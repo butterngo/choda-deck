@@ -4,3 +4,7 @@ out
 .DS_Store
 .eslintcache
 *.log*
+
+# Personal Claude Code context — never commit
+CLAUDE.local.md
+.claude/settings.local.json
