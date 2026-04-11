@@ -1,8 +1,13 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
-import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import * as pty from 'node-pty'
 import icon from '../../resources/icon.png?asset'
+
+const is = {
+  get dev(): boolean {
+    return !app.isPackaged
+  }
+}
 
 // Hardcoded spike config — first project only, to validate PTY + claude + xterm.js pipeline.
 // This will be replaced by a real config loader once the spike passes.
@@ -73,10 +78,18 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('dev.choda.deck')
+  app.setAppUserModelId('dev.choda.deck')
 
+  // Dev-mode shortcuts: F12 toggles devtools. Skipped for packaged builds.
   app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
+    if (!app.isPackaged) {
+      window.webContents.on('before-input-event', (event, input) => {
+        if (input.type === 'keyDown' && input.key === 'F12') {
+          window.webContents.toggleDevTools()
+          event.preventDefault()
+        }
+      })
+    }
   })
 
   // PTY IPC handlers
