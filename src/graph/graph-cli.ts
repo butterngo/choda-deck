@@ -203,6 +203,14 @@ program
   graph workspace add <id> <cwd>      Add project
   graph workspace remove <id>         Remove project
 
+  Plugins
+  ───────
+  graph plugin list                   List all plugins
+  graph plugin add <id> -c <cmd>      Add MCP plugin (-a args, -e KEY=VAL)
+  graph plugin remove <id>            Remove plugin
+  graph plugin enable <id>            Enable plugin
+  graph plugin disable <id>           Disable plugin
+
   Options
   ───────
   -f, --format json                   Machine-readable output (on context, list, info)
@@ -475,6 +483,127 @@ workspace
     projects.splice(idx, 1)
     saveWorkspaceProjects(projects)
     console.log(`Removed ${id}`)
+  })
+
+// plugin management (plugins.json)
+const plugin = program.command('plugin').description('Manage MCP plugins (plugins.json)')
+
+interface PluginConfig {
+  id: string
+  type: string
+  command: string
+  args: string[]
+  env?: Record<string, string>
+  enabled: boolean
+}
+
+function getPluginsJsonPath(): string {
+  return path.resolve(process.cwd(), 'plugins.json')
+}
+
+function loadPluginConfigs(): PluginConfig[] {
+  const p = getPluginsJsonPath()
+  if (!fs.existsSync(p)) return []
+  return JSON.parse(fs.readFileSync(p, 'utf-8'))
+}
+
+function savePluginConfigs(list: PluginConfig[]): void {
+  fs.writeFileSync(getPluginsJsonPath(), JSON.stringify(list, null, 2), 'utf-8')
+}
+
+plugin
+  .command('list')
+  .description('List all plugins')
+  .action(() => {
+    const list = loadPluginConfigs()
+    if (list.length === 0) {
+      console.log('No plugins. Use `graph plugin add` to add one.')
+      return
+    }
+    for (const p of list) {
+      const state = p.enabled ? 'enabled' : 'disabled'
+      console.log(`${p.id.padEnd(20)} ${p.type.padEnd(6)} ${state.padEnd(10)} ${p.command} ${p.args.join(' ')}`)
+    }
+  })
+
+plugin
+  .command('add <id>')
+  .description('Add a new MCP plugin')
+  .requiredOption('-c, --command <cmd>', 'command to run')
+  .option('-a, --args <args>', 'space-separated arguments', '')
+  .option('-e, --env <pairs>', 'env vars (KEY=VAL,KEY2=VAL2)', '')
+  .action((id: string, opts: { command: string; args: string; env: string }) => {
+    const list = loadPluginConfigs()
+    if (list.some(p => p.id === id)) {
+      console.error(`Plugin "${id}" already exists`)
+      process.exit(1)
+    }
+
+    const env: Record<string, string> = {}
+    if (opts.env) {
+      for (const pair of opts.env.split(',')) {
+        const [k, v] = pair.split('=')
+        if (k && v) env[k.trim()] = v.trim()
+      }
+    }
+
+    const entry: PluginConfig = {
+      id,
+      type: 'mcp',
+      command: opts.command,
+      args: opts.args.trim() ? opts.args.trim().split(' ') : [],
+      env: Object.keys(env).length > 0 ? env : undefined,
+      enabled: true
+    }
+
+    list.push(entry)
+    savePluginConfigs(list)
+    console.log(`Added plugin ${id} (${opts.command} ${opts.args})`)
+  })
+
+plugin
+  .command('remove <id>')
+  .description('Remove a plugin')
+  .action((id: string) => {
+    const list = loadPluginConfigs()
+    const idx = list.findIndex(p => p.id === id)
+    if (idx === -1) {
+      console.error(`Plugin "${id}" not found`)
+      process.exit(1)
+    }
+    list.splice(idx, 1)
+    savePluginConfigs(list)
+    console.log(`Removed plugin ${id}`)
+  })
+
+plugin
+  .command('enable <id>')
+  .description('Enable a plugin')
+  .action((id: string) => {
+    const list = loadPluginConfigs()
+    const p = list.find(x => x.id === id)
+    if (!p) {
+      console.error(`Plugin "${id}" not found`)
+      process.exit(1)
+    }
+    p.enabled = true
+    savePluginConfigs(list)
+    console.log(`Enabled ${id}`)
+  })
+
+plugin
+  .command('disable <id>')
+  .description('Disable a plugin')
+  .action((id: string) => {
+    const list = loadPluginConfigs()
+    const p = list.find(x => x.id === id)
+    if (!p) {
+      console.error(`Plugin "${id}" not found`)
+      process.exit(1)
+    }
+    p.enabled = false
+    savePluginConfigs(list)
+    console.log(`Disabled ${id}`)
   })
 
 // ── Run ────────────────────────────────────────────────────────────────────────

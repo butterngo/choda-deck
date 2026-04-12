@@ -3,11 +3,13 @@ import '@xterm/xterm/css/xterm.css'
 import './assets/deck.css'
 import Sidebar from './Sidebar'
 import TerminalView from './TerminalView'
+import PluginPanel from './PluginPanel'
 import type { SpikeProject } from '../../preload/index'
 
 function App(): React.JSX.Element {
   const [projects, setProjects] = useState<SpikeProject[]>([])
   const [activeId, setActiveId] = useState<string>('')
+  const [showPlugins, setShowPlugins] = useState(false)
 
   // Load projects on mount
   useEffect(() => {
@@ -90,7 +92,15 @@ function App(): React.JSX.Element {
             <div className="deck-project">
               {activeProject ? `${activeProject.id} — ${activeProject.cwd}` : ''}
             </div>
+            <button
+              className="deck-header-btn"
+              onClick={() => setShowPlugins(true)}
+              title="Plugins"
+            >
+              &#9881;
+            </button>
           </header>
+          <PluginPanel visible={showPlugins} onClose={() => setShowPlugins(false)} />
           {projects.map((p) => (
             <TerminalView key={p.id} project={p} visible={p.id === activeId} />
           ))}

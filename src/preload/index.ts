@@ -7,6 +7,16 @@ export interface SpikeProject {
   shell: string
 }
 
+export interface PluginEntry {
+  id: string
+  type: 'mcp'
+  command: string
+  args: string[]
+  cwd?: string
+  env?: Record<string, string>
+  enabled: boolean
+}
+
 // Custom APIs for renderer — PTY bridge for xterm.js
 const api = {
   pty: {
@@ -40,6 +50,19 @@ const api = {
       ipcRenderer.invoke('project:add', id, cwd),
     remove: (id: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('project:remove', id)
+  },
+  plugin: {
+    list: (): Promise<PluginEntry[]> => ipcRenderer.invoke('plugin:list'),
+    add: (entry: PluginEntry): Promise<{ ok: boolean; error?: string; plugin?: PluginEntry }> =>
+      ipcRenderer.invoke('plugin:add', entry),
+    remove: (id: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('plugin:remove', id),
+    toggle: (id: string): Promise<{ ok: boolean; error?: string; enabled?: boolean }> =>
+      ipcRenderer.invoke('plugin:toggle', id),
+    statuses: (): Promise<Array<{ id: string; enabled: boolean; status: string }>> =>
+      ipcRenderer.invoke('plugin:statuses'),
+    restart: (id: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('plugin:restart', id)
   },
   spike: {
     getProject: (): Promise<SpikeProject> => ipcRenderer.invoke('spike:project'),
