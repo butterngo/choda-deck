@@ -246,8 +246,49 @@ body,
   overflow: hidden;
 }
 
+.deck-terminal-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .deck-terminal--hidden {
   display: none;
+}
+
+/* Restart banner */
+.deck-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.deck-banner--error {
+  background: #4a1c1c;
+  color: #f88;
+}
+
+.deck-banner--info {
+  background: #1c3a4a;
+  color: #8cf;
+}
+
+.deck-banner-btn {
+  background: #444;
+  border: 1px solid #555;
+  color: #d4d4d4;
+  padding: 2px 10px;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.deck-banner-btn:hover {
+  background: #555;
 }
 
 /* Header actions */

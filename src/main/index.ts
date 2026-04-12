@@ -49,6 +49,47 @@ function saveProjects(projects: ProjectEntry[]): void {
 
 let projects: ProjectEntry[] = []
 
+// R11: PATH fallback — ensure common CLI install locations are in PATH
+function ensurePath(): void {
+  const currentPath = process.env.PATH || ''
+  const extraPaths: string[] = []
+
+  if (process.platform === 'win32') {
+    // npm global, AppData local, common install dirs
+    const appData = process.env.APPDATA || ''
+    const localAppData = process.env.LOCALAPPDATA || ''
+    const candidates = [
+      join(appData, 'npm'),
+      join(localAppData, 'Programs', 'claude-code'),
+      'C:\\Program Files\\nodejs'
+    ]
+    for (const p of candidates) {
+      if (existsSync(p) && !currentPath.includes(p)) {
+        extraPaths.push(p)
+      }
+    }
+  } else {
+    // macOS/Linux: homebrew, nvm, npm global
+    const home = process.env.HOME || ''
+    const candidates = [
+      '/usr/local/bin',
+      '/opt/homebrew/bin',
+      join(home, '.nvm/versions/node'),
+      join(home, '.npm-global/bin')
+    ]
+    for (const p of candidates) {
+      if (existsSync(p) && !currentPath.includes(p)) {
+        extraPaths.push(p)
+      }
+    }
+  }
+
+  if (extraPaths.length > 0) {
+    const sep = process.platform === 'win32' ? ';' : ':'
+    process.env.PATH = currentPath + sep + extraPaths.join(sep)
+  }
+}
+
 // Map of session id -> running pty process
 const sessions = new Map<string, pty.IPty>()
 
@@ -156,7 +197,7 @@ app.whenReady().then(() => {
     }
   })
 
-  // Load projects from config
+  ensurePath()
   projects = loadProjects()
 
   // Project management IPC
@@ -199,15 +240,33 @@ app.whenReady().then(() => {
   })
 })
 
-app.on('window-all-closed', () => {
-  // Clean up any running PTY sessions
-  for (const session of sessions.values()) {
-    try {
-      session.kill()
-    } catch {
-      // Ignore errors on shutdown
-    }
+app.on('window-all-closed', async () => {
+  // Graceful shutdown: send SIGINT first, wait, then force kill
+  const pending: Array<Promise<void>> = []
+
+  for (const [, session] of sessions.entries()) {
+    pending.push(
+      new Promise<void>((resolve) => {
+        try {
+          // Send Ctrl+C (SIGINT equivalent)
+          session.write('\x03')
+          const timeout = setTimeout(() => {
+            try { session.kill() } catch { /* ignore */ }
+            resolve()
+          }, 2000)
+          session.onExit(() => {
+            clearTimeout(timeout)
+            resolve()
+          })
+        } catch {
+          resolve()
+        }
+      })
+    )
   }
+
+  // Wait for all sessions to exit (max 2s each)
+  await Promise.all(pending)
   sessions.clear()
 
   if (process.platform !== 'darwin') {
