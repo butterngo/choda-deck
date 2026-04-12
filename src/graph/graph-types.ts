@@ -12,7 +12,8 @@ export enum RelationType {
   Blocks = 'blocks',
   PartOf = 'part-of',
   RelatesTo = 'relates-to',
-  Implements = 'implements'
+  Implements = 'implements',
+  DecidedBy = 'decided-by'
 }
 
 /**

@@ -1,5 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import * as pty from 'node-pty'
 import icon from '../../resources/icon.png?asset'
 
@@ -9,13 +10,44 @@ const is = {
   }
 }
 
-// Hardcoded spike config — first project only, to validate PTY + claude + xterm.js pipeline.
-// This will be replaced by a real config loader once the spike passes.
-const SPIKE_PROJECT = {
-  id: 'workflow-engine',
-  cwd: 'C:\\dev\\test\\workflow-engine',
-  shell: process.platform === 'win32' ? 'claude.cmd' : 'claude'
+// ── Project config (projects.json) ─────────────────────────────────────────────
+
+interface ProjectEntry {
+  id: string
+  cwd: string
+  shell: string
 }
+
+const DEFAULT_SHELL = process.platform === 'win32' ? 'claude.cmd' : 'claude'
+
+function getProjectsPath(): string {
+  const dir = app.isPackaged ? app.getPath('userData') : join(__dirname, '../..')
+  return join(dir, 'projects.json')
+}
+
+function loadProjects(): ProjectEntry[] {
+  const filePath = getProjectsPath()
+  if (!existsSync(filePath)) return []
+  try {
+    const raw = JSON.parse(readFileSync(filePath, 'utf-8'))
+    return (raw as Array<{ id: string; cwd: string; shell?: string }>).map((p) => ({
+      id: p.id,
+      cwd: p.cwd,
+      shell: p.shell || DEFAULT_SHELL
+    }))
+  } catch {
+    return []
+  }
+}
+
+function saveProjects(projects: ProjectEntry[]): void {
+  const filePath = getProjectsPath()
+  const dir = join(filePath, '..')
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  writeFileSync(filePath, JSON.stringify(projects, null, 2), 'utf-8')
+}
+
+let projects: ProjectEntry[] = []
 
 // Map of session id -> running pty process
 const sessions = new Map<string, pty.IPty>()
@@ -26,7 +58,8 @@ function createPtySession(id: string, cwd: string, cols: number, rows: number, w
     return
   }
 
-  const shellCmd = SPIKE_PROJECT.shell
+  const project = projects.find(p => p.id === id)
+  const shellCmd = project ? project.shell : DEFAULT_SHELL
   const ptyProcess = pty.spawn(shellCmd, [], {
     name: 'xterm-256color',
     cols,
@@ -120,8 +153,41 @@ app.whenReady().then(() => {
     }
   })
 
-  // Expose spike project config to renderer
-  ipcMain.handle('spike:project', () => SPIKE_PROJECT)
+  // Load projects from config
+  projects = loadProjects()
+
+  // Project management IPC
+  ipcMain.handle('project:list', () => projects)
+
+  ipcMain.handle('project:add', (_event, id: string, cwd: string) => {
+    if (projects.some(p => p.id === id)) {
+      return { ok: false, error: `Project "${id}" already exists` }
+    }
+    const entry: ProjectEntry = { id, cwd, shell: DEFAULT_SHELL }
+    projects.push(entry)
+    saveProjects(projects)
+    return { ok: true, project: entry }
+  })
+
+  ipcMain.handle('project:remove', (_event, id: string) => {
+    const idx = projects.findIndex(p => p.id === id)
+    if (idx === -1) {
+      return { ok: false, error: `Project "${id}" not found` }
+    }
+    // Kill session if running
+    const session = sessions.get(id)
+    if (session) {
+      session.kill()
+      sessions.delete(id)
+    }
+    projects.splice(idx, 1)
+    saveProjects(projects)
+    return { ok: true }
+  })
+
+  // Legacy spike handlers (backwards compat)
+  ipcMain.handle('spike:project', () => projects[0] || null)
+  ipcMain.handle('spike:projects', () => projects)
 
   createWindow()
 

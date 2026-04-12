@@ -15,8 +15,14 @@ export interface ChodaApi {
     onData: (id: string, callback: (data: string) => void) => () => void
     onExit: (id: string, callback: (exitCode: number) => void) => () => void
   }
+  project: {
+    list: () => Promise<SpikeProject[]>
+    add: (id: string, cwd: string) => Promise<{ ok: boolean; error?: string; project?: SpikeProject }>
+    remove: (id: string) => Promise<{ ok: boolean; error?: string }>
+  }
   spike: {
     getProject: () => Promise<SpikeProject>
+    getProjects: () => Promise<SpikeProject[]>
   }
 }
 

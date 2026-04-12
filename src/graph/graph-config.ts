@@ -32,7 +32,7 @@ export function createGraphService(config: GraphConfig): GraphService {
   if (!factory) {
     throw new Error(
       `Unknown graph provider "${config.provider}". ` +
-        `Registered: [${[...providers.keys()].join(', ')}]`
+        `Registered: [${Array.from(providers.keys()).join(', ')}]`
     )
   }
   return factory(config)

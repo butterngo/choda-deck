@@ -62,11 +62,3 @@ Concretely:
 ## Relationship to MVP
 
 **MVP ships without any spawn-worker code.** This ADR records the *intent* so MVP architectural choices (`<ViewRouter>`, polymorphic main pane, session map design) leave room for a future `worker` view type without refactoring the shell. No MVP code is blocked by this ADR.
-
-## Status
-
-Accepted 2026-04-11. Not yet implemented in Choda Deck (V2+). Reference implementation: `vault/skills/spawn-worker/`. Archived origin: `vault/90-Archive/claude-orchestrator/docs/decisions/ADR-0002-orchestration-pattern.md`.
-
-## Log
-
-- 2026-04-11 — ADR drafted during `/project-discovery` run. Records adoption intent without committing MVP code.

@@ -17,10 +17,196 @@ body,
 }
 
 .deck-root {
-  display: flex;
-  flex-direction: column;
   height: 100vh;
   width: 100vw;
+}
+
+.deck-layout {
+  display: flex;
+  height: 100%;
+}
+
+/* Sidebar */
+.deck-sidebar {
+  width: 200px;
+  background: #1e1e1e;
+  border-right: 1px solid #333;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+.deck-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px 8px;
+}
+
+.deck-sidebar-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #666;
+}
+
+.deck-sidebar-add-btn {
+  background: transparent;
+  border: 1px solid #444;
+  color: #888;
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.deck-sidebar-add-btn:hover {
+  background: #333;
+  color: #d4d4d4;
+}
+
+/* Add project form */
+.deck-sidebar-form {
+  padding: 4px 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.deck-sidebar-input {
+  background: #2a2d2e;
+  border: 1px solid #444;
+  color: #d4d4d4;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  outline: none;
+}
+
+.deck-sidebar-input:focus {
+  border-color: #61dafb;
+}
+
+.deck-sidebar-error {
+  color: #f44;
+  font-size: 11px;
+}
+
+.deck-sidebar-form-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.deck-sidebar-btn {
+  background: #333;
+  border: 1px solid #444;
+  color: #ccc;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.deck-sidebar-btn--ok {
+  background: #264f78;
+  border-color: #264f78;
+}
+
+.deck-sidebar-btn:hover {
+  background: #444;
+}
+
+/* Project item */
+.deck-sidebar-item {
+  display: flex;
+  align-items: center;
+  padding: 0;
+  background: transparent;
+  color: #999;
+}
+
+.deck-sidebar-item-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  cursor: pointer;
+  text-align: left;
+  flex: 1;
+  min-width: 0;
+}
+
+.deck-sidebar-remove-btn {
+  background: transparent;
+  border: none;
+  color: transparent;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.deck-sidebar-item:hover .deck-sidebar-remove-btn {
+  color: #666;
+}
+
+.deck-sidebar-remove-btn:hover {
+  color: #f44 !important;
+}
+
+.deck-sidebar-item:hover {
+  background: #2a2d2e;
+  color: #d4d4d4;
+}
+
+.deck-sidebar-item--active {
+  background: #37373d;
+  color: #d4d4d4;
+}
+
+.deck-sidebar-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  background: #333;
+  color: #888;
+  font-size: 11px;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  flex-shrink: 0;
+}
+
+.deck-sidebar-item--active .deck-sidebar-key {
+  background: #464647;
+  color: #d4d4d4;
+}
+
+.deck-sidebar-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Main content */
+.deck-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .deck-header {
@@ -58,6 +244,10 @@ body,
   flex: 1;
   padding: 4px;
   overflow: hidden;
+}
+
+.deck-terminal--hidden {
+  display: none;
 }
 
 .deck-terminal .xterm {

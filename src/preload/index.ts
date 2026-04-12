@@ -34,8 +34,16 @@ const api = {
       return () => ipcRenderer.removeListener(channel, listener)
     }
   },
+  project: {
+    list: (): Promise<SpikeProject[]> => ipcRenderer.invoke('project:list'),
+    add: (id: string, cwd: string): Promise<{ ok: boolean; error?: string; project?: SpikeProject }> =>
+      ipcRenderer.invoke('project:add', id, cwd),
+    remove: (id: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('project:remove', id)
+  },
   spike: {
-    getProject: (): Promise<SpikeProject> => ipcRenderer.invoke('spike:project')
+    getProject: (): Promise<SpikeProject> => ipcRenderer.invoke('spike:project'),
+    getProjects: (): Promise<SpikeProject[]> => ipcRenderer.invoke('spike:projects')
   }
 }
 

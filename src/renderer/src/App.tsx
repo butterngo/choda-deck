@@ -1,105 +1,101 @@
-import { useEffect, useRef, useState } from 'react'
-import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
+import { useEffect, useState } from 'react'
 import '@xterm/xterm/css/xterm.css'
 import './assets/deck.css'
+import Sidebar from './Sidebar'
+import TerminalView from './TerminalView'
+import type { SpikeProject } from '../../preload/index'
 
 function App(): React.JSX.Element {
-  const terminalContainerRef = useRef<HTMLDivElement | null>(null)
-  const terminalRef = useRef<Terminal | null>(null)
-  const fitAddonRef = useRef<FitAddon | null>(null)
-  const [status, setStatus] = useState<string>('initializing...')
-  const [projectLabel, setProjectLabel] = useState<string>('')
+  const [projects, setProjects] = useState<SpikeProject[]>([])
+  const [activeId, setActiveId] = useState<string>('')
 
+  // Load projects on mount
   useEffect(() => {
     let disposed = false
-    let cleanupData: (() => void) | null = null
-    let cleanupExit: (() => void) | null = null
-    let resizeObserver: ResizeObserver | null = null
-
-    async function boot(): Promise<void> {
-      if (!terminalContainerRef.current) return
-
-      const project = await window.api.spike.getProject()
+    window.api.project.list().then((list) => {
       if (disposed) return
-      setProjectLabel(`${project.id} — ${project.cwd}`)
+      setProjects(list)
+      if (list.length > 0) setActiveId(list[0].id)
+    })
+    return () => { disposed = true }
+  }, [])
 
-      const term = new Terminal({
-        cursorBlink: true,
-        fontFamily: 'Cascadia Code, Consolas, "Courier New", monospace',
-        fontSize: 14,
-        theme: {
-          background: '#1e1e1e',
-          foreground: '#d4d4d4'
+  // Keyboard shortcuts — single top-level listener
+  useEffect(() => {
+    if (projects.length === 0) return
+
+    function handleKeyDown(e: KeyboardEvent): void {
+      // Ctrl+1..9 → jump to project by index
+      if (e.ctrlKey && !e.altKey && e.key >= '1' && e.key <= '9') {
+        const idx = parseInt(e.key) - 1
+        if (idx < projects.length) {
+          e.preventDefault()
+          setActiveId(projects[idx].id)
         }
-      })
-      const fitAddon = new FitAddon()
-      term.loadAddon(fitAddon)
-      term.open(terminalContainerRef.current)
-      fitAddon.fit()
-
-      terminalRef.current = term
-      fitAddonRef.current = fitAddon
-
-      const { cols, rows } = term
-      const spawnResult = await window.api.pty.spawn(project.id, project.cwd, cols, rows)
-      if (disposed) return
-
-      if (!spawnResult.ok) {
-        setStatus('failed to spawn pty')
         return
       }
 
-      setStatus('running')
-
-      cleanupData = window.api.pty.onData(project.id, (data) => {
-        term.write(data)
-      })
-
-      cleanupExit = window.api.pty.onExit(project.id, (exitCode) => {
-        setStatus(`exited (code ${exitCode})`)
-        term.write(`\r\n\x1b[33m[process exited with code ${exitCode}]\x1b[0m\r\n`)
-      })
-
-      term.onData((data) => {
-        window.api.pty.input(project.id, data)
-      })
-
-      resizeObserver = new ResizeObserver(() => {
-        if (fitAddonRef.current && terminalRef.current) {
-          fitAddonRef.current.fit()
-          const { cols: c, rows: r } = terminalRef.current
-          window.api.pty.resize(project.id, c, r)
-        }
-      })
-      resizeObserver.observe(terminalContainerRef.current)
-    }
-
-    boot().catch((err) => {
-      console.error('boot failed', err)
-      setStatus(`error: ${String(err)}`)
-    })
-
-    return () => {
-      disposed = true
-      if (cleanupData) cleanupData()
-      if (cleanupExit) cleanupExit()
-      if (resizeObserver) resizeObserver.disconnect()
-      if (terminalRef.current) {
-        terminalRef.current.dispose()
-        terminalRef.current = null
+      // Ctrl+Tab → next, Ctrl+Shift+Tab → prev
+      if (e.ctrlKey && e.key === 'Tab') {
+        e.preventDefault()
+        setActiveId((currentId) => {
+          const curr = projects.findIndex((p) => p.id === currentId)
+          const next = e.shiftKey
+            ? (curr - 1 + projects.length) % projects.length
+            : (curr + 1) % projects.length
+          return projects[next].id
+        })
       }
     }
-  }, [])
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [projects])
+
+  async function handleAddProject(id: string, cwd: string): Promise<string | null> {
+    const result = await window.api.project.add(id, cwd)
+    if (!result.ok) return result.error || 'Failed to add project'
+    if (result.project) {
+      setProjects((prev) => [...prev, result.project!])
+      setActiveId(id)
+    }
+    return null
+  }
+
+  async function handleRemoveProject(id: string): Promise<void> {
+    const result = await window.api.project.remove(id)
+    if (!result.ok) return
+    setProjects((prev) => {
+      const next = prev.filter((p) => p.id !== id)
+      if (activeId === id && next.length > 0) setActiveId(next[0].id)
+      return next
+    })
+  }
+
+  const activeProject = projects.find((p) => p.id === activeId)
 
   return (
     <div className="deck-root">
-      <header className="deck-header">
-        <div className="deck-title">Choda Deck — spike</div>
-        <div className="deck-project">{projectLabel}</div>
-        <div className="deck-status">{status}</div>
-      </header>
-      <div className="deck-terminal" ref={terminalContainerRef} />
+      <div className="deck-layout">
+        <Sidebar
+          projects={projects}
+          activeId={activeId}
+          onSelect={setActiveId}
+          onAdd={handleAddProject}
+          onRemove={handleRemoveProject}
+        />
+        <main className="deck-main">
+          <header className="deck-header">
+            <div className="deck-title">Choda Deck</div>
+            <div className="deck-project">
+              {activeProject ? `${activeProject.id} — ${activeProject.cwd}` : ''}
+            </div>
+          </header>
+          {projects.map((p) => (
+            <TerminalView key={p.id} project={p} visible={p.id === activeId} />
+          ))}
+        </main>
+      </div>
     </div>
   )
 }
