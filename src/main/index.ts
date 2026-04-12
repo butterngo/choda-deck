@@ -36,11 +36,15 @@ function createPtySession(id: string, cwd: string, cols: number, rows: number, w
   })
 
   ptyProcess.onData((data) => {
-    webContents.send(`pty:data:${id}`, data)
+    if (!webContents.isDestroyed()) {
+      webContents.send(`pty:data:${id}`, data)
+    }
   })
 
   ptyProcess.onExit(({ exitCode }) => {
-    webContents.send(`pty:exit:${id}`, exitCode)
+    if (!webContents.isDestroyed()) {
+      webContents.send(`pty:exit:${id}`, exitCode)
+    }
     sessions.delete(id)
   })
 
