@@ -12,7 +12,16 @@ Architecture style: **process-isolated, IPC-mediated, session-as-entity**. The u
 |---|---|
 | `src/main/index.ts` | Main process. Electron lifecycle, BrowserWindow, PTY session map, IPC handlers |
 | `src/preload/index.ts` | Preload script. Exposes `window.api.pty.{spawn,input,resize,kill,onData,onExit}` via contextBridge |
-| `src/renderer/src/App.tsx` | Renderer. React UI, xterm.js terminal, FitAddon, ResizeObserver wiring |
+| `src/renderer/src/App.tsx` | Renderer orchestrator. Holds project list + active ID, keyboard shortcuts |
+| `src/renderer/src/Sidebar.tsx` | Project sidebar. Add/remove projects, help overlay |
+| `src/renderer/src/TerminalView.tsx` | Per-project terminal. xterm.js + FitAddon + restart banner |
+| `src/graph/graph-types.ts` | Graph types: NodeType, RelationType, GraphNode, GraphEdge, buildUid() |
+| `src/graph/graph-service.interface.ts` | GraphService interface — provider-agnostic contract |
+| `src/graph/neo4j-graph-service.ts` | Neo4j implementation of GraphService |
+| `src/graph/vault-parser.ts` | Parse vault markdown → JSON (nodes + edges) |
+| `src/graph/neo4j-import.ts` | Import vault-graph.json → Neo4j (idempotent MERGE) |
+| `src/graph/graph-cli.ts` | CLI for graph queries + workspace management |
+| `src/graph/mcp-graph-server.ts` | MCP server — 5 graph tools for Claude sessions |
 | `scripts/spike-pty.mjs` | Plain-Node PTY validation harness (no Electron) — diagnostic tool for native-module / PTY issues |
 | `scripts/dev.mjs` | Dev wrapper that unsets `ELECTRON_RUN_AS_NODE` before invoking `electron-vite dev` (fix for commit `7187791`) |
 | `electron.vite.config.ts` | Build pipeline config for main/preload/renderer |
@@ -100,18 +109,49 @@ Channel naming: `pty:<verb>` for commands, `pty:<verb>:<sessionId>` for per-sess
 | `pty:kill` | send | R→M | `(id)` |
 | `pty:data:${id}` | on | M→R | `data: string` (stream) |
 | `pty:exit:${id}` | on | M→R | `exitCode: number` |
-| `spike:project` | invoke | R→M | `()` → `SpikeProject` (temporary, spike-only) |
+| `spike:project` | invoke | R→M | `()` → `SpikeProject` (legacy compat) |
+| `spike:projects` | invoke | R→M | `()` → `SpikeProject[]` (legacy compat) |
+| `project:list` | invoke | R→M | `()` → `ProjectEntry[]` |
+| `project:add` | invoke | R→M | `(id, cwd)` → `{ ok, error?, project? }` |
+| `project:remove` | invoke | R→M | `(id)` → `{ ok, error? }` |
 
 ## Quality attributes
 
 | Attribute | How it is ensured |
 |---|---|
-| Responsiveness | xterm.js renders direct on canvas; IPC batches data chunks; FitAddon debounce (TODO R4) |
+| Responsiveness | xterm.js renders direct on canvas; IPC batches data chunks; FitAddon debounce (50ms) |
 | Session persistence | Sessions live in main process `Map`; xterm instances mounted once in renderer, never disposed on tab switch |
-| Graceful shutdown | `window-all-closed` iterates session map and calls `.kill()` before `app.quit()` — sequence pending hardening per R3 |
-| Crash resilience | Per-tab state machine `idle | running | exited-ok | crashed`; banner + manual restart on failure (Q1 decision) |
-| Cross-environment reliability | PATH inherited from Electron main; fallback scan for `claude` install locations TBD per R11 |
+| Graceful shutdown | `window-all-closed` sends Ctrl+C, waits 2s, then force kills. Sessions cleaned up before `app.quit()` |
+| Crash resilience | Per-tab state machine `idle | running | exited-ok | crashed`; banner + manual restart button on failure |
+| Cross-environment reliability | PATH augmented at startup with common CLI install dirs (npm global, homebrew, etc.) |
 | Security | `contextIsolation: true`, `sandbox: false` (required for preload Node APIs); renderer has no direct Node access, only `window.api` surface |
+
+## Graph layer
+
+Data flow:
+
+```text
+vault (.md files)
+  → vault-parser.ts → vault-graph.json (nodes + edges)
+  → neo4j-import.ts → Neo4j (idempotent MERGE)
+  → Neo4jGraphService (implements GraphService interface)
+  → Consumers: CLI, MCP server, future UI
+```
+
+Design: files = content store, Neo4j = relationship store. GraphService interface abstracts the backend — consumers code to interface, not implementation. SQLite backend can be added by implementing the same interface.
+
+UID scheme: `{type}:{project}/{id}` (e.g. `task:task-management/TASK-130`)
+
+Node types: Task, Feature, Decision, Project.
+Relation types: DependsOn, Blocks, PartOf, RelatesTo, Implements, DecidedBy.
+
+### Known limitations (Phase 1)
+
+- One-way sync only (vault → graph). No file → graph watcher yet (TASK-207)
+- No UI for graph — CLI + MCP only
+- No SQLite implementation yet
+- Content search is title-match only, no full-text index
+- 2 duplicate ADR UIDs in vault data (ADR-010, ADR-011 each have 2 files)
 
 ## Architectural note — polymorphic view container (MVP target, not yet implemented)
 
