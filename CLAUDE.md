@@ -44,6 +44,30 @@ npx ts-node src/graph/graph-cli.ts cheatsheet           # all commands
 
 When asked for "context" of a task/feature/decision, use the graph CLI first — it returns the full dependency tree from Neo4j. Fall back to vault file search only if Neo4j is unavailable.
 
+### MCP Server
+
+Graph tools are also available as an MCP server for Claude Desktop / Claude Code:
+
+```bash
+npm run mcp:graph   # starts MCP server on stdio
+```
+
+Register in `claude_desktop_config.json` or `.claude.json`:
+```json
+{
+  "mcpServers": {
+    "choda-graph": {
+      "command": "npx",
+      "args": ["ts-node", "src/graph/mcp-graph-server.ts"],
+      "cwd": "C:\\dev\\choda-deck",
+      "env": { "NEO4J_PASSWORD": "yourpassword" }
+    }
+  }
+}
+```
+
+Tools: `graph_context`, `graph_list`, `graph_search`, `graph_create_node`, `graph_create_relationship`.
+
 ## Working style
 
 - **KISS first.** This is a spike → MVP. Simplest thing that satisfies the requirement. No premature abstractions.
