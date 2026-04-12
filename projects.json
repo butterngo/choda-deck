@@ -1,0 +1,17 @@
+[
+  {
+    "id": "workflow-engine",
+    "cwd": "C:\\dev\\test\\workflow-engine",
+    "shell": "claude.cmd"
+  },
+  {
+    "id": "remote-workflow",
+    "cwd": "C:\\dev\\test\\remote-workflow",
+    "shell": "claude.cmd"
+  },
+  {
+    "id": "choda-deck",
+    "cwd": "C:\\dev\\choda-deck",
+    "shell": "claude.cmd"
+  }
+]

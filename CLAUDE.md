@@ -30,6 +30,20 @@ When docs/vault context disagrees with code: code describes current spike state,
 - `src/preload/CLAUDE.md` — contextBridge API surface, what can and cannot live here
 - `src/renderer/CLAUDE.md` — React renderer, xterm mount, `window.api`-only rule
 
+## Graph CLI
+
+This project has a knowledge graph backed by Neo4j. Use the graph CLI for context queries:
+
+```bash
+npx ts-node src/graph/graph-cli.ts context <id>        # e.g. context TASK-130
+npx ts-node src/graph/graph-cli.ts context <id> -f json # JSON output
+npx ts-node src/graph/graph-cli.ts list tasks -p <project>
+npx ts-node src/graph/graph-cli.ts info <id>
+npx ts-node src/graph/graph-cli.ts cheatsheet           # all commands
+```
+
+When asked for "context" of a task/feature/decision, use the graph CLI first — it returns the full dependency tree from Neo4j. Fall back to vault file search only if Neo4j is unavailable.
+
 ## Working style
 
 - **KISS first.** This is a spike → MVP. Simplest thing that satisfies the requirement. No premature abstractions.

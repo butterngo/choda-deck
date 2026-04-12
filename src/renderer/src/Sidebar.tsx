@@ -1,6 +1,30 @@
 import { useState } from 'react'
 import type { SpikeProject } from '../../preload/index'
 
+const HELP_TEXT = `Keyboard Shortcuts
+─────────────────
+Ctrl+1..9      Switch to project by number
+Ctrl+Tab       Next project
+Ctrl+Shift+Tab Previous project
+
+Sidebar
+─────────────────
++  button      Add new project
+x  button      Remove project (on hover)
+
+CLI (graph)
+─────────────────
+graph context <id>          Context tree
+graph context <id> -f json  JSON output
+graph list tasks -p <proj>  List nodes
+graph info <id>             Node details
+graph create <type>         Create node
+graph link <src> <tgt> <r>  Create edge
+graph unlink <src> <tgt> <r> Remove edge
+graph workspace list        List projects
+graph workspace add <id> <cwd>
+graph workspace remove <id>`
+
 interface SidebarProps {
   projects: SpikeProject[]
   activeId: string
@@ -10,6 +34,7 @@ interface SidebarProps {
 }
 
 function Sidebar({ projects, activeId, onSelect, onAdd, onRemove }: SidebarProps): React.JSX.Element {
+  const [showHelp, setShowHelp] = useState(false)
   const [adding, setAdding] = useState(false)
   const [addId, setAddId] = useState('')
   const [addCwd, setAddCwd] = useState('')
@@ -43,13 +68,22 @@ function Sidebar({ projects, activeId, onSelect, onAdd, onRemove }: SidebarProps
     <aside className="deck-sidebar">
       <div className="deck-sidebar-header">
         <span className="deck-sidebar-title">Projects</span>
-        <button
-          className="deck-sidebar-add-btn"
-          onClick={() => setAdding(true)}
-          title="Add project"
-        >
-          +
-        </button>
+        <div className="deck-sidebar-header-actions">
+          <button
+            className="deck-sidebar-add-btn"
+            onClick={() => setShowHelp(true)}
+            title="Help"
+          >
+            ?
+          </button>
+          <button
+            className="deck-sidebar-add-btn"
+            onClick={() => setAdding(true)}
+            title="Add project"
+          >
+            +
+          </button>
+        </div>
       </div>
 
       {adding && (
@@ -73,6 +107,15 @@ function Sidebar({ projects, activeId, onSelect, onAdd, onRemove }: SidebarProps
             <button type="button" className="deck-sidebar-btn" onClick={handleCancel}>Cancel</button>
           </div>
         </form>
+      )}
+
+      {showHelp && (
+        <div className="deck-help-overlay" onClick={() => setShowHelp(false)}>
+          <div className="deck-help-panel" onClick={(e) => e.stopPropagation()}>
+            <pre className="deck-help-text">{HELP_TEXT}</pre>
+            <button className="deck-sidebar-btn" onClick={() => setShowHelp(false)}>Close</button>
+          </div>
+        </div>
       )}
 
       {projects.map((project, index) => (

@@ -250,6 +250,43 @@ body,
   display: none;
 }
 
+/* Header actions */
+.deck-sidebar-header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* Help overlay */
+.deck-help-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.deck-help-panel {
+  background: #252526;
+  border: 1px solid #444;
+  border-radius: 8px;
+  padding: 20px 24px;
+  max-width: 480px;
+}
+
+.deck-help-text {
+  margin: 0 0 12px;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 12px;
+  color: #d4d4d4;
+  line-height: 1.6;
+  white-space: pre;
+}
+
 .deck-terminal .xterm {
   height: 100%;
 }

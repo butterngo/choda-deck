@@ -6,7 +6,7 @@
 
 import { Command } from 'commander'
 import { Neo4jGraphService } from './neo4j-graph-service'
-import { NodeType, RelationType, buildUid } from './graph-types'
+import { NodeType, RelationType } from './graph-types'
 import type { GraphNode, ContextResult } from './graph-types'
 import type { Neo4jProviderConfig } from './graph-config'
 import * as fs from 'fs'
@@ -172,6 +172,44 @@ function printTable(nodes: GraphNode[]): void {
 
 const program = new Command()
 program.name('graph').description('Graph CLI — query and manage the knowledge graph').version('0.1.0')
+
+// quick-reference
+program
+  .command('cheatsheet')
+  .description('Show quick-reference of all commands')
+  .action(() => {
+    console.log(`Graph CLI — Quick Reference
+═══════════════════════════
+
+  Query
+  ─────
+  graph context <id>                  Context tree (default depth 2)
+  graph context <id> -d 1             Depth 1 only
+  graph context <id> -f json          JSON output
+  graph info <id>                     Node details + relationship counts
+  graph list tasks -p <project>       List nodes (filter: -s status, -q text, -l limit)
+  graph list features -p <project>
+  graph list decisions -p <project>
+
+  Mutate
+  ──────
+  graph create <type> -p <proj> -t "title"   Create node (task/feature/decision)
+  graph link <src> <tgt> <relation>          Create edge (depends_on, implements, etc.)
+  graph unlink <src> <tgt> <relation>        Remove edge
+
+  Workspace
+  ─────────
+  graph workspace list                List projects in projects.json
+  graph workspace add <id> <cwd>      Add project
+  graph workspace remove <id>         Remove project
+
+  Options
+  ───────
+  -f, --format json                   Machine-readable output (on context, list, info)
+  -d, --depth <n>                     Traversal depth for context (default: 2)
+  -h, --help                          Help for any command
+`)
+  })
 
 // context
 program

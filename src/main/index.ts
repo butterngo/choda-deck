@@ -65,7 +65,10 @@ function createPtySession(id: string, cwd: string, cols: number, rows: number, w
     cols,
     rows,
     cwd,
-    env: process.env as { [key: string]: string }
+    env: {
+      ...process.env,
+      NEO4J_PASSWORD: process.env.NEO4J_PASSWORD || 'yourpassword'
+    } as { [key: string]: string }
   })
 
   ptyProcess.onData((data) => {
