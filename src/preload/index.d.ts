@@ -47,6 +47,7 @@ export interface ChodaApi {
     subtasks: (parentId: string) => Promise<unknown[]>
     pinned: () => Promise<unknown[]>
     due: (date: string) => Promise<unknown[]>
+    refresh: () => Promise<{ imported: number; skipped: number; errors: string[] }>
   }
   epic: {
     list: (projectId: string) => Promise<unknown[]>

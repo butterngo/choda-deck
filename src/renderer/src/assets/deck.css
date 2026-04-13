@@ -514,15 +514,10 @@ body,
   border: 1px solid #333;
   border-radius: 4px;
   padding: 8px;
-  cursor: grab;
 }
 
 .deck-kanban-card:hover {
   border-color: #555;
-}
-
-.deck-kanban-card--dragging {
-  opacity: 0.4;
 }
 
 .deck-kanban-card-header {

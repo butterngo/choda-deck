@@ -80,7 +80,9 @@ const api = {
     pinned: (): Promise<unknown[]> =>
       ipcRenderer.invoke('task:pinned'),
     due: (date: string): Promise<unknown[]> =>
-      ipcRenderer.invoke('task:due', date)
+      ipcRenderer.invoke('task:due', date),
+    refresh: (): Promise<{ imported: number; skipped: number; errors: string[] }> =>
+      ipcRenderer.invoke('task:refresh')
   },
   epic: {
     list: (projectId: string): Promise<unknown[]> =>

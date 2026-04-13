@@ -5,6 +5,7 @@ import { spawn, ChildProcess } from 'child_process'
 import * as pty from 'node-pty'
 import icon from '../../resources/icon.png?asset'
 import { SqliteTaskService } from '../tasks/sqlite-task-service'
+import { VaultImporter } from '../tasks/vault-importer'
 
 const is = {
   get dev(): boolean {
@@ -458,6 +459,17 @@ app.whenReady().then(() => {
     taskService.ensureProject(p.id, p.id, p.cwd)
   }
 
+  // Vault import + file watcher
+  const vaultPath = process.env.VAULT_PATH || 'C:/Users/hngo1_mantu/vault'
+  const importer = new VaultImporter(taskService, vaultPath)
+  const importResult = importer.importAll(projects.map(p => ({ id: p.id, cwd: p.cwd })))
+  console.log(`Vault import: ${importResult.imported} imported, ${importResult.skipped} skipped, ${importResult.errors.length} errors`)
+  importer.startWatching(projects.map(p => p.id))
+
+  ipcMain.handle('task:refresh', () => {
+    return importer.importAll(projects.map(p => ({ id: p.id, cwd: p.cwd })))
+  })
+
   ipcMain.handle('task:list', (_event, filter) => taskService.findTasks(filter))
   ipcMain.handle('task:get', (_event, id: string) => taskService.getTask(id))
   ipcMain.handle('task:create', (_event, input) => taskService.createTask(input))
@@ -487,7 +499,7 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', async () => {
-  // Stop all MCP servers
+  // Stop file watcher + MCP servers
   stopAllMcpServers()
 
   // Graceful shutdown: send SIGINT first, wait, then force kill
