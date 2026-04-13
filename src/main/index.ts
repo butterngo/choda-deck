@@ -352,6 +352,21 @@ app.whenReady().then(async () => {
   ipcMain.handle('epic:delete', (_event, id: string) => taskService.deleteEpic(id))
   ipcMain.handle('epic:progress', (_event, epicId: string) => taskService.getEpicProgress(epicId))
 
+  ipcMain.handle('phase:list', (_event, projectId: string) => taskService.findPhases(projectId))
+  ipcMain.handle('phase:get', (_event, id: string) => taskService.getPhase(id))
+  ipcMain.handle('phase:create', (_event, input) => taskService.createPhase(input))
+  ipcMain.handle('phase:update', (_event, id: string, input) => taskService.updatePhase(id, input))
+  ipcMain.handle('phase:delete', (_event, id: string) => taskService.deletePhase(id))
+  ipcMain.handle('phase:progress', (_event, phaseId: string) => taskService.getPhaseProgress(phaseId))
+
+  ipcMain.handle('feature:list', (_event, projectId: string) => taskService.findFeatures(projectId))
+  ipcMain.handle('feature:listByPhase', (_event, phaseId: string) => taskService.findFeaturesByPhase(phaseId))
+  ipcMain.handle('feature:get', (_event, id: string) => taskService.getFeature(id))
+  ipcMain.handle('feature:create', (_event, input) => taskService.createFeature(input))
+  ipcMain.handle('feature:update', (_event, id: string, input) => taskService.updateFeature(id, input))
+  ipcMain.handle('feature:delete', (_event, id: string) => taskService.deleteFeature(id))
+  ipcMain.handle('feature:progress', (_event, featureId: string) => taskService.getFeatureProgress(featureId))
+
   ipcMain.handle('task:pinned', () => taskService.getPinnedTasks())
   ipcMain.handle('task:due', (_event, date: string) => taskService.getDueTasks(date))
 

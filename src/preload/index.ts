@@ -79,6 +79,36 @@ const api = {
     import: (statusMap?: Record<string, string>): Promise<{ tasks: number; phases: number; documents: number; skipped: number; errors: string[] }> =>
       ipcRenderer.invoke('vault:import', statusMap)
   },
+  phase: {
+    list: (projectId: string): Promise<unknown[]> =>
+      ipcRenderer.invoke('phase:list', projectId),
+    get: (id: string): Promise<unknown> =>
+      ipcRenderer.invoke('phase:get', id),
+    create: (input: Record<string, unknown>): Promise<unknown> =>
+      ipcRenderer.invoke('phase:create', input),
+    update: (id: string, input: Record<string, unknown>): Promise<unknown> =>
+      ipcRenderer.invoke('phase:update', id, input),
+    delete: (id: string): Promise<void> =>
+      ipcRenderer.invoke('phase:delete', id),
+    progress: (phaseId: string): Promise<{ total: number; done: number; inProgress: number; status: string; percent: number }> =>
+      ipcRenderer.invoke('phase:progress', phaseId)
+  },
+  feature: {
+    list: (projectId: string): Promise<unknown[]> =>
+      ipcRenderer.invoke('feature:list', projectId),
+    listByPhase: (phaseId: string): Promise<unknown[]> =>
+      ipcRenderer.invoke('feature:listByPhase', phaseId),
+    get: (id: string): Promise<unknown> =>
+      ipcRenderer.invoke('feature:get', id),
+    create: (input: Record<string, unknown>): Promise<unknown> =>
+      ipcRenderer.invoke('feature:create', input),
+    update: (id: string, input: Record<string, unknown>): Promise<unknown> =>
+      ipcRenderer.invoke('feature:update', id, input),
+    delete: (id: string): Promise<void> =>
+      ipcRenderer.invoke('feature:delete', id),
+    progress: (featureId: string): Promise<{ total: number; done: number; inProgress: number; status: string; percent: number }> =>
+      ipcRenderer.invoke('feature:progress', featureId)
+  },
   epic: {
     list: (projectId: string): Promise<unknown[]> =>
       ipcRenderer.invoke('epic:list', projectId),
@@ -90,7 +120,7 @@ const api = {
       ipcRenderer.invoke('epic:update', id, input),
     delete: (id: string): Promise<void> =>
       ipcRenderer.invoke('epic:delete', id),
-    progress: (epicId: string): Promise<{ total: number; done: number }> =>
+    progress: (epicId: string): Promise<{ total: number; done: number; inProgress: number; status: string; percent: number }> =>
       ipcRenderer.invoke('epic:progress', epicId)
   },
   spike: {

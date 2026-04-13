@@ -861,6 +861,23 @@ body,
   color: #666;
 }
 
+.deck-roadmap-level--1 { border-left: 3px solid #3a7bd5; }
+.deck-roadmap-level--2 { border-left: 3px solid #5a5a8a; margin-left: 8px; }
+.deck-roadmap-level--3 { border-left: 3px solid #444; margin-left: 8px; }
+
+.deck-roadmap-date {
+  font-size: 11px;
+  color: #888;
+  margin-left: 8px;
+}
+
+.deck-roadmap-empty {
+  font-size: 12px;
+  color: #555;
+  padding: 4px 16px;
+  font-style: italic;
+}
+
 .deck-dot--blue { background: #2196f3; }
 
 /* Daily focus view */

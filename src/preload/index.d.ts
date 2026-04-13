@@ -46,13 +46,30 @@ export interface ChodaApi {
     refresh: () => Promise<{ imported: number; skipped: number; errors: string[] }>
     import: (statusMap?: Record<string, string>) => Promise<{ tasks: number; phases: number; documents: number; skipped: number; errors: string[] }>
   }
+  phase: {
+    list: (projectId: string) => Promise<unknown[]>
+    get: (id: string) => Promise<unknown>
+    create: (input: Record<string, unknown>) => Promise<unknown>
+    update: (id: string, input: Record<string, unknown>) => Promise<unknown>
+    delete: (id: string) => Promise<void>
+    progress: (phaseId: string) => Promise<{ total: number; done: number; inProgress: number; status: string; percent: number }>
+  }
+  feature: {
+    list: (projectId: string) => Promise<unknown[]>
+    listByPhase: (phaseId: string) => Promise<unknown[]>
+    get: (id: string) => Promise<unknown>
+    create: (input: Record<string, unknown>) => Promise<unknown>
+    update: (id: string, input: Record<string, unknown>) => Promise<unknown>
+    delete: (id: string) => Promise<void>
+    progress: (featureId: string) => Promise<{ total: number; done: number; inProgress: number; status: string; percent: number }>
+  }
   epic: {
     list: (projectId: string) => Promise<unknown[]>
     get: (id: string) => Promise<unknown>
     create: (input: Record<string, unknown>) => Promise<unknown>
     update: (id: string, input: Record<string, unknown>) => Promise<unknown>
     delete: (id: string) => Promise<void>
-    progress: (epicId: string) => Promise<{ total: number; done: number }>
+    progress: (epicId: string) => Promise<{ total: number; done: number; inProgress: number; status: string; percent: number }>
   }
   spike: {
     getProject: () => Promise<SpikeProject>
