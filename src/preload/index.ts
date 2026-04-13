@@ -77,7 +77,12 @@ const api = {
     refresh: (): Promise<{ imported: number; skipped: number; errors: string[] }> =>
       ipcRenderer.invoke('task:refresh'),
     import: (statusMap?: Record<string, string>): Promise<{ tasks: number; phases: number; documents: number; skipped: number; errors: string[] }> =>
-      ipcRenderer.invoke('vault:import', statusMap)
+      ipcRenderer.invoke('vault:import', statusMap),
+    onChanged: (callback: () => void): (() => void) => {
+      const listener = (): void => callback()
+      ipcRenderer.on('task:changed', listener)
+      return () => ipcRenderer.removeListener('task:changed', listener)
+    }
   },
   phase: {
     list: (projectId: string): Promise<unknown[]> =>

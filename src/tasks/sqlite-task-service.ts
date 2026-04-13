@@ -141,6 +141,7 @@ function run(db: SqlJsDatabase, sql: string, params: Param[] = []): void {
 
 export class SqliteTaskService implements TaskService {
   private db: SqlJsDatabase | null = null
+  private sqlModule: Awaited<ReturnType<typeof initSqlJs>> | null = null
   private dbPath: string
 
   constructor(dbPath: string) {
@@ -149,6 +150,7 @@ export class SqliteTaskService implements TaskService {
 
   async initializeAsync(): Promise<void> {
     const SQL = await initSqlJs()
+    this.sqlModule = SQL
     if (fs.existsSync(this.dbPath)) {
       const buffer = fs.readFileSync(this.dbPath)
       this.db = new SQL.Database(buffer)
@@ -289,6 +291,14 @@ export class SqliteTaskService implements TaskService {
     const data = this.getDb().export()
     const buffer = Buffer.from(data)
     fs.writeFileSync(this.dbPath, buffer)
+  }
+
+  reloadFromDisk(): void {
+    if (!this.db || !this.sqlModule) return
+    if (!fs.existsSync(this.dbPath)) return
+    const buffer = fs.readFileSync(this.dbPath)
+    this.db.close()
+    this.db = new this.sqlModule.Database(buffer)
   }
 
   close(): void {

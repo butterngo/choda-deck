@@ -34,10 +34,9 @@ function DailyFocusView({ visible }: DailyFocusViewProps): React.JSX.Element {
 
   useEffect(() => {
     if (!visible) return
-    let disposed = false
     loadData()
-    const interval = setInterval(() => { if (!disposed) loadData() }, 5000)
-    return () => { disposed = true; clearInterval(interval) }
+    const cleanup = window.api.task.onChanged(() => loadData())
+    return () => cleanup()
   }, [visible, loadData])
 
   function renderTask(task: TaskItem): React.JSX.Element {

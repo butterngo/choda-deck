@@ -45,6 +45,7 @@ export interface ChodaApi {
     due: (date: string) => Promise<unknown[]>
     refresh: () => Promise<{ imported: number; skipped: number; errors: string[] }>
     import: (statusMap?: Record<string, string>) => Promise<{ tasks: number; phases: number; documents: number; skipped: number; errors: string[] }>
+    onChanged: (callback: () => void) => () => void
   }
   phase: {
     list: (projectId: string) => Promise<unknown[]>

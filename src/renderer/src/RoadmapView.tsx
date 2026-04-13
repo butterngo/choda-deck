@@ -104,10 +104,9 @@ function RoadmapView({ projectId, visible }: RoadmapViewProps): React.JSX.Elemen
 
   useEffect(() => {
     if (!visible) return
-    let disposed = false
     loadData()
-    const interval = setInterval(() => { if (!disposed) loadData() }, 5000)
-    return () => { disposed = true; clearInterval(interval) }
+    const cleanup = window.api.task.onChanged(() => loadData())
+    return () => cleanup()
   }, [visible, projectId, loadData])
 
   function toggle(id: string): void {

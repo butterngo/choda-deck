@@ -39,6 +39,33 @@ When docs/vault context disagrees with code: code describes current state, docs 
 - **.md files** = content store (descriptions, specs, ADRs — git-friendly)
 - Task data in `src/tasks/` — SQLite service, vault importer, type definitions
 
+## MCP Task Server
+
+Task management tools available via MCP stdio for Claude Code:
+
+```bash
+npm run mcp:tasks   # starts MCP server
+```
+
+Register in `.claude.json`:
+```json
+{
+  "mcpServers": {
+    "choda-tasks": {
+      "command": "npx",
+      "args": ["ts-node", "src/tasks/mcp-task-server.ts"],
+      "cwd": "C:\\dev\\choda-deck",
+      "env": {
+        "CHODA_DB_PATH": "./choda-deck.db",
+        "CHODA_CONTENT_ROOT": "C:\\Users\\hngo1_mantu\\vault"
+      }
+    }
+  }
+}
+```
+
+Tools: `task_context`, `task_list`, `task_create`, `task_update`, `phase_list`, `phase_create`, `feature_list`, `feature_create`, `roadmap`, `search`.
+
 ## Working style
 
 - **KISS first.** Simplest thing that satisfies the requirement. No premature abstractions.

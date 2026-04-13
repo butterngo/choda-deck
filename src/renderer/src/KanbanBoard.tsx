@@ -51,22 +51,14 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
     setEpicProgress(progress)
   }, [projectId])
 
-  // Load on mount + poll for file watcher changes
+  // Load on mount + reload when DB changes externally
   useEffect(() => {
     if (!visible) return
-    let disposed = false
 
     loadData()
 
-    // Poll every 3s to pick up file watcher changes
-    const interval = setInterval(() => {
-      if (!disposed) loadData()
-    }, 3000)
-
-    return () => {
-      disposed = true
-      clearInterval(interval)
-    }
+    const cleanup = window.api.task.onChanged(() => loadData())
+    return () => cleanup()
   }, [visible, projectId, loadData])
 
   async function toggleExpand(taskId: string): Promise<void> {

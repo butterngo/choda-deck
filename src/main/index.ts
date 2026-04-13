@@ -1,6 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, watch } from 'fs'
 import * as pty from 'node-pty'
 import icon from '../../resources/icon.png?asset'
 import { SqliteTaskService } from '../tasks/sqlite-task-service'
@@ -303,6 +303,21 @@ app.whenReady().then(async () => {
     taskService.ensureProject(p.id, p.name, config.contentRoot)
   }
 
+  // Watch DB file for external changes (e.g. MCP server updates)
+  // Reload in-memory DB and notify renderer
+  let dbWatchDebounce: ReturnType<typeof setTimeout> | null = null
+  watch(dbPath, () => {
+    if (dbWatchDebounce) clearTimeout(dbWatchDebounce)
+    dbWatchDebounce = setTimeout(() => {
+      taskService.reloadFromDisk()
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send('task:changed')
+        }
+      }
+    }, 200)
+  })
+
   // Vault import — manual trigger, not auto on boot
   let importer: VaultImporter | null = null
 
@@ -310,7 +325,6 @@ app.whenReady().then(async () => {
     if (!config.contentRoot) return { tasks: 0, phases: 0, documents: 0, tags: 0, relationships: 0, skipped: 0, errors: ['No contentRoot configured'] }
     importer = new VaultImporter(taskService, config.contentRoot, statusMap)
     const result = importer.importAll(projects.map(p => p.id))
-    importer.startWatching(projects.map(p => p.id))
     return result
   })
 
