@@ -15,10 +15,18 @@ const is = {
 
 // ── Project config (projects.json) ─────────────────────────────────────────────
 
+interface WorkspaceEntry {
+  id: string
+  label: string
+  cwd: string
+  shell?: string
+}
+
 interface ProjectEntry {
   id: string
-  cwd: string
-  shell: string
+  name: string
+  taskPath: string
+  workspaces: WorkspaceEntry[]
 }
 
 const DEFAULT_SHELL = process.platform === 'win32' ? 'claude.cmd' : 'claude'
@@ -32,22 +40,37 @@ function loadProjects(): ProjectEntry[] {
   const filePath = getProjectsPath()
   if (!existsSync(filePath)) return []
   try {
-    const raw = JSON.parse(readFileSync(filePath, 'utf-8'))
-    return (raw as Array<{ id: string; cwd: string; shell?: string }>).map((p) => ({
-      id: p.id,
-      cwd: p.cwd,
-      shell: p.shell || DEFAULT_SHELL
-    }))
+    const raw = JSON.parse(readFileSync(filePath, 'utf-8')) as unknown[]
+
+    // Auto-migrate flat schema → hierarchy
+    if (raw.length > 0 && 'cwd' in (raw[0] as Record<string, unknown>)) {
+      return (raw as Array<{ id: string; cwd: string; shell?: string }>).map((p) => ({
+        id: p.id,
+        name: p.id,
+        taskPath: '',
+        workspaces: [{ id: p.id, label: 'Main', cwd: p.cwd, shell: p.shell }]
+      }))
+    }
+
+    return raw as ProjectEntry[]
   } catch {
     return []
   }
 }
 
-function saveProjects(projects: ProjectEntry[]): void {
+function saveProjects(list: ProjectEntry[]): void {
   const filePath = getProjectsPath()
   const dir = join(filePath, '..')
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-  writeFileSync(filePath, JSON.stringify(projects, null, 2), 'utf-8')
+  writeFileSync(filePath, JSON.stringify(list, null, 2), 'utf-8')
+}
+
+function findWorkspace(workspaceId: string): { project: ProjectEntry; workspace: WorkspaceEntry } | null {
+  for (const p of projects) {
+    const ws = p.workspaces.find(w => w.id === workspaceId)
+    if (ws) return { project: p, workspace: ws }
+  }
+  return null
 }
 
 let projects: ProjectEntry[] = []
@@ -253,8 +276,8 @@ function createPtySession(id: string, cwd: string, cols: number, rows: number, w
   writeClaudeConfigForProject(cwd)
   startEnabledMcpServers()
 
-  const project = projects.find(p => p.id === id)
-  const shellCmd = project ? project.shell : DEFAULT_SHELL
+  const found = findWorkspace(id)
+  const shellCmd = found?.workspace.shell || DEFAULT_SHELL
   const ptyProcess = pty.spawn(shellCmd, [], {
     name: 'xterm-256color',
     cols,
@@ -358,28 +381,43 @@ app.whenReady().then(async () => {
   // Project management IPC
   ipcMain.handle('project:list', () => projects)
 
-  ipcMain.handle('project:add', (_event, id: string, cwd: string) => {
-    if (projects.some(p => p.id === id)) {
-      return { ok: false, error: `Project "${id}" already exists` }
+  ipcMain.handle('project:add', (_event, projectId: string, name: string, taskPath: string, workspaceId: string, workspaceLabel: string, cwd: string) => {
+    let project = projects.find(p => p.id === projectId)
+    if (!project) {
+      project = { id: projectId, name, taskPath, workspaces: [] }
+      projects.push(project)
     }
-    const entry: ProjectEntry = { id, cwd, shell: DEFAULT_SHELL }
-    projects.push(entry)
+    if (project.workspaces.some(w => w.id === workspaceId)) {
+      return { ok: false, error: `Workspace "${workspaceId}" already exists` }
+    }
+    project.workspaces.push({ id: workspaceId, label: workspaceLabel, cwd })
     saveProjects(projects)
-    return { ok: true, project: entry }
+    return { ok: true, project }
   })
 
-  ipcMain.handle('project:remove', (_event, id: string) => {
-    const idx = projects.findIndex(p => p.id === id)
-    if (idx === -1) {
-      return { ok: false, error: `Project "${id}" not found` }
+  ipcMain.handle('project:remove', (_event, projectId: string, workspaceId?: string) => {
+    const projIdx = projects.findIndex(p => p.id === projectId)
+    if (projIdx === -1) {
+      return { ok: false, error: `Project "${projectId}" not found` }
     }
-    // Kill session if running
-    const session = sessions.get(id)
-    if (session) {
-      session.kill()
-      sessions.delete(id)
+    if (workspaceId) {
+      // Remove workspace only
+      const project = projects[projIdx]
+      const wsIdx = project.workspaces.findIndex(w => w.id === workspaceId)
+      if (wsIdx === -1) return { ok: false, error: `Workspace "${workspaceId}" not found` }
+      const session = sessions.get(workspaceId)
+      if (session) { session.kill(); sessions.delete(workspaceId) }
+      project.workspaces.splice(wsIdx, 1)
+      if (project.workspaces.length === 0) projects.splice(projIdx, 1)
+    } else {
+      // Remove entire project + all workspaces
+      const project = projects[projIdx]
+      for (const ws of project.workspaces) {
+        const session = sessions.get(ws.id)
+        if (session) { session.kill(); sessions.delete(ws.id) }
+      }
+      projects.splice(projIdx, 1)
     }
-    projects.splice(idx, 1)
     saveProjects(projects)
     return { ok: true }
   })
@@ -456,7 +494,7 @@ app.whenReady().then(async () => {
 
   // Ensure projects exist in SQLite
   for (const p of projects) {
-    taskService.ensureProject(p.id, p.id, p.cwd)
+    taskService.ensureProject(p.id, p.name, p.taskPath)
   }
 
   // Vault import — manual trigger, not auto on boot
@@ -464,7 +502,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('vault:import', async (_event, vaultPath: string, statusMap?: Record<string, string>) => {
     importer = new VaultImporter(taskService, vaultPath, statusMap)
-    const result = importer.importAll(projects.map(p => ({ id: p.id, cwd: p.cwd })))
+    const result = importer.importAll(projects.map(p => ({ id: p.id, cwd: p.taskPath })))
     importer.startWatching(projects.map(p => p.id))
     return result
   })
@@ -478,7 +516,8 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle('task:refresh', () => {
-    return importer.importAll(projects.map(p => ({ id: p.id, cwd: p.cwd })))
+    if (!importer) return { imported: 0, skipped: 0, errors: ['No import active'] }
+    return importer.importAll(projects.map(p => ({ id: p.id, cwd: p.taskPath })))
   })
 
   ipcMain.handle('task:list', (_event, filter) => taskService.findTasks(filter))

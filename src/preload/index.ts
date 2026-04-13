@@ -1,6 +1,21 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
+export interface WorkspaceConfig {
+  id: string
+  label: string
+  cwd: string
+  shell?: string
+}
+
+export interface ProjectConfig {
+  id: string
+  name: string
+  taskPath: string
+  workspaces: WorkspaceConfig[]
+}
+
+// Legacy compat
 export interface SpikeProject {
   id: string
   cwd: string
@@ -45,11 +60,11 @@ const api = {
     }
   },
   project: {
-    list: (): Promise<SpikeProject[]> => ipcRenderer.invoke('project:list'),
-    add: (id: string, cwd: string): Promise<{ ok: boolean; error?: string; project?: SpikeProject }> =>
-      ipcRenderer.invoke('project:add', id, cwd),
-    remove: (id: string): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke('project:remove', id)
+    list: (): Promise<ProjectConfig[]> => ipcRenderer.invoke('project:list'),
+    add: (projectId: string, name: string, taskPath: string, workspaceId: string, workspaceLabel: string, cwd: string): Promise<{ ok: boolean; error?: string; project?: ProjectConfig }> =>
+      ipcRenderer.invoke('project:add', projectId, name, taskPath, workspaceId, workspaceLabel, cwd),
+    remove: (projectId: string, workspaceId?: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('project:remove', projectId, workspaceId)
   },
   plugin: {
     list: (): Promise<PluginEntry[]> => ipcRenderer.invoke('plugin:list'),

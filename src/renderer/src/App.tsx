@@ -7,32 +7,44 @@ import PluginPanel from './PluginPanel'
 import KanbanBoard from './KanbanBoard'
 import RoadmapView from './RoadmapView'
 import DailyFocusView from './DailyFocusView'
-import type { SpikeProject } from '../../preload/index'
+import type { ProjectConfig, WorkspaceConfig } from '../../preload/index'
 import type { ViewType } from './ViewRouter'
 
-// Register all view types here — future views (notes, graph) added to this array
+// Active selection: which workspace is selected + its parent project
+interface ActiveSelection {
+  projectId: string
+  workspaceId: string
+}
+
+// Register all view types — future views (notes, graph) added here
 const VIEW_TYPES: ViewType[] = [
   terminalViewType,
   {
     id: 'tasks',
     label: 'Tasks',
-    render: (project, visible) => <KanbanBoard project={project} visible={visible} />
+    render: (project, _workspace, visible) => (
+      <KanbanBoard projectId={project.id} visible={visible} />
+    )
   },
   {
     id: 'roadmap',
     label: 'Roadmap',
-    render: (project, visible) => <RoadmapView project={project} visible={visible} />
+    render: (project, _workspace, visible) => (
+      <RoadmapView projectId={project.id} visible={visible} />
+    )
   },
   {
     id: 'focus',
     label: 'Focus',
-    render: (project, visible) => <DailyFocusView project={project} visible={visible} />
+    render: (_project, _workspace, visible) => (
+      <DailyFocusView visible={visible} />
+    )
   }
 ]
 
 function App(): React.JSX.Element {
-  const [projects, setProjects] = useState<SpikeProject[]>([])
-  const [activeId, setActiveId] = useState<string>('')
+  const [projects, setProjects] = useState<ProjectConfig[]>([])
+  const [active, setActive] = useState<ActiveSelection | null>(null)
   const [showPlugins, setShowPlugins] = useState(false)
 
   // Load projects on mount
@@ -41,80 +53,78 @@ function App(): React.JSX.Element {
     window.api.project.list().then((list) => {
       if (disposed) return
       setProjects(list)
-      if (list.length > 0) setActiveId(list[0].id)
+      if (list.length > 0 && list[0].workspaces.length > 0) {
+        setActive({ projectId: list[0].id, workspaceId: list[0].workspaces[0].id })
+      }
     })
     return () => { disposed = true }
   }, [])
 
-  // Keyboard shortcuts — single top-level listener
+  // Flatten workspaces for keyboard shortcuts
+  const allWorkspaces: Array<{ project: ProjectConfig; workspace: WorkspaceConfig }> = []
+  for (const p of projects) {
+    for (const ws of p.workspaces) {
+      allWorkspaces.push({ project: p, workspace: ws })
+    }
+  }
+
+  // Keyboard shortcuts
   useEffect(() => {
-    if (projects.length === 0) return
+    if (allWorkspaces.length === 0) return
 
     function handleKeyDown(e: KeyboardEvent): void {
-      // Ctrl+1..9 → jump to project by index
       if (e.ctrlKey && !e.altKey && e.key >= '1' && e.key <= '9') {
         const idx = parseInt(e.key) - 1
-        if (idx < projects.length) {
+        if (idx < allWorkspaces.length) {
           e.preventDefault()
-          setActiveId(projects[idx].id)
+          const { project, workspace } = allWorkspaces[idx]
+          setActive({ projectId: project.id, workspaceId: workspace.id })
         }
         return
       }
 
-      // Ctrl+Tab → next, Ctrl+Shift+Tab → prev
       if (e.ctrlKey && e.key === 'Tab') {
         e.preventDefault()
-        setActiveId((currentId) => {
-          const curr = projects.findIndex((p) => p.id === currentId)
+        setActive((curr) => {
+          if (!curr) return curr
+          const idx = allWorkspaces.findIndex(w => w.workspace.id === curr.workspaceId)
           const next = e.shiftKey
-            ? (curr - 1 + projects.length) % projects.length
-            : (curr + 1) % projects.length
-          return projects[next].id
+            ? (idx - 1 + allWorkspaces.length) % allWorkspaces.length
+            : (idx + 1) % allWorkspaces.length
+          return {
+            projectId: allWorkspaces[next].project.id,
+            workspaceId: allWorkspaces[next].workspace.id
+          }
         })
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [projects])
+  }, [allWorkspaces.length])
 
-  async function handleAddProject(id: string, cwd: string): Promise<string | null> {
-    const result = await window.api.project.add(id, cwd)
-    if (!result.ok) return result.error || 'Failed to add project'
-    if (result.project) {
-      setProjects((prev) => [...prev, result.project!])
-      setActiveId(id)
-    }
-    return null
+  function handleSelect(projectId: string, workspaceId: string): void {
+    setActive({ projectId, workspaceId })
   }
 
-  async function handleRemoveProject(id: string): Promise<void> {
-    const result = await window.api.project.remove(id)
-    if (!result.ok) return
-    setProjects((prev) => {
-      const next = prev.filter((p) => p.id !== id)
-      if (activeId === id && next.length > 0) setActiveId(next[0].id)
-      return next
-    })
-  }
-
-  const activeProject = projects.find((p) => p.id === activeId)
+  const activeProject = active ? projects.find(p => p.id === active.projectId) : null
+  const activeWorkspace = activeProject?.workspaces.find(w => w.id === active?.workspaceId)
 
   return (
     <div className="deck-root">
       <div className="deck-layout">
         <Sidebar
           projects={projects}
-          activeId={activeId}
-          onSelect={setActiveId}
-          onAdd={handleAddProject}
-          onRemove={handleRemoveProject}
+          activeWorkspaceId={active?.workspaceId || ''}
+          onSelect={handleSelect}
         />
         <main className="deck-main">
           <header className="deck-header">
             <div className="deck-title">Choda Deck</div>
             <div className="deck-project">
-              {activeProject ? `${activeProject.id} — ${activeProject.cwd}` : ''}
+              {activeProject && activeWorkspace
+                ? `${activeProject.name} / ${activeWorkspace.label} — ${activeWorkspace.cwd}`
+                : ''}
             </div>
             <button
               className="deck-header-btn"
@@ -125,11 +135,12 @@ function App(): React.JSX.Element {
             </button>
           </header>
           <PluginPanel visible={showPlugins} onClose={() => setShowPlugins(false)} />
-          {projects.map((p) => (
+          {allWorkspaces.map(({ project, workspace }) => (
             <ViewRouter
-              key={p.id}
-              project={p}
-              visible={p.id === activeId}
+              key={workspace.id}
+              project={project}
+              workspace={workspace}
+              visible={workspace.id === active?.workspaceId}
               viewTypes={VIEW_TYPES}
             />
           ))}

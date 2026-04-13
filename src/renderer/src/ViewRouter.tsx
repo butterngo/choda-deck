@@ -1,23 +1,23 @@
 import { useState } from 'react'
-import type { SpikeProject } from '../../preload/index'
+import type { ProjectConfig, WorkspaceConfig } from '../../preload/index'
 import TerminalView from './TerminalView'
 
 export interface ViewType {
   id: string
   label: string
-  render: (project: SpikeProject, visible: boolean) => React.JSX.Element
+  render: (project: ProjectConfig, workspace: WorkspaceConfig, visible: boolean) => React.JSX.Element
 }
 
 interface ViewRouterProps {
-  project: SpikeProject
+  project: ProjectConfig
+  workspace: WorkspaceConfig
   visible: boolean
   viewTypes: ViewType[]
 }
 
-function ViewRouter({ project, visible, viewTypes }: ViewRouterProps): React.JSX.Element {
+function ViewRouter({ project, workspace, visible, viewTypes }: ViewRouterProps): React.JSX.Element {
   const [activeTab, setActiveTab] = useState(viewTypes[0]?.id || 'terminal')
 
-  // All views mounted once, shown/hidden by CSS
   return (
     <div className={`deck-view-router${visible ? '' : ' deck-terminal--hidden'}`}>
       <div className="deck-tab-bar">
@@ -37,7 +37,7 @@ function ViewRouter({ project, visible, viewTypes }: ViewRouterProps): React.JSX
             key={vt.id}
             className={`deck-view${activeTab === vt.id ? '' : ' deck-terminal--hidden'}`}
           >
-            {vt.render(project, visible && activeTab === vt.id)}
+            {vt.render(project, workspace, visible && activeTab === vt.id)}
           </div>
         ))}
       </div>
@@ -45,11 +45,12 @@ function ViewRouter({ project, visible, viewTypes }: ViewRouterProps): React.JSX
   )
 }
 
-// Default terminal view type
 export const terminalViewType: ViewType = {
   id: 'terminal',
   label: 'Terminal',
-  render: (project, visible) => <TerminalView project={project} visible={visible} />
+  render: (_project, workspace, visible) => (
+    <TerminalView workspaceId={workspace.id} cwd={workspace.cwd} visible={visible} />
+  )
 }
 
 export default ViewRouter

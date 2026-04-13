@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from 'react'
-import type { SpikeProject } from '../../preload/index'
 
 interface TaskItem {
   id: string
@@ -12,11 +11,10 @@ interface TaskItem {
 }
 
 interface DailyFocusViewProps {
-  project: SpikeProject
   visible: boolean
 }
 
-function DailyFocusView({ project, visible }: DailyFocusViewProps): React.JSX.Element {
+function DailyFocusView({ visible }: DailyFocusViewProps): React.JSX.Element {
   const [pinnedTasks, setPinnedTasks] = useState<TaskItem[]>([])
   const [dueTasks, setDueTasks] = useState<TaskItem[]>([])
   const [inProgressTasks, setInProgressTasks] = useState<TaskItem[]>([])

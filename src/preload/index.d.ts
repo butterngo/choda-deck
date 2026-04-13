@@ -1,5 +1,19 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 
+export interface WorkspaceConfig {
+  id: string
+  label: string
+  cwd: string
+  shell?: string
+}
+
+export interface ProjectConfig {
+  id: string
+  name: string
+  taskPath: string
+  workspaces: WorkspaceConfig[]
+}
+
 export interface SpikeProject {
   id: string
   cwd: string
@@ -26,9 +40,9 @@ export interface ChodaApi {
     onExit: (id: string, callback: (exitCode: number) => void) => () => void
   }
   project: {
-    list: () => Promise<SpikeProject[]>
-    add: (id: string, cwd: string) => Promise<{ ok: boolean; error?: string; project?: SpikeProject }>
-    remove: (id: string) => Promise<{ ok: boolean; error?: string }>
+    list: () => Promise<ProjectConfig[]>
+    add: (projectId: string, name: string, taskPath: string, workspaceId: string, workspaceLabel: string, cwd: string) => Promise<{ ok: boolean; error?: string; project?: ProjectConfig }>
+    remove: (projectId: string, workspaceId?: string) => Promise<{ ok: boolean; error?: string }>
   }
   plugin: {
     list: () => Promise<PluginEntry[]>

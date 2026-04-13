@@ -1,68 +1,40 @@
 import { useState } from 'react'
-import type { SpikeProject } from '../../preload/index'
+import type { ProjectConfig } from '../../preload/index'
 
 const HELP_TEXT = `Keyboard Shortcuts
 ─────────────────
-Ctrl+1..9      Switch to project by number
-Ctrl+Tab       Next project
-Ctrl+Shift+Tab Previous project
+Ctrl+1..9      Switch to workspace by number
+Ctrl+Tab       Next workspace
+Ctrl+Shift+Tab Previous workspace
 
 Sidebar
 ─────────────────
-+  button      Add new project
-x  button      Remove project (on hover)
+?  button      Help
++  button      Add project (coming soon)
+
+Views (per workspace)
+─────────────────
+Terminal       Live claude session
+Tasks          Kanban board (read-only)
+Roadmap        Epic progress overview
+Focus          Today's tasks
 
 CLI (graph)
 ─────────────────
+graph cheatsheet            All commands
 graph context <id>          Context tree
-graph context <id> -f json  JSON output
-graph list tasks -p <proj>  List nodes
-graph info <id>             Node details
-graph create <type>         Create node
-graph link <src> <tgt> <r>  Create edge
-graph unlink <src> <tgt> <r> Remove edge
-graph workspace list        List projects
-graph workspace add <id> <cwd>
-graph workspace remove <id>`
+graph list tasks -p <proj>  List nodes`
 
 interface SidebarProps {
-  projects: SpikeProject[]
-  activeId: string
-  onSelect: (id: string) => void
-  onAdd: (id: string, cwd: string) => Promise<string | null>
-  onRemove: (id: string) => Promise<void>
+  projects: ProjectConfig[]
+  activeWorkspaceId: string
+  onSelect: (projectId: string, workspaceId: string) => void
 }
 
-function Sidebar({ projects, activeId, onSelect, onAdd, onRemove }: SidebarProps): React.JSX.Element {
+function Sidebar({ projects, activeWorkspaceId, onSelect }: SidebarProps): React.JSX.Element {
   const [showHelp, setShowHelp] = useState(false)
-  const [adding, setAdding] = useState(false)
-  const [addId, setAddId] = useState('')
-  const [addCwd, setAddCwd] = useState('')
-  const [addError, setAddError] = useState<string | null>(null)
 
-  async function handleSubmit(e: React.FormEvent): Promise<void> {
-    e.preventDefault()
-    const id = addId.trim()
-    const cwd = addCwd.trim()
-    if (!id || !cwd) return
-
-    const error = await onAdd(id, cwd)
-    if (error) {
-      setAddError(error)
-    } else {
-      setAdding(false)
-      setAddId('')
-      setAddCwd('')
-      setAddError(null)
-    }
-  }
-
-  function handleCancel(): void {
-    setAdding(false)
-    setAddId('')
-    setAddCwd('')
-    setAddError(null)
-  }
+  let wsIndex = 0
 
   return (
     <aside className="deck-sidebar">
@@ -76,38 +48,8 @@ function Sidebar({ projects, activeId, onSelect, onAdd, onRemove }: SidebarProps
           >
             ?
           </button>
-          <button
-            className="deck-sidebar-add-btn"
-            onClick={() => setAdding(true)}
-            title="Add project"
-          >
-            +
-          </button>
         </div>
       </div>
-
-      {adding && (
-        <form className="deck-sidebar-form" onSubmit={handleSubmit}>
-          <input
-            className="deck-sidebar-input"
-            placeholder="project-id"
-            value={addId}
-            onChange={(e) => setAddId(e.target.value)}
-            autoFocus
-          />
-          <input
-            className="deck-sidebar-input"
-            placeholder="C:\path\to\project"
-            value={addCwd}
-            onChange={(e) => setAddCwd(e.target.value)}
-          />
-          {addError && <div className="deck-sidebar-error">{addError}</div>}
-          <div className="deck-sidebar-form-actions">
-            <button type="submit" className="deck-sidebar-btn deck-sidebar-btn--ok">Add</button>
-            <button type="button" className="deck-sidebar-btn" onClick={handleCancel}>Cancel</button>
-          </div>
-        </form>
-      )}
 
       {showHelp && (
         <div className="deck-help-overlay" onClick={() => setShowHelp(false)}>
@@ -118,25 +60,25 @@ function Sidebar({ projects, activeId, onSelect, onAdd, onRemove }: SidebarProps
         </div>
       )}
 
-      {projects.map((project, index) => (
-        <div
-          key={project.id}
-          className={`deck-sidebar-item${project.id === activeId ? ' deck-sidebar-item--active' : ''}`}
-        >
-          <button
-            className="deck-sidebar-item-btn"
-            onClick={() => onSelect(project.id)}
-          >
-            {index < 9 && <span className="deck-sidebar-key">{index + 1}</span>}
-            <span className="deck-sidebar-label">{project.id}</span>
-          </button>
-          <button
-            className="deck-sidebar-remove-btn"
-            onClick={() => onRemove(project.id)}
-            title="Remove project"
-          >
-            x
-          </button>
+      {projects.map((project) => (
+        <div key={project.id} className="deck-sidebar-project">
+          <div className="deck-sidebar-project-header">
+            {project.name}
+          </div>
+          {project.workspaces.map((ws) => {
+            const idx = wsIndex++
+            const isActive = ws.id === activeWorkspaceId
+            return (
+              <button
+                key={ws.id}
+                className={`deck-sidebar-item-btn${isActive ? ' deck-sidebar-item--active' : ''}`}
+                onClick={() => onSelect(project.id, ws.id)}
+              >
+                {idx < 9 && <span className="deck-sidebar-key">{idx + 1}</span>}
+                <span className="deck-sidebar-label">{ws.label}</span>
+              </button>
+            )
+          })}
         </div>
       ))}
     </aside>

@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from 'react'
-import type { SpikeProject } from '../../preload/index'
 
 const STATUSES = ['TODO', 'READY', 'IN-PROGRESS', 'DONE'] as const
 
@@ -20,11 +19,11 @@ interface EpicItem {
 }
 
 interface KanbanBoardProps {
-  project: SpikeProject
+  projectId: string
   visible: boolean
 }
 
-function KanbanBoard({ project, visible }: KanbanBoardProps): React.JSX.Element {
+function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Element {
   const [tasks, setTasks] = useState<TaskItem[]>([])
   const [epics, setEpics] = useState<EpicItem[]>([])
   const [epicProgress, setEpicProgress] = useState<Record<string, { total: number; done: number }>>({})
@@ -38,8 +37,8 @@ function KanbanBoard({ project, visible }: KanbanBoardProps): React.JSX.Element 
 
   const loadData = useCallback(async () => {
     const [taskList, epicList] = await Promise.all([
-      window.api.task.list({ projectId: project.id }),
-      window.api.epic.list(project.id)
+      window.api.task.list({ projectId: projectId }),
+      window.api.epic.list(projectId)
     ])
     setTasks(taskList as TaskItem[])
     setEpics(epicList as EpicItem[])
@@ -49,7 +48,7 @@ function KanbanBoard({ project, visible }: KanbanBoardProps): React.JSX.Element 
       progress[epic.id] = await window.api.epic.progress(epic.id)
     }
     setEpicProgress(progress)
-  }, [project.id])
+  }, [projectId])
 
   // Load on mount + poll for file watcher changes
   useEffect(() => {
@@ -67,7 +66,7 @@ function KanbanBoard({ project, visible }: KanbanBoardProps): React.JSX.Element 
       disposed = true
       clearInterval(interval)
     }
-  }, [visible, project.id, loadData])
+  }, [visible, projectId, loadData])
 
   async function toggleExpand(taskId: string): Promise<void> {
     const next = new Set(expandedCards)

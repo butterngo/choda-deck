@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from 'react'
-import type { SpikeProject } from '../../preload/index'
 
 interface TaskItem {
   id: string
@@ -16,11 +15,11 @@ interface EpicItem {
 }
 
 interface RoadmapViewProps {
-  project: SpikeProject
+  projectId: string
   visible: boolean
 }
 
-function RoadmapView({ project, visible }: RoadmapViewProps): React.JSX.Element {
+function RoadmapView({ projectId, visible }: RoadmapViewProps): React.JSX.Element {
   const [epics, setEpics] = useState<EpicItem[]>([])
   const [tasks, setTasks] = useState<TaskItem[]>([])
   const [epicProgress, setEpicProgress] = useState<Record<string, { total: number; done: number }>>({})
@@ -28,8 +27,8 @@ function RoadmapView({ project, visible }: RoadmapViewProps): React.JSX.Element 
 
   const loadData = useCallback(async () => {
     const [taskList, epicList] = await Promise.all([
-      window.api.task.list({ projectId: project.id }),
-      window.api.epic.list(project.id)
+      window.api.task.list({ projectId: projectId }),
+      window.api.epic.list(projectId)
     ])
     setTasks(taskList as TaskItem[])
     setEpics(epicList as EpicItem[])
@@ -39,7 +38,7 @@ function RoadmapView({ project, visible }: RoadmapViewProps): React.JSX.Element 
       progress[epic.id] = await window.api.epic.progress(epic.id)
     }
     setEpicProgress(progress)
-  }, [project.id])
+  }, [projectId])
 
   useEffect(() => {
     if (!visible) return
@@ -47,7 +46,7 @@ function RoadmapView({ project, visible }: RoadmapViewProps): React.JSX.Element 
     loadData()
     const interval = setInterval(() => { if (!disposed) loadData() }, 5000)
     return () => { disposed = true; clearInterval(interval) }
-  }, [visible, project.id, loadData])
+  }, [visible, projectId, loadData])
 
   function toggleEpic(epicId: string): void {
     setExpandedEpics((prev) => {
@@ -71,7 +70,7 @@ function RoadmapView({ project, visible }: RoadmapViewProps): React.JSX.Element 
   return (
     <div className="deck-roadmap">
       <div className="deck-roadmap-header">
-        <span className="deck-roadmap-title">Roadmap — {project.id}</span>
+        <span className="deck-roadmap-title">Roadmap — {projectId}</span>
         <button className="deck-sidebar-btn" onClick={loadData} title="Refresh">↻</button>
       </div>
 

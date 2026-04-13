@@ -1,17 +1,19 @@
 [
   {
-    "id": "workflow-engine",
-    "cwd": "C:\\dev\\test\\workflow-engine",
-    "shell": "claude.cmd"
-  },
-  {
-    "id": "remote-workflow",
-    "cwd": "C:\\dev\\test\\remote-workflow",
-    "shell": "claude.cmd"
+    "id": "automation-rule",
+    "name": "Automation Rule",
+    "taskPath": "C:\\Users\\hngo1_mantu\\vault\\10-Projects\\automation-rule",
+    "workspaces": [
+      { "id": "workflow-engine", "label": "BE", "cwd": "C:\\dev\\test\\workflow-engine" },
+      { "id": "remote-workflow", "label": "FE", "cwd": "C:\\dev\\test\\remote-workflow" }
+    ]
   },
   {
     "id": "choda-deck",
-    "cwd": "C:\\dev\\choda-deck",
-    "shell": "claude.cmd"
+    "name": "Choda Deck",
+    "taskPath": "C:\\Users\\hngo1_mantu\\vault\\10-Projects\\choda-deck",
+    "workspaces": [
+      { "id": "choda-deck", "label": "Main", "cwd": "C:\\dev\\choda-deck" }
+    ]
   }
 ]
