@@ -2,9 +2,15 @@ import { useEffect, useState } from 'react'
 import '@xterm/xterm/css/xterm.css'
 import './assets/deck.css'
 import Sidebar from './Sidebar'
-import TerminalView from './TerminalView'
+import ViewRouter, { terminalViewType } from './ViewRouter'
 import PluginPanel from './PluginPanel'
 import type { SpikeProject } from '../../preload/index'
+import type { ViewType } from './ViewRouter'
+
+// Register all view types here — future views (tasks, notes, graph) added to this array
+const VIEW_TYPES: ViewType[] = [
+  terminalViewType
+]
 
 function App(): React.JSX.Element {
   const [projects, setProjects] = useState<SpikeProject[]>([])
@@ -102,7 +108,12 @@ function App(): React.JSX.Element {
           </header>
           <PluginPanel visible={showPlugins} onClose={() => setShowPlugins(false)} />
           {projects.map((p) => (
-            <TerminalView key={p.id} project={p} visible={p.id === activeId} />
+            <ViewRouter
+              key={p.id}
+              project={p}
+              visible={p.id === activeId}
+              viewTypes={VIEW_TYPES}
+            />
           ))}
         </main>
       </div>
