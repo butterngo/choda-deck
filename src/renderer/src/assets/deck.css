@@ -637,6 +637,142 @@ body,
   color: #aaa;
 }
 
+/* Roadmap view */
+.deck-roadmap {
+  flex: 1;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.deck-roadmap-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.deck-roadmap-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #d4d4d4;
+}
+
+.deck-roadmap-epic {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.deck-roadmap-epic-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.deck-roadmap-epic-header:hover {
+  background: #2a2d2e;
+}
+
+.deck-roadmap-expand {
+  color: #888;
+  font-size: 12px;
+  width: 14px;
+}
+
+.deck-roadmap-epic-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #c8f;
+  flex: 1;
+}
+
+.deck-roadmap-epic-title--muted {
+  color: #888;
+}
+
+.deck-roadmap-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.deck-roadmap-bar {
+  width: 100px;
+  height: 6px;
+  background: #333;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.deck-roadmap-bar-fill {
+  height: 100%;
+  background: #4caf50;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+.deck-roadmap-pct {
+  font-size: 12px;
+  color: #888;
+  min-width: 35px;
+}
+
+.deck-roadmap-counts {
+  display: flex;
+  gap: 6px;
+}
+
+.deck-roadmap-count {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.deck-roadmap-count--todo { background: #2a2d2e; color: #888; }
+.deck-roadmap-count--ready { background: #1a3a5c; color: #8cf; }
+.deck-roadmap-count--ip { background: #4a3000; color: #fa0; }
+.deck-roadmap-count--done { background: #1a4a1a; color: #8f8; }
+
+.deck-roadmap-tasks {
+  border-top: 1px solid #333;
+  padding: 6px 0;
+}
+
+.deck-roadmap-task {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 36px;
+  font-size: 13px;
+}
+
+.deck-roadmap-task:hover {
+  background: #2a2d2e;
+}
+
+.deck-roadmap-task-id {
+  color: #61dafb;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 11px;
+  min-width: 70px;
+}
+
+.deck-roadmap-task-title {
+  flex: 1;
+  color: #d4d4d4;
+}
+
+.deck-roadmap-task-status {
+  font-size: 11px;
+  color: #666;
+}
+
+.deck-dot--blue { background: #2196f3; }
+
 .deck-terminal {
   flex: 1;
   padding: 4px;

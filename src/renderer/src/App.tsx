@@ -5,6 +5,7 @@ import Sidebar from './Sidebar'
 import ViewRouter, { terminalViewType } from './ViewRouter'
 import PluginPanel from './PluginPanel'
 import KanbanBoard from './KanbanBoard'
+import RoadmapView from './RoadmapView'
 import type { SpikeProject } from '../../preload/index'
 import type { ViewType } from './ViewRouter'
 
@@ -15,6 +16,11 @@ const VIEW_TYPES: ViewType[] = [
     id: 'tasks',
     label: 'Tasks',
     render: (project, visible) => <KanbanBoard project={project} visible={visible} />
+  },
+  {
+    id: 'roadmap',
+    label: 'Roadmap',
+    render: (project, visible) => <RoadmapView project={project} visible={visible} />
   }
 ]
 
