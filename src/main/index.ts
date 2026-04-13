@@ -312,7 +312,7 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   app.setAppUserModelId('dev.choda.deck')
 
   // Dev-mode shortcuts: F12 toggles devtools. Skipped for packaged builds.
@@ -452,7 +452,7 @@ app.whenReady().then(() => {
     ? join(app.getPath('userData'), 'choda-deck.db')
     : join(__dirname, '../../choda-deck.db')
   const taskService = new SqliteTaskService(dbPath)
-  taskService.initialize()
+  await taskService.initializeAsync()
 
   // Ensure projects exist in SQLite
   for (const p of projects) {

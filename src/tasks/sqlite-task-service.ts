@@ -1,4 +1,5 @@
-import Database from 'better-sqlite3'
+import initSqlJs, { Database as SqlJsDatabase } from 'sql.js'
+import * as fs from 'fs'
 import type { TaskService } from './task-service.interface'
 import type {
   Task,
@@ -16,7 +17,9 @@ function now(): string {
   return new Date().toISOString()
 }
 
-function rowToTask(row: Record<string, unknown>): Task {
+function rowToTask(columns: string[], values: unknown[]): Task {
+  const row: Record<string, unknown> = {}
+  columns.forEach((col, i) => { row[col] = values[i] })
   return {
     id: row.id as string,
     projectId: row.project_id as string,
@@ -34,7 +37,9 @@ function rowToTask(row: Record<string, unknown>): Task {
   }
 }
 
-function rowToEpic(row: Record<string, unknown>): Epic {
+function rowToEpic(columns: string[], values: unknown[]): Epic {
+  const row: Record<string, unknown> = {}
+  columns.forEach((col, i) => { row[col] = values[i] })
   return {
     id: row.id as string,
     projectId: row.project_id as string,
@@ -45,37 +50,77 @@ function rowToEpic(row: Record<string, unknown>): Epic {
   }
 }
 
+function queryAll(db: SqlJsDatabase, sql: string, params: unknown[] = []): { columns: string[]; rows: unknown[][] } {
+  const stmt = db.prepare(sql)
+  stmt.bind(params)
+  const columns: string[] = stmt.getColumnNames()
+  const rows: unknown[][] = []
+  while (stmt.step()) {
+    rows.push(stmt.get())
+  }
+  stmt.free()
+  return { columns, rows }
+}
+
+function queryOne(db: SqlJsDatabase, sql: string, params: unknown[] = []): { columns: string[]; row: unknown[] } | null {
+  const result = queryAll(db, sql, params)
+  if (result.rows.length === 0) return null
+  return { columns: result.columns, row: result.rows[0] }
+}
+
+function run(db: SqlJsDatabase, sql: string, params: unknown[] = []): void {
+  db.run(sql, params)
+}
+
 export class SqliteTaskService implements TaskService {
-  private db: Database.Database
+  private db: SqlJsDatabase | null = null
+  private dbPath: string
 
   constructor(dbPath: string) {
-    this.db = new Database(dbPath)
-    this.db.pragma('journal_mode = WAL')
-    this.db.pragma('foreign_keys = ON')
+    this.dbPath = dbPath
+  }
+
+  async initializeAsync(): Promise<void> {
+    const SQL = await initSqlJs()
+    if (fs.existsSync(this.dbPath)) {
+      const buffer = fs.readFileSync(this.dbPath)
+      this.db = new SQL.Database(buffer)
+    } else {
+      this.db = new SQL.Database()
+    }
+    this.createTables()
   }
 
   initialize(): void {
-    this.db.exec(`
+    // Sync fallback — caller must ensure initializeAsync was called first
+    if (!this.db) throw new Error('Call initializeAsync() first')
+  }
+
+  private createTables(): void {
+    const db = this.getDb()
+    db.run(`
       CREATE TABLE IF NOT EXISTS projects (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         cwd TEXT NOT NULL
-      );
-
+      )
+    `)
+    db.run(`
       CREATE TABLE IF NOT EXISTS epics (
         id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL REFERENCES projects(id),
+        project_id TEXT NOT NULL,
         title TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'TODO',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
-      );
-
+      )
+    `)
+    db.run(`
       CREATE TABLE IF NOT EXISTS tasks (
         id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL REFERENCES projects(id),
-        epic_id TEXT REFERENCES epics(id),
-        parent_task_id TEXT REFERENCES tasks(id),
+        project_id TEXT NOT NULL,
+        epic_id TEXT,
+        parent_task_id TEXT,
         title TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'TODO',
         priority TEXT,
@@ -85,52 +130,60 @@ export class SqliteTaskService implements TaskService {
         file_path TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS task_dependencies (
-        source_id TEXT NOT NULL REFERENCES tasks(id),
-        target_id TEXT NOT NULL REFERENCES tasks(id),
-        PRIMARY KEY (source_id, target_id)
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
-      CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(project_id, status);
-      CREATE INDEX IF NOT EXISTS idx_tasks_epic ON tasks(epic_id);
-      CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id);
+      )
     `)
+    db.run(`
+      CREATE TABLE IF NOT EXISTS task_dependencies (
+        source_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        PRIMARY KEY (source_id, target_id)
+      )
+    `)
+    db.run('CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id)')
+    db.run('CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(project_id, status)')
+    db.run('CREATE INDEX IF NOT EXISTS idx_tasks_epic ON tasks(epic_id)')
+    db.run('CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id)')
+  }
+
+  private getDb(): SqlJsDatabase {
+    if (!this.db) throw new Error('Database not initialized')
+    return this.db
+  }
+
+  private save(): void {
+    const data = this.getDb().export()
+    const buffer = Buffer.from(data)
+    fs.writeFileSync(this.dbPath, buffer)
   }
 
   close(): void {
-    this.db.close()
+    if (this.db) {
+      this.save()
+      this.db.close()
+      this.db = null
+    }
   }
 
   // ── Task CRUD ──────────────────────────────────────────────────────────────
 
   createTask(input: CreateTaskInput): Task {
+    const db = this.getDb()
     const ts = now()
     const id = input.id || `TASK-${Date.now()}`
-    const stmt = this.db.prepare(`
-      INSERT INTO tasks (id, project_id, epic_id, parent_task_id, title, status, priority, labels, due_date, file_path, pinned, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-    `)
-    stmt.run(
-      id,
-      input.projectId,
-      input.epicId || null,
-      input.parentTaskId || null,
-      input.title,
-      input.status || 'TODO',
-      input.priority || null,
-      input.labels ? JSON.stringify(input.labels) : null,
-      input.dueDate || null,
-      input.filePath || null,
-      ts,
-      ts
+    run(db,
+      `INSERT INTO tasks (id, project_id, epic_id, parent_task_id, title, status, priority, labels, due_date, file_path, pinned, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+      [id, input.projectId, input.epicId || null, input.parentTaskId || null, input.title,
+       input.status || 'TODO', input.priority || null,
+       input.labels ? JSON.stringify(input.labels) : null,
+       input.dueDate || null, input.filePath || null, ts, ts]
     )
+    this.save()
     return this.getTask(id)!
   }
 
   updateTask(id: string, input: UpdateTaskInput): Task {
+    const db = this.getDb()
     const sets: string[] = ['updated_at = ?']
     const params: unknown[] = [now()]
 
@@ -144,21 +197,24 @@ export class SqliteTaskService implements TaskService {
     if (input.pinned !== undefined) { sets.push('pinned = ?'); params.push(input.pinned ? 1 : 0) }
 
     params.push(id)
-    this.db.prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`).run(...params)
+    run(db, `UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`, params)
+    this.save()
     const task = this.getTask(id)
     if (!task) throw new Error(`Task not found: ${id}`)
     return task
   }
 
   deleteTask(id: string): void {
-    this.db.prepare('DELETE FROM task_dependencies WHERE source_id = ? OR target_id = ?').run(id, id)
-    this.db.prepare('UPDATE tasks SET parent_task_id = NULL WHERE parent_task_id = ?').run(id)
-    this.db.prepare('DELETE FROM tasks WHERE id = ?').run(id)
+    const db = this.getDb()
+    run(db, 'DELETE FROM task_dependencies WHERE source_id = ? OR target_id = ?', [id, id])
+    run(db, 'UPDATE tasks SET parent_task_id = NULL WHERE parent_task_id = ?', [id])
+    run(db, 'DELETE FROM tasks WHERE id = ?', [id])
+    this.save()
   }
 
   getTask(id: string): Task | null {
-    const row = this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Record<string, unknown> | undefined
-    return row ? rowToTask(row) : null
+    const result = queryOne(this.getDb(), 'SELECT * FROM tasks WHERE id = ?', [id])
+    return result ? rowToTask(result.columns, result.row) : null
   }
 
   findTasks(filter: TaskFilter): Task[] {
@@ -175,31 +231,33 @@ export class SqliteTaskService implements TaskService {
     if (filter.query) { wheres.push('title LIKE ?'); params.push(`%${filter.query}%`) }
 
     const where = wheres.length > 0 ? `WHERE ${wheres.join(' AND ')}` : ''
-    const limit = filter.limit ? `LIMIT ?` : ''
-    if (filter.limit) params.push(filter.limit)
+    const limit = filter.limit ? `LIMIT ${filter.limit}` : ''
 
-    const rows = this.db.prepare(`SELECT * FROM tasks ${where} ORDER BY created_at DESC ${limit}`).all(...params) as Record<string, unknown>[]
-    return rows.map(rowToTask)
+    const result = queryAll(this.getDb(), `SELECT * FROM tasks ${where} ORDER BY created_at DESC ${limit}`, params)
+    return result.rows.map(row => rowToTask(result.columns, row))
   }
 
   getSubtasks(parentId: string): Task[] {
-    const rows = this.db.prepare('SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at').all(parentId) as Record<string, unknown>[]
-    return rows.map(rowToTask)
+    const result = queryAll(this.getDb(), 'SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at', [parentId])
+    return result.rows.map(row => rowToTask(result.columns, row))
   }
 
   // ── Epic CRUD ──────────────────────────────────────────────────────────────
 
   createEpic(input: CreateEpicInput): Epic {
+    const db = this.getDb()
     const ts = now()
     const id = input.id || `EPIC-${Date.now()}`
-    this.db.prepare(`
-      INSERT INTO epics (id, project_id, title, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, input.projectId, input.title, input.status || 'TODO', ts, ts)
+    run(db,
+      'INSERT INTO epics (id, project_id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, input.projectId, input.title, input.status || 'TODO', ts, ts]
+    )
+    this.save()
     return this.getEpic(id)!
   }
 
   updateEpic(id: string, input: UpdateEpicInput): Epic {
+    const db = this.getDb()
     const sets: string[] = ['updated_at = ?']
     const params: unknown[] = [now()]
 
@@ -207,67 +265,78 @@ export class SqliteTaskService implements TaskService {
     if (input.status !== undefined) { sets.push('status = ?'); params.push(input.status) }
 
     params.push(id)
-    this.db.prepare(`UPDATE epics SET ${sets.join(', ')} WHERE id = ?`).run(...params)
+    run(db, `UPDATE epics SET ${sets.join(', ')} WHERE id = ?`, params)
+    this.save()
     const epic = this.getEpic(id)
     if (!epic) throw new Error(`Epic not found: ${id}`)
     return epic
   }
 
   deleteEpic(id: string): void {
-    this.db.prepare('UPDATE tasks SET epic_id = NULL WHERE epic_id = ?').run(id)
-    this.db.prepare('DELETE FROM epics WHERE id = ?').run(id)
+    const db = this.getDb()
+    run(db, 'UPDATE tasks SET epic_id = NULL WHERE epic_id = ?', [id])
+    run(db, 'DELETE FROM epics WHERE id = ?', [id])
+    this.save()
   }
 
   getEpic(id: string): Epic | null {
-    const row = this.db.prepare('SELECT * FROM epics WHERE id = ?').get(id) as Record<string, unknown> | undefined
-    return row ? rowToEpic(row) : null
+    const result = queryOne(this.getDb(), 'SELECT * FROM epics WHERE id = ?', [id])
+    return result ? rowToEpic(result.columns, result.row) : null
   }
 
   findEpics(projectId: string): Epic[] {
-    const rows = this.db.prepare('SELECT * FROM epics WHERE project_id = ? ORDER BY created_at').all(projectId) as Record<string, unknown>[]
-    return rows.map(rowToEpic)
+    const result = queryAll(this.getDb(), 'SELECT * FROM epics WHERE project_id = ? ORDER BY created_at', [projectId])
+    return result.rows.map(row => rowToEpic(result.columns, row))
   }
 
   getEpicProgress(epicId: string): { total: number; done: number } {
-    const row = this.db.prepare(`
-      SELECT COUNT(*) as total, SUM(CASE WHEN status = 'DONE' THEN 1 ELSE 0 END) as done
-      FROM tasks WHERE epic_id = ?
-    `).get(epicId) as { total: number; done: number }
-    return { total: row.total, done: row.done || 0 }
+    const result = queryOne(this.getDb(),
+      `SELECT COUNT(*) as total, SUM(CASE WHEN status = 'DONE' THEN 1 ELSE 0 END) as done FROM tasks WHERE epic_id = ?`,
+      [epicId]
+    )
+    if (!result) return { total: 0, done: 0 }
+    return { total: (result.row[0] as number) || 0, done: (result.row[1] as number) || 0 }
   }
 
   // ── Dependencies ───────────────────────────────────────────────────────────
 
   addDependency(sourceId: string, targetId: string): void {
-    this.db.prepare('INSERT OR IGNORE INTO task_dependencies (source_id, target_id) VALUES (?, ?)').run(sourceId, targetId)
+    run(this.getDb(), 'INSERT OR IGNORE INTO task_dependencies (source_id, target_id) VALUES (?, ?)', [sourceId, targetId])
+    this.save()
   }
 
   removeDependency(sourceId: string, targetId: string): void {
-    this.db.prepare('DELETE FROM task_dependencies WHERE source_id = ? AND target_id = ?').run(sourceId, targetId)
+    run(this.getDb(), 'DELETE FROM task_dependencies WHERE source_id = ? AND target_id = ?', [sourceId, targetId])
+    this.save()
   }
 
   getDependencies(taskId: string): TaskDependency[] {
-    const rows = this.db.prepare(
-      'SELECT * FROM task_dependencies WHERE source_id = ? OR target_id = ?'
-    ).all(taskId, taskId) as Record<string, unknown>[]
-    return rows.map(r => ({ sourceId: r.source_id as string, targetId: r.target_id as string }))
+    const result = queryAll(this.getDb(),
+      'SELECT * FROM task_dependencies WHERE source_id = ? OR target_id = ?',
+      [taskId, taskId]
+    )
+    return result.rows.map(row => ({
+      sourceId: row[0] as string,
+      targetId: row[1] as string
+    }))
   }
 
   // ── Daily focus ────────────────────────────────────────────────────────────
 
   getPinnedTasks(): Task[] {
-    const rows = this.db.prepare('SELECT * FROM tasks WHERE pinned = 1 ORDER BY project_id, created_at').all() as Record<string, unknown>[]
-    return rows.map(rowToTask)
+    const result = queryAll(this.getDb(), 'SELECT * FROM tasks WHERE pinned = 1 ORDER BY project_id, created_at')
+    return result.rows.map(row => rowToTask(result.columns, row))
   }
 
   getDueTasks(date: string): Task[] {
-    const rows = this.db.prepare('SELECT * FROM tasks WHERE due_date <= ? AND status != ? ORDER BY due_date').all(date, 'DONE') as Record<string, unknown>[]
-    return rows.map(rowToTask)
+    const result = queryAll(this.getDb(), "SELECT * FROM tasks WHERE due_date <= ? AND status != 'DONE' ORDER BY due_date", [date])
+    return result.rows.map(row => rowToTask(result.columns, row))
   }
 
   // ── Project helpers ────────────────────────────────────────────────────────
 
   ensureProject(id: string, name: string, cwd: string): void {
-    this.db.prepare('INSERT OR IGNORE INTO projects (id, name, cwd) VALUES (?, ?, ?)').run(id, name, cwd)
+    run(this.getDb(), 'INSERT OR IGNORE INTO projects (id, name, cwd) VALUES (?, ?, ?)', [id, name, cwd])
+    this.save()
   }
 }

@@ -8,10 +8,10 @@ const TEST_DB = path.join(__dirname, '__test-tasks__.db')
 describe('SqliteTaskService', () => {
   let svc: SqliteTaskService
 
-  beforeAll(() => {
+  beforeAll(async () => {
     if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
     svc = new SqliteTaskService(TEST_DB)
-    svc.initialize()
+    await svc.initializeAsync()
     svc.ensureProject('test-proj', 'Test Project', '/tmp/test')
   })
 
@@ -51,7 +51,7 @@ describe('SqliteTaskService', () => {
     expect(updated.status).toBe('IN-PROGRESS')
     expect(updated.priority).toBe('critical')
     expect(updated.labels).toEqual(['urgent', 'bug'])
-    expect(updated.title).toBe('First task') // unchanged
+    expect(updated.title).toBe('First task')
   })
 
   it('updateTask throws for missing', () => {
@@ -121,7 +121,7 @@ describe('SqliteTaskService', () => {
 
     const progress = svc.getEpicProgress('EPIC-001')
     expect(progress.total).toBe(3)
-    expect(progress.done).toBe(1) // TASK-003 is DONE
+    expect(progress.done).toBe(1)
   })
 
   it('deleteEpic unlinks tasks', () => {
@@ -140,9 +140,9 @@ describe('SqliteTaskService', () => {
   })
 
   it('addDependency is idempotent', () => {
-    svc.addDependency('TASK-001', 'TASK-002') // already exists
+    svc.addDependency('TASK-001', 'TASK-002')
     const deps = svc.getDependencies('TASK-001')
-    expect(deps.length).toBe(2) // no duplicate
+    expect(deps.length).toBe(2)
   })
 
   it('removeDependency', () => {
