@@ -773,6 +773,76 @@ body,
 
 .deck-dot--blue { background: #2196f3; }
 
+/* Daily focus view */
+.deck-focus {
+  flex: 1;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.deck-focus-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.deck-focus-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #d4d4d4;
+}
+
+.deck-focus-section {
+  margin-bottom: 16px;
+}
+
+.deck-focus-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #888;
+  padding: 0 0 6px;
+  border-bottom: 1px solid #333;
+  margin-bottom: 4px;
+}
+
+.deck-focus-task {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  font-size: 13px;
+}
+
+.deck-focus-task:hover {
+  background: #2a2d2e;
+  border-radius: 4px;
+}
+
+.deck-focus-task-id {
+  color: #61dafb;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 11px;
+  min-width: 70px;
+}
+
+.deck-focus-task-title {
+  flex: 1;
+  color: #d4d4d4;
+}
+
+.deck-focus-task-project {
+  font-size: 11px;
+  color: #666;
+}
+
+.deck-focus-task-status {
+  font-size: 11px;
+  color: #666;
+}
+
 .deck-terminal {
   flex: 1;
   padding: 4px;
