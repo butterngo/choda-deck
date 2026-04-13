@@ -102,7 +102,7 @@ describe('SqliteTaskService', () => {
   it('createEpic + getEpic', () => {
     const epic = svc.createEpic({ id: 'EPIC-001', projectId: 'test-proj', title: 'MVP' })
     expect(epic.id).toBe('EPIC-001')
-    expect(epic.status).toBe('TODO')
+    expect(epic.title).toBe('MVP')
 
     const fetched = svc.getEpic('EPIC-001')
     expect(fetched).not.toBeNull()
@@ -165,5 +165,162 @@ describe('SqliteTaskService', () => {
     const due = svc.getDueTasks('2026-04-13')
     expect(due.length).toBe(1)
     expect(due[0].id).toBe('TASK-002')
+  })
+
+  // ── Phases ─────────────────────────────────────────────────────────────
+
+  it('createPhase + getPhase', () => {
+    const phase = svc.createPhase({ id: 'PH-A', projectId: 'test-proj', title: 'Phase A', position: 1 })
+    expect(phase.id).toBe('PH-A')
+    expect(phase.status).toBe('open')
+    expect(phase.position).toBe(1)
+  })
+
+  it('updatePhase', () => {
+    const updated = svc.updatePhase('PH-A', { status: 'closed', targetDate: '2026-06-01' })
+    expect(updated.status).toBe('closed')
+    expect(updated.targetDate).toBe('2026-06-01')
+  })
+
+  it('findPhases ordered by position', () => {
+    svc.createPhase({ id: 'PH-B', projectId: 'test-proj', title: 'Phase B', position: 2 })
+    svc.updatePhase('PH-A', { status: 'open' })
+    const phases = svc.findPhases('test-proj')
+    expect(phases.length).toBe(2)
+    expect(phases[0].id).toBe('PH-A')
+    expect(phases[1].id).toBe('PH-B')
+  })
+
+  it('deletePhase unlinks features', () => {
+    svc.deletePhase('PH-B')
+    expect(svc.getPhase('PH-B')).toBeNull()
+  })
+
+  // ── Features ───────────────────────────────────────────────────────────
+
+  it('createFeature + getFeature', () => {
+    const feat = svc.createFeature({ id: 'FEAT-001', projectId: 'test-proj', phaseId: 'PH-A', title: 'Schema', priority: 'critical' })
+    expect(feat.id).toBe('FEAT-001')
+    expect(feat.phaseId).toBe('PH-A')
+    expect(feat.priority).toBe('critical')
+  })
+
+  it('findFeaturesByPhase', () => {
+    svc.createFeature({ id: 'FEAT-002', projectId: 'test-proj', phaseId: 'PH-A', title: 'Roadmap' })
+    const feats = svc.findFeaturesByPhase('PH-A')
+    expect(feats.length).toBe(2)
+  })
+
+  it('deleteFeature unlinks epics', () => {
+    svc.createFeature({ id: 'FEAT-DEL', projectId: 'test-proj', title: 'To delete' })
+    svc.updateEpic('EPIC-001', { featureId: 'FEAT-DEL' })
+    svc.deleteFeature('FEAT-DEL')
+    const epic = svc.getEpic('EPIC-001')!
+    expect(epic.featureId).toBeNull()
+  })
+
+  // ── Derived progress ──────────────────────────────────────────────────
+
+  it('epic derived progress has status', () => {
+    const progress = svc.getEpicProgress('EPIC-001')
+    expect(progress.status).toBe('active')
+    expect(progress.percent).toBeGreaterThan(0)
+    expect(progress.inProgress).toBeGreaterThanOrEqual(0)
+  })
+
+  it('feature derived progress', () => {
+    svc.updateEpic('EPIC-001', { featureId: 'FEAT-001' })
+    const progress = svc.getFeatureProgress('FEAT-001')
+    expect(progress.total).toBe(3)
+    expect(progress.status).toBe('active')
+  })
+
+  it('phase derived progress', () => {
+    const progress = svc.getPhaseProgress('PH-A')
+    expect(progress.total).toBe(3)
+    expect(progress.status).toBe('active')
+  })
+
+  it('empty epic is planned', () => {
+    svc.createEpic({ id: 'EPIC-EMPTY', projectId: 'test-proj', title: 'Empty' })
+    const progress = svc.getEpicProgress('EPIC-EMPTY')
+    expect(progress.status).toBe('planned')
+    expect(progress.percent).toBe(0)
+  })
+
+  // ── Documents ──────────────────────────────────────────────────────────
+
+  it('createDocument + getDocument', () => {
+    const doc = svc.createDocument({ id: 'ADR-001', projectId: 'test-proj', type: 'adr', title: 'Use SQLite' })
+    expect(doc.id).toBe('ADR-001')
+    expect(doc.type).toBe('adr')
+  })
+
+  it('findDocuments by type', () => {
+    svc.createDocument({ id: 'SPEC-001', projectId: 'test-proj', type: 'spec', title: 'API spec' })
+    const adrs = svc.findDocuments('test-proj', 'adr')
+    expect(adrs.length).toBe(1)
+    const all = svc.findDocuments('test-proj')
+    expect(all.length).toBe(2)
+  })
+
+  it('deleteDocument removes tags', () => {
+    svc.addTag('ADR-001', 'sqlite')
+    svc.deleteDocument('ADR-001')
+    expect(svc.getDocument('ADR-001')).toBeNull()
+    expect(svc.getTags('ADR-001')).toEqual([])
+  })
+
+  // ── Tags ──────────────────────────────────────────────────────────────
+
+  it('addTag + getTags', () => {
+    svc.addTag('TASK-001', 'electron')
+    svc.addTag('TASK-001', 'react')
+    const tags = svc.getTags('TASK-001')
+    expect(tags).toEqual(['electron', 'react'])
+  })
+
+  it('addTag is idempotent', () => {
+    svc.addTag('TASK-001', 'electron')
+    expect(svc.getTags('TASK-001').length).toBe(2)
+  })
+
+  it('removeTag', () => {
+    svc.removeTag('TASK-001', 'react')
+    expect(svc.getTags('TASK-001')).toEqual(['electron'])
+  })
+
+  it('findByTag', () => {
+    svc.addTag('TASK-002', 'electron')
+    const items = svc.findByTag('electron')
+    expect(items).toContain('TASK-001')
+    expect(items).toContain('TASK-002')
+  })
+
+  // ── Relationships ─────────────────────────────────────────────────────
+
+  it('addRelationship + getRelationships', () => {
+    svc.addRelationship('TASK-001', 'FEAT-001', 'IMPLEMENTS')
+    svc.addRelationship('TASK-001', 'TASK-002', 'DEPENDS_ON')
+    const rels = svc.getRelationships('TASK-001')
+    // TASK-001 has: DEPENDS_ON TASK-003 (from earlier dep tests) + IMPLEMENTS FEAT-001 + DEPENDS_ON TASK-002
+    expect(rels.length).toBe(3)
+  })
+
+  it('addRelationship is idempotent', () => {
+    svc.addRelationship('TASK-001', 'FEAT-001', 'IMPLEMENTS')
+    expect(svc.getRelationships('TASK-001').length).toBe(3)
+  })
+
+  it('getRelationshipsFrom with type filter', () => {
+    const deps = svc.getRelationshipsFrom('TASK-001', 'DEPENDS_ON')
+    expect(deps.length).toBe(2) // TASK-002 + TASK-003
+  })
+
+  it('removeRelationship', () => {
+    svc.removeRelationship('TASK-001', 'TASK-002', 'DEPENDS_ON')
+    svc.removeRelationship('TASK-001', 'TASK-003', 'DEPENDS_ON')
+    const rels = svc.getRelationshipsFrom('TASK-001', 'DEPENDS_ON')
+    expect(rels.length).toBe(0)
   })
 })

@@ -2,6 +2,10 @@
 
 export type TaskStatus = 'TODO' | 'READY' | 'IN-PROGRESS' | 'DONE'
 export type TaskPriority = 'critical' | 'high' | 'medium' | 'low'
+export type PhaseStatus = 'open' | 'closed'
+export type DerivedStatus = 'planned' | 'active' | 'completed'
+export type RelationType = 'DEPENDS_ON' | 'IMPLEMENTS' | 'USES_TECH' | 'DECIDED_BY'
+export type DocumentType = 'adr' | 'guide' | 'spec' | 'note' | 'research'
 
 export const TASK_STATUSES: TaskStatus[] = ['TODO', 'READY', 'IN-PROGRESS', 'DONE']
 
@@ -11,13 +15,55 @@ export interface Project {
   cwd: string
 }
 
-export interface Epic {
+export interface Phase {
   id: string
   projectId: string
   title: string
-  status: TaskStatus
+  status: PhaseStatus
+  position: number
+  targetDate: string | null
   createdAt: string
   updatedAt: string
+}
+
+export interface Feature {
+  id: string
+  projectId: string
+  phaseId: string | null
+  title: string
+  priority: TaskPriority | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Epic {
+  id: string
+  projectId: string
+  featureId: string | null
+  title: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Document {
+  id: string
+  projectId: string
+  type: DocumentType
+  title: string
+  filePath: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Tag {
+  itemId: string
+  tag: string
+}
+
+export interface Relationship {
+  fromId: string
+  toId: string
+  type: RelationType
 }
 
 export interface Task {
@@ -80,11 +126,63 @@ export interface TaskFilter {
 export interface CreateEpicInput {
   id?: string
   projectId: string
+  featureId?: string
   title: string
-  status?: TaskStatus
 }
 
 export interface UpdateEpicInput {
   title?: string
-  status?: TaskStatus
+  featureId?: string | null
+}
+
+export interface CreatePhaseInput {
+  id?: string
+  projectId: string
+  title: string
+  status?: PhaseStatus
+  position?: number
+  targetDate?: string
+}
+
+export interface UpdatePhaseInput {
+  title?: string
+  status?: PhaseStatus
+  position?: number
+  targetDate?: string | null
+}
+
+export interface CreateFeatureInput {
+  id?: string
+  projectId: string
+  phaseId?: string
+  title: string
+  priority?: TaskPriority
+}
+
+export interface UpdateFeatureInput {
+  title?: string
+  phaseId?: string | null
+  priority?: TaskPriority | null
+}
+
+export interface CreateDocumentInput {
+  id?: string
+  projectId: string
+  type: DocumentType
+  title: string
+  filePath?: string
+}
+
+export interface UpdateDocumentInput {
+  title?: string
+  type?: DocumentType
+  filePath?: string | null
+}
+
+export interface DerivedProgress {
+  total: number
+  done: number
+  inProgress: number
+  status: DerivedStatus
+  percent: number
 }
