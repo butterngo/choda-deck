@@ -8,3 +8,11 @@ out
 # Personal Claude Code context — never commit
 CLAUDE.local.md
 .claude/settings.local.json
+
+# Generated / runtime
+choda-deck.db
+vault-graph.json
+graphify-out/
+.graphify_python
+tsconfig.node.tsbuildinfo
+.claude.json
