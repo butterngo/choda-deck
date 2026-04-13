@@ -48,6 +48,7 @@ export interface ChodaApi {
     pinned: () => Promise<unknown[]>
     due: (date: string) => Promise<unknown[]>
     refresh: () => Promise<{ imported: number; skipped: number; errors: string[] }>
+    import: (vaultPath: string, statusMap?: Record<string, string>) => Promise<{ imported: number; skipped: number; errors: string[] }>
   }
   epic: {
     list: (projectId: string) => Promise<unknown[]>

@@ -459,12 +459,23 @@ app.whenReady().then(async () => {
     taskService.ensureProject(p.id, p.id, p.cwd)
   }
 
-  // Vault import + file watcher
-  const vaultPath = process.env.VAULT_PATH || 'C:/Users/hngo1_mantu/vault'
-  const importer = new VaultImporter(taskService, vaultPath)
-  const importResult = importer.importAll(projects.map(p => ({ id: p.id, cwd: p.cwd })))
-  console.log(`Vault import: ${importResult.imported} imported, ${importResult.skipped} skipped, ${importResult.errors.length} errors`)
-  importer.startWatching(projects.map(p => p.id))
+  // Vault import — manual trigger, not auto on boot
+  let importer: VaultImporter | null = null
+
+  ipcMain.handle('vault:import', async (_event, vaultPath: string, statusMap?: Record<string, string>) => {
+    importer = new VaultImporter(taskService, vaultPath, statusMap)
+    const result = importer.importAll(projects.map(p => ({ id: p.id, cwd: p.cwd })))
+    importer.startWatching(projects.map(p => p.id))
+    return result
+  })
+
+  ipcMain.handle('vault:stop-watch', () => {
+    if (importer) {
+      importer.stopWatching()
+      importer = null
+    }
+    return { ok: true }
+  })
 
   ipcMain.handle('task:refresh', () => {
     return importer.importAll(projects.map(p => ({ id: p.id, cwd: p.cwd })))

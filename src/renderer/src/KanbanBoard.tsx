@@ -32,6 +32,9 @@ function KanbanBoard({ project, visible }: KanbanBoardProps): React.JSX.Element 
   const [filterEpic, setFilterEpic] = useState<string>('all')
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
   const [subtasks, setSubtasks] = useState<Record<string, TaskItem[]>>({})
+  const [showImport, setShowImport] = useState(false)
+  const [importPath, setImportPath] = useState('')
+  const [importResult, setImportResult] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     const [taskList, epicList] = await Promise.all([
@@ -80,6 +83,16 @@ function KanbanBoard({ project, visible }: KanbanBoardProps): React.JSX.Element 
     setExpandedCards(next)
   }
 
+  async function handleImport(): Promise<void> {
+    const vaultPath = importPath.trim()
+    if (!vaultPath) return
+    const result = await window.api.task.import(vaultPath)
+    setImportResult(`Imported ${result.imported}, skipped ${result.skipped}, ${result.errors.length} errors`)
+    setShowImport(false)
+    setImportPath('')
+    loadData()
+  }
+
   // Filter: text + epic, root tasks only
   const rootTasks = tasks.filter((t) => !t.parentTaskId)
   const filtered = rootTasks.filter((t) => {
@@ -113,10 +126,37 @@ function KanbanBoard({ project, visible }: KanbanBoardProps): React.JSX.Element 
             ))}
           </select>
         )}
+        <button className="deck-sidebar-btn" onClick={() => setShowImport(true)} title="Import from vault">
+          Import
+        </button>
         <button className="deck-sidebar-btn" onClick={loadData} title="Refresh">
           ↻
         </button>
       </div>
+
+      {importResult && (
+        <div className="deck-kanban-import-result">
+          {importResult}
+          <button className="deck-sidebar-remove-btn" onClick={() => setImportResult(null)}>x</button>
+        </div>
+      )}
+
+      {showImport && (
+        <div className="deck-kanban-create">
+          <input
+            className="deck-sidebar-input"
+            placeholder="Vault path (e.g. C:\Users\you\vault)"
+            value={importPath}
+            onChange={(e) => setImportPath(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleImport() }}
+            autoFocus
+          />
+          <div className="deck-sidebar-form-actions">
+            <button className="deck-sidebar-btn deck-sidebar-btn--ok" onClick={handleImport}>Import</button>
+            <button className="deck-sidebar-btn" onClick={() => setShowImport(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       {/* Epic progress bar */}
       {epics.length > 0 && (

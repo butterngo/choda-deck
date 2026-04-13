@@ -6,11 +6,11 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import matter from 'gray-matter'
-import chokidar from 'chokidar'
+import * as chokidar from 'chokidar'
 import type { SqliteTaskService } from './sqlite-task-service'
 import type { TaskStatus, TaskPriority } from './task-types'
 
-const VALID_STATUSES: Record<string, TaskStatus> = {
+const DEFAULT_STATUS_MAP: Record<string, TaskStatus> = {
   'todo': 'TODO',
   'open': 'TODO',
   'ready': 'READY',
@@ -21,9 +21,9 @@ const VALID_STATUSES: Record<string, TaskStatus> = {
   'closed': 'DONE'
 }
 
-function normalizeStatus(raw: string | undefined): TaskStatus {
+function normalizeStatus(raw: string | undefined, statusMap: Record<string, TaskStatus>): TaskStatus {
   if (!raw) return 'TODO'
-  return VALID_STATUSES[raw.toLowerCase()] || 'TODO'
+  return statusMap[raw.toLowerCase()] || 'TODO'
 }
 
 function normalizePriority(raw: string | undefined): TaskPriority | null {
@@ -54,12 +54,14 @@ interface ImportResult {
 export class VaultImporter {
   private taskService: SqliteTaskService
   private vaultPath: string
+  private statusMap: Record<string, TaskStatus>
   private watcher: chokidar.FSWatcher | null = null
-  private ignoreSet = new Set<string>() // paths we just wrote — skip to avoid loop
+  private ignoreSet = new Set<string>()
 
-  constructor(taskService: SqliteTaskService, vaultPath: string) {
+  constructor(taskService: SqliteTaskService, vaultPath: string, statusMap?: Record<string, string>) {
     this.taskService = taskService
     this.vaultPath = vaultPath
+    this.statusMap = { ...DEFAULT_STATUS_MAP, ...(statusMap || {}) } as Record<string, TaskStatus>
   }
 
   /**
@@ -126,7 +128,7 @@ export class VaultImporter {
     const fm = parsed.data
     if (!fm || Object.keys(fm).length === 0) return false
 
-    const status = archived ? 'DONE' : normalizeStatus(fm.status)
+    const status = archived ? 'DONE' : normalizeStatus(fm.status, this.statusMap)
     const priority = normalizePriority(fm.priority)
     const title = fm.title || taskId
 

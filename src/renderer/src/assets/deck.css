@@ -455,6 +455,18 @@ body,
   gap: 4px;
 }
 
+.deck-kanban-import-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  background: #1a3a1a;
+  color: #8f8;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
 .deck-kanban-columns {
   display: flex;
   gap: 8px;

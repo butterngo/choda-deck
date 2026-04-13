@@ -82,7 +82,9 @@ const api = {
     due: (date: string): Promise<unknown[]> =>
       ipcRenderer.invoke('task:due', date),
     refresh: (): Promise<{ imported: number; skipped: number; errors: string[] }> =>
-      ipcRenderer.invoke('task:refresh')
+      ipcRenderer.invoke('task:refresh'),
+    import: (vaultPath: string, statusMap?: Record<string, string>): Promise<{ imported: number; skipped: number; errors: string[] }> =>
+      ipcRenderer.invoke('vault:import', vaultPath, statusMap)
   },
   epic: {
     list: (projectId: string): Promise<unknown[]> =>
