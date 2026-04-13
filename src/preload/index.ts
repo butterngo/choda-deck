@@ -84,6 +84,8 @@ const api = {
       ipcRenderer.invoke('task:list', filter),
     get: (id: string): Promise<unknown> =>
       ipcRenderer.invoke('task:get', id),
+    detail: (id: string): Promise<unknown> =>
+      ipcRenderer.invoke('task:detail', id),
     create: (input: Record<string, unknown>): Promise<unknown> =>
       ipcRenderer.invoke('task:create', input),
     update: (id: string, input: Record<string, unknown>): Promise<unknown> =>

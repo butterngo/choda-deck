@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import TaskDetailPanel from './TaskDetailPanel'
 
 const STATUSES = ['TODO', 'READY', 'IN-PROGRESS', 'DONE'] as const
 
@@ -34,6 +35,7 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
   const [showImport, setShowImport] = useState(false)
   const [importPath, setImportPath] = useState('')
   const [importResult, setImportResult] = useState<string | null>(null)
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     const [taskList, epicList] = await Promise.all([
@@ -104,7 +106,7 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
   })
 
   return (
-    <div className="deck-kanban">
+    <div className={`deck-kanban${selectedTaskId ? ' deck-kanban--with-detail' : ''}`}>
       <div className="deck-kanban-toolbar">
         <input
           className="deck-sidebar-input deck-kanban-search"
@@ -194,7 +196,7 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
                   const hasSubtasks = tasks.some((t) => t.parentTaskId === task.id)
 
                   return (
-                    <div key={task.id} className="deck-kanban-card">
+                    <div key={task.id} className="deck-kanban-card" onClick={() => setSelectedTaskId(task.id)}>
                       <div className="deck-kanban-card-header">
                         <span className="deck-kanban-card-id">{task.id}</span>
                         {task.priority && (
@@ -237,6 +239,7 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
           )
         })}
       </div>
+      <TaskDetailPanel taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />
     </div>
   )
 }

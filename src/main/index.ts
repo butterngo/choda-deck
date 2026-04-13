@@ -522,6 +522,17 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('task:list', (_event, filter) => taskService.findTasks(filter))
   ipcMain.handle('task:get', (_event, id: string) => taskService.getTask(id))
+  ipcMain.handle('task:detail', (_event, id: string) => {
+    const task = taskService.getTask(id)
+    if (!task) return null
+    const deps = taskService.getDependencies(id)
+    const subtasks = taskService.getSubtasks(id)
+    let fileContent: string | null = null
+    if (task.filePath && existsSync(task.filePath)) {
+      try { fileContent = readFileSync(task.filePath, 'utf-8') } catch { /* ignore */ }
+    }
+    return { task, dependencies: deps, subtasks, fileContent }
+  })
   ipcMain.handle('task:create', (_event, input) => taskService.createTask(input))
   ipcMain.handle('task:update', (_event, id: string, input) => taskService.updateTask(id, input))
   ipcMain.handle('task:delete', (_event, id: string) => taskService.deleteTask(id))

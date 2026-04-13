@@ -55,6 +55,7 @@ export interface ChodaApi {
   task: {
     list: (filter: Record<string, unknown>) => Promise<unknown[]>
     get: (id: string) => Promise<unknown>
+    detail: (id: string) => Promise<unknown>
     create: (input: Record<string, unknown>) => Promise<unknown>
     update: (id: string, input: Record<string, unknown>) => Promise<unknown>
     delete: (id: string) => Promise<void>
