@@ -4,6 +4,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { spawn, ChildProcess } from 'child_process'
 import * as pty from 'node-pty'
 import icon from '../../resources/icon.png?asset'
+import { SqliteTaskService } from '../tasks/sqlite-task-service'
 
 const is = {
   get dev(): boolean {
@@ -444,6 +445,35 @@ app.whenReady().then(() => {
     }
     return { ok: true, enabled: plugin.enabled }
   })
+
+  // ── Task management IPC ────────────────────────────────────────────────────
+  const dbPath = app.isPackaged
+    ? join(app.getPath('userData'), 'choda-deck.db')
+    : join(__dirname, '../../choda-deck.db')
+  const taskService = new SqliteTaskService(dbPath)
+  taskService.initialize()
+
+  // Ensure projects exist in SQLite
+  for (const p of projects) {
+    taskService.ensureProject(p.id, p.id, p.cwd)
+  }
+
+  ipcMain.handle('task:list', (_event, filter) => taskService.findTasks(filter))
+  ipcMain.handle('task:get', (_event, id: string) => taskService.getTask(id))
+  ipcMain.handle('task:create', (_event, input) => taskService.createTask(input))
+  ipcMain.handle('task:update', (_event, id: string, input) => taskService.updateTask(id, input))
+  ipcMain.handle('task:delete', (_event, id: string) => taskService.deleteTask(id))
+  ipcMain.handle('task:subtasks', (_event, parentId: string) => taskService.getSubtasks(parentId))
+
+  ipcMain.handle('epic:list', (_event, projectId: string) => taskService.findEpics(projectId))
+  ipcMain.handle('epic:get', (_event, id: string) => taskService.getEpic(id))
+  ipcMain.handle('epic:create', (_event, input) => taskService.createEpic(input))
+  ipcMain.handle('epic:update', (_event, id: string, input) => taskService.updateEpic(id, input))
+  ipcMain.handle('epic:delete', (_event, id: string) => taskService.deleteEpic(id))
+  ipcMain.handle('epic:progress', (_event, epicId: string) => taskService.getEpicProgress(epicId))
+
+  ipcMain.handle('task:pinned', () => taskService.getPinnedTasks())
+  ipcMain.handle('task:due', (_event, date: string) => taskService.getDueTasks(date))
 
   // Legacy spike handlers (backwards compat)
   ipcMain.handle('spike:project', () => projects[0] || null)

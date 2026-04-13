@@ -4,12 +4,18 @@ import './assets/deck.css'
 import Sidebar from './Sidebar'
 import ViewRouter, { terminalViewType } from './ViewRouter'
 import PluginPanel from './PluginPanel'
+import KanbanBoard from './KanbanBoard'
 import type { SpikeProject } from '../../preload/index'
 import type { ViewType } from './ViewRouter'
 
-// Register all view types here — future views (tasks, notes, graph) added to this array
+// Register all view types here — future views (notes, graph) added to this array
 const VIEW_TYPES: ViewType[] = [
-  terminalViewType
+  terminalViewType,
+  {
+    id: 'tasks',
+    label: 'Tasks',
+    render: (project, visible) => <KanbanBoard project={project} visible={visible} />
+  }
 ]
 
 function App(): React.JSX.Element {

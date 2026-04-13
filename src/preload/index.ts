@@ -64,6 +64,38 @@ const api = {
     restart: (id: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('plugin:restart', id)
   },
+  task: {
+    list: (filter: Record<string, unknown>): Promise<unknown[]> =>
+      ipcRenderer.invoke('task:list', filter),
+    get: (id: string): Promise<unknown> =>
+      ipcRenderer.invoke('task:get', id),
+    create: (input: Record<string, unknown>): Promise<unknown> =>
+      ipcRenderer.invoke('task:create', input),
+    update: (id: string, input: Record<string, unknown>): Promise<unknown> =>
+      ipcRenderer.invoke('task:update', id, input),
+    delete: (id: string): Promise<void> =>
+      ipcRenderer.invoke('task:delete', id),
+    subtasks: (parentId: string): Promise<unknown[]> =>
+      ipcRenderer.invoke('task:subtasks', parentId),
+    pinned: (): Promise<unknown[]> =>
+      ipcRenderer.invoke('task:pinned'),
+    due: (date: string): Promise<unknown[]> =>
+      ipcRenderer.invoke('task:due', date)
+  },
+  epic: {
+    list: (projectId: string): Promise<unknown[]> =>
+      ipcRenderer.invoke('epic:list', projectId),
+    get: (id: string): Promise<unknown> =>
+      ipcRenderer.invoke('epic:get', id),
+    create: (input: Record<string, unknown>): Promise<unknown> =>
+      ipcRenderer.invoke('epic:create', input),
+    update: (id: string, input: Record<string, unknown>): Promise<unknown> =>
+      ipcRenderer.invoke('epic:update', id, input),
+    delete: (id: string): Promise<void> =>
+      ipcRenderer.invoke('epic:delete', id),
+    progress: (epicId: string): Promise<{ total: number; done: number }> =>
+      ipcRenderer.invoke('epic:progress', epicId)
+  },
   spike: {
     getProject: (): Promise<SpikeProject> => ipcRenderer.invoke('spike:project'),
     getProjects: (): Promise<SpikeProject[]> => ipcRenderer.invoke('spike:projects')

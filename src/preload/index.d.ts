@@ -38,6 +38,24 @@ export interface ChodaApi {
     statuses: () => Promise<Array<{ id: string; enabled: boolean; status: string }>>
     restart: (id: string) => Promise<{ ok: boolean; error?: string }>
   }
+  task: {
+    list: (filter: Record<string, unknown>) => Promise<unknown[]>
+    get: (id: string) => Promise<unknown>
+    create: (input: Record<string, unknown>) => Promise<unknown>
+    update: (id: string, input: Record<string, unknown>) => Promise<unknown>
+    delete: (id: string) => Promise<void>
+    subtasks: (parentId: string) => Promise<unknown[]>
+    pinned: () => Promise<unknown[]>
+    due: (date: string) => Promise<unknown[]>
+  }
+  epic: {
+    list: (projectId: string) => Promise<unknown[]>
+    get: (id: string) => Promise<unknown>
+    create: (input: Record<string, unknown>) => Promise<unknown>
+    update: (id: string, input: Record<string, unknown>) => Promise<unknown>
+    delete: (id: string) => Promise<void>
+    progress: (epicId: string) => Promise<{ total: number; done: number }>
+  }
   spike: {
     getProject: () => Promise<SpikeProject>
     getProjects: () => Promise<SpikeProject[]>
