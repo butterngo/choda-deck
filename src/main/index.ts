@@ -502,7 +502,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('vault:import', async (_event, vaultPath: string, statusMap?: Record<string, string>) => {
     importer = new VaultImporter(taskService, vaultPath, statusMap)
-    const result = importer.importAll(projects.map(p => ({ id: p.id, cwd: p.taskPath })))
+    const result = importer.importAll(projects.map(p => ({ id: p.id, taskPath: p.taskPath })))
     importer.startWatching(projects.map(p => p.id))
     return result
   })
@@ -517,7 +517,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('task:refresh', () => {
     if (!importer) return { imported: 0, skipped: 0, errors: ['No import active'] }
-    return importer.importAll(projects.map(p => ({ id: p.id, cwd: p.taskPath })))
+    return importer.importAll(projects.map(p => ({ id: p.id, taskPath: p.taskPath })))
   })
 
   ipcMain.handle('task:list', (_event, filter) => taskService.findTasks(filter))

@@ -67,14 +67,14 @@ export class VaultImporter {
   /**
    * Full import: scan all task folders, import into SQLite
    */
-  importAll(projectConfigs: Array<{ id: string; cwd: string }>): ImportResult {
+  importAll(projectConfigs: Array<{ id: string; taskPath: string }>): ImportResult {
     const result: ImportResult = { imported: 0, skipped: 0, errors: [] }
 
     for (const proj of projectConfigs) {
-      this.taskService.ensureProject(proj.id, proj.id, proj.cwd)
+      this.taskService.ensureProject(proj.id, proj.id, proj.taskPath)
 
-      // Scan vault project tasks folder
-      const tasksDir = path.join(this.vaultPath, '10-Projects', proj.id, 'tasks')
+      // Scan taskPath/tasks/ directly (e.g. vault/10-Projects/automation-rule/tasks/)
+      const tasksDir = path.join(proj.taskPath, 'tasks')
       if (!fs.existsSync(tasksDir)) continue
 
       const files = fs.readdirSync(tasksDir).filter(f => f.endsWith('.md'))
@@ -88,7 +88,7 @@ export class VaultImporter {
         }
       }
 
-      // Scan archive
+      // Scan archive (vault/90-Archive/{project.id}/)
       const archiveDir = path.join(this.vaultPath, '90-Archive', proj.id)
       if (fs.existsSync(archiveDir)) {
         const archiveFiles = fs.readdirSync(archiveDir).filter(f => f.endsWith('.md'))
