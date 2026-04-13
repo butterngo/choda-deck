@@ -1,7 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { spawn, ChildProcess } from 'child_process'
 import * as pty from 'node-pty'
 import icon from '../../resources/icon.png?asset'
 import { SqliteTaskService } from '../tasks/sqlite-task-service'
@@ -75,153 +74,6 @@ function findWorkspace(workspaceId: string): { project: ProjectEntry; workspace:
 
 let projects: ProjectEntry[] = []
 
-// ── Plugin config (plugins.json) ──────────────────────────────────────────────
-
-interface PluginEntry {
-  id: string
-  type: 'mcp'
-  command: string
-  args: string[]
-  cwd?: string
-  env?: Record<string, string>
-  enabled: boolean
-}
-
-function getPluginsPath(): string {
-  const dir = app.isPackaged ? app.getPath('userData') : join(__dirname, '../..')
-  return join(dir, 'plugins.json')
-}
-
-function loadPlugins(): PluginEntry[] {
-  const filePath = getPluginsPath()
-  if (!existsSync(filePath)) return []
-  try {
-    const raw = JSON.parse(readFileSync(filePath, 'utf-8'))
-    return (raw as PluginEntry[]).map((p) => ({
-      id: p.id,
-      type: p.type || 'mcp',
-      command: p.command,
-      args: p.args || [],
-      cwd: p.cwd,
-      env: p.env,
-      enabled: p.enabled !== false
-    }))
-  } catch {
-    return []
-  }
-}
-
-function savePlugins(list: PluginEntry[]): void {
-  const filePath = getPluginsPath()
-  const dir = join(filePath, '..')
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-  writeFileSync(filePath, JSON.stringify(list, null, 2), 'utf-8')
-}
-
-let plugins: PluginEntry[] = []
-
-// ── MCP server lifecycle ──────────────────────────────────────────────────────
-
-interface McpProcess {
-  plugin: PluginEntry
-  process: ChildProcess
-  status: 'running' | 'stopped' | 'error'
-}
-
-const mcpProcesses = new Map<string, McpProcess>()
-
-function startMcpServer(plugin: PluginEntry): McpProcess | null {
-  if (mcpProcesses.has(plugin.id)) return mcpProcesses.get(plugin.id)!
-  if (!plugin.enabled) return null
-
-  const cwd = plugin.cwd || join(__dirname, '../..')
-  const env = { ...process.env, ...(plugin.env || {}) } as NodeJS.ProcessEnv
-
-  const child = spawn(plugin.command, plugin.args, {
-    cwd,
-    env,
-    stdio: 'pipe',
-    shell: true
-  })
-
-  const entry: McpProcess = { plugin, process: child, status: 'running' }
-
-  child.on('exit', (code) => {
-    entry.status = code === 0 ? 'stopped' : 'error'
-  })
-
-  child.on('error', () => {
-    entry.status = 'error'
-  })
-
-  mcpProcesses.set(plugin.id, entry)
-  return entry
-}
-
-function stopMcpServer(id: string): void {
-  const entry = mcpProcesses.get(id)
-  if (!entry) return
-  try {
-    entry.process.kill()
-  } catch { /* ignore */ }
-  entry.status = 'stopped'
-  mcpProcesses.delete(id)
-}
-
-function stopAllMcpServers(): void {
-  for (const [id] of mcpProcesses) {
-    stopMcpServer(id)
-  }
-}
-
-function getMcpStatus(id: string): string {
-  const entry = mcpProcesses.get(id)
-  if (!entry) return 'stopped'
-  return entry.status
-}
-
-function startEnabledMcpServers(): void {
-  for (const plugin of plugins) {
-    if (plugin.enabled) {
-      startMcpServer(plugin)
-    }
-  }
-}
-
-function generateClaudeConfig(): Record<string, unknown> {
-  const mcpServers: Record<string, unknown> = {}
-  for (const plugin of plugins) {
-    if (plugin.enabled && plugin.type === 'mcp') {
-      mcpServers[plugin.id] = {
-        command: plugin.command,
-        args: plugin.args,
-        cwd: plugin.cwd || join(__dirname, '../..'),
-        env: plugin.env || {}
-      }
-    }
-  }
-  return { mcpServers }
-}
-
-function writeClaudeConfigForProject(projectCwd: string): void {
-  const config = generateClaudeConfig()
-  if (Object.keys(config.mcpServers as object).length === 0) return
-
-  const configPath = join(projectCwd, '.claude.json')
-  // Read existing config if any, merge mcpServers
-  let existing: Record<string, unknown> = {}
-  if (existsSync(configPath)) {
-    try {
-      existing = JSON.parse(readFileSync(configPath, 'utf-8'))
-    } catch { /* ignore */ }
-  }
-  existing.mcpServers = {
-    ...((existing.mcpServers as Record<string, unknown>) || {}),
-    ...(config.mcpServers as Record<string, unknown>)
-  }
-  writeFileSync(configPath, JSON.stringify(existing, null, 2), 'utf-8')
-}
-
 // R11: PATH fallback — ensure common CLI install locations are in PATH
 function ensurePath(): void {
   const currentPath = process.env.PATH || ''
@@ -272,10 +124,6 @@ function createPtySession(id: string, cwd: string, cols: number, rows: number, w
     return
   }
 
-  // Lazy-start: write .claude.json with MCP config + start MCP servers
-  writeClaudeConfigForProject(cwd)
-  startEnabledMcpServers()
-
   const found = findWorkspace(id)
   const shellCmd = found?.workspace.shell || DEFAULT_SHELL
   const ptyProcess = pty.spawn(shellCmd, [], {
@@ -283,10 +131,7 @@ function createPtySession(id: string, cwd: string, cols: number, rows: number, w
     cols,
     rows,
     cwd,
-    env: {
-      ...process.env,
-      NEO4J_PASSWORD: process.env.NEO4J_PASSWORD || 'yourpassword'
-    } as { [key: string]: string }
+    env: process.env as { [key: string]: string }
   })
 
   ptyProcess.onData((data) => {
@@ -376,7 +221,6 @@ app.whenReady().then(async () => {
 
   ensurePath()
   projects = loadProjects()
-  plugins = loadPlugins()
 
   // Project management IPC
   ipcMain.handle('project:list', () => projects)
@@ -420,69 +264,6 @@ app.whenReady().then(async () => {
     }
     saveProjects(projects)
     return { ok: true }
-  })
-
-  // Plugin management IPC
-  ipcMain.handle('plugin:list', () => plugins)
-
-  ipcMain.handle('plugin:add', (_event, entry: PluginEntry) => {
-    if (plugins.some(p => p.id === entry.id)) {
-      return { ok: false, error: `Plugin "${entry.id}" already exists` }
-    }
-    const plugin: PluginEntry = {
-      id: entry.id,
-      type: entry.type || 'mcp',
-      command: entry.command,
-      args: entry.args || [],
-      cwd: entry.cwd,
-      env: entry.env,
-      enabled: entry.enabled !== false
-    }
-    plugins.push(plugin)
-    savePlugins(plugins)
-    return { ok: true, plugin }
-  })
-
-  ipcMain.handle('plugin:remove', (_event, id: string) => {
-    const idx = plugins.findIndex(p => p.id === id)
-    if (idx === -1) {
-      return { ok: false, error: `Plugin "${id}" not found` }
-    }
-    plugins.splice(idx, 1)
-    savePlugins(plugins)
-    return { ok: true }
-  })
-
-  ipcMain.handle('plugin:status', (_event, id: string) => {
-    return { id, status: getMcpStatus(id) }
-  })
-
-  ipcMain.handle('plugin:statuses', () => {
-    return plugins.map(p => ({ id: p.id, enabled: p.enabled, status: getMcpStatus(p.id) }))
-  })
-
-  ipcMain.handle('plugin:restart', (_event, id: string) => {
-    stopMcpServer(id)
-    const plugin = plugins.find(p => p.id === id)
-    if (!plugin) return { ok: false, error: `Plugin "${id}" not found` }
-    startMcpServer(plugin)
-    return { ok: true }
-  })
-
-  ipcMain.handle('plugin:toggle', (_event, id: string) => {
-    const plugin = plugins.find(p => p.id === id)
-    if (!plugin) {
-      return { ok: false, error: `Plugin "${id}" not found` }
-    }
-    plugin.enabled = !plugin.enabled
-    savePlugins(plugins)
-    // Start or stop MCP server accordingly
-    if (plugin.enabled) {
-      startMcpServer(plugin)
-    } else {
-      stopMcpServer(id)
-    }
-    return { ok: true, enabled: plugin.enabled }
   })
 
   // ── Task management IPC ────────────────────────────────────────────────────
@@ -560,9 +341,6 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', async () => {
-  // Stop file watcher + MCP servers
-  stopAllMcpServers()
-
   // Graceful shutdown: send SIGINT first, wait, then force kill
   const pending: Array<Promise<void>> = []
 

@@ -20,16 +20,6 @@ export interface SpikeProject {
   shell: string
 }
 
-export interface PluginEntry {
-  id: string
-  type: 'mcp'
-  command: string
-  args: string[]
-  cwd?: string
-  env?: Record<string, string>
-  enabled: boolean
-}
-
 export interface ChodaApi {
   pty: {
     spawn: (id: string, cwd: string, cols: number, rows: number) => Promise<{ ok: boolean; id: string }>
@@ -43,14 +33,6 @@ export interface ChodaApi {
     list: () => Promise<ProjectConfig[]>
     add: (projectId: string, name: string, taskPath: string, workspaceId: string, workspaceLabel: string, cwd: string) => Promise<{ ok: boolean; error?: string; project?: ProjectConfig }>
     remove: (projectId: string, workspaceId?: string) => Promise<{ ok: boolean; error?: string }>
-  }
-  plugin: {
-    list: () => Promise<PluginEntry[]>
-    add: (entry: PluginEntry) => Promise<{ ok: boolean; error?: string; plugin?: PluginEntry }>
-    remove: (id: string) => Promise<{ ok: boolean; error?: string }>
-    toggle: (id: string) => Promise<{ ok: boolean; error?: string; enabled?: boolean }>
-    statuses: () => Promise<Array<{ id: string; enabled: boolean; status: string }>>
-    restart: (id: string) => Promise<{ ok: boolean; error?: string }>
   }
   task: {
     list: (filter: Record<string, unknown>) => Promise<unknown[]>

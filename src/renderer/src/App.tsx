@@ -3,7 +3,6 @@ import '@xterm/xterm/css/xterm.css'
 import './assets/deck.css'
 import Sidebar from './Sidebar'
 import ViewRouter, { terminalViewType } from './ViewRouter'
-import PluginPanel from './PluginPanel'
 import KanbanBoard from './KanbanBoard'
 import RoadmapView from './RoadmapView'
 import DailyFocusView from './DailyFocusView'
@@ -45,8 +44,6 @@ const VIEW_TYPES: ViewType[] = [
 function App(): React.JSX.Element {
   const [projects, setProjects] = useState<ProjectConfig[]>([])
   const [active, setActive] = useState<ActiveSelection | null>(null)
-  const [showPlugins, setShowPlugins] = useState(false)
-
   // Load projects on mount
   useEffect(() => {
     let disposed = false
@@ -126,15 +123,7 @@ function App(): React.JSX.Element {
                 ? `${activeProject.name} / ${activeWorkspace.label} — ${activeWorkspace.cwd}`
                 : ''}
             </div>
-            <button
-              className="deck-header-btn"
-              onClick={() => setShowPlugins(true)}
-              title="Plugins"
-            >
-              &#9881;
-            </button>
           </header>
-          <PluginPanel visible={showPlugins} onClose={() => setShowPlugins(false)} />
           {allWorkspaces.map(({ project, workspace }) => (
             <ViewRouter
               key={workspace.id}

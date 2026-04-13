@@ -324,62 +324,7 @@ body,
   color: #d4d4d4;
 }
 
-/* Plugin panel overlay */
-.deck-plugin-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-
-.deck-plugin-panel {
-  background: #252526;
-  border: 1px solid #444;
-  border-radius: 8px;
-  padding: 16px;
-  min-width: 400px;
-  max-width: 500px;
-  max-height: 80vh;
-  overflow-y: auto;
-}
-
-.deck-plugin-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.deck-plugin-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #d4d4d4;
-}
-
-.deck-plugin-empty {
-  color: #666;
-  font-size: 13px;
-  padding: 12px 0;
-}
-
-.deck-plugin-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 4px;
-  border-bottom: 1px solid #333;
-}
-
-.deck-plugin-item:last-child {
-  border-bottom: none;
-}
-
+/* Shared utility styles */
 .deck-dot {
   width: 8px;
   height: 8px;
@@ -391,52 +336,10 @@ body,
 .deck-dot--red { background: #f44336; }
 .deck-dot--grey { background: #666; }
 
-.deck-plugin-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.deck-plugin-name {
-  display: block;
+.deck-plugin-empty {
+  color: #666;
   font-size: 13px;
-  color: #d4d4d4;
-}
-
-.deck-plugin-status {
-  display: block;
-  font-size: 11px;
-  color: #888;
-}
-
-.deck-plugin-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.deck-plugin-toggle {
-  background: #333;
-  border: 1px solid #555;
-  color: #888;
-  padding: 2px 8px;
-  border-radius: 3px;
-  font-size: 11px;
-  cursor: pointer;
-  min-width: 32px;
-}
-
-.deck-plugin-toggle--on {
-  background: #264f78;
-  border-color: #3a7bd5;
-  color: #d4d4d4;
-}
-
-.deck-plugin-remove {
-  color: #666 !important;
-}
-
-.deck-plugin-remove:hover {
-  color: #f44 !important;
+  padding: 12px 0;
 }
 
 /* Kanban board */
