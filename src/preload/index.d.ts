@@ -10,7 +10,6 @@ export interface WorkspaceConfig {
 export interface ProjectConfig {
   id: string
   name: string
-  taskPath: string
   workspaces: WorkspaceConfig[]
 }
 
@@ -31,7 +30,7 @@ export interface ChodaApi {
   }
   project: {
     list: () => Promise<ProjectConfig[]>
-    add: (projectId: string, name: string, taskPath: string, workspaceId: string, workspaceLabel: string, cwd: string) => Promise<{ ok: boolean; error?: string; project?: ProjectConfig }>
+    add: (projectId: string, name: string, workspaceId: string, workspaceLabel: string, cwd: string) => Promise<{ ok: boolean; error?: string; project?: ProjectConfig }>
     remove: (projectId: string, workspaceId?: string) => Promise<{ ok: boolean; error?: string }>
   }
   task: {
@@ -45,7 +44,7 @@ export interface ChodaApi {
     pinned: () => Promise<unknown[]>
     due: (date: string) => Promise<unknown[]>
     refresh: () => Promise<{ imported: number; skipped: number; errors: string[] }>
-    import: (vaultPath: string, statusMap?: Record<string, string>) => Promise<{ imported: number; skipped: number; errors: string[] }>
+    import: (statusMap?: Record<string, string>) => Promise<{ tasks: number; phases: number; documents: number; skipped: number; errors: string[] }>
   }
   epic: {
     list: (projectId: string) => Promise<unknown[]>

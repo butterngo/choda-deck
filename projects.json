@@ -1,19 +1,20 @@
-[
-  {
-    "id": "automation-rule",
-    "name": "Automation Rule",
-    "taskPath": "C:\\Users\\hngo1_mantu\\vault\\10-Projects\\automation-rule",
-    "workspaces": [
-      { "id": "workflow-engine", "label": "BE", "cwd": "C:\\dev\\test\\workflow-engine" },
-      { "id": "remote-workflow", "label": "FE", "cwd": "C:\\dev\\test\\remote-workflow" }
-    ]
-  },
-  {
-    "id": "choda-deck",
-    "name": "Choda Deck",
-    "taskPath": "C:\\Users\\hngo1_mantu\\vault\\10-Projects\\choda-deck",
-    "workspaces": [
-      { "id": "choda-deck", "label": "Main", "cwd": "C:\\dev\\choda-deck" }
-    ]
-  }
-]
+{
+  "contentRoot": "C:\\Users\\hngo1_mantu\\vault",
+  "projects": [
+    {
+      "id": "automation-rule",
+      "name": "Automation Rule",
+      "workspaces": [
+        { "id": "workflow-engine", "label": "BE", "cwd": "C:\\dev\\test\\workflow-engine" },
+        { "id": "remote-workflow", "label": "FE", "cwd": "C:\\dev\\test\\remote-workflow" }
+      ]
+    },
+    {
+      "id": "choda-deck",
+      "name": "Choda Deck",
+      "workspaces": [
+        { "id": "choda-deck", "label": "Main", "cwd": "C:\\dev\\choda-deck" }
+      ]
+    }
+  ]
+}

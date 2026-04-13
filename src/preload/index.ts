@@ -11,7 +11,6 @@ export interface WorkspaceConfig {
 export interface ProjectConfig {
   id: string
   name: string
-  taskPath: string
   workspaces: WorkspaceConfig[]
 }
 
@@ -51,8 +50,8 @@ const api = {
   },
   project: {
     list: (): Promise<ProjectConfig[]> => ipcRenderer.invoke('project:list'),
-    add: (projectId: string, name: string, taskPath: string, workspaceId: string, workspaceLabel: string, cwd: string): Promise<{ ok: boolean; error?: string; project?: ProjectConfig }> =>
-      ipcRenderer.invoke('project:add', projectId, name, taskPath, workspaceId, workspaceLabel, cwd),
+    add: (projectId: string, name: string, workspaceId: string, workspaceLabel: string, cwd: string): Promise<{ ok: boolean; error?: string; project?: ProjectConfig }> =>
+      ipcRenderer.invoke('project:add', projectId, name, workspaceId, workspaceLabel, cwd),
     remove: (projectId: string, workspaceId?: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('project:remove', projectId, workspaceId)
   },
@@ -77,8 +76,8 @@ const api = {
       ipcRenderer.invoke('task:due', date),
     refresh: (): Promise<{ imported: number; skipped: number; errors: string[] }> =>
       ipcRenderer.invoke('task:refresh'),
-    import: (vaultPath: string, statusMap?: Record<string, string>): Promise<{ imported: number; skipped: number; errors: string[] }> =>
-      ipcRenderer.invoke('vault:import', vaultPath, statusMap)
+    import: (statusMap?: Record<string, string>): Promise<{ tasks: number; phases: number; documents: number; skipped: number; errors: string[] }> =>
+      ipcRenderer.invoke('vault:import', statusMap)
   },
   epic: {
     list: (projectId: string): Promise<unknown[]> =>

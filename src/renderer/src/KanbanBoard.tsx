@@ -33,7 +33,6 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
   const [subtasks, setSubtasks] = useState<Record<string, TaskItem[]>>({})
   const [showImport, setShowImport] = useState(false)
-  const [importPath, setImportPath] = useState('')
   const [importResult, setImportResult] = useState<string | null>(null)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
 
@@ -85,12 +84,9 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
   }
 
   async function handleImport(): Promise<void> {
-    const vaultPath = importPath.trim()
-    if (!vaultPath) return
-    const result = await window.api.task.import(vaultPath)
-    setImportResult(`Imported ${result.imported}, skipped ${result.skipped}, ${result.errors.length} errors`)
+    const result = await window.api.task.import()
+    setImportResult(`Imported ${result.tasks} tasks, ${result.phases} phases, ${result.documents} docs, ${result.errors.length} errors`)
     setShowImport(false)
-    setImportPath('')
     loadData()
   }
 
@@ -144,16 +140,8 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
 
       {showImport && (
         <div className="deck-kanban-create">
-          <input
-            className="deck-sidebar-input"
-            placeholder="Vault path (e.g. C:\Users\you\vault)"
-            value={importPath}
-            onChange={(e) => setImportPath(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleImport() }}
-            autoFocus
-          />
           <div className="deck-sidebar-form-actions">
-            <button className="deck-sidebar-btn deck-sidebar-btn--ok" onClick={handleImport}>Import</button>
+            <button className="deck-sidebar-btn deck-sidebar-btn--ok" onClick={handleImport}>Import from vault</button>
             <button className="deck-sidebar-btn" onClick={() => setShowImport(false)}>Cancel</button>
           </div>
         </div>

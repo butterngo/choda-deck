@@ -1,6 +1,6 @@
 /**
  * Vault Importer — parse vault .md files into SQLite
- * Watches for file changes and re-imports.
+ * Derives all paths from contentRoot + projectId (PARA convention).
  */
 
 import * as fs from 'fs'
@@ -8,7 +8,7 @@ import * as path from 'path'
 import matter from 'gray-matter'
 import * as chokidar from 'chokidar'
 import type { SqliteTaskService } from './sqlite-task-service'
-import type { TaskStatus, TaskPriority } from './task-types'
+import type { TaskStatus, TaskPriority, DocumentType, RelationType } from './task-types'
 
 const DEFAULT_STATUS_MAP: Record<string, TaskStatus> = {
   'todo': 'TODO',
@@ -33,88 +33,126 @@ function normalizePriority(raw: string | undefined): TaskPriority | null {
   return null
 }
 
-function extractTaskId(filename: string): string | null {
-  const match = filename.match(/^((?:TASK|BUG)-\d+[a-z]?)/)
+function extractId(filename: string, prefixes: string[]): string | null {
+  const pattern = new RegExp(`^((?:${prefixes.join('|')})-\\d+[a-z]?)`)
+  const match = filename.match(pattern)
   return match ? match[1] : null
 }
 
-function normalizeDependsOn(raw: unknown): string[] {
+function normalizeList(raw: unknown): string[] {
   if (!raw) return []
   if (Array.isArray(raw)) return raw.map(String).filter(Boolean)
   if (typeof raw === 'string') return raw.split(',').map(s => s.trim()).filter(Boolean)
   return []
 }
 
+// ── Path derivation (PARA convention) ─────────────────────────────────────
+
+function projectDir(contentRoot: string, projectId: string): string {
+  return path.join(contentRoot, '10-Projects', projectId)
+}
+
+function tasksDir(contentRoot: string, projectId: string): string {
+  return path.join(projectDir(contentRoot, projectId), 'tasks')
+}
+
+function phasesDir(contentRoot: string, projectId: string): string {
+  return path.join(projectDir(contentRoot, projectId), 'phases')
+}
+
+function docsDir(contentRoot: string, projectId: string): string {
+  return path.join(projectDir(contentRoot, projectId), 'docs')
+}
+
+function archiveDir(contentRoot: string, projectId: string): string {
+  return path.join(contentRoot, '90-Archive', projectId)
+}
+
+// ── Import result ─────────────────────────────────────────────────────────
+
 interface ImportResult {
-  imported: number
+  tasks: number
+  phases: number
+  documents: number
+  tags: number
+  relationships: number
   skipped: number
   errors: string[]
 }
 
+function emptyResult(): ImportResult {
+  return { tasks: 0, phases: 0, documents: 0, tags: 0, relationships: 0, skipped: 0, errors: [] }
+}
+
+// ── Importer ──────────────────────────────────────────────────────────────
+
 export class VaultImporter {
   private taskService: SqliteTaskService
-  private vaultPath: string
+  private contentRoot: string
   private statusMap: Record<string, TaskStatus>
   private watcher: chokidar.FSWatcher | null = null
-  private ignoreSet = new Set<string>()
 
-  constructor(taskService: SqliteTaskService, vaultPath: string, statusMap?: Record<string, string>) {
+  constructor(taskService: SqliteTaskService, contentRoot: string, statusMap?: Record<string, string>) {
     this.taskService = taskService
-    this.vaultPath = vaultPath
+    this.contentRoot = contentRoot
     this.statusMap = { ...DEFAULT_STATUS_MAP, ...(statusMap || {}) } as Record<string, TaskStatus>
   }
 
   /**
-   * Full import: scan all task folders, import into SQLite
+   * Full import: scan all project folders, import tasks, phases, documents
    */
-  importAll(projectConfigs: Array<{ id: string; taskPath: string }>): ImportResult {
-    const result: ImportResult = { imported: 0, skipped: 0, errors: [] }
+  importAll(projectIds: string[]): ImportResult {
+    const result = emptyResult()
 
-    for (const proj of projectConfigs) {
-      this.taskService.ensureProject(proj.id, proj.id, proj.taskPath)
+    for (const projectId of projectIds) {
+      this.taskService.ensureProject(projectId, projectId, projectDir(this.contentRoot, projectId))
 
-      // Scan taskPath/tasks/ directly (e.g. vault/10-Projects/automation-rule/tasks/)
-      const tasksDir = path.join(proj.taskPath, 'tasks')
-      if (!fs.existsSync(tasksDir)) continue
-
-      const files = fs.readdirSync(tasksDir).filter(f => f.endsWith('.md'))
-      for (const file of files) {
-        try {
-          const imported = this.importTaskFile(path.join(tasksDir, file), proj.id)
-          if (imported) result.imported++
-          else result.skipped++
-        } catch (err) {
-          result.errors.push(`${file}: ${err instanceof Error ? err.message : String(err)}`)
-        }
-      }
-
-      // Scan archive (vault/90-Archive/{project.id}/)
-      const archiveDir = path.join(this.vaultPath, '90-Archive', proj.id)
-      if (fs.existsSync(archiveDir)) {
-        const archiveFiles = fs.readdirSync(archiveDir).filter(f => f.endsWith('.md'))
-        for (const file of archiveFiles) {
-          const taskId = extractTaskId(file)
-          if (!taskId) continue
-          try {
-            const imported = this.importTaskFile(path.join(archiveDir, file), proj.id, true)
-            if (imported) result.imported++
-            else result.skipped++
-          } catch (err) {
-            result.errors.push(`archive/${file}: ${err instanceof Error ? err.message : String(err)}`)
-          }
-        }
-      }
+      this.importTasks(projectId, result)
+      this.importArchive(projectId, result)
+      this.importPhases(projectId, result)
+      this.importDocuments(projectId, result)
     }
 
     return result
   }
 
-  /**
-   * Import a single task .md file into SQLite
-   */
-  private importTaskFile(filePath: string, projectId: string, archived = false): boolean {
+  // ── Task import ─────────────────────────────────────────────────────────
+
+  private importTasks(projectId: string, result: ImportResult): void {
+    const dir = tasksDir(this.contentRoot, projectId)
+    if (!fs.existsSync(dir)) return
+
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.md'))
+    for (const file of files) {
+      try {
+        if (this.importTaskFile(path.join(dir, file), projectId, result)) result.tasks++
+        else result.skipped++
+      } catch (err) {
+        result.errors.push(`${file}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+  }
+
+  private importArchive(projectId: string, result: ImportResult): void {
+    const dir = archiveDir(this.contentRoot, projectId)
+    if (!fs.existsSync(dir)) return
+
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.md'))
+    for (const file of files) {
+      const taskId = extractId(file, ['TASK', 'BUG'])
+      if (!taskId) continue
+      try {
+        if (this.importTaskFile(path.join(dir, file), projectId, result, true)) result.tasks++
+        else result.skipped++
+      } catch (err) {
+        result.errors.push(`archive/${file}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+  }
+
+  private importTaskFile(filePath: string, projectId: string, result: ImportResult, archived = false): boolean {
     const filename = path.basename(filePath)
-    const taskId = extractTaskId(filename)
+    const taskId = extractId(filename, ['TASK', 'BUG'])
     if (!taskId) return false
 
     const content = fs.readFileSync(filePath, 'utf-8')
@@ -134,45 +172,175 @@ export class VaultImporter {
 
     const existing = this.taskService.getTask(taskId)
     if (existing) {
-      // Update existing
-      this.taskService.updateTask(taskId, {
-        title,
-        status,
-        priority,
-        labels: fm.labels || undefined
-      })
+      this.taskService.updateTask(taskId, { title, status, priority, labels: fm.labels || undefined })
     } else {
-      // Create new
       this.taskService.createTask({
-        id: taskId,
-        projectId,
-        title,
-        status,
+        id: taskId, projectId, title, status,
         priority: priority || undefined,
-        labels: fm.labels,
-        filePath
+        labels: fm.labels, filePath
       })
     }
 
-    // Import dependencies
-    const deps = normalizeDependsOn(fm['depends-on'])
-    for (const dep of deps) {
-      // Only add if target exists
-      if (this.taskService.getTask(dep)) {
-        this.taskService.addDependency(taskId, dep)
+    // Tags
+    const tags = normalizeList(fm.tags)
+    for (const tag of tags) {
+      this.taskService.addTag(taskId, tag)
+      result.tags++
+    }
+
+    // Relationships
+    this.importRelationships(taskId, fm, result)
+
+    return true
+  }
+
+  // ── Phase import ────────────────────────────────────────────────────────
+
+  private importPhases(projectId: string, result: ImportResult): void {
+    const dir = phasesDir(this.contentRoot, projectId)
+    if (!fs.existsSync(dir)) return
+
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.md'))
+    for (const file of files) {
+      try {
+        if (this.importPhaseFile(path.join(dir, file), projectId, result)) result.phases++
+        else result.skipped++
+      } catch (err) {
+        result.errors.push(`phase/${file}: ${err instanceof Error ? err.message : String(err)}`)
       }
+    }
+  }
+
+  private importPhaseFile(filePath: string, projectId: string, result: ImportResult): boolean {
+    const content = fs.readFileSync(filePath, 'utf-8')
+    let parsed: matter.GrayMatterFile<string>
+    try {
+      parsed = matter(content)
+    } catch {
+      return false
+    }
+
+    const fm = parsed.data
+    if (!fm || !fm.id) return false
+
+    const id = fm.id as string
+    const title = fm.title || id
+    const status = fm.status === 'closed' ? 'closed' : 'open'
+    const position = typeof fm.position === 'number' ? fm.position : 0
+    const targetDate = fm.targetDate || fm['target-date'] || null
+
+    const existing = this.taskService.getPhase(id)
+    if (existing) {
+      this.taskService.updatePhase(id, { title, status, position, targetDate })
+    } else {
+      this.taskService.createPhase({ id, projectId, title, status, position, targetDate: targetDate || undefined })
+    }
+
+    // Tags
+    const tags = normalizeList(fm.tags)
+    for (const tag of tags) {
+      this.taskService.addTag(id, tag)
+      result.tags++
     }
 
     return true
   }
 
-  /**
-   * Start watching vault task folders for changes
-   */
+  // ── Document import ─────────────────────────────────────────────────────
+
+  private importDocuments(projectId: string, result: ImportResult): void {
+    const dir = docsDir(this.contentRoot, projectId)
+    if (!fs.existsSync(dir)) return
+
+    // Scan docs/decisions/ for ADRs
+    const decisionsDir = path.join(dir, 'decisions')
+    if (fs.existsSync(decisionsDir)) {
+      this.importDocDir(decisionsDir, projectId, 'adr', result)
+    }
+
+    // Scan docs/ root for other doc types
+    const rootFiles = fs.readdirSync(dir).filter(f => f.endsWith('.md'))
+    for (const file of rootFiles) {
+      try {
+        if (this.importDocFile(path.join(dir, file), projectId, 'spec', result)) result.documents++
+        else result.skipped++
+      } catch (err) {
+        result.errors.push(`docs/${file}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+  }
+
+  private importDocDir(dir: string, projectId: string, type: DocumentType, result: ImportResult): void {
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.md'))
+    for (const file of files) {
+      try {
+        if (this.importDocFile(path.join(dir, file), projectId, type, result)) result.documents++
+        else result.skipped++
+      } catch (err) {
+        result.errors.push(`docs/${file}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+  }
+
+  private importDocFile(filePath: string, projectId: string, defaultType: DocumentType, result: ImportResult): boolean {
+    const content = fs.readFileSync(filePath, 'utf-8')
+    let parsed: matter.GrayMatterFile<string>
+    try {
+      parsed = matter(content)
+    } catch {
+      return false
+    }
+
+    const fm = parsed.data
+    const filename = path.basename(filePath, '.md')
+    const id = (fm.id as string) || filename
+    const title = (fm.title as string) || filename
+    const type = (fm.type as DocumentType) || defaultType
+
+    const existing = this.taskService.getDocument(id)
+    if (existing) {
+      this.taskService.updateDocument(id, { title, type, filePath })
+    } else {
+      this.taskService.createDocument({ id, projectId, type, title, filePath })
+    }
+
+    // Tags
+    const tags = normalizeList(fm.tags)
+    for (const tag of tags) {
+      this.taskService.addTag(id, tag)
+      result.tags++
+    }
+
+    return true
+  }
+
+  // ── Relationships from frontmatter ──────────────────────────────────────
+
+  private importRelationships(itemId: string, fm: Record<string, unknown>, result: ImportResult): void {
+    const mapping: Array<{ key: string; type: RelationType }> = [
+      { key: 'depends-on', type: 'DEPENDS_ON' },
+      { key: 'implements', type: 'IMPLEMENTS' },
+      { key: 'uses-tech', type: 'USES_TECH' },
+      { key: 'decided-by', type: 'DECIDED_BY' }
+    ]
+
+    for (const { key, type } of mapping) {
+      const targets = normalizeList(fm[key])
+      for (const target of targets) {
+        this.taskService.addRelationship(itemId, target, type)
+        result.relationships++
+      }
+    }
+  }
+
+  // ── File watcher ────────────────────────────────────────────────────────
+
   startWatching(projectIds: string[]): void {
     const watchPaths = projectIds.flatMap(id => [
-      path.join(this.vaultPath, '10-Projects', id, 'tasks'),
-      path.join(this.vaultPath, '90-Archive', id)
+      tasksDir(this.contentRoot, id),
+      phasesDir(this.contentRoot, id),
+      docsDir(this.contentRoot, id),
+      archiveDir(this.contentRoot, id)
     ]).filter(p => fs.existsSync(p))
 
     if (watchPaths.length === 0) return
@@ -182,26 +350,14 @@ export class VaultImporter {
       awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 }
     })
 
-    this.watcher.on('change', (filePath) => {
-      this.handleFileChange(filePath)
-    })
-
-    this.watcher.on('add', (filePath) => {
-      this.handleFileChange(filePath)
-    })
+    this.watcher.on('change', (filePath) => this.handleFileChange(filePath))
+    this.watcher.on('add', (filePath) => this.handleFileChange(filePath))
   }
 
   private handleFileChange(filePath: string): void {
-    // Skip if we wrote this file (avoid loop)
-    if (this.ignoreSet.has(filePath)) {
-      this.ignoreSet.delete(filePath)
-      return
-    }
-
     if (!filePath.endsWith('.md')) return
 
-    // Determine project from path
-    const relative = path.relative(this.vaultPath, filePath)
+    const relative = path.relative(this.contentRoot, filePath)
     const parts = relative.split(path.sep)
 
     let projectId: string | null = null
@@ -216,18 +372,21 @@ export class VaultImporter {
 
     if (!projectId) return
 
+    const result = emptyResult()
     try {
-      this.importTaskFile(filePath, projectId, archived)
+      // Determine what kind of file changed
+      const subdir = parts[2] // tasks, phases, docs
+      if (subdir === 'tasks' || archived) {
+        this.importTaskFile(filePath, projectId, result, archived)
+      } else if (subdir === 'phases') {
+        this.importPhaseFile(filePath, projectId, result)
+      } else if (subdir === 'docs') {
+        const type: DocumentType = parts[3] === 'decisions' ? 'adr' : 'spec'
+        this.importDocFile(filePath, projectId, type, result)
+      }
     } catch {
       // Ignore import errors from watcher
     }
-  }
-
-  /**
-   * Mark a file as "we wrote it" to prevent re-import loop
-   */
-  ignoreNextChange(filePath: string): void {
-    this.ignoreSet.add(filePath)
   }
 
   stopWatching(): void {

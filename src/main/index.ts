@@ -24,8 +24,12 @@ interface WorkspaceEntry {
 interface ProjectEntry {
   id: string
   name: string
-  taskPath: string
   workspaces: WorkspaceEntry[]
+}
+
+interface ProjectsConfig {
+  contentRoot: string
+  projects: ProjectEntry[]
 }
 
 const DEFAULT_SHELL = process.platform === 'win32' ? 'claude.cmd' : 'claude'
@@ -35,33 +39,50 @@ function getProjectsPath(): string {
   return join(dir, 'projects.json')
 }
 
-function loadProjects(): ProjectEntry[] {
+function loadConfig(): ProjectsConfig {
   const filePath = getProjectsPath()
-  if (!existsSync(filePath)) return []
+  if (!existsSync(filePath)) return { contentRoot: '', projects: [] }
   try {
-    const raw = JSON.parse(readFileSync(filePath, 'utf-8')) as unknown[]
+    const raw = JSON.parse(readFileSync(filePath, 'utf-8'))
 
-    // Auto-migrate flat schema → hierarchy
-    if (raw.length > 0 && 'cwd' in (raw[0] as Record<string, unknown>)) {
-      return (raw as Array<{ id: string; cwd: string; shell?: string }>).map((p) => ({
-        id: p.id,
-        name: p.id,
-        taskPath: '',
-        workspaces: [{ id: p.id, label: 'Main', cwd: p.cwd, shell: p.shell }]
-      }))
+    // New schema: { contentRoot, projects: [...] }
+    if (raw.contentRoot && raw.projects) {
+      return raw as ProjectsConfig
     }
 
-    return raw as ProjectEntry[]
+    // Auto-migrate old array schema → new object schema
+    const arr = raw as unknown[]
+    if (arr.length > 0 && 'cwd' in (arr[0] as Record<string, unknown>)) {
+      // Flat schema: [{ id, cwd }]
+      return {
+        contentRoot: '',
+        projects: (arr as Array<{ id: string; cwd: string; shell?: string }>).map((p) => ({
+          id: p.id,
+          name: p.id,
+          workspaces: [{ id: p.id, label: 'Main', cwd: p.cwd, shell: p.shell }]
+        }))
+      }
+    }
+
+    // Old hierarchy schema: [{ id, name, taskPath, workspaces }]
+    return {
+      contentRoot: '',
+      projects: (arr as Array<{ id: string; name: string; taskPath?: string; workspaces: WorkspaceEntry[] }>).map((p) => ({
+        id: p.id,
+        name: p.name,
+        workspaces: p.workspaces
+      }))
+    }
   } catch {
-    return []
+    return { contentRoot: '', projects: [] }
   }
 }
 
-function saveProjects(list: ProjectEntry[]): void {
+function saveConfig(config: ProjectsConfig): void {
   const filePath = getProjectsPath()
   const dir = join(filePath, '..')
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-  writeFileSync(filePath, JSON.stringify(list, null, 2), 'utf-8')
+  writeFileSync(filePath, JSON.stringify(config, null, 2), 'utf-8')
 }
 
 function findWorkspace(workspaceId: string): { project: ProjectEntry; workspace: WorkspaceEntry } | null {
@@ -72,6 +93,7 @@ function findWorkspace(workspaceId: string): { project: ProjectEntry; workspace:
   return null
 }
 
+let config: ProjectsConfig = { contentRoot: '', projects: [] }
 let projects: ProjectEntry[] = []
 
 // R11: PATH fallback — ensure common CLI install locations are in PATH
@@ -220,22 +242,24 @@ app.whenReady().then(async () => {
   })
 
   ensurePath()
-  projects = loadProjects()
+  config = loadConfig()
+  projects = config.projects
 
   // Project management IPC
   ipcMain.handle('project:list', () => projects)
 
-  ipcMain.handle('project:add', (_event, projectId: string, name: string, taskPath: string, workspaceId: string, workspaceLabel: string, cwd: string) => {
+  ipcMain.handle('project:add', (_event, projectId: string, name: string, workspaceId: string, workspaceLabel: string, cwd: string) => {
     let project = projects.find(p => p.id === projectId)
     if (!project) {
-      project = { id: projectId, name, taskPath, workspaces: [] }
+      project = { id: projectId, name, workspaces: [] }
       projects.push(project)
     }
     if (project.workspaces.some(w => w.id === workspaceId)) {
       return { ok: false, error: `Workspace "${workspaceId}" already exists` }
     }
     project.workspaces.push({ id: workspaceId, label: workspaceLabel, cwd })
-    saveProjects(projects)
+    config.projects = projects
+    saveConfig(config)
     return { ok: true, project }
   })
 
@@ -262,7 +286,8 @@ app.whenReady().then(async () => {
       }
       projects.splice(projIdx, 1)
     }
-    saveProjects(projects)
+    config.projects = projects
+    saveConfig(config)
     return { ok: true }
   })
 
@@ -275,15 +300,16 @@ app.whenReady().then(async () => {
 
   // Ensure projects exist in SQLite
   for (const p of projects) {
-    taskService.ensureProject(p.id, p.name, p.taskPath)
+    taskService.ensureProject(p.id, p.name, config.contentRoot)
   }
 
   // Vault import — manual trigger, not auto on boot
   let importer: VaultImporter | null = null
 
-  ipcMain.handle('vault:import', async (_event, vaultPath: string, statusMap?: Record<string, string>) => {
-    importer = new VaultImporter(taskService, vaultPath, statusMap)
-    const result = importer.importAll(projects.map(p => ({ id: p.id, taskPath: p.taskPath })))
+  ipcMain.handle('vault:import', async (_event, statusMap?: Record<string, string>) => {
+    if (!config.contentRoot) return { tasks: 0, phases: 0, documents: 0, tags: 0, relationships: 0, skipped: 0, errors: ['No contentRoot configured'] }
+    importer = new VaultImporter(taskService, config.contentRoot, statusMap)
+    const result = importer.importAll(projects.map(p => p.id))
     importer.startWatching(projects.map(p => p.id))
     return result
   })
@@ -297,8 +323,8 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle('task:refresh', () => {
-    if (!importer) return { imported: 0, skipped: 0, errors: ['No import active'] }
-    return importer.importAll(projects.map(p => ({ id: p.id, taskPath: p.taskPath })))
+    if (!importer) return { tasks: 0, phases: 0, documents: 0, tags: 0, relationships: 0, skipped: 0, errors: ['No import active'] }
+    return importer.importAll(projects.map(p => p.id))
   })
 
   ipcMain.handle('task:list', (_event, filter) => taskService.findTasks(filter))
