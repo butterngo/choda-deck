@@ -572,36 +572,41 @@ body,
   text-transform: uppercase;
 }
 
-/* Kanban with detail panel */
-.deck-kanban--with-detail {
-  flex-direction: row;
-}
-
-.deck-kanban--with-detail .deck-kanban-columns {
-  flex: 1;
-  min-width: 0;
-}
-
 .deck-kanban-card {
   cursor: pointer;
 }
 
-/* Task detail panel */
-.deck-detail-panel {
-  width: 360px;
-  flex-shrink: 0;
+/* Task detail modal */
+.deck-detail-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.deck-detail-modal {
   background: #252526;
-  border-left: 1px solid #333;
+  border: 1px solid #444;
+  border-radius: 8px;
+  width: 700px;
+  max-width: 90vw;
+  max-height: 85vh;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .deck-detail-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
+  padding: 12px 16px;
   border-bottom: 1px solid #333;
   flex-shrink: 0;
 }
@@ -614,13 +619,31 @@ body,
 }
 
 .deck-detail-body {
-  padding: 12px;
+  padding: 16px;
   flex: 1;
   overflow-y: auto;
 }
 
+.deck-detail-top {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+
 .deck-detail-meta {
-  margin-bottom: 12px;
+  flex: 1;
+}
+
+.deck-detail-task-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #d4d4d4;
+  margin: 0 0 12px;
+}
+
+.deck-detail-sidebar {
+  width: 200px;
+  flex-shrink: 0;
 }
 
 .deck-detail-field {
@@ -647,6 +670,13 @@ body,
   color: #d4d4d4;
 }
 
+.deck-detail-filepath {
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 11px;
+  color: #888;
+  word-break: break-all;
+}
+
 .deck-detail-section {
   margin-bottom: 12px;
 }
@@ -666,6 +696,7 @@ body,
   font-size: 12px;
   color: #aaa;
   padding: 2px 0;
+  font-family: 'Cascadia Code', Consolas, monospace;
 }
 
 .deck-detail-subtask {
@@ -687,12 +718,13 @@ body,
   background: #1e1e1e;
   border: 1px solid #333;
   border-radius: 4px;
-  padding: 10px;
+  padding: 12px;
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
-  max-height: 500px;
+  max-height: 400px;
   overflow-y: auto;
+  line-height: 1.5;
 }
 
 .deck-detail-empty {

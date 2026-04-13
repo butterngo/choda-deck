@@ -106,7 +106,7 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
   })
 
   return (
-    <div className={`deck-kanban${selectedTaskId ? ' deck-kanban--with-detail' : ''}`}>
+    <div className="deck-kanban">
       <div className="deck-kanban-toolbar">
         <input
           className="deck-sidebar-input deck-kanban-search"
