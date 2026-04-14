@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'fs'
+import { readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { join, basename, extname } from 'path'
 import type { FileNode, FileStat, SearchResult } from './vault-types'
 
@@ -37,6 +37,10 @@ export class VaultService {
     }
     const key = wikilink.toLowerCase().replace(/\[\[|\]\]/g, '').trim()
     return this.wikilinkCache!.get(key) || null
+  }
+
+  writeFile(filePath: string, content: string): void {
+    writeFileSync(filePath, content, 'utf-8')
   }
 
   invalidateCache(): void {

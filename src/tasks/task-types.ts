@@ -21,7 +21,8 @@ export interface Phase {
   title: string
   status: PhaseStatus
   position: number
-  targetDate: string | null
+  startDate: string | null
+  completedDate: string | null
   createdAt: string
   updatedAt: string
 }
@@ -100,6 +101,7 @@ export interface UpdateTaskInput {
   labels?: string[]
   dueDate?: string | null
   pinned?: boolean
+  filePath?: string | null
 }
 
 export interface TaskFilter {
@@ -120,14 +122,15 @@ export interface CreatePhaseInput {
   title: string
   status?: PhaseStatus
   position?: number
-  targetDate?: string
+  startDate?: string
 }
 
 export interface UpdatePhaseInput {
   title?: string
   status?: PhaseStatus
   position?: number
-  targetDate?: string | null
+  startDate?: string | null
+  completedDate?: string | null
 }
 
 export interface CreateFeatureInput {

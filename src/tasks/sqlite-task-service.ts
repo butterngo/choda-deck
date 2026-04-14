@@ -52,7 +52,8 @@ function rowToPhase(row: Record<string, unknown>): Phase {
     title: row.title as string,
     status: row.status as PhaseStatus,
     position: (row.position as number) || 0,
-    targetDate: (row.target_date as string) || null,
+    startDate: (row.start_date as string) || null,
+    completedDate: (row.completed_date as string) || null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string
   }
@@ -85,7 +86,8 @@ function rowToDocument(row: Record<string, unknown>): Document {
 function derivedProgress(total: number, done: number, inProgress: number): DerivedProgress {
   const status = total === 0 ? 'planned'
     : done === total ? 'completed'
-    : 'active'
+    : (done > 0 || inProgress > 0) ? 'active'
+    : 'planned'
   const percent = total === 0 ? 0 : Math.round((done / total) * 100)
   return { total, done, inProgress, status, percent }
 }
@@ -179,6 +181,10 @@ export class SqliteTaskService implements TaskService {
       )
     `)
 
+    // Migrate: add startDate + completedDate to phases
+    try { this.db.exec('ALTER TABLE phases ADD COLUMN start_date TEXT') } catch { /* exists */ }
+    try { this.db.exec('ALTER TABLE phases ADD COLUMN completed_date TEXT') } catch { /* exists */ }
+
     // Migrate: add feature_id to tasks if missing (was epic_id)
     try {
       this.db.exec('ALTER TABLE tasks ADD COLUMN feature_id TEXT')
@@ -244,6 +250,7 @@ export class SqliteTaskService implements TaskService {
     if (input.labels !== undefined) { sets.push('labels = ?'); params.push(JSON.stringify(input.labels)) }
     if (input.dueDate !== undefined) { sets.push('due_date = ?'); params.push(input.dueDate) }
     if (input.pinned !== undefined) { sets.push('pinned = ?'); params.push(input.pinned ? 1 : 0) }
+    if (input.filePath !== undefined) { sets.push('file_path = ?'); params.push(input.filePath) }
 
     params.push(id)
     this.db.prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`).run(...params as (string | number | null)[])
@@ -327,8 +334,8 @@ export class SqliteTaskService implements TaskService {
     const ts = now()
     const id = input.id || `PHASE-${Date.now()}`
     this.db.prepare(
-      'INSERT INTO phases (id, project_id, title, status, position, target_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(id, input.projectId, input.title, input.status || 'open', input.position || 0, input.targetDate || null, ts, ts)
+      'INSERT INTO phases (id, project_id, title, status, position, start_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(id, input.projectId, input.title, input.status || 'open', input.position || 0, input.startDate || null, ts, ts)
     return this.getPhase(id)!
   }
 
@@ -339,7 +346,8 @@ export class SqliteTaskService implements TaskService {
     if (input.title !== undefined) { sets.push('title = ?'); params.push(input.title) }
     if (input.status !== undefined) { sets.push('status = ?'); params.push(input.status) }
     if (input.position !== undefined) { sets.push('position = ?'); params.push(input.position) }
-    if (input.targetDate !== undefined) { sets.push('target_date = ?'); params.push(input.targetDate) }
+    if (input.startDate !== undefined) { sets.push('start_date = ?'); params.push(input.startDate) }
+    if (input.completedDate !== undefined) { sets.push('completed_date = ?'); params.push(input.completedDate) }
 
     params.push(id)
     this.db.prepare(`UPDATE phases SET ${sets.join(', ')} WHERE id = ?`).run(...params as (string | number | null)[])
@@ -364,6 +372,7 @@ export class SqliteTaskService implements TaskService {
   }
 
   getPhaseProgress(phaseId: string): DerivedProgress {
+    const phase = this.getPhase(phaseId)
     const row = this.db.prepare(
       `SELECT COUNT(*) as total,
               SUM(CASE WHEN t.status = 'DONE' THEN 1 ELSE 0 END) as done,
@@ -372,8 +381,30 @@ export class SqliteTaskService implements TaskService {
        JOIN features f ON t.feature_id = f.id
        WHERE f.phase_id = ?`
     ).get(phaseId) as Record<string, number> | undefined
-    if (!row) return derivedProgress(0, 0, 0)
-    return derivedProgress(row.total || 0, row.done || 0, row.ip || 0)
+    const total = row?.total || 0
+    const done = row?.done || 0
+    const inProgress = row?.ip || 0
+    const percent = total === 0 ? 0 : Math.round((done / total) * 100)
+
+    // Status logic: startDate + tasks
+    let status: 'planned' | 'active' | 'completed'
+    if (total > 0 && done === total) {
+      status = 'completed'
+      // Auto-set completedDate if not set
+      if (phase && !phase.completedDate) {
+        this.updatePhase(phaseId, { completedDate: now().split('T')[0] })
+      }
+    } else if (phase?.startDate) {
+      status = 'active'
+      // Clear completedDate if was set but now not all done
+      if (phase.completedDate) {
+        this.updatePhase(phaseId, { completedDate: null })
+      }
+    } else {
+      status = 'planned'
+    }
+
+    return { total, done, inProgress, status, percent }
   }
 
   // ── Feature CRUD ──────────────────────────────────────────────────────────

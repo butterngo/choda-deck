@@ -303,6 +303,7 @@ app.whenReady().then(async () => {
     taskService.ensureProject(p.id, p.name, config.contentRoot)
   }
 
+
   // Vault import — manual trigger, not auto on boot
   let importer: VaultImporter | null = null
 
@@ -348,7 +349,18 @@ app.whenReady().then(async () => {
   ipcMain.handle('phase:get', (_event, id: string) => taskService.getPhase(id))
   ipcMain.handle('phase:create', (_event, input) => taskService.createPhase(input))
   ipcMain.handle('phase:update', (_event, id: string, input) => taskService.updatePhase(id, input))
-  ipcMain.handle('phase:delete', (_event, id: string) => taskService.deletePhase(id))
+  ipcMain.handle('phase:delete', (_event, id: string, cascade?: boolean) => {
+    if (cascade) {
+      const features = taskService.findFeaturesByPhase(id)
+      for (const f of features) {
+        const tasks = taskService.findTasks({ featureId: f.id })
+        for (const t of tasks) taskService.deleteTask(t.id)
+        taskService.deleteFeature(f.id)
+      }
+    }
+    taskService.deletePhase(id)
+    return { ok: true }
+  })
   ipcMain.handle('phase:progress', (_event, phaseId: string) => taskService.getPhaseProgress(phaseId))
 
   ipcMain.handle('feature:list', (_event, projectId: string) => taskService.findFeatures(projectId))
@@ -379,6 +391,11 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('vault:resolve', (_event, wikilink: string, rootPath: string) => {
     return vaultService.resolveWikilink(wikilink, rootPath)
+  })
+
+  ipcMain.handle('vault:write', (_event, filePath: string, content: string) => {
+    vaultService.writeFile(filePath, content)
+    return { ok: true }
   })
 
   ipcMain.handle('vault:contentRoot', () => {

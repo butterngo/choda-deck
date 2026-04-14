@@ -172,7 +172,7 @@ export class VaultImporter {
 
     const existing = this.taskService.getTask(taskId)
     if (existing) {
-      this.taskService.updateTask(taskId, { title, status, priority, labels: fm.labels || undefined })
+      this.taskService.updateTask(taskId, { title, status, priority, labels: fm.labels || undefined, filePath })
     } else {
       this.taskService.createTask({
         id: taskId, projectId, title, status,
@@ -227,13 +227,13 @@ export class VaultImporter {
     const title = fm.title || id
     const status = fm.status === 'closed' ? 'closed' : 'open'
     const position = typeof fm.position === 'number' ? fm.position : 0
-    const targetDate = fm.targetDate || fm['target-date'] || null
+    const startDate = fm.startDate || fm['start-date'] || null
 
     const existing = this.taskService.getPhase(id)
     if (existing) {
-      this.taskService.updatePhase(id, { title, status, position, targetDate })
+      this.taskService.updatePhase(id, { title, status, position, startDate })
     } else {
-      this.taskService.createPhase({ id, projectId, title, status, position, targetDate: targetDate || undefined })
+      this.taskService.createPhase({ id, projectId, title, status, position, startDate: startDate || undefined })
     }
 
     // Tags

@@ -93,8 +93,8 @@ const api = {
       ipcRenderer.invoke('phase:create', input),
     update: (id: string, input: Record<string, unknown>): Promise<unknown> =>
       ipcRenderer.invoke('phase:update', id, input),
-    delete: (id: string): Promise<void> =>
-      ipcRenderer.invoke('phase:delete', id),
+    delete: (id: string, cascade?: boolean): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('phase:delete', id, cascade),
     progress: (phaseId: string): Promise<{ total: number; done: number; inProgress: number; status: string; percent: number }> =>
       ipcRenderer.invoke('phase:progress', phaseId)
   },
@@ -123,6 +123,8 @@ const api = {
       ipcRenderer.invoke('vault:search', query, rootPath),
     resolve: (wikilink: string, rootPath: string): Promise<string | null> =>
       ipcRenderer.invoke('vault:resolve', wikilink, rootPath),
+    write: (filePath: string, content: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('vault:write', filePath, content),
     contentRoot: (): Promise<string> =>
       ipcRenderer.invoke('vault:contentRoot')
   },

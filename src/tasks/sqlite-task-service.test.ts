@@ -165,9 +165,9 @@ describe('SqliteTaskService', () => {
   })
 
   it('updatePhase', () => {
-    const updated = svc.updatePhase('PH-A', { status: 'closed', targetDate: '2026-06-01' })
+    const updated = svc.updatePhase('PH-A', { status: 'closed', startDate: '2026-04-01' })
     expect(updated.status).toBe('closed')
-    expect(updated.targetDate).toBe('2026-06-01')
+    expect(updated.startDate).toBe('2026-04-01')
   })
 
   it('findPhases ordered by position', () => {

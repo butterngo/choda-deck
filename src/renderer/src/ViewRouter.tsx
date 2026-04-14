@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { ProjectConfig, WorkspaceConfig } from '../../preload/index'
 import TerminalView from './TerminalView'
 
@@ -17,6 +17,16 @@ interface ViewRouterProps {
 
 function ViewRouter({ project, workspace, visible, viewTypes }: ViewRouterProps): React.JSX.Element {
   const [activeTab, setActiveTab] = useState(viewTypes[0]?.id || 'terminal')
+
+  // Listen for tab switch requests (e.g. from RoadmapView → Kanban)
+  useEffect(() => {
+    function handleSwitch(e: Event): void {
+      const detail = (e as CustomEvent).detail
+      if (detail?.tab) setActiveTab(detail.tab)
+    }
+    window.addEventListener('deck:switch-tab', handleSwitch)
+    return () => window.removeEventListener('deck:switch-tab', handleSwitch)
+  }, [])
 
   return (
     <div className={`deck-view-router${visible ? '' : ' deck-terminal--hidden'}`}>

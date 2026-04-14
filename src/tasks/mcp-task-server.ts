@@ -176,7 +176,7 @@ async function main(): Promise<void> {
       projectId: z.string(),
       title: z.string(),
       position: z.number().optional(),
-      targetDate: z.string().optional()
+      startDate: z.string().optional()
     },
     async (input) => {
       const phase = taskService.createPhase(input)

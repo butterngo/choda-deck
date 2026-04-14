@@ -52,7 +52,7 @@ export interface ChodaApi {
     get: (id: string) => Promise<unknown>
     create: (input: Record<string, unknown>) => Promise<unknown>
     update: (id: string, input: Record<string, unknown>) => Promise<unknown>
-    delete: (id: string) => Promise<void>
+    delete: (id: string, cascade?: boolean) => Promise<{ ok: boolean }>
     progress: (phaseId: string) => Promise<{ total: number; done: number; inProgress: number; status: string; percent: number }>
   }
   feature: {
@@ -69,6 +69,7 @@ export interface ChodaApi {
     read: (filePath: string) => Promise<{ content: string; size: number; mtime: string }>
     search: (query: string, rootPath: string) => Promise<Array<{ path: string; name: string; matches: Array<{ line: number; text: string }> }>>
     resolve: (wikilink: string, rootPath: string) => Promise<string | null>
+    write: (filePath: string, content: string) => Promise<{ ok: boolean }>
     contentRoot: () => Promise<string>
   }
   spike: {
