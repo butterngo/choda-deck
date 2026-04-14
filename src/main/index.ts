@@ -5,6 +5,7 @@ import * as pty from 'node-pty'
 import icon from '../../resources/icon.png?asset'
 import { SqliteTaskService } from '../tasks/sqlite-task-service'
 import { VaultImporter } from '../tasks/vault-importer'
+import { VaultService } from '../vault/vault-service'
 
 const is = {
   get dev(): boolean {
@@ -383,6 +384,29 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('task:pinned', () => taskService.getPinnedTasks())
   ipcMain.handle('task:due', (_event, date: string) => taskService.getDueTasks(date))
+
+  // ── Vault file browser IPC (Phase B) ───────────────────────────────────────
+  const vaultService = new VaultService()
+
+  ipcMain.handle('vault:tree', (_event, rootPath: string) => {
+    return vaultService.readTree(rootPath)
+  })
+
+  ipcMain.handle('vault:read', (_event, filePath: string) => {
+    return vaultService.readFile(filePath)
+  })
+
+  ipcMain.handle('vault:search', (_event, query: string, rootPath: string) => {
+    return vaultService.search(query, rootPath)
+  })
+
+  ipcMain.handle('vault:resolve', (_event, wikilink: string, rootPath: string) => {
+    return vaultService.resolveWikilink(wikilink, rootPath)
+  })
+
+  ipcMain.handle('vault:contentRoot', () => {
+    return config.contentRoot
+  })
 
   // Legacy spike handlers (backwards compat)
   ipcMain.handle('spike:project', () => projects[0] || null)

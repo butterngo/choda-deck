@@ -6,6 +6,7 @@ import ViewRouter, { terminalViewType } from './ViewRouter'
 import KanbanBoard from './KanbanBoard'
 import RoadmapView from './RoadmapView'
 import DailyFocusView from './DailyFocusView'
+import FilesView from './FilesView'
 import type { ProjectConfig, WorkspaceConfig } from '../../preload/index'
 import type { ViewType } from './ViewRouter'
 
@@ -37,6 +38,13 @@ const VIEW_TYPES: ViewType[] = [
     label: 'Focus',
     render: (_project, _workspace, visible) => (
       <DailyFocusView visible={visible} />
+    )
+  },
+  {
+    id: 'files',
+    label: 'Files',
+    render: (_project, _workspace, visible) => (
+      <FilesView visible={visible} />
     )
   }
 ]

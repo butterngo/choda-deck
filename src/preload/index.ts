@@ -128,6 +128,18 @@ const api = {
     progress: (epicId: string): Promise<{ total: number; done: number; inProgress: number; status: string; percent: number }> =>
       ipcRenderer.invoke('epic:progress', epicId)
   },
+  vault: {
+    tree: (rootPath: string): Promise<Array<{ name: string; path: string; type: 'file' | 'directory'; children?: unknown[] }>> =>
+      ipcRenderer.invoke('vault:tree', rootPath),
+    read: (filePath: string): Promise<{ content: string; size: number; mtime: string }> =>
+      ipcRenderer.invoke('vault:read', filePath),
+    search: (query: string, rootPath: string): Promise<Array<{ path: string; name: string; matches: Array<{ line: number; text: string }> }>> =>
+      ipcRenderer.invoke('vault:search', query, rootPath),
+    resolve: (wikilink: string, rootPath: string): Promise<string | null> =>
+      ipcRenderer.invoke('vault:resolve', wikilink, rootPath),
+    contentRoot: (): Promise<string> =>
+      ipcRenderer.invoke('vault:contentRoot')
+  },
   spike: {
     getProject: (): Promise<SpikeProject> => ipcRenderer.invoke('spike:project'),
     getProjects: (): Promise<SpikeProject[]> => ipcRenderer.invoke('spike:projects')

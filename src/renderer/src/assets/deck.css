@@ -1038,6 +1038,365 @@ body,
   white-space: pre;
 }
 
+/* Search bar */
+.deck-search {
+  position: relative;
+  flex: 1;
+}
+
+.deck-search-input {
+  width: 100%;
+  background: #2a2d2e;
+  border: 1px solid #444;
+  color: #d4d4d4;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  outline: none;
+  height: 26px;
+}
+
+.deck-search-input:focus {
+  border-color: #61dafb;
+}
+
+.deck-search-input::placeholder {
+  color: #666;
+}
+
+.deck-search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #252526;
+  border: 1px solid #444;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 50;
+}
+
+.deck-search-result {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  color: #d4d4d4;
+  font-size: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+
+.deck-search-result:hover,
+.deck-search-result--active {
+  background: #2a2d2e;
+}
+
+.deck-search-result-name {
+  color: #61dafb;
+  font-weight: 500;
+}
+
+.deck-search-result-match {
+  color: #888;
+  font-size: 11px;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deck-search-empty {
+  padding: 8px;
+  color: #666;
+  font-size: 12px;
+  font-style: italic;
+  text-align: center;
+}
+
+/* Files view */
+.deck-files {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.deck-files-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: #252526;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+
+.deck-files-btn {
+  background: transparent;
+  border: 1px solid #444;
+  color: #888;
+  width: 26px;
+  height: 26px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.deck-files-btn:hover:not(:disabled) {
+  background: #333;
+  color: #d4d4d4;
+}
+
+.deck-files-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.deck-files-error {
+  font-size: 12px;
+  color: #f88;
+  margin-left: 8px;
+}
+
+.deck-files-split {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.deck-files-tree {
+  width: 250px;
+  flex-shrink: 0;
+  border-right: 1px solid #333;
+  overflow-y: auto;
+  background: #1e1e1e;
+}
+
+.deck-files-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Markdown viewer */
+.deck-md {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.deck-md-header {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  background: #252526;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+
+.deck-md-filename {
+  font-size: 12px;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  color: #888;
+}
+
+.deck-md-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #d4d4d4;
+}
+
+.deck-md-body h1 { font-size: 22px; font-weight: 600; color: #e4e4e4; margin: 0 0 12px; padding-bottom: 6px; border-bottom: 1px solid #333; }
+.deck-md-body h2 { font-size: 18px; font-weight: 600; color: #e4e4e4; margin: 20px 0 8px; }
+.deck-md-body h3 { font-size: 15px; font-weight: 600; color: #d4d4d4; margin: 16px 0 6px; }
+.deck-md-body h4 { font-size: 14px; font-weight: 600; color: #ccc; margin: 12px 0 4px; }
+
+.deck-md-body p { margin: 0 0 10px; }
+
+.deck-md-body a {
+  color: #61dafb;
+  text-decoration: none;
+}
+
+.deck-md-body a:hover {
+  text-decoration: underline;
+}
+
+.deck-md-wikilink {
+  color: #c8a0ff;
+  text-decoration: none;
+  border-bottom: 1px dotted #c8a0ff;
+  cursor: pointer;
+}
+
+.deck-md-wikilink:hover {
+  color: #dfc0ff;
+  border-bottom-style: solid;
+}
+
+.deck-md-body code {
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 13px;
+  background: #2a2d2e;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.deck-md-body pre {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 12px;
+  overflow-x: auto;
+  margin: 0 0 10px;
+}
+
+.deck-md-body pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.deck-md-body ul,
+.deck-md-body ol {
+  padding-left: 24px;
+  margin: 0 0 10px;
+}
+
+.deck-md-body li { margin: 2px 0; }
+
+.deck-md-body blockquote {
+  border-left: 3px solid #444;
+  padding-left: 12px;
+  color: #aaa;
+  margin: 0 0 10px;
+}
+
+.deck-md-body table {
+  border-collapse: collapse;
+  margin: 0 0 10px;
+  width: 100%;
+}
+
+.deck-md-body th,
+.deck-md-body td {
+  border: 1px solid #333;
+  padding: 6px 10px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.deck-md-body th {
+  background: #2a2d2e;
+  font-weight: 600;
+  color: #ccc;
+}
+
+.deck-md-body hr {
+  border: none;
+  border-top: 1px solid #333;
+  margin: 16px 0;
+}
+
+.deck-md-body img {
+  max-width: 100%;
+  border-radius: 4px;
+}
+
+.deck-md-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: #555;
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* File tree */
+.deck-ftree {
+  overflow-y: auto;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.deck-ftree-empty {
+  color: #666;
+  font-size: 12px;
+  padding: 12px;
+  font-style: italic;
+}
+
+.deck-ftree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 3px 8px;
+  border: none;
+  background: transparent;
+  color: #d4d4d4;
+  font-size: 13px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  cursor: pointer;
+  text-align: left;
+}
+
+.deck-ftree-row:hover {
+  background: #2a2d2e;
+}
+
+.deck-ftree-row--selected {
+  background: #37373d;
+}
+
+.deck-ftree-row--selected:hover {
+  background: #37373d;
+}
+
+.deck-ftree-arrow {
+  width: 12px;
+  font-size: 10px;
+  color: #888;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.deck-ftree-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+}
+
+.deck-ftree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deck-ftree-row--dir .deck-ftree-name {
+  font-weight: 500;
+  color: #ccc;
+}
+
 .deck-terminal .xterm {
   height: 100%;
 }

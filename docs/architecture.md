@@ -109,6 +109,11 @@ Channel naming: `pty:<verb>` for commands, `pty:<verb>:<sessionId>` for per-sess
 | `pty:kill` | send | R→M | `(id)` |
 | `pty:data:${id}` | on | M→R | `data: string` (stream) |
 | `pty:exit:${id}` | on | M→R | `exitCode: number` |
+| `vault:tree` | invoke | R→M | `(rootPath)` → `FileNode[]` |
+| `vault:read` | invoke | R→M | `(filePath)` → `{ content, size, mtime }` |
+| `vault:search` | invoke | R→M | `(query, rootPath)` → `SearchResult[]` |
+| `vault:resolve` | invoke | R→M | `(wikilink, rootPath)` → `string \| null` |
+| `vault:contentRoot` | invoke | R→M | `()` → `string` |
 | `spike:project` | invoke | R→M | `()` → `SpikeProject` (legacy compat) |
 | `spike:projects` | invoke | R→M | `()` → `SpikeProject[]` (legacy compat) |
 | `project:list` | invoke | R→M | `()` → `ProjectEntry[]` |

@@ -72,6 +72,13 @@ export interface ChodaApi {
     delete: (id: string) => Promise<void>
     progress: (epicId: string) => Promise<{ total: number; done: number; inProgress: number; status: string; percent: number }>
   }
+  vault: {
+    tree: (rootPath: string) => Promise<Array<{ name: string; path: string; type: 'file' | 'directory'; children?: unknown[] }>>
+    read: (filePath: string) => Promise<{ content: string; size: number; mtime: string }>
+    search: (query: string, rootPath: string) => Promise<Array<{ path: string; name: string; matches: Array<{ line: number; text: string }> }>>
+    resolve: (wikilink: string, rootPath: string) => Promise<string | null>
+    contentRoot: () => Promise<string>
+  }
   spike: {
     getProject: () => Promise<SpikeProject>
     getProjects: () => Promise<SpikeProject[]>
