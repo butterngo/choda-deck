@@ -5,12 +5,6 @@ interface TaskItem {
   title: string
   status: string
   priority: string | null
-  epicId: string | null
-}
-
-interface EpicItem {
-  id: string
-  title: string
   featureId: string | null
 }
 
@@ -63,26 +57,21 @@ function StatusBadge({ status }: { status: string }): React.JSX.Element {
 function RoadmapView({ projectId, visible }: RoadmapViewProps): React.JSX.Element {
   const [phases, setPhases] = useState<PhaseItem[]>([])
   const [features, setFeatures] = useState<FeatureItem[]>([])
-  const [epics, setEpics] = useState<EpicItem[]>([])
   const [tasks, setTasks] = useState<TaskItem[]>([])
   const [phaseProgress, setPhaseProgress] = useState<Record<string, Progress>>({})
   const [featureProgress, setFeatureProgress] = useState<Record<string, Progress>>({})
-  const [epicProgress, setEpicProgress] = useState<Record<string, Progress>>({})
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   const loadData = useCallback(async () => {
-    const [phaseList, featureList, epicList, taskList] = await Promise.all([
+    const [phaseList, featureList, taskList] = await Promise.all([
       window.api.phase.list(projectId),
       window.api.feature.list(projectId),
-      window.api.epic.list(projectId),
       window.api.task.list({ projectId })
     ])
     setPhases(phaseList as PhaseItem[])
     setFeatures(featureList as FeatureItem[])
-    setEpics(epicList as EpicItem[])
     setTasks(taskList as TaskItem[])
 
-    // Load progress for all phases, features, epics
     const pp: Record<string, Progress> = {}
     for (const ph of phaseList as PhaseItem[]) {
       pp[ph.id] = await window.api.phase.progress(ph.id)
@@ -94,12 +83,6 @@ function RoadmapView({ projectId, visible }: RoadmapViewProps): React.JSX.Elemen
       fp[f.id] = await window.api.feature.progress(f.id)
     }
     setFeatureProgress(fp)
-
-    const ep: Record<string, Progress> = {}
-    for (const e of epicList as EpicItem[]) {
-      ep[e.id] = await window.api.epic.progress(e.id)
-    }
-    setEpicProgress(ep)
   }, [projectId])
 
   useEffect(() => {
@@ -118,18 +101,13 @@ function RoadmapView({ projectId, visible }: RoadmapViewProps): React.JSX.Elemen
     })
   }
 
-  // Group: features by phase, epics by feature, tasks by epic
+  const tasksByFeature = (featureId: string): TaskItem[] =>
+    tasks.filter(t => t.featureId === featureId)
   const featuresByPhase = (phaseId: string): FeatureItem[] =>
     features.filter(f => f.phaseId === phaseId)
-  const epicsByFeature = (featureId: string): EpicItem[] =>
-    epics.filter(e => e.featureId === featureId)
-  const tasksByEpic = (epicId: string): TaskItem[] =>
-    tasks.filter(t => t.epicId === epicId)
 
-  // Unassigned: features without phase, epics without feature, tasks without epic
   const unassignedFeatures = features.filter(f => !f.phaseId)
-  const unassignedEpics = epics.filter(e => !e.featureId)
-  const unassignedTasks = tasks.filter(t => !t.epicId)
+  const unassignedTasks = tasks.filter(t => !t.featureId)
 
   function renderTask(task: TaskItem): React.JSX.Element {
     return (
@@ -143,33 +121,10 @@ function RoadmapView({ projectId, visible }: RoadmapViewProps): React.JSX.Elemen
     )
   }
 
-  function renderEpic(epic: EpicItem): React.JSX.Element {
-    const prog = epicProgress[epic.id] || { total: 0, done: 0, inProgress: 0, status: 'planned', percent: 0 }
-    const isExp = expanded.has(epic.id)
-    const eTasks = tasksByEpic(epic.id)
-
-    return (
-      <div key={epic.id} className="deck-roadmap-epic deck-roadmap-level--3">
-        <div className="deck-roadmap-epic-header" onClick={() => toggle(epic.id)}>
-          <span className="deck-roadmap-expand">{isExp ? '▾' : '▸'}</span>
-          <span className="deck-roadmap-epic-title">{epic.title}</span>
-          <ProgressBar progress={prog} />
-          <StatusBadge status={prog.status} />
-        </div>
-        {isExp && (
-          <div className="deck-roadmap-tasks">
-            {eTasks.map(renderTask)}
-            {eTasks.length === 0 && <div className="deck-roadmap-empty">No tasks</div>}
-          </div>
-        )}
-      </div>
-    )
-  }
-
   function renderFeature(feat: FeatureItem): React.JSX.Element {
     const prog = featureProgress[feat.id] || { total: 0, done: 0, inProgress: 0, status: 'planned', percent: 0 }
     const isExp = expanded.has(feat.id)
-    const fEpics = epicsByFeature(feat.id)
+    const fTasks = tasksByFeature(feat.id)
 
     return (
       <div key={feat.id} className="deck-roadmap-epic deck-roadmap-level--2">
@@ -181,8 +136,8 @@ function RoadmapView({ projectId, visible }: RoadmapViewProps): React.JSX.Elemen
         </div>
         {isExp && (
           <div className="deck-roadmap-tasks">
-            {fEpics.map(renderEpic)}
-            {fEpics.length === 0 && <div className="deck-roadmap-empty">No epics</div>}
+            {fTasks.map(renderTask)}
+            {fTasks.length === 0 && <div className="deck-roadmap-empty">No tasks</div>}
           </div>
         )}
       </div>
@@ -215,7 +170,7 @@ function RoadmapView({ projectId, visible }: RoadmapViewProps): React.JSX.Elemen
     )
   }
 
-  const hasData = phases.length > 0 || features.length > 0 || epics.length > 0 || tasks.length > 0
+  const hasData = phases.length > 0 || features.length > 0 || tasks.length > 0
 
   return (
     <div className="deck-roadmap">
@@ -240,21 +195,6 @@ function RoadmapView({ projectId, visible }: RoadmapViewProps): React.JSX.Elemen
           {expanded.has('__unassigned-features__') && (
             <div className="deck-roadmap-tasks">
               {unassignedFeatures.map(renderFeature)}
-            </div>
-          )}
-        </div>
-      )}
-
-      {unassignedEpics.length > 0 && (
-        <div className="deck-roadmap-epic deck-roadmap-level--3">
-          <div className="deck-roadmap-epic-header" onClick={() => toggle('__unassigned-epics__')}>
-            <span className="deck-roadmap-expand">{expanded.has('__unassigned-epics__') ? '▾' : '▸'}</span>
-            <span className="deck-roadmap-epic-title deck-roadmap-epic-title--muted">Unassigned Epics</span>
-            <span className="deck-roadmap-pct">{unassignedEpics.length}</span>
-          </div>
-          {expanded.has('__unassigned-epics__') && (
-            <div className="deck-roadmap-tasks">
-              {unassignedEpics.map(renderEpic)}
             </div>
           )}
         </div>

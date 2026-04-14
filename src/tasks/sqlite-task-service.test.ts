@@ -8,10 +8,9 @@ const TEST_DB = path.join(__dirname, '__test-tasks__.db')
 describe('SqliteTaskService', () => {
   let svc: SqliteTaskService
 
-  beforeAll(async () => {
+  beforeAll(() => {
     if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
     svc = new SqliteTaskService(TEST_DB)
-    await svc.initializeAsync()
     svc.ensureProject('test-proj', 'Test Project', '/tmp/test')
   })
 
@@ -97,36 +96,25 @@ describe('SqliteTaskService', () => {
     expect(subs.map(s => s.id).sort()).toEqual(['TASK-SUB1', 'TASK-SUB2'])
   })
 
-  // ── Epics ──────────────────────────────────────────────────────────────
+  // ── Task → Feature link ─────────────────────────────────────────────
 
-  it('createEpic + getEpic', () => {
-    const epic = svc.createEpic({ id: 'EPIC-001', projectId: 'test-proj', title: 'MVP' })
-    expect(epic.id).toBe('EPIC-001')
-    expect(epic.title).toBe('MVP')
+  it('task links to feature via featureId', () => {
+    svc.createFeature({ id: 'FEAT-LINK', projectId: 'test-proj', title: 'Link test' })
+    svc.updateTask('TASK-001', { featureId: 'FEAT-LINK' })
+    svc.updateTask('TASK-002', { featureId: 'FEAT-LINK' })
+    svc.updateTask('TASK-003', { featureId: 'FEAT-LINK' })
 
-    const fetched = svc.getEpic('EPIC-001')
-    expect(fetched).not.toBeNull()
-  })
-
-  it('findEpics by project', () => {
-    svc.createEpic({ id: 'EPIC-002', projectId: 'test-proj', title: 'Phase 2' })
-    const epics = svc.findEpics('test-proj')
-    expect(epics.length).toBe(2)
-  })
-
-  it('getEpicProgress', () => {
-    svc.updateTask('TASK-001', { epicId: 'EPIC-001' })
-    svc.updateTask('TASK-002', { epicId: 'EPIC-001' })
-    svc.updateTask('TASK-003', { epicId: 'EPIC-001' })
-
-    const progress = svc.getEpicProgress('EPIC-001')
+    const progress = svc.getFeatureProgress('FEAT-LINK')
     expect(progress.total).toBe(3)
     expect(progress.done).toBe(1)
+
+    const task = svc.getTask('TASK-001')!
+    expect(task.featureId).toBe('FEAT-LINK')
   })
 
-  it('deleteEpic unlinks tasks', () => {
-    svc.deleteEpic('EPIC-002')
-    expect(svc.getEpic('EPIC-002')).toBeNull()
+  it('findTasks filters by featureId', () => {
+    const tasks = svc.findTasks({ featureId: 'FEAT-LINK' })
+    expect(tasks.length).toBe(3)
   })
 
   // ── Dependencies ───────────────────────────────────────────────────────
@@ -211,39 +199,35 @@ describe('SqliteTaskService', () => {
     expect(feats.length).toBe(2)
   })
 
-  it('deleteFeature unlinks epics', () => {
+  it('deleteFeature unlinks tasks', () => {
     svc.createFeature({ id: 'FEAT-DEL', projectId: 'test-proj', title: 'To delete' })
-    svc.updateEpic('EPIC-001', { featureId: 'FEAT-DEL' })
+    svc.createTask({ id: 'TASK-FDEL', projectId: 'test-proj', title: 'Linked', featureId: 'FEAT-DEL' })
     svc.deleteFeature('FEAT-DEL')
-    const epic = svc.getEpic('EPIC-001')!
-    expect(epic.featureId).toBeNull()
+    const task = svc.getTask('TASK-FDEL')!
+    expect(task.featureId).toBeNull()
   })
 
   // ── Derived progress ──────────────────────────────────────────────────
 
-  it('epic derived progress has status', () => {
-    const progress = svc.getEpicProgress('EPIC-001')
-    expect(progress.status).toBe('active')
-    expect(progress.percent).toBeGreaterThan(0)
-    expect(progress.inProgress).toBeGreaterThanOrEqual(0)
-  })
-
-  it('feature derived progress', () => {
-    svc.updateEpic('EPIC-001', { featureId: 'FEAT-001' })
+  it('feature derived progress via tasks', () => {
+    // FEAT-001 is in PH-A, link tasks to it
+    svc.updateTask('TASK-001', { featureId: 'FEAT-001' })
+    svc.updateTask('TASK-002', { featureId: 'FEAT-001' })
+    svc.updateTask('TASK-003', { featureId: 'FEAT-001' })
     const progress = svc.getFeatureProgress('FEAT-001')
     expect(progress.total).toBe(3)
     expect(progress.status).toBe('active')
   })
 
-  it('phase derived progress', () => {
+  it('phase derived progress via features → tasks', () => {
     const progress = svc.getPhaseProgress('PH-A')
     expect(progress.total).toBe(3)
     expect(progress.status).toBe('active')
   })
 
-  it('empty epic is planned', () => {
-    svc.createEpic({ id: 'EPIC-EMPTY', projectId: 'test-proj', title: 'Empty' })
-    const progress = svc.getEpicProgress('EPIC-EMPTY')
+  it('empty feature is planned', () => {
+    svc.createFeature({ id: 'FEAT-EMPTY', projectId: 'test-proj', title: 'Empty' })
+    const progress = svc.getFeatureProgress('FEAT-EMPTY')
     expect(progress.status).toBe('planned')
     expect(progress.percent).toBe(0)
   })

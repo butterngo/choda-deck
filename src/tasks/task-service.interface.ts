@@ -1,6 +1,5 @@
 import type {
   Task,
-  Epic,
   Phase,
   Feature,
   Document,
@@ -9,8 +8,6 @@ import type {
   CreateTaskInput,
   UpdateTaskInput,
   TaskFilter,
-  CreateEpicInput,
-  UpdateEpicInput,
   CreatePhaseInput,
   UpdatePhaseInput,
   CreateFeatureInput,
@@ -32,14 +29,6 @@ export interface TaskService {
 
   // Subtasks
   getSubtasks(parentId: string): Task[]
-
-  // Epic CRUD
-  createEpic(input: CreateEpicInput): Epic
-  updateEpic(id: string, input: UpdateEpicInput): Epic
-  deleteEpic(id: string): void
-  getEpic(id: string): Epic | null
-  findEpics(projectId: string): Epic[]
-  getEpicProgress(epicId: string): DerivedProgress
 
   // Phase CRUD
   createPhase(input: CreatePhaseInput): Phase

@@ -64,14 +64,6 @@ export interface ChodaApi {
     delete: (id: string) => Promise<void>
     progress: (featureId: string) => Promise<{ total: number; done: number; inProgress: number; status: string; percent: number }>
   }
-  epic: {
-    list: (projectId: string) => Promise<unknown[]>
-    get: (id: string) => Promise<unknown>
-    create: (input: Record<string, unknown>) => Promise<unknown>
-    update: (id: string, input: Record<string, unknown>) => Promise<unknown>
-    delete: (id: string) => Promise<void>
-    progress: (epicId: string) => Promise<{ total: number; done: number; inProgress: number; status: string; percent: number }>
-  }
   vault: {
     tree: (rootPath: string) => Promise<Array<{ name: string; path: string; type: 'file' | 'directory'; children?: unknown[] }>>
     read: (filePath: string) => Promise<{ content: string; size: number; mtime: string }>

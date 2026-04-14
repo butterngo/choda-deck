@@ -121,6 +121,54 @@ describe('MarkdownViewer', () => {
     expect(screen.getByText('Just a normal paragraph with no links.')).toBeDefined()
   })
 
+  it('renders wikilinks consistently (no global regex bug)', () => {
+    const onWikilinkClick = vi.fn()
+    render(
+      <MarkdownViewer
+        content={'See [[note-a]] first.\n\nThen [[note-b]] next.\n\nFinally [[note-c]].'}
+        filePath="/test.md"
+        onWikilinkClick={onWikilinkClick}
+      />
+    )
+
+    // All three wikilinks must render — global regex .test() bug would skip every other one
+    expect(screen.getByText('note-a')).toBeDefined()
+    expect(screen.getByText('note-b')).toBeDefined()
+    expect(screen.getByText('note-c')).toBeDefined()
+  })
+
+  it('renders relative markdown links as clickable', () => {
+    const onRelative = vi.fn()
+    render(
+      <MarkdownViewer
+        content="See [Setup](references/setup.md) for details"
+        filePath="/vault/skills/app-insights/SKILL.md"
+        onWikilinkClick={() => {}}
+        onRelativeLinkClick={onRelative}
+      />
+    )
+
+    const link = screen.getByText('Setup')
+    expect(link.tagName).toBe('A')
+    expect(link.className).toContain('deck-md-wikilink')
+
+    fireEvent.click(link)
+    expect(onRelative).toHaveBeenCalledWith('/vault/skills/app-insights/references/setup.md')
+  })
+
+  it('renders external links with target=_blank', () => {
+    render(
+      <MarkdownViewer
+        content="Visit [Google](https://google.com)"
+        filePath="/test.md"
+        onWikilinkClick={() => {}}
+      />
+    )
+
+    const link = screen.getByText('Google')
+    expect(link.getAttribute('target')).toBe('_blank')
+  })
+
   it('handles Windows paths in filePath', () => {
     render(
       <MarkdownViewer

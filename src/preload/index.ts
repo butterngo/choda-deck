@@ -114,20 +114,6 @@ const api = {
     progress: (featureId: string): Promise<{ total: number; done: number; inProgress: number; status: string; percent: number }> =>
       ipcRenderer.invoke('feature:progress', featureId)
   },
-  epic: {
-    list: (projectId: string): Promise<unknown[]> =>
-      ipcRenderer.invoke('epic:list', projectId),
-    get: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('epic:get', id),
-    create: (input: Record<string, unknown>): Promise<unknown> =>
-      ipcRenderer.invoke('epic:create', input),
-    update: (id: string, input: Record<string, unknown>): Promise<unknown> =>
-      ipcRenderer.invoke('epic:update', id, input),
-    delete: (id: string): Promise<void> =>
-      ipcRenderer.invoke('epic:delete', id),
-    progress: (epicId: string): Promise<{ total: number; done: number; inProgress: number; status: string; percent: number }> =>
-      ipcRenderer.invoke('epic:progress', epicId)
-  },
   vault: {
     tree: (rootPath: string): Promise<Array<{ name: string; path: string; type: 'file' | 'directory'; children?: unknown[] }>> =>
       ipcRenderer.invoke('vault:tree', rootPath),

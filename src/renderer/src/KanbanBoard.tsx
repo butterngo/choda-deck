@@ -9,14 +9,13 @@ interface TaskItem {
   status: string
   priority: string | null
   labels: string[]
-  epicId: string | null
+  featureId: string | null
   parentTaskId: string | null
 }
 
-interface EpicItem {
+interface FeatureItem {
   id: string
   title: string
-  status: string
 }
 
 interface KanbanBoardProps {
@@ -26,10 +25,10 @@ interface KanbanBoardProps {
 
 function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Element {
   const [tasks, setTasks] = useState<TaskItem[]>([])
-  const [epics, setEpics] = useState<EpicItem[]>([])
-  const [epicProgress, setEpicProgress] = useState<Record<string, { total: number; done: number }>>({})
+  const [features, setFeatures] = useState<FeatureItem[]>([])
+  const [featureProgress, setFeatureProgress] = useState<Record<string, { total: number; done: number }>>({})
   const [filterText, setFilterText] = useState('')
-  const [filterEpic, setFilterEpic] = useState<string>('all')
+  const [filterFeature, setFilterFeature] = useState<string>('all')
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
   const [subtasks, setSubtasks] = useState<Record<string, TaskItem[]>>({})
   const [showImport, setShowImport] = useState(false)
@@ -37,21 +36,20 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
-    const [taskList, epicList] = await Promise.all([
+    const [taskList, featureList] = await Promise.all([
       window.api.task.list({ projectId: projectId }),
-      window.api.epic.list(projectId)
+      window.api.feature.list(projectId)
     ])
     setTasks(taskList as TaskItem[])
-    setEpics(epicList as EpicItem[])
+    setFeatures(featureList as FeatureItem[])
 
     const progress: Record<string, { total: number; done: number }> = {}
-    for (const epic of epicList as EpicItem[]) {
-      progress[epic.id] = await window.api.epic.progress(epic.id)
+    for (const feat of featureList as FeatureItem[]) {
+      progress[feat.id] = await window.api.feature.progress(feat.id)
     }
-    setEpicProgress(progress)
+    setFeatureProgress(progress)
   }, [projectId])
 
-  // Load on mount + reload when DB changes externally
   useEffect(() => {
     if (!visible) return
 
@@ -82,13 +80,13 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
     loadData()
   }
 
-  // Filter: text + epic, root tasks only
+  // Filter: text + feature, root tasks only
   const rootTasks = tasks.filter((t) => !t.parentTaskId)
   const filtered = rootTasks.filter((t) => {
     if (filterText && !t.title.toLowerCase().includes(filterText.toLowerCase())) return false
-    if (filterEpic !== 'all') {
-      if (filterEpic === 'none' && t.epicId) return false
-      if (filterEpic !== 'none' && t.epicId !== filterEpic) return false
+    if (filterFeature !== 'all') {
+      if (filterFeature === 'none' && t.featureId) return false
+      if (filterFeature !== 'none' && t.featureId !== filterFeature) return false
     }
     return true
   })
@@ -102,16 +100,16 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
           value={filterText}
           onChange={(e) => setFilterText(e.target.value)}
         />
-        {epics.length > 0 && (
+        {features.length > 0 && (
           <select
             className="deck-sidebar-input deck-kanban-epic-filter"
-            value={filterEpic}
-            onChange={(e) => setFilterEpic(e.target.value)}
+            value={filterFeature}
+            onChange={(e) => setFilterFeature(e.target.value)}
           >
-            <option value="all">All epics</option>
-            <option value="none">No epic</option>
-            {epics.map((e) => (
-              <option key={e.id} value={e.id}>{e.title}</option>
+            <option value="all">All features</option>
+            <option value="none">No feature</option>
+            {features.map((f) => (
+              <option key={f.id} value={f.id}>{f.title}</option>
             ))}
           </select>
         )}
@@ -139,15 +137,15 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
         </div>
       )}
 
-      {/* Epic progress bar */}
-      {epics.length > 0 && (
+      {/* Feature progress bar */}
+      {features.length > 0 && (
         <div className="deck-epic-bar">
-          {epics.map((epic) => {
-            const prog = epicProgress[epic.id] || { total: 0, done: 0 }
+          {features.map((feat) => {
+            const prog = featureProgress[feat.id] || { total: 0, done: 0 }
             const pct = prog.total > 0 ? Math.round((prog.done / prog.total) * 100) : 0
             return (
-              <div key={epic.id} className="deck-epic-chip">
-                <span className="deck-epic-chip-title">{epic.title}</span>
+              <div key={feat.id} className="deck-epic-chip">
+                <span className="deck-epic-chip-title">{feat.title}</span>
                 <div className="deck-epic-progress-bar">
                   <div className="deck-epic-progress-fill" style={{ width: `${pct}%` }} />
                 </div>
@@ -170,7 +168,7 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
               </div>
               <div className="deck-kanban-column-body">
                 {columnTasks.map((task) => {
-                  const epic = task.epicId ? epics.find((e) => e.id === task.epicId) : null
+                  const feat = task.featureId ? features.find((f) => f.id === task.featureId) : null
                   const isExpanded = expandedCards.has(task.id)
                   const subs = subtasks[task.id] || []
                   const hasSubtasks = tasks.some((t) => t.parentTaskId === task.id)
@@ -184,9 +182,9 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
                             {task.priority}
                           </span>
                         )}
-                        {epic && (
+                        {feat && (
                           <span className="deck-kanban-badge deck-kanban-badge--epic">
-                            {epic.title}
+                            {feat.title}
                           </span>
                         )}
                       </div>

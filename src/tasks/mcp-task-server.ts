@@ -10,7 +10,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { SqliteTaskService } from './sqlite-task-service'
-import type { Epic, Feature, Phase } from './task-types'
+import type { Feature, Phase } from './task-types'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -19,10 +19,9 @@ const CONTENT_ROOT = process.env.CHODA_CONTENT_ROOT || ''
 
 async function main(): Promise<void> {
   const taskService = new SqliteTaskService(DB_PATH)
-  await taskService.initializeAsync()
 
   const server = new McpServer(
-    { name: 'choda-tasks', version: '0.1.0' },
+    { name: 'choda-tasks', version: '0.2.0' },
     { capabilities: { tools: {} } }
   )
 
@@ -30,7 +29,7 @@ async function main(): Promise<void> {
 
   server.tool(
     'task_context',
-    'Get full context for a task: task details + epic + feature + phase + dependencies + file content',
+    'Get full context for a task: task details + feature + phase + dependencies + file content',
     { id: z.string().describe('Task ID (e.g. TASK-401)') },
     async ({ id }) => {
       const task = taskService.getTask(id)
@@ -41,16 +40,12 @@ async function main(): Promise<void> {
       const tags = taskService.getTags(id)
       const rels = taskService.getRelationships(id)
 
-      let epic: Epic | null = null
       let feature: Feature | null = null
       let phase: Phase | null = null
-      if (task.epicId) {
-        epic = taskService.getEpic(task.epicId)
-        if (epic?.featureId) {
-          feature = taskService.getFeature(epic.featureId)
-          if (feature?.phaseId) {
-            phase = taskService.getPhase(feature.phaseId)
-          }
+      if (task.featureId) {
+        feature = taskService.getFeature(task.featureId)
+        if (feature?.phaseId) {
+          phase = taskService.getPhase(feature.phaseId)
         }
       }
 
@@ -60,7 +55,7 @@ async function main(): Promise<void> {
       }
 
       const context = {
-        task, epic, feature, phase,
+        task, feature, phase,
         dependencies: deps, subtasks, tags, relationships: rels,
         fileContent
       }
@@ -78,7 +73,7 @@ async function main(): Promise<void> {
       projectId: z.string().optional().describe('Filter by project ID'),
       status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE']).optional().describe('Filter by status'),
       priority: z.enum(['critical', 'high', 'medium', 'low']).optional().describe('Filter by priority'),
-      epicId: z.string().optional().describe('Filter by epic ID'),
+      featureId: z.string().optional().describe('Filter by feature ID'),
       query: z.string().optional().describe('Search title'),
       limit: z.number().optional().describe('Max results')
     },
@@ -99,7 +94,7 @@ async function main(): Promise<void> {
       title: z.string().describe('Task title'),
       status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE']).optional(),
       priority: z.enum(['critical', 'high', 'medium', 'low']).optional(),
-      epicId: z.string().optional().describe('Epic to assign to'),
+      featureId: z.string().optional().describe('Feature to assign to'),
       parentTaskId: z.string().optional().describe('Parent task for subtasks'),
       labels: z.array(z.string()).optional(),
       dueDate: z.string().optional()
@@ -119,7 +114,7 @@ async function main(): Promise<void> {
           `title: ${task.title}`,
           `status: ${(task.status || 'todo').toLowerCase()}`,
           task.priority ? `priority: ${task.priority}` : '',
-          task.epicId ? `epic: ${task.epicId}` : '',
+          task.featureId ? `feature: ${task.featureId}` : '',
           task.dueDate ? `due-date: ${task.dueDate}` : '',
           '---',
           '',
@@ -143,7 +138,7 @@ async function main(): Promise<void> {
       title: z.string().optional(),
       status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE']).optional(),
       priority: z.enum(['critical', 'high', 'medium', 'low']).nullable().optional(),
-      epicId: z.string().nullable().optional(),
+      featureId: z.string().nullable().optional(),
       parentTaskId: z.string().nullable().optional(),
       labels: z.array(z.string()).optional(),
       dueDate: z.string().nullable().optional(),
@@ -234,12 +229,11 @@ async function main(): Promise<void> {
 
   server.tool(
     'roadmap',
-    'Get full roadmap tree: phases → features → epics → tasks with progress at each level',
+    'Get full roadmap tree: phases → features → tasks with progress at each level',
     { projectId: z.string().describe('Project ID') },
     async ({ projectId }) => {
       const phases = taskService.findPhases(projectId)
       const features = taskService.findFeatures(projectId)
-      const epics = taskService.findEpics(projectId)
       const tasks = taskService.findTasks({ projectId })
 
       const tree = phases.map(ph => ({
@@ -248,24 +242,18 @@ async function main(): Promise<void> {
         features: features.filter(f => f.phaseId === ph.id).map(f => ({
           ...f,
           progress: taskService.getFeatureProgress(f.id),
-          epics: epics.filter(e => e.featureId === f.id).map(e => ({
-            ...e,
-            progress: taskService.getEpicProgress(e.id),
-            tasks: tasks.filter(t => t.epicId === e.id)
-          }))
+          tasks: tasks.filter(t => t.featureId === f.id)
         }))
       }))
 
       // Unassigned items
       const unassignedFeatures = features.filter(f => !f.phaseId)
-      const unassignedEpics = epics.filter(e => !e.featureId)
-      const unassignedTasks = tasks.filter(t => !t.epicId)
+      const unassignedTasks = tasks.filter(t => !t.featureId)
 
       const result = {
         phases: tree,
         unassigned: {
           features: unassignedFeatures,
-          epics: unassignedEpics,
           tasks: unassignedTasks
         }
       }

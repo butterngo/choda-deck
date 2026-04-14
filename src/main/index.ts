@@ -1,6 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync, mkdirSync, watch } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import * as pty from 'node-pty'
 import icon from '../../resources/icon.png?asset'
 import { SqliteTaskService } from '../tasks/sqlite-task-service'
@@ -297,27 +297,11 @@ app.whenReady().then(async () => {
     ? join(app.getPath('userData'), 'choda-deck.db')
     : join(__dirname, '../../choda-deck.db')
   const taskService = new SqliteTaskService(dbPath)
-  await taskService.initializeAsync()
 
   // Ensure projects exist in SQLite
   for (const p of projects) {
     taskService.ensureProject(p.id, p.name, config.contentRoot)
   }
-
-  // Watch DB file for external changes (e.g. MCP server updates)
-  // Reload in-memory DB and notify renderer
-  let dbWatchDebounce: ReturnType<typeof setTimeout> | null = null
-  watch(dbPath, () => {
-    if (dbWatchDebounce) clearTimeout(dbWatchDebounce)
-    dbWatchDebounce = setTimeout(() => {
-      taskService.reloadFromDisk()
-      for (const win of BrowserWindow.getAllWindows()) {
-        if (!win.isDestroyed()) {
-          win.webContents.send('task:changed')
-        }
-      }
-    }, 200)
-  })
 
   // Vault import — manual trigger, not auto on boot
   let importer: VaultImporter | null = null
@@ -359,13 +343,6 @@ app.whenReady().then(async () => {
   ipcMain.handle('task:update', (_event, id: string, input) => taskService.updateTask(id, input))
   ipcMain.handle('task:delete', (_event, id: string) => taskService.deleteTask(id))
   ipcMain.handle('task:subtasks', (_event, parentId: string) => taskService.getSubtasks(parentId))
-
-  ipcMain.handle('epic:list', (_event, projectId: string) => taskService.findEpics(projectId))
-  ipcMain.handle('epic:get', (_event, id: string) => taskService.getEpic(id))
-  ipcMain.handle('epic:create', (_event, input) => taskService.createEpic(input))
-  ipcMain.handle('epic:update', (_event, id: string, input) => taskService.updateEpic(id, input))
-  ipcMain.handle('epic:delete', (_event, id: string) => taskService.deleteEpic(id))
-  ipcMain.handle('epic:progress', (_event, epicId: string) => taskService.getEpicProgress(epicId))
 
   ipcMain.handle('phase:list', (_event, projectId: string) => taskService.findPhases(projectId))
   ipcMain.handle('phase:get', (_event, id: string) => taskService.getPhase(id))

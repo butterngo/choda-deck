@@ -151,6 +151,7 @@ function FilesView({ visible }: FilesViewProps): React.JSX.Element {
               content={fileContent}
               filePath={selectedPath}
               onWikilinkClick={handleWikilinkClick}
+              onRelativeLinkClick={handleFileSelect}
             />
           ) : (
             <div className="deck-md-empty">Select a file to view</div>

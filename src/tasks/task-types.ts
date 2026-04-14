@@ -36,15 +36,6 @@ export interface Feature {
   updatedAt: string
 }
 
-export interface Epic {
-  id: string
-  projectId: string
-  featureId: string | null
-  title: string
-  createdAt: string
-  updatedAt: string
-}
-
 export interface Document {
   id: string
   projectId: string
@@ -69,7 +60,7 @@ export interface Relationship {
 export interface Task {
   id: string
   projectId: string
-  epicId: string | null
+  featureId: string | null
   parentTaskId: string | null
   title: string
   status: TaskStatus
@@ -90,7 +81,7 @@ export interface TaskDependency {
 export interface CreateTaskInput {
   id?: string
   projectId: string
-  epicId?: string
+  featureId?: string
   parentTaskId?: string
   title: string
   status?: TaskStatus
@@ -104,7 +95,7 @@ export interface UpdateTaskInput {
   title?: string
   status?: TaskStatus
   priority?: TaskPriority | null
-  epicId?: string | null
+  featureId?: string | null
   parentTaskId?: string | null
   labels?: string[]
   dueDate?: string | null
@@ -115,24 +106,12 @@ export interface TaskFilter {
   projectId?: string
   status?: TaskStatus
   priority?: TaskPriority
-  epicId?: string
+  featureId?: string
   parentTaskId?: string
   pinned?: boolean
   dueBefore?: string
   query?: string
   limit?: number
-}
-
-export interface CreateEpicInput {
-  id?: string
-  projectId: string
-  featureId?: string
-  title: string
-}
-
-export interface UpdateEpicInput {
-  title?: string
-  featureId?: string | null
 }
 
 export interface CreatePhaseInput {
