@@ -7,10 +7,12 @@ import { textResponse, type Register } from './types'
 const CONTENT_ROOT = process.env.CHODA_CONTENT_ROOT || ''
 
 export const register: Register = (server, svc) => {
-  server.tool(
+  server.registerTool(
     'task_context',
-    'Get full context for a task: task details + feature + phase + dependencies + file content',
-    { id: z.string().describe('Task ID (e.g. TASK-401)') },
+    {
+      description: 'Get full context for a task: task details + feature + phase + dependencies + file content',
+      inputSchema: { id: z.string().describe('Task ID (e.g. TASK-401)') }
+    },
     async ({ id }) => {
       const task = svc.getTask(id)
       if (!task) return textResponse(`Task ${id} not found`)
@@ -42,33 +44,37 @@ export const register: Register = (server, svc) => {
     }
   )
 
-  server.tool(
+  server.registerTool(
     'task_list',
-    'List tasks with optional filters',
     {
-      projectId: z.string().optional().describe('Filter by project ID'),
-      status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE']).optional().describe('Filter by status'),
-      priority: z.enum(['critical', 'high', 'medium', 'low']).optional().describe('Filter by priority'),
-      featureId: z.string().optional().describe('Filter by feature ID'),
-      query: z.string().optional().describe('Search title'),
-      limit: z.number().optional().describe('Max results')
+      description: 'List tasks with optional filters',
+      inputSchema: {
+        projectId: z.string().optional().describe('Filter by project ID'),
+        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE']).optional().describe('Filter by status'),
+        priority: z.enum(['critical', 'high', 'medium', 'low']).optional().describe('Filter by priority'),
+        featureId: z.string().optional().describe('Filter by feature ID'),
+        query: z.string().optional().describe('Search title'),
+        limit: z.number().optional().describe('Max results')
+      }
     },
     async (filter) => textResponse(svc.findTasks(filter))
   )
 
-  server.tool(
+  server.registerTool(
     'task_create',
-    'Create a new task',
     {
-      id: z.string().optional().describe('Task ID (auto-generated if omitted)'),
-      projectId: z.string().describe('Project ID'),
-      title: z.string().describe('Task title'),
-      status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE']).optional(),
-      priority: z.enum(['critical', 'high', 'medium', 'low']).optional(),
-      featureId: z.string().optional().describe('Feature to assign to'),
-      parentTaskId: z.string().optional().describe('Parent task for subtasks'),
-      labels: z.array(z.string()).optional(),
-      dueDate: z.string().optional()
+      description: 'Create a new task',
+      inputSchema: {
+        id: z.string().optional().describe('Task ID (auto-generated if omitted)'),
+        projectId: z.string().describe('Project ID'),
+        title: z.string().describe('Task title'),
+        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE']).optional(),
+        priority: z.enum(['critical', 'high', 'medium', 'low']).optional(),
+        featureId: z.string().optional().describe('Feature to assign to'),
+        parentTaskId: z.string().optional().describe('Parent task for subtasks'),
+        labels: z.array(z.string()).optional(),
+        dueDate: z.string().optional()
+      }
     },
     async (input) => {
       const task = svc.createTask(input)
@@ -98,19 +104,21 @@ export const register: Register = (server, svc) => {
     }
   )
 
-  server.tool(
+  server.registerTool(
     'task_update',
-    'Update a task',
     {
-      id: z.string().describe('Task ID'),
-      title: z.string().optional(),
-      status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE']).optional(),
-      priority: z.enum(['critical', 'high', 'medium', 'low']).nullable().optional(),
-      featureId: z.string().nullable().optional(),
-      parentTaskId: z.string().nullable().optional(),
-      labels: z.array(z.string()).optional(),
-      dueDate: z.string().nullable().optional(),
-      pinned: z.boolean().optional()
+      description: 'Update a task',
+      inputSchema: {
+        id: z.string().describe('Task ID'),
+        title: z.string().optional(),
+        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE']).optional(),
+        priority: z.enum(['critical', 'high', 'medium', 'low']).nullable().optional(),
+        featureId: z.string().nullable().optional(),
+        parentTaskId: z.string().nullable().optional(),
+        labels: z.array(z.string()).optional(),
+        dueDate: z.string().nullable().optional(),
+        pinned: z.boolean().optional()
+      }
     },
     async ({ id, ...input }) => textResponse(svc.updateTask(id, input))
   )

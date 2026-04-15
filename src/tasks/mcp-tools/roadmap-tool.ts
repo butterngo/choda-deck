@@ -2,10 +2,12 @@ import { z } from 'zod'
 import { textResponse, type Register } from './types'
 
 export const register: Register = (server, svc) => {
-  server.tool(
+  server.registerTool(
     'roadmap',
-    'Get full roadmap tree: phases → features → tasks with progress at each level',
-    { projectId: z.string().describe('Project ID') },
+    {
+      description: 'Get full roadmap tree: phases → features → tasks with progress at each level',
+      inputSchema: { projectId: z.string().describe('Project ID') }
+    },
     async ({ projectId }) => {
       const phases = svc.findPhases(projectId)
       const features = svc.findFeatures(projectId)
