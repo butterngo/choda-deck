@@ -14,13 +14,6 @@ export interface ProjectConfig {
   workspaces: WorkspaceConfig[]
 }
 
-// Legacy compat
-export interface SpikeProject {
-  id: string
-  cwd: string
-  shell: string
-}
-
 // Custom APIs for renderer — PTY bridge for xterm.js
 const api = {
   pty: {
@@ -128,10 +121,6 @@ const api = {
     contentRoot: (): Promise<string> =>
       ipcRenderer.invoke('vault:contentRoot')
   },
-  spike: {
-    getProject: (): Promise<SpikeProject> => ipcRenderer.invoke('spike:project'),
-    getProjects: (): Promise<SpikeProject[]> => ipcRenderer.invoke('spike:projects')
-  }
 }
 
 if (process.contextIsolated) {

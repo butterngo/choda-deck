@@ -30,7 +30,7 @@ Run `npm run format` before committing if unsure. Do not fight prettier.
 
 ## Type declarations
 
-- **Public API types → `interface`**, not `type`. Example: `SpikeProject` in preload/index.ts:4
+- **Public API types → `interface`**, not `type`. Example: `ProjectConfig`, `WorkspaceConfig` in `src/preload/index.ts`
 - Inline object types OK for local/private use
 - **Return types are explicit on exported / public functions.** See preload/index.ts:
   ```ts
@@ -58,8 +58,8 @@ Run `npm run format` before committing if unsure. Do not fight prettier.
 
 - **camelCase** for variables, functions, methods, props
 - **PascalCase** for types, interfaces, React components
-- **UPPER_SNAKE_CASE** for constants that represent stable config (e.g. `SPIKE_PROJECT` in main/index.ts:14)
-- **No Hungarian notation**, no `I` prefix on interfaces (`SpikeProject`, not `ISpikeProject`)
+- **UPPER_SNAKE_CASE** for constants that represent stable config
+- **No Hungarian notation**, no `I` prefix on interfaces (`ProjectConfig`, not `IProjectConfig`)
 
 ## Lint
 

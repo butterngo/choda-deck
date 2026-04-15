@@ -94,8 +94,8 @@ window-all-closed
 | Entity | Description |
 |---|---|
 | `Session` (implicit) | `{ id, cwd, pty, cols, rows }` held in `sessions: Map<string, pty.IPty>` in main |
-| `SpikeProject` (preload type) | `{ id, cwd, shell }` — single hardcoded project in spike phase |
-| `Project` (MVP target) | `{ id, cwd, label, shell? }` from `projects.json` |
+| `ProjectConfig` (preload type) | `{ id, name, workspaces: WorkspaceConfig[] }` loaded from `projects.json` |
+| `WorkspaceConfig` (preload type) | `{ id, label, cwd, shell? }` — per-project terminal config |
 
 ## IPC contract
 
@@ -114,9 +114,7 @@ Channel naming: `pty:<verb>` for commands, `pty:<verb>:<sessionId>` for per-sess
 | `vault:search` | invoke | R→M | `(query, rootPath)` → `SearchResult[]` |
 | `vault:resolve` | invoke | R→M | `(wikilink, rootPath)` → `string \| null` |
 | `vault:contentRoot` | invoke | R→M | `()` → `string` |
-| `spike:project` | invoke | R→M | `()` → `SpikeProject` (legacy compat) |
-| `spike:projects` | invoke | R→M | `()` → `SpikeProject[]` (legacy compat) |
-| `project:list` | invoke | R→M | `()` → `ProjectEntry[]` |
+| `project:list` | invoke | R→M | `()` → `ProjectConfig[]` |
 | `project:add` | invoke | R→M | `(id, cwd)` → `{ ok, error?, project? }` |
 | `project:remove` | invoke | R→M | `(id)` → `{ ok, error? }` |
 
@@ -169,5 +167,3 @@ Main pane must be a **polymorphic view container**, not hardcoded single xterm. 
 - R4 — Resize propagation correctness under ConPTY
 - R6 — React state management choice (affects ViewRouter + session map refactor)
 - R11 — PATH handling for OSS users across install methods
-
-Full details: `docs/research.md`.

@@ -16,14 +16,8 @@ Views (per workspace)
 ─────────────────
 Terminal       Live claude session
 Tasks          Kanban board (read-only)
-Roadmap        Epic progress overview
-Focus          Today's tasks
-
-CLI (graph)
-─────────────────
-graph cheatsheet            All commands
-graph context <id>          Context tree
-graph list tasks -p <proj>  List nodes`
+Roadmap        Phase/Feature progress overview
+Focus          Today's tasks`
 
 interface SidebarProps {
   projects: ProjectConfig[]

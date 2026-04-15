@@ -26,7 +26,6 @@ Electron main process. Owns all non-UI state: pty session map, IPC handlers, Bro
 
 - `createPtySession(id, cwd, cols, rows, webContents)` — the only place `pty.spawn` is called. Guards against double-spawn via `sessions.has(id)` check.
 - `sessions: Map<string, pty.IPty>` — module-level. Do not add parallel session stores; extend this map if you need more per-session data (switch to `Map<string, { pty, meta }>`).
-- `SPIKE_PROJECT` — hardcoded temporary project config. Will be replaced by a `projects.json` loader. Do not add more hardcoded projects here; when the config loader lands, remove `SPIKE_PROJECT` and the `spike:project` IPC channel with it.
 - `ipcMain.handle('pty:spawn', ...)` / `ipcMain.on('pty:input' | 'pty:resize' | 'pty:kill', ...)` — the live IPC surface. Extend per `.claude/rules/electron-ipc.md` conventions.
 
 ## Layer-specific rules

@@ -22,8 +22,6 @@ The **only** boundary between the sandboxed renderer and the Node-capable main p
 ## Key types / entry points
 
 - `api.pty.*` — session lifecycle and IPC streams. Matches channel names in `src/main/index.ts` one-to-one.
-- `api.spike.*` — **temporary** surface for the hardcoded spike project. Delete the whole namespace when the real config loader lands in main.
-- `SpikeProject` interface (exported for renderer consumption) — colocated with the spike namespace. Delete together.
 - `contextBridge.exposeInMainWorld` is called only if `process.contextIsolated`. The `else` branch writes directly to `window` — `// @ts-ignore` on those lines is intentional for the non-isolated fallback; do not add new globals in the fallback branch without a corresponding isolated-mode exposure.
 
 ## Layer-specific rules

@@ -24,10 +24,9 @@ Existing channels:
 | `pty:kill` | send | Terminate a pty on user request |
 | `pty:data:${id}` | on (stream) | Bytes from pty stdout/stderr to renderer |
 | `pty:exit:${id}` | on (event) | Pty exited with code |
-| `spike:project` | invoke | Return the hardcoded spike project (temporary) |
 
 Rules:
-- **Namespace is lowercase, single word** (`pty`, `spike`, `workspace`). Not kebab, not camelCase.
+- **Namespace is lowercase, single word** (`pty`, `project`, `task`, `vault`). Not kebab, not camelCase.
 - **Verb describes the action from the renderer's POV** (it's the caller): `spawn`, `input`, `resize`, `kill`, `data`, `exit`.
 - **Per-session event streams suffix the session id**: `pty:data:${id}`. One channel per session prevents cross-session data fan-out at the IPC layer and keeps listener cleanup scoped.
 - **Request/response pairs do NOT suffix the id** — the id goes in the payload. Only streams get the suffixed channel.
@@ -63,7 +62,7 @@ Two globals are exposed:
 
 Rules:
 - **All new renderer-visible IPC must go through `window.api`.** Do not expose new globals.
-- **Organize by feature namespace**: `window.api.pty.*`, `window.api.spike.*`, future `window.api.workspace.*`. Do not flatten.
+- **Organize by feature namespace**: `window.api.pty.*`, `window.api.project.*`, `window.api.task.*`. Do not flatten.
 - **Type every method explicitly** with return type — `window.api` is the public boundary, implicit returns hide contract drift. See existing style:
   ```ts
   spawn: (id: string, cwd: string, cols: number, rows: number): Promise<{ ok: boolean; id: string }> =>

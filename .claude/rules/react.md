@@ -62,7 +62,7 @@ If you add a new resource (another listener, a timer, a subscription), add its c
 
 - **Only via `window.api`.** Never `require`, never `process`, never direct `ipcRenderer`. The preload bridge (`src/preload/index.ts`) is the entire allowed surface.
 - `window.api.pty.*` — terminal session ops
-- `window.api.spike.*` — spike-only temporary surface (will be removed when the real project list lands)
+- `window.api.project.*` / `task.*` / `phase.*` / `feature.*` / `vault.*` — feature-scoped namespaces (see `src/preload/index.ts`)
 - Type definitions for `window.api` live in `src/preload/index.d.ts` — keep them in sync with `src/preload/index.ts`
 
 ## State management

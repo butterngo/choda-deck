@@ -402,10 +402,6 @@ app.whenReady().then(async () => {
     return config.contentRoot
   })
 
-  // Legacy spike handlers (backwards compat)
-  ipcMain.handle('spike:project', () => projects[0] || null)
-  ipcMain.handle('spike:projects', () => projects)
-
   createWindow()
 
   app.on('activate', function () {

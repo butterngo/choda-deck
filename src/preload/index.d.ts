@@ -13,12 +13,6 @@ export interface ProjectConfig {
   workspaces: WorkspaceConfig[]
 }
 
-export interface SpikeProject {
-  id: string
-  cwd: string
-  shell: string
-}
-
 export interface ChodaApi {
   pty: {
     spawn: (id: string, cwd: string, cols: number, rows: number) => Promise<{ ok: boolean; id: string }>
@@ -71,10 +65,6 @@ export interface ChodaApi {
     resolve: (wikilink: string, rootPath: string) => Promise<string | null>
     write: (filePath: string, content: string) => Promise<{ ok: boolean }>
     contentRoot: () => Promise<string>
-  }
-  spike: {
-    getProject: () => Promise<SpikeProject>
-    getProjects: () => Promise<SpikeProject[]>
   }
 }
 
