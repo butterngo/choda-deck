@@ -243,27 +243,45 @@ export interface UpdateContextSourceInput {
 
 // ── Conversations (L2 — Conversation Protocol) ──────────────────────────────
 
-export type ConversationStatus = 'open' | 'closed'
-export type ConversationMessageType = 'question' | 'answer' | 'decision' | 'action' | 'comment'
-export type ConversationLinkType = 'task' | 'adr' | 'feature'
+export type ConversationStatus = 'open' | 'discussing' | 'decided' | 'implemented' | 'stale'
+export type ConversationMessageType =
+  | 'question' | 'answer' | 'proposal' | 'review' | 'decision' | 'action' | 'comment'
+export type ConversationLinkType = 'task' | 'adr' | 'feature' | 'commit'
+export type ConversationParticipantType = 'human' | 'agent' | 'role'
+export type ConversationActionStatus = 'pending' | 'done'
 
 export interface Conversation {
   id: string
   projectId: string
   title: string
   status: ConversationStatus
-  participants: string[]
+  createdBy: string
   decisionSummary: string | null
   createdAt: string
+  decidedAt: string | null
   closedAt: string | null
+}
+
+export interface ConversationParticipant {
+  conversationId: string
+  name: string
+  type: ConversationParticipantType
+  role: string | null
+}
+
+export interface ConversationMessageMetadata {
+  codeChanges?: string[]
+  options?: Array<{ id: string; description: string; tradeoff: string }>
+  selectedOption?: string
 }
 
 export interface ConversationMessage {
   id: string
   conversationId: string
-  author: string
+  authorName: string
   content: string
   messageType: ConversationMessageType
+  metadata: ConversationMessageMetadata | null
   createdAt: string
 }
 
@@ -273,26 +291,52 @@ export interface ConversationLink {
   linkedId: string
 }
 
+export interface ConversationAction {
+  id: string
+  conversationId: string
+  assignee: string
+  description: string
+  status: ConversationActionStatus
+  linkedTaskId: string | null
+  createdAt: string
+}
+
 export interface CreateConversationInput {
   id?: string
   projectId: string
   title: string
+  createdBy: string
   status?: ConversationStatus
-  participants?: string[]
+  participants?: Array<{ name: string; type: ConversationParticipantType; role?: string }>
 }
 
 export interface UpdateConversationInput {
   title?: string
   status?: ConversationStatus
-  participants?: string[]
   decisionSummary?: string | null
+  decidedAt?: string | null
   closedAt?: string | null
 }
 
 export interface CreateConversationMessageInput {
   id?: string
   conversationId: string
-  author: string
+  authorName: string
   content: string
   messageType?: ConversationMessageType
+  metadata?: ConversationMessageMetadata
+}
+
+export interface CreateConversationActionInput {
+  id?: string
+  conversationId: string
+  assignee: string
+  description: string
+  status?: ConversationActionStatus
+  linkedTaskId?: string
+}
+
+export interface UpdateConversationActionInput {
+  status?: ConversationActionStatus
+  linkedTaskId?: string | null
 }

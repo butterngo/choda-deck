@@ -21,11 +21,18 @@ import type {
   ConversationStatus,
   ConversationMessage,
   ConversationMessageType,
+  ConversationMessageMetadata,
   ConversationLink,
   ConversationLinkType,
+  ConversationParticipant,
+  ConversationParticipantType,
+  ConversationAction,
+  ConversationActionStatus,
   CreateConversationInput,
   UpdateConversationInput,
   CreateConversationMessageInput,
+  CreateConversationActionInput,
+  UpdateConversationActionInput,
   CreateTaskInput,
   UpdateTaskInput,
   TaskFilter,
@@ -270,20 +277,32 @@ export class SqliteTaskService implements TaskService {
         project_id TEXT NOT NULL,
         title TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'open',
-        participants TEXT,
+        created_by TEXT NOT NULL,
         decision_summary TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        decided_at TEXT,
         closed_at TEXT,
         FOREIGN KEY (project_id) REFERENCES projects(id)
+      )
+    `)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS conversation_participants (
+        conversation_id TEXT NOT NULL,
+        participant_name TEXT NOT NULL,
+        participant_type TEXT NOT NULL,
+        participant_role TEXT,
+        PRIMARY KEY (conversation_id, participant_name),
+        FOREIGN KEY (conversation_id) REFERENCES conversations(id)
       )
     `)
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS conversation_messages (
         id TEXT PRIMARY KEY,
         conversation_id TEXT NOT NULL,
-        author TEXT NOT NULL,
+        author_name TEXT NOT NULL,
         content TEXT NOT NULL,
         message_type TEXT NOT NULL DEFAULT 'comment',
+        metadata_json TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         FOREIGN KEY (conversation_id) REFERENCES conversations(id)
       )
@@ -297,6 +316,18 @@ export class SqliteTaskService implements TaskService {
         FOREIGN KEY (conversation_id) REFERENCES conversations(id)
       )
     `)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS conversation_actions (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        assignee TEXT NOT NULL,
+        description TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        linked_task_id TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+      )
+    `)
 
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id)')
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(project_id, status)')
@@ -304,6 +335,8 @@ export class SqliteTaskService implements TaskService {
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_project ON conversations(project_id)')
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_conv_messages_conv ON conversation_messages(conversation_id)')
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_conv_links_conv ON conversation_links(conversation_id)')
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_conv_participants_conv ON conversation_participants(conversation_id)')
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_conv_actions_conv ON conversation_actions(conversation_id)')
   }
 
   // ── Row mappers (M1) ───────────────────────────────────────────────────────
@@ -339,10 +372,32 @@ export class SqliteTaskService implements TaskService {
       projectId: row.project_id as string,
       title: row.title as string,
       status: row.status as ConversationStatus,
-      participants: row.participants ? JSON.parse(row.participants as string) : [],
+      createdBy: row.created_by as string,
       decisionSummary: (row.decision_summary as string) || null,
       createdAt: row.created_at as string,
+      decidedAt: (row.decided_at as string) || null,
       closedAt: (row.closed_at as string) || null
+    }
+  }
+
+  private rowToConversationParticipant(row: Record<string, unknown>): ConversationParticipant {
+    return {
+      conversationId: row.conversation_id as string,
+      name: row.participant_name as string,
+      type: row.participant_type as ConversationParticipantType,
+      role: (row.participant_role as string) || null
+    }
+  }
+
+  private rowToConversationAction(row: Record<string, unknown>): ConversationAction {
+    return {
+      id: row.id as string,
+      conversationId: row.conversation_id as string,
+      assignee: row.assignee as string,
+      description: row.description as string,
+      status: row.status as ConversationActionStatus,
+      linkedTaskId: (row.linked_task_id as string) || null,
+      createdAt: row.created_at as string
     }
   }
 
@@ -350,9 +405,12 @@ export class SqliteTaskService implements TaskService {
     return {
       id: row.id as string,
       conversationId: row.conversation_id as string,
-      author: row.author as string,
+      authorName: row.author_name as string,
       content: row.content as string,
       messageType: row.message_type as ConversationMessageType,
+      metadata: row.metadata_json
+        ? JSON.parse(row.metadata_json as string) as ConversationMessageMetadata
+        : null,
       createdAt: row.created_at as string
     }
   }
@@ -476,10 +534,16 @@ export class SqliteTaskService implements TaskService {
   createConversation(input: CreateConversationInput): Conversation {
     const id = input.id || `CONV-${Date.now()}`
     this.db.prepare(
-      `INSERT INTO conversations (id, project_id, title, status, participants)
+      `INSERT INTO conversations (id, project_id, title, status, created_by)
        VALUES (?, ?, ?, ?, ?)`
-    ).run(id, input.projectId, input.title, input.status || 'open',
-      input.participants ? JSON.stringify(input.participants) : null)
+    ).run(id, input.projectId, input.title, input.status || 'open', input.createdBy)
+
+    if (input.participants) {
+      for (const p of input.participants) {
+        this.addConversationParticipant(id, p.name, p.type, p.role)
+      }
+    }
+
     return this.getConversation(id)!
   }
 
@@ -489,8 +553,8 @@ export class SqliteTaskService implements TaskService {
 
     if (input.title !== undefined) { sets.push('title = ?'); params.push(input.title) }
     if (input.status !== undefined) { sets.push('status = ?'); params.push(input.status) }
-    if (input.participants !== undefined) { sets.push('participants = ?'); params.push(JSON.stringify(input.participants)) }
     if (input.decisionSummary !== undefined) { sets.push('decision_summary = ?'); params.push(input.decisionSummary) }
+    if (input.decidedAt !== undefined) { sets.push('decided_at = ?'); params.push(input.decidedAt) }
     if (input.closedAt !== undefined) { sets.push('closed_at = ?'); params.push(input.closedAt) }
 
     if (sets.length === 0) {
@@ -519,9 +583,39 @@ export class SqliteTaskService implements TaskService {
   }
 
   deleteConversation(id: string): void {
+    this.db.prepare('DELETE FROM conversation_actions WHERE conversation_id = ?').run(id)
     this.db.prepare('DELETE FROM conversation_links WHERE conversation_id = ?').run(id)
     this.db.prepare('DELETE FROM conversation_messages WHERE conversation_id = ?').run(id)
+    this.db.prepare('DELETE FROM conversation_participants WHERE conversation_id = ?').run(id)
     this.db.prepare('DELETE FROM conversations WHERE id = ?').run(id)
+  }
+
+  // ── Conversation participants ──────────────────────────────────────────────
+
+  addConversationParticipant(
+    conversationId: string,
+    name: string,
+    type: ConversationParticipantType,
+    role?: string | null
+  ): void {
+    this.db.prepare(
+      `INSERT OR REPLACE INTO conversation_participants
+       (conversation_id, participant_name, participant_type, participant_role)
+       VALUES (?, ?, ?, ?)`
+    ).run(conversationId, name, type, role ?? null)
+  }
+
+  removeConversationParticipant(conversationId: string, name: string): void {
+    this.db.prepare(
+      'DELETE FROM conversation_participants WHERE conversation_id = ? AND participant_name = ?'
+    ).run(conversationId, name)
+  }
+
+  getConversationParticipants(conversationId: string): ConversationParticipant[] {
+    const rows = this.db.prepare(
+      'SELECT * FROM conversation_participants WHERE conversation_id = ? ORDER BY participant_name'
+    ).all(conversationId) as Array<Record<string, unknown>>
+    return rows.map(r => this.rowToConversationParticipant(r))
   }
 
   // ── Conversation messages ──────────────────────────────────────────────────
@@ -529,9 +623,17 @@ export class SqliteTaskService implements TaskService {
   addConversationMessage(input: CreateConversationMessageInput): ConversationMessage {
     const id = input.id || `MSG-${Date.now()}`
     this.db.prepare(
-      `INSERT INTO conversation_messages (id, conversation_id, author, content, message_type)
-       VALUES (?, ?, ?, ?, ?)`
-    ).run(id, input.conversationId, input.author, input.content, input.messageType || 'comment')
+      `INSERT INTO conversation_messages
+       (id, conversation_id, author_name, content, message_type, metadata_json)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      input.conversationId,
+      input.authorName,
+      input.content,
+      input.messageType || 'comment',
+      input.metadata ? JSON.stringify(input.metadata) : null
+    )
     const row = this.db.prepare('SELECT * FROM conversation_messages WHERE id = ?').get(id) as Record<string, unknown>
     return this.rowToConversationMessage(row)
   }
@@ -541,6 +643,51 @@ export class SqliteTaskService implements TaskService {
       'SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY created_at, id'
     ).all(conversationId) as Array<Record<string, unknown>>
     return rows.map(r => this.rowToConversationMessage(r))
+  }
+
+  // ── Conversation actions ───────────────────────────────────────────────────
+
+  addConversationAction(input: CreateConversationActionInput): ConversationAction {
+    const id = input.id || `ACT-${Date.now()}`
+    this.db.prepare(
+      `INSERT INTO conversation_actions
+       (id, conversation_id, assignee, description, status, linked_task_id)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      input.conversationId,
+      input.assignee,
+      input.description,
+      input.status || 'pending',
+      input.linkedTaskId || null
+    )
+    const row = this.db.prepare('SELECT * FROM conversation_actions WHERE id = ?').get(id) as Record<string, unknown>
+    return this.rowToConversationAction(row)
+  }
+
+  updateConversationAction(id: string, input: UpdateConversationActionInput): ConversationAction {
+    const sets: string[] = []
+    const params: Param[] = []
+
+    if (input.status !== undefined) { sets.push('status = ?'); params.push(input.status) }
+    if (input.linkedTaskId !== undefined) { sets.push('linked_task_id = ?'); params.push(input.linkedTaskId) }
+
+    if (sets.length > 0) {
+      params.push(id)
+      this.db.prepare(`UPDATE conversation_actions SET ${sets.join(', ')} WHERE id = ?`)
+        .run(...params as (string | number | null)[])
+    }
+
+    const row = this.db.prepare('SELECT * FROM conversation_actions WHERE id = ?').get(id) as Record<string, unknown> | undefined
+    if (!row) throw new Error(`ConversationAction not found: ${id}`)
+    return this.rowToConversationAction(row)
+  }
+
+  getConversationActions(conversationId: string): ConversationAction[] {
+    const rows = this.db.prepare(
+      'SELECT * FROM conversation_actions WHERE conversation_id = ? ORDER BY created_at, id'
+    ).all(conversationId) as Array<Record<string, unknown>>
+    return rows.map(r => this.rowToConversationAction(r))
   }
 
   // ── Conversation links ─────────────────────────────────────────────────────

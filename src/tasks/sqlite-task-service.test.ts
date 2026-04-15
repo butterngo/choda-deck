@@ -402,49 +402,79 @@ describe('SqliteTaskService', () => {
     })).toThrow()
   })
 
-  // ── Conversations (M1) ─────────────────────────────────────────────────
+  // ── Conversations (M1 / TASK-504) ──────────────────────────────────────
 
-  it('createConversation + getConversation', () => {
+  it('createConversation + getConversation + participants', () => {
     const c = svc.createConversation({
       id: 'CONV-001',
       projectId: 'test-proj',
       title: 'Pick DB engine',
-      participants: ['ARCH', 'DEV']
+      createdBy: 'ARCH',
+      participants: [
+        { name: 'ARCH', type: 'role', role: 'requester' },
+        { name: 'DEV', type: 'role', role: 'reviewer' }
+      ]
     })
     expect(c.status).toBe('open')
-    expect(c.participants).toEqual(['ARCH', 'DEV'])
+    expect(c.createdBy).toBe('ARCH')
+
+    const parts = svc.getConversationParticipants('CONV-001')
+    expect(parts.length).toBe(2)
+    expect(parts.find(p => p.name === 'ARCH')?.role).toBe('requester')
+    expect(parts.find(p => p.name === 'DEV')?.type).toBe('role')
   })
 
   it('addConversationMessage + getConversationMessages ordered', () => {
     svc.addConversationMessage({
       id: 'MSG-001',
       conversationId: 'CONV-001',
-      author: 'ARCH',
+      authorName: 'ARCH',
       content: 'Should we use sql.js or better-sqlite3?',
       messageType: 'question'
     })
     svc.addConversationMessage({
       id: 'MSG-002',
       conversationId: 'CONV-001',
-      author: 'DEV',
+      authorName: 'DEV',
       content: 'better-sqlite3 — sync API, no WASM',
       messageType: 'answer'
     })
     const msgs = svc.getConversationMessages('CONV-001')
     expect(msgs.length).toBe(2)
     expect(msgs[0].id).toBe('MSG-001')
+    expect(msgs[0].authorName).toBe('ARCH')
     expect(msgs[1].messageType).toBe('answer')
   })
 
-  it('updateConversation closes with decision', () => {
-    const closedAt = new Date().toISOString()
-    const updated = svc.updateConversation('CONV-001', {
-      status: 'closed',
-      decisionSummary: 'Use better-sqlite3',
-      closedAt
+  it('addConversationMessage with metadata persists JSON', () => {
+    svc.addConversationMessage({
+      id: 'MSG-003',
+      conversationId: 'CONV-001',
+      authorName: 'DEV',
+      content: '3 options',
+      messageType: 'proposal',
+      metadata: {
+        options: [
+          { id: 'A', description: 'remove', tradeoff: 'breaking' },
+          { id: 'B', description: 'slim', tradeoff: 'complex' }
+        ]
+      }
     })
-    expect(updated.status).toBe('closed')
+    const msg = svc.getConversationMessages('CONV-001').find(m => m.id === 'MSG-003')!
+    expect(msg.metadata?.options?.length).toBe(2)
+    expect(msg.metadata?.options?.[0].id).toBe('A')
+  })
+
+  it('updateConversation records decision', () => {
+    const decidedAt = new Date().toISOString()
+    const updated = svc.updateConversation('CONV-001', {
+      status: 'decided',
+      decisionSummary: 'Use better-sqlite3',
+      decidedAt
+    })
+    expect(updated.status).toBe('decided')
     expect(updated.decisionSummary).toBe('Use better-sqlite3')
+    expect(updated.decidedAt).toBe(decidedAt)
   })
 
   it('linkConversation + findConversationsByLink', () => {
@@ -468,22 +498,68 @@ describe('SqliteTaskService', () => {
     expect(svc.getConversationLinks('CONV-001').length).toBe(0)
   })
 
+  it('addConversationAction + update to done', () => {
+    const action = svc.addConversationAction({
+      id: 'ACT-001',
+      conversationId: 'CONV-001',
+      assignee: 'DEV',
+      description: 'Migrate sql.js → better-sqlite3'
+    })
+    expect(action.status).toBe('pending')
+
+    const updated = svc.updateConversationAction('ACT-001', { status: 'done' })
+    expect(updated.status).toBe('done')
+
+    const all = svc.getConversationActions('CONV-001')
+    expect(all.length).toBe(1)
+    expect(all[0].assignee).toBe('DEV')
+  })
+
+  it('addConversationAction with linkedTaskId', () => {
+    svc.addConversationAction({
+      id: 'ACT-002',
+      conversationId: 'CONV-001',
+      assignee: 'DEV',
+      description: 'Spawned task',
+      linkedTaskId: 'TASK-501'
+    })
+    const action = svc.getConversationActions('CONV-001').find(a => a.id === 'ACT-002')!
+    expect(action.linkedTaskId).toBe('TASK-501')
+  })
+
   it('conversation_messages FK rejects unknown conversation', () => {
     expect(() => svc.addConversationMessage({
       conversationId: 'nonexistent-conv',
-      author: 'X',
+      authorName: 'X',
       content: 'orphan'
     })).toThrow()
   })
 
-  it('deleteConversation cascades messages + links', () => {
-    svc.createConversation({ id: 'CONV-002', projectId: 'test-proj', title: 'throwaway' })
-    svc.addConversationMessage({ conversationId: 'CONV-002', author: 'X', content: 'hi' })
+  it('conversation_actions FK rejects unknown conversation', () => {
+    expect(() => svc.addConversationAction({
+      conversationId: 'nonexistent-conv',
+      assignee: 'X',
+      description: 'orphan'
+    })).toThrow()
+  })
+
+  it('deleteConversation cascades all related rows', () => {
+    svc.createConversation({
+      id: 'CONV-002',
+      projectId: 'test-proj',
+      title: 'throwaway',
+      createdBy: 'X',
+      participants: [{ name: 'X', type: 'human' }]
+    })
+    svc.addConversationMessage({ conversationId: 'CONV-002', authorName: 'X', content: 'hi' })
     svc.linkConversation('CONV-002', 'task', 'TASK-501')
+    svc.addConversationAction({ conversationId: 'CONV-002', assignee: 'X', description: 'do thing' })
 
     svc.deleteConversation('CONV-002')
     expect(svc.getConversation('CONV-002')).toBeNull()
     expect(svc.getConversationMessages('CONV-002').length).toBe(0)
     expect(svc.getConversationLinks('CONV-002').length).toBe(0)
+    expect(svc.getConversationActions('CONV-002').length).toBe(0)
+    expect(svc.getConversationParticipants('CONV-002').length).toBe(0)
   })
 })
