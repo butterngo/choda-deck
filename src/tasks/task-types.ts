@@ -168,3 +168,131 @@ export interface DerivedProgress {
   status: DerivedStatus
   percent: number
 }
+
+// ── Sessions (L3 — Session Lifecycle) ────────────────────────────────────────
+
+export type SessionStatus = 'active' | 'completed' | 'abandoned'
+
+export interface SessionHandoff {
+  commits?: string[]
+  decisions?: string[]
+  resumePoint?: string
+  looseEnds?: string[]
+  tasksUpdated?: string[]
+}
+
+export interface Session {
+  id: string
+  projectId: string
+  startedAt: string
+  endedAt: string | null
+  status: SessionStatus
+  handoff: SessionHandoff | null
+  createdAt: string
+}
+
+export interface CreateSessionInput {
+  id?: string
+  projectId: string
+  startedAt?: string
+  status?: SessionStatus
+  handoff?: SessionHandoff
+}
+
+export interface UpdateSessionInput {
+  endedAt?: string | null
+  status?: SessionStatus
+  handoff?: SessionHandoff | null
+}
+
+// ── Context sources (L1 — Context Engine) ───────────────────────────────────
+
+export type ContextSourceType = 'file' | 'sqlite_query' | 'mcp_tool'
+export type ContextCategory = 'who' | 'what' | 'how' | 'state' | 'decisions'
+
+export interface ContextSource {
+  id: string
+  projectId: string
+  sourceType: ContextSourceType
+  sourcePath: string
+  label: string
+  category: ContextCategory
+  priority: number
+  isActive: boolean
+}
+
+export interface CreateContextSourceInput {
+  id?: string
+  projectId: string
+  sourceType: ContextSourceType
+  sourcePath: string
+  label: string
+  category: ContextCategory
+  priority?: number
+  isActive?: boolean
+}
+
+export interface UpdateContextSourceInput {
+  sourceType?: ContextSourceType
+  sourcePath?: string
+  label?: string
+  category?: ContextCategory
+  priority?: number
+  isActive?: boolean
+}
+
+// ── Conversations (L2 — Conversation Protocol) ──────────────────────────────
+
+export type ConversationStatus = 'open' | 'closed'
+export type ConversationMessageType = 'question' | 'answer' | 'decision' | 'action' | 'comment'
+export type ConversationLinkType = 'task' | 'adr' | 'feature'
+
+export interface Conversation {
+  id: string
+  projectId: string
+  title: string
+  status: ConversationStatus
+  participants: string[]
+  decisionSummary: string | null
+  createdAt: string
+  closedAt: string | null
+}
+
+export interface ConversationMessage {
+  id: string
+  conversationId: string
+  author: string
+  content: string
+  messageType: ConversationMessageType
+  createdAt: string
+}
+
+export interface ConversationLink {
+  conversationId: string
+  linkedType: ConversationLinkType
+  linkedId: string
+}
+
+export interface CreateConversationInput {
+  id?: string
+  projectId: string
+  title: string
+  status?: ConversationStatus
+  participants?: string[]
+}
+
+export interface UpdateConversationInput {
+  title?: string
+  status?: ConversationStatus
+  participants?: string[]
+  decisionSummary?: string | null
+  closedAt?: string | null
+}
+
+export interface CreateConversationMessageInput {
+  id?: string
+  conversationId: string
+  author: string
+  content: string
+  messageType?: ConversationMessageType
+}

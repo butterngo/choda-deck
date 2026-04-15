@@ -7,6 +7,25 @@ import type {
   Document,
   Relationship,
   TaskDependency,
+  Session,
+  SessionHandoff,
+  SessionStatus,
+  CreateSessionInput,
+  UpdateSessionInput,
+  ContextSource,
+  ContextSourceType,
+  ContextCategory,
+  CreateContextSourceInput,
+  UpdateContextSourceInput,
+  Conversation,
+  ConversationStatus,
+  ConversationMessage,
+  ConversationMessageType,
+  ConversationLink,
+  ConversationLinkType,
+  CreateConversationInput,
+  UpdateConversationInput,
+  CreateConversationMessageInput,
   CreateTaskInput,
   UpdateTaskInput,
   TaskFilter,
@@ -218,6 +237,345 @@ export class SqliteTaskService implements TaskService {
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_relationships_from ON relationships(from_id)')
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_relationships_to ON relationships(to_id)')
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_documents_project ON documents(project_id)')
+
+    // ── M1: sessions, context_sources, conversations ────────────────────────
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        handoff_json TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (project_id) REFERENCES projects(id)
+      )
+    `)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS context_sources (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        source_path TEXT NOT NULL,
+        label TEXT NOT NULL,
+        category TEXT NOT NULL,
+        priority INTEGER NOT NULL DEFAULT 100,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        FOREIGN KEY (project_id) REFERENCES projects(id)
+      )
+    `)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS conversations (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        participants TEXT,
+        decision_summary TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        closed_at TEXT,
+        FOREIGN KEY (project_id) REFERENCES projects(id)
+      )
+    `)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS conversation_messages (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        author TEXT NOT NULL,
+        content TEXT NOT NULL,
+        message_type TEXT NOT NULL DEFAULT 'comment',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+      )
+    `)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS conversation_links (
+        conversation_id TEXT NOT NULL,
+        linked_type TEXT NOT NULL,
+        linked_id TEXT NOT NULL,
+        PRIMARY KEY (conversation_id, linked_type, linked_id),
+        FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+      )
+    `)
+
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id)')
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(project_id, status)')
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_context_sources_project ON context_sources(project_id)')
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_project ON conversations(project_id)')
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_conv_messages_conv ON conversation_messages(conversation_id)')
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_conv_links_conv ON conversation_links(conversation_id)')
+  }
+
+  // ── Row mappers (M1) ───────────────────────────────────────────────────────
+
+  private rowToSession(row: Record<string, unknown>): Session {
+    return {
+      id: row.id as string,
+      projectId: row.project_id as string,
+      startedAt: row.started_at as string,
+      endedAt: (row.ended_at as string) || null,
+      status: row.status as SessionStatus,
+      handoff: row.handoff_json ? JSON.parse(row.handoff_json as string) as SessionHandoff : null,
+      createdAt: row.created_at as string
+    }
+  }
+
+  private rowToContextSource(row: Record<string, unknown>): ContextSource {
+    return {
+      id: row.id as string,
+      projectId: row.project_id as string,
+      sourceType: row.source_type as ContextSourceType,
+      sourcePath: row.source_path as string,
+      label: row.label as string,
+      category: row.category as ContextCategory,
+      priority: row.priority as number,
+      isActive: row.is_active === 1
+    }
+  }
+
+  private rowToConversation(row: Record<string, unknown>): Conversation {
+    return {
+      id: row.id as string,
+      projectId: row.project_id as string,
+      title: row.title as string,
+      status: row.status as ConversationStatus,
+      participants: row.participants ? JSON.parse(row.participants as string) : [],
+      decisionSummary: (row.decision_summary as string) || null,
+      createdAt: row.created_at as string,
+      closedAt: (row.closed_at as string) || null
+    }
+  }
+
+  private rowToConversationMessage(row: Record<string, unknown>): ConversationMessage {
+    return {
+      id: row.id as string,
+      conversationId: row.conversation_id as string,
+      author: row.author as string,
+      content: row.content as string,
+      messageType: row.message_type as ConversationMessageType,
+      createdAt: row.created_at as string
+    }
+  }
+
+  // ── Session CRUD ───────────────────────────────────────────────────────────
+
+  createSession(input: CreateSessionInput): Session {
+    const ts = now()
+    const id = input.id || `SESSION-${Date.now()}`
+    const startedAt = input.startedAt || ts
+    this.db.prepare(
+      `INSERT INTO sessions (id, project_id, started_at, status, handoff_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(id, input.projectId, startedAt, input.status || 'active',
+      input.handoff ? JSON.stringify(input.handoff) : null, ts)
+    return this.getSession(id)!
+  }
+
+  updateSession(id: string, input: UpdateSessionInput): Session {
+    const sets: string[] = []
+    const params: Param[] = []
+
+    if (input.endedAt !== undefined) { sets.push('ended_at = ?'); params.push(input.endedAt) }
+    if (input.status !== undefined) { sets.push('status = ?'); params.push(input.status) }
+    if (input.handoff !== undefined) {
+      sets.push('handoff_json = ?')
+      params.push(input.handoff === null ? null : JSON.stringify(input.handoff))
+    }
+
+    if (sets.length === 0) {
+      const s = this.getSession(id)
+      if (!s) throw new Error(`Session not found: ${id}`)
+      return s
+    }
+
+    params.push(id)
+    this.db.prepare(`UPDATE sessions SET ${sets.join(', ')} WHERE id = ?`).run(...params as (string | number | null)[])
+    const s = this.getSession(id)
+    if (!s) throw new Error(`Session not found: ${id}`)
+    return s
+  }
+
+  getSession(id: string): Session | null {
+    const row = this.db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as Record<string, unknown> | undefined
+    return row ? this.rowToSession(row) : null
+  }
+
+  findSessions(projectId: string, status?: SessionStatus): Session[] {
+    const rows = status
+      ? this.db.prepare('SELECT * FROM sessions WHERE project_id = ? AND status = ? ORDER BY started_at DESC').all(projectId, status) as Array<Record<string, unknown>>
+      : this.db.prepare('SELECT * FROM sessions WHERE project_id = ? ORDER BY started_at DESC').all(projectId) as Array<Record<string, unknown>>
+    return rows.map(r => this.rowToSession(r))
+  }
+
+  getActiveSession(projectId: string): Session | null {
+    const row = this.db.prepare(
+      "SELECT * FROM sessions WHERE project_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1"
+    ).get(projectId) as Record<string, unknown> | undefined
+    return row ? this.rowToSession(row) : null
+  }
+
+  deleteSession(id: string): void {
+    this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
+  }
+
+  // ── ContextSource CRUD ─────────────────────────────────────────────────────
+
+  createContextSource(input: CreateContextSourceInput): ContextSource {
+    const id = input.id || `CTXSRC-${Date.now()}`
+    this.db.prepare(
+      `INSERT INTO context_sources (id, project_id, source_type, source_path, label, category, priority, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, input.projectId, input.sourceType, input.sourcePath, input.label, input.category,
+      input.priority ?? 100, input.isActive === false ? 0 : 1)
+    return this.getContextSource(id)!
+  }
+
+  updateContextSource(id: string, input: UpdateContextSourceInput): ContextSource {
+    const sets: string[] = []
+    const params: Param[] = []
+
+    if (input.sourceType !== undefined) { sets.push('source_type = ?'); params.push(input.sourceType) }
+    if (input.sourcePath !== undefined) { sets.push('source_path = ?'); params.push(input.sourcePath) }
+    if (input.label !== undefined) { sets.push('label = ?'); params.push(input.label) }
+    if (input.category !== undefined) { sets.push('category = ?'); params.push(input.category) }
+    if (input.priority !== undefined) { sets.push('priority = ?'); params.push(input.priority) }
+    if (input.isActive !== undefined) { sets.push('is_active = ?'); params.push(input.isActive ? 1 : 0) }
+
+    if (sets.length === 0) {
+      const s = this.getContextSource(id)
+      if (!s) throw new Error(`ContextSource not found: ${id}`)
+      return s
+    }
+
+    params.push(id)
+    this.db.prepare(`UPDATE context_sources SET ${sets.join(', ')} WHERE id = ?`).run(...params as (string | number | null)[])
+    const s = this.getContextSource(id)
+    if (!s) throw new Error(`ContextSource not found: ${id}`)
+    return s
+  }
+
+  getContextSource(id: string): ContextSource | null {
+    const row = this.db.prepare('SELECT * FROM context_sources WHERE id = ?').get(id) as Record<string, unknown> | undefined
+    return row ? this.rowToContextSource(row) : null
+  }
+
+  findContextSources(projectId: string, activeOnly = false): ContextSource[] {
+    const sql = activeOnly
+      ? 'SELECT * FROM context_sources WHERE project_id = ? AND is_active = 1 ORDER BY priority, label'
+      : 'SELECT * FROM context_sources WHERE project_id = ? ORDER BY priority, label'
+    const rows = this.db.prepare(sql).all(projectId) as Array<Record<string, unknown>>
+    return rows.map(r => this.rowToContextSource(r))
+  }
+
+  deleteContextSource(id: string): void {
+    this.db.prepare('DELETE FROM context_sources WHERE id = ?').run(id)
+  }
+
+  // ── Conversation CRUD ──────────────────────────────────────────────────────
+
+  createConversation(input: CreateConversationInput): Conversation {
+    const id = input.id || `CONV-${Date.now()}`
+    this.db.prepare(
+      `INSERT INTO conversations (id, project_id, title, status, participants)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run(id, input.projectId, input.title, input.status || 'open',
+      input.participants ? JSON.stringify(input.participants) : null)
+    return this.getConversation(id)!
+  }
+
+  updateConversation(id: string, input: UpdateConversationInput): Conversation {
+    const sets: string[] = []
+    const params: Param[] = []
+
+    if (input.title !== undefined) { sets.push('title = ?'); params.push(input.title) }
+    if (input.status !== undefined) { sets.push('status = ?'); params.push(input.status) }
+    if (input.participants !== undefined) { sets.push('participants = ?'); params.push(JSON.stringify(input.participants)) }
+    if (input.decisionSummary !== undefined) { sets.push('decision_summary = ?'); params.push(input.decisionSummary) }
+    if (input.closedAt !== undefined) { sets.push('closed_at = ?'); params.push(input.closedAt) }
+
+    if (sets.length === 0) {
+      const c = this.getConversation(id)
+      if (!c) throw new Error(`Conversation not found: ${id}`)
+      return c
+    }
+
+    params.push(id)
+    this.db.prepare(`UPDATE conversations SET ${sets.join(', ')} WHERE id = ?`).run(...params as (string | number | null)[])
+    const c = this.getConversation(id)
+    if (!c) throw new Error(`Conversation not found: ${id}`)
+    return c
+  }
+
+  getConversation(id: string): Conversation | null {
+    const row = this.db.prepare('SELECT * FROM conversations WHERE id = ?').get(id) as Record<string, unknown> | undefined
+    return row ? this.rowToConversation(row) : null
+  }
+
+  findConversations(projectId: string, status?: ConversationStatus): Conversation[] {
+    const rows = status
+      ? this.db.prepare('SELECT * FROM conversations WHERE project_id = ? AND status = ? ORDER BY created_at DESC').all(projectId, status) as Array<Record<string, unknown>>
+      : this.db.prepare('SELECT * FROM conversations WHERE project_id = ? ORDER BY created_at DESC').all(projectId) as Array<Record<string, unknown>>
+    return rows.map(r => this.rowToConversation(r))
+  }
+
+  deleteConversation(id: string): void {
+    this.db.prepare('DELETE FROM conversation_links WHERE conversation_id = ?').run(id)
+    this.db.prepare('DELETE FROM conversation_messages WHERE conversation_id = ?').run(id)
+    this.db.prepare('DELETE FROM conversations WHERE id = ?').run(id)
+  }
+
+  // ── Conversation messages ──────────────────────────────────────────────────
+
+  addConversationMessage(input: CreateConversationMessageInput): ConversationMessage {
+    const id = input.id || `MSG-${Date.now()}`
+    this.db.prepare(
+      `INSERT INTO conversation_messages (id, conversation_id, author, content, message_type)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run(id, input.conversationId, input.author, input.content, input.messageType || 'comment')
+    const row = this.db.prepare('SELECT * FROM conversation_messages WHERE id = ?').get(id) as Record<string, unknown>
+    return this.rowToConversationMessage(row)
+  }
+
+  getConversationMessages(conversationId: string): ConversationMessage[] {
+    const rows = this.db.prepare(
+      'SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY created_at, id'
+    ).all(conversationId) as Array<Record<string, unknown>>
+    return rows.map(r => this.rowToConversationMessage(r))
+  }
+
+  // ── Conversation links ─────────────────────────────────────────────────────
+
+  linkConversation(conversationId: string, linkedType: ConversationLinkType, linkedId: string): void {
+    this.db.prepare(
+      'INSERT OR IGNORE INTO conversation_links (conversation_id, linked_type, linked_id) VALUES (?, ?, ?)'
+    ).run(conversationId, linkedType, linkedId)
+  }
+
+  unlinkConversation(conversationId: string, linkedType: ConversationLinkType, linkedId: string): void {
+    this.db.prepare(
+      'DELETE FROM conversation_links WHERE conversation_id = ? AND linked_type = ? AND linked_id = ?'
+    ).run(conversationId, linkedType, linkedId)
+  }
+
+  getConversationLinks(conversationId: string): ConversationLink[] {
+    const rows = this.db.prepare(
+      'SELECT * FROM conversation_links WHERE conversation_id = ?'
+    ).all(conversationId) as Array<{ conversation_id: string; linked_type: string; linked_id: string }>
+    return rows.map(r => ({
+      conversationId: r.conversation_id,
+      linkedType: r.linked_type as ConversationLinkType,
+      linkedId: r.linked_id
+    }))
+  }
+
+  findConversationsByLink(linkedType: ConversationLinkType, linkedId: string): Conversation[] {
+    const rows = this.db.prepare(
+      `SELECT c.* FROM conversations c
+       JOIN conversation_links l ON l.conversation_id = c.id
+       WHERE l.linked_type = ? AND l.linked_id = ?
+       ORDER BY c.created_at DESC`
+    ).all(linkedType, linkedId) as Array<Record<string, unknown>>
+    return rows.map(r => this.rowToConversation(r))
   }
 
   close(): void {

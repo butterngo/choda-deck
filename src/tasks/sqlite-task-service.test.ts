@@ -307,4 +307,183 @@ describe('SqliteTaskService', () => {
     const rels = svc.getRelationshipsFrom('TASK-001', 'DEPENDS_ON')
     expect(rels.length).toBe(0)
   })
+
+  // ── Sessions (M1) ──────────────────────────────────────────────────────
+
+  it('createSession + getSession', () => {
+    const s = svc.createSession({
+      id: 'SESSION-001',
+      projectId: 'test-proj',
+      handoff: { commits: ['abc123'], resumePoint: 'TASK-501' }
+    })
+    expect(s.id).toBe('SESSION-001')
+    expect(s.status).toBe('active')
+    expect(s.handoff?.resumePoint).toBe('TASK-501')
+
+    const fetched = svc.getSession('SESSION-001')
+    expect(fetched?.handoff?.commits).toEqual(['abc123'])
+  })
+
+  it('getActiveSession returns latest active', () => {
+    svc.createSession({ id: 'SESSION-002', projectId: 'test-proj' })
+    const active = svc.getActiveSession('test-proj')
+    expect(active).not.toBeNull()
+    expect(['SESSION-001', 'SESSION-002']).toContain(active!.id)
+  })
+
+  it('updateSession marks completed', () => {
+    const updated = svc.updateSession('SESSION-001', {
+      status: 'completed',
+      endedAt: new Date().toISOString(),
+      handoff: { decisions: ['chose better-sqlite3'] }
+    })
+    expect(updated.status).toBe('completed')
+    expect(updated.endedAt).not.toBeNull()
+    expect(updated.handoff?.decisions).toEqual(['chose better-sqlite3'])
+  })
+
+  it('findSessions filters by status', () => {
+    const active = svc.findSessions('test-proj', 'active')
+    expect(active.every(s => s.status === 'active')).toBe(true)
+    const all = svc.findSessions('test-proj')
+    expect(all.length).toBeGreaterThanOrEqual(active.length)
+  })
+
+  it('sessions FK rejects unknown project', () => {
+    expect(() => svc.createSession({ projectId: 'nonexistent-proj' })).toThrow()
+  })
+
+  // ── ContextSources (M1) ────────────────────────────────────────────────
+
+  it('createContextSource + getContextSource', () => {
+    const src = svc.createContextSource({
+      id: 'CTXSRC-001',
+      projectId: 'test-proj',
+      sourceType: 'file',
+      sourcePath: 'docs/architecture.md',
+      label: 'System Architecture',
+      category: 'how',
+      priority: 10
+    })
+    expect(src.priority).toBe(10)
+    expect(src.isActive).toBe(true)
+    expect(svc.getContextSource('CTXSRC-001')?.label).toBe('System Architecture')
+  })
+
+  it('findContextSources orders by priority', () => {
+    svc.createContextSource({
+      id: 'CTXSRC-002',
+      projectId: 'test-proj',
+      sourceType: 'file',
+      sourcePath: 'CLAUDE.md',
+      label: 'Project Conventions',
+      category: 'how',
+      priority: 5
+    })
+    const sources = svc.findContextSources('test-proj')
+    expect(sources[0].id).toBe('CTXSRC-002')
+    expect(sources[1].id).toBe('CTXSRC-001')
+  })
+
+  it('updateContextSource toggles is_active', () => {
+    const updated = svc.updateContextSource('CTXSRC-001', { isActive: false })
+    expect(updated.isActive).toBe(false)
+    const active = svc.findContextSources('test-proj', true)
+    expect(active.find(s => s.id === 'CTXSRC-001')).toBeUndefined()
+  })
+
+  it('context_sources FK rejects unknown project', () => {
+    expect(() => svc.createContextSource({
+      projectId: 'nonexistent-proj',
+      sourceType: 'file',
+      sourcePath: 'x.md',
+      label: 'x',
+      category: 'what'
+    })).toThrow()
+  })
+
+  // ── Conversations (M1) ─────────────────────────────────────────────────
+
+  it('createConversation + getConversation', () => {
+    const c = svc.createConversation({
+      id: 'CONV-001',
+      projectId: 'test-proj',
+      title: 'Pick DB engine',
+      participants: ['ARCH', 'DEV']
+    })
+    expect(c.status).toBe('open')
+    expect(c.participants).toEqual(['ARCH', 'DEV'])
+  })
+
+  it('addConversationMessage + getConversationMessages ordered', () => {
+    svc.addConversationMessage({
+      id: 'MSG-001',
+      conversationId: 'CONV-001',
+      author: 'ARCH',
+      content: 'Should we use sql.js or better-sqlite3?',
+      messageType: 'question'
+    })
+    svc.addConversationMessage({
+      id: 'MSG-002',
+      conversationId: 'CONV-001',
+      author: 'DEV',
+      content: 'better-sqlite3 — sync API, no WASM',
+      messageType: 'answer'
+    })
+    const msgs = svc.getConversationMessages('CONV-001')
+    expect(msgs.length).toBe(2)
+    expect(msgs[0].id).toBe('MSG-001')
+    expect(msgs[1].messageType).toBe('answer')
+  })
+
+  it('updateConversation closes with decision', () => {
+    const closedAt = new Date().toISOString()
+    const updated = svc.updateConversation('CONV-001', {
+      status: 'closed',
+      decisionSummary: 'Use better-sqlite3',
+      closedAt
+    })
+    expect(updated.status).toBe('closed')
+    expect(updated.decisionSummary).toBe('Use better-sqlite3')
+  })
+
+  it('linkConversation + findConversationsByLink', () => {
+    svc.linkConversation('CONV-001', 'task', 'TASK-501')
+    const links = svc.getConversationLinks('CONV-001')
+    expect(links.length).toBe(1)
+    expect(links[0].linkedId).toBe('TASK-501')
+
+    const convs = svc.findConversationsByLink('task', 'TASK-501')
+    expect(convs.length).toBe(1)
+    expect(convs[0].id).toBe('CONV-001')
+  })
+
+  it('linkConversation is idempotent', () => {
+    svc.linkConversation('CONV-001', 'task', 'TASK-501')
+    expect(svc.getConversationLinks('CONV-001').length).toBe(1)
+  })
+
+  it('unlinkConversation removes link', () => {
+    svc.unlinkConversation('CONV-001', 'task', 'TASK-501')
+    expect(svc.getConversationLinks('CONV-001').length).toBe(0)
+  })
+
+  it('conversation_messages FK rejects unknown conversation', () => {
+    expect(() => svc.addConversationMessage({
+      conversationId: 'nonexistent-conv',
+      author: 'X',
+      content: 'orphan'
+    })).toThrow()
+  })
+
+  it('deleteConversation cascades messages + links', () => {
+    svc.createConversation({ id: 'CONV-002', projectId: 'test-proj', title: 'throwaway' })
+    svc.addConversationMessage({ conversationId: 'CONV-002', author: 'X', content: 'hi' })
+    svc.linkConversation('CONV-002', 'task', 'TASK-501')
+
+    svc.deleteConversation('CONV-002')
+    expect(svc.getConversation('CONV-002')).toBeNull()
+    expect(svc.getConversationMessages('CONV-002').length).toBe(0)
+    expect(svc.getConversationLinks('CONV-002').length).toBe(0)
+  })
 })
