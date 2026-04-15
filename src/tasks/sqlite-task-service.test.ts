@@ -543,6 +543,83 @@ describe('SqliteTaskService', () => {
     })).toThrow()
   })
 
+  it('full conversation lifecycle: open → 3 msgs → decide with spawned task', () => {
+    const conv = svc.createConversation({
+      id: 'CONV-LC',
+      projectId: 'test-proj',
+      title: 'Remove outputData from execution response',
+      createdBy: 'BE',
+      participants: [
+        { name: 'BE', type: 'role', role: 'requester' },
+        { name: 'FE', type: 'role', role: 'reviewer' }
+      ]
+    })
+    svc.linkConversation(conv.id, 'task', 'TASK-501')
+
+    svc.addConversationMessage({
+      conversationId: conv.id,
+      authorName: 'BE',
+      content: '3 options: A/B/C',
+      messageType: 'proposal',
+      metadata: {
+        options: [
+          { id: 'A', description: 'remove', tradeoff: 'breaking' },
+          { id: 'B', description: 'slim', tradeoff: 'complex' },
+          { id: 'C', description: 'keep', tradeoff: '50KB' }
+        ]
+      }
+    })
+    svc.addConversationMessage({
+      conversationId: conv.id,
+      authorName: 'FE',
+      content: 'Pick A — lazy-load detail',
+      messageType: 'review',
+      metadata: { selectedOption: 'A' }
+    })
+    svc.addConversationMessage({
+      conversationId: conv.id,
+      authorName: 'BE',
+      content: 'Acked, will implement',
+      messageType: 'answer'
+    })
+
+    svc.updateConversation(conv.id, {
+      status: 'decided',
+      decisionSummary: 'Option A — FE lazy-load, BE set outputData NULL',
+      decidedAt: new Date().toISOString()
+    })
+
+    const spawned = svc.createTask({
+      projectId: 'test-proj',
+      title: 'FE: remove Logs tab, lazy-load node detail',
+      priority: 'high',
+      labels: ['assignee:FE']
+    })
+    svc.addConversationAction({
+      conversationId: conv.id,
+      assignee: 'FE',
+      description: 'Remove Logs tab, lazy-load node detail',
+      linkedTaskId: spawned.id
+    })
+    svc.linkConversation(conv.id, 'task', spawned.id)
+
+    const finalConv = svc.getConversation(conv.id)!
+    expect(finalConv.status).toBe('decided')
+    expect(finalConv.decisionSummary).toContain('Option A')
+
+    const msgs = svc.getConversationMessages(conv.id)
+    expect(msgs.length).toBe(3)
+    expect(msgs[0].metadata?.options?.length).toBe(3)
+    expect(msgs[1].metadata?.selectedOption).toBe('A')
+
+    const actions = svc.getConversationActions(conv.id)
+    expect(actions.length).toBe(1)
+    expect(actions[0].linkedTaskId).toBe(spawned.id)
+
+    const reverse = svc.findConversationsByLink('task', spawned.id)
+    expect(reverse.map(c => c.id)).toContain(conv.id)
+  })
+
   it('deleteConversation cascades all related rows', () => {
     svc.createConversation({
       id: 'CONV-002',

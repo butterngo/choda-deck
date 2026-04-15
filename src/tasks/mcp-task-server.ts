@@ -14,6 +14,7 @@ import * as phaseTools from './mcp-tools/phase-tools'
 import * as featureTools from './mcp-tools/feature-tools'
 import * as roadmapTool from './mcp-tools/roadmap-tool'
 import * as searchTool from './mcp-tools/search-tool'
+import * as conversationTools from './mcp-tools/conversation-tools'
 
 const DB_PATH = process.env.CHODA_DB_PATH || './choda-deck.db'
 
@@ -30,6 +31,7 @@ async function main(): Promise<void> {
   featureTools.register(server, svc)
   roadmapTool.register(server, svc)
   searchTool.register(server, svc)
+  conversationTools.register(server, svc)
 
   const transport = new StdioServerTransport()
   await server.connect(transport)

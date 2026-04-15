@@ -6,6 +6,13 @@ export function now(): string {
   return new Date().toISOString()
 }
 
+let idCounter = 0
+
+export function generateId(prefix: string): string {
+  idCounter += 1
+  return `${prefix}-${Date.now()}-${idCounter}`
+}
+
 export function derivedProgress(total: number, done: number, inProgress: number): DerivedProgress {
   const status = total === 0 ? 'planned'
     : done === total ? 'completed'

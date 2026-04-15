@@ -17,7 +17,7 @@ import type {
   CreateConversationActionInput,
   UpdateConversationActionInput
 } from '../task-types'
-import type { Param } from './shared'
+import { generateId, type Param } from './shared'
 
 function rowToConversation(row: Record<string, unknown>): Conversation {
   return {
@@ -74,7 +74,7 @@ export class ConversationRepository {
   // ── Conversations ──────────────────────────────────────────────────────────
 
   create(input: CreateConversationInput): Conversation {
-    const id = input.id || `CONV-${Date.now()}`
+    const id = input.id || generateId('CONV')
     this.db.prepare(
       `INSERT INTO conversations (id, project_id, title, status, created_by)
        VALUES (?, ?, ?, ?, ?)`
@@ -164,7 +164,7 @@ export class ConversationRepository {
   // ── Messages ───────────────────────────────────────────────────────────────
 
   addMessage(input: CreateConversationMessageInput): ConversationMessage {
-    const id = input.id || `MSG-${Date.now()}`
+    const id = input.id || generateId('MSG')
     this.db.prepare(
       `INSERT INTO conversation_messages
        (id, conversation_id, author_name, content, message_type, metadata_json)
@@ -191,7 +191,7 @@ export class ConversationRepository {
   // ── Actions ────────────────────────────────────────────────────────────────
 
   addAction(input: CreateConversationActionInput): ConversationAction {
-    const id = input.id || `ACT-${Date.now()}`
+    const id = input.id || generateId('ACT')
     this.db.prepare(
       `INSERT INTO conversation_actions
        (id, conversation_id, assignee, description, status, linked_task_id)

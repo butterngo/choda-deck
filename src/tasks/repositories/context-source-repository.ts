@@ -6,7 +6,7 @@ import type {
   CreateContextSourceInput,
   UpdateContextSourceInput
 } from '../task-types'
-import type { Param } from './shared'
+import { generateId, type Param } from './shared'
 
 function rowToContextSource(row: Record<string, unknown>): ContextSource {
   return {
@@ -25,7 +25,7 @@ export class ContextSourceRepository {
   constructor(private readonly db: Database.Database) {}
 
   create(input: CreateContextSourceInput): ContextSource {
-    const id = input.id || `CTXSRC-${Date.now()}`
+    const id = input.id || generateId('CTXSRC')
     this.db.prepare(
       `INSERT INTO context_sources (id, project_id, source_type, source_path, label, category, priority, is_active)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`

@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 import type { Feature, CreateFeatureInput, UpdateFeatureInput, DerivedProgress } from '../task-types'
-import { now, derivedProgress, type Param } from './shared'
+import { now, generateId, derivedProgress, type Param } from './shared'
 
 function rowToFeature(row: Record<string, unknown>): Feature {
   return {
@@ -19,7 +19,7 @@ export class FeatureRepository {
 
   create(input: CreateFeatureInput): Feature {
     const ts = now()
-    const id = input.id || `FEAT-${Date.now()}`
+    const id = input.id || generateId('FEAT')
     this.db.prepare(
       'INSERT INTO features (id, project_id, phase_id, title, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
     ).run(id, input.projectId, input.phaseId || null, input.title, input.priority || null, ts, ts)

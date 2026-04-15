@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 import type { Document, DocumentType, CreateDocumentInput, UpdateDocumentInput } from '../task-types'
-import { now, type Param } from './shared'
+import { now, generateId, type Param } from './shared'
 
 function rowToDocument(row: Record<string, unknown>): Document {
   return {
@@ -19,7 +19,7 @@ export class DocumentRepository {
 
   create(input: CreateDocumentInput): Document {
     const ts = now()
-    const id = input.id || `DOC-${Date.now()}`
+    const id = input.id || generateId('DOC')
     this.db.prepare(
       'INSERT INTO documents (id, project_id, type, title, file_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
     ).run(id, input.projectId, input.type, input.title, input.filePath || null, ts, ts)

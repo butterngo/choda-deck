@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 import type { Phase, PhaseStatus, CreatePhaseInput, UpdatePhaseInput, DerivedProgress } from '../task-types'
-import { now, type Param } from './shared'
+import { now, generateId, type Param } from './shared'
 
 function rowToPhase(row: Record<string, unknown>): Phase {
   return {
@@ -21,7 +21,7 @@ export class PhaseRepository {
 
   create(input: CreatePhaseInput): Phase {
     const ts = now()
-    const id = input.id || `PHASE-${Date.now()}`
+    const id = input.id || generateId('PHASE')
     this.db.prepare(
       'INSERT INTO phases (id, project_id, title, status, position, start_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(id, input.projectId, input.title, input.status || 'open', input.position || 0, input.startDate || null, ts, ts)

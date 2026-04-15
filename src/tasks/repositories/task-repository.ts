@@ -7,7 +7,7 @@ import type {
   UpdateTaskInput,
   TaskFilter
 } from '../task-types'
-import { now, type Param } from './shared'
+import { now, generateId, type Param } from './shared'
 import type { RelationshipRepository } from './relationship-repository'
 
 function rowToTask(row: Record<string, unknown>): Task {
@@ -36,7 +36,7 @@ export class TaskRepository {
 
   create(input: CreateTaskInput): Task {
     const ts = now()
-    const id = input.id || `TASK-${Date.now()}`
+    const id = input.id || generateId('TASK')
     this.db.prepare(
       `INSERT INTO tasks (id, project_id, feature_id, parent_task_id, title, status, priority, labels, due_date, file_path, pinned, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`

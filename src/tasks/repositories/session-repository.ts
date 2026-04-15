@@ -6,7 +6,7 @@ import type {
   CreateSessionInput,
   UpdateSessionInput
 } from '../task-types'
-import { now, type Param } from './shared'
+import { now, generateId, type Param } from './shared'
 
 function rowToSession(row: Record<string, unknown>): Session {
   return {
@@ -25,7 +25,7 @@ export class SessionRepository {
 
   create(input: CreateSessionInput): Session {
     const ts = now()
-    const id = input.id || `SESSION-${Date.now()}`
+    const id = input.id || generateId('SESSION')
     const startedAt = input.startedAt || ts
     this.db.prepare(
       `INSERT INTO sessions (id, project_id, started_at, status, handoff_json, created_at)
