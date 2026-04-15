@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { SqliteTaskService } from './sqlite-task-service'
+import { exportConversationMarkdown } from './mcp-tools/conversation-exporter'
 import * as fs from 'fs'
 import * as path from 'path'
+import * as os from 'os'
 
 const TEST_DB = path.join(__dirname, '__test-tasks__.db')
 
@@ -618,6 +620,90 @@ describe('SqliteTaskService', () => {
 
     const reverse = svc.findConversationsByLink('task', spawned.id)
     expect(reverse.map(c => c.id)).toContain(conv.id)
+  })
+
+  it('exportConversationMarkdown writes conversation.md with decision + actions', () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'choda-export-'))
+    try {
+      const conv = svc.createConversation({
+        id: 'CONV-EXP',
+        projectId: 'test-proj',
+        title: 'Export smoke test',
+        createdBy: 'ARCH',
+        participants: [{ name: 'ARCH', type: 'role' }]
+      })
+      svc.addConversationMessage({
+        conversationId: conv.id,
+        authorName: 'ARCH',
+        content: 'Proposing option A',
+        messageType: 'proposal'
+      })
+      svc.updateConversation(conv.id, {
+        status: 'decided',
+        decisionSummary: 'Use option A',
+        decidedAt: new Date().toISOString()
+      })
+      svc.addConversationAction({
+        conversationId: conv.id,
+        assignee: 'ARCH',
+        description: 'Ship option A'
+      })
+
+      const filePath = exportConversationMarkdown(svc, conv.id, tmpRoot)
+      expect(filePath).not.toBeNull()
+      expect(fs.existsSync(filePath!)).toBe(true)
+
+      const body = fs.readFileSync(filePath!, 'utf-8')
+      expect(body).toContain('Export smoke test')
+      expect(body).toContain('`DECIDED`')
+      expect(body).toContain('**Decision:** Use option A')
+      expect(body).toContain('- [ ] ARCH: Ship option A')
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('exportConversationMarkdown returns null when contentRoot is empty', () => {
+    const conv = svc.createConversation({
+      id: 'CONV-NOROOT',
+      projectId: 'test-proj',
+      title: 'No root',
+      createdBy: 'ARCH'
+    })
+    expect(exportConversationMarkdown(svc, conv.id, '')).toBeNull()
+  })
+
+  it('task_context-style query surfaces linked conversations + actions', () => {
+    const task = svc.createTask({
+      id: 'TASK-CTX',
+      projectId: 'test-proj',
+      title: 'Needs context'
+    })
+    const conv = svc.createConversation({
+      id: 'CONV-CTX',
+      projectId: 'test-proj',
+      title: 'Decide approach for TASK-CTX',
+      createdBy: 'ARCH',
+      participants: [{ name: 'ARCH', type: 'role' }]
+    })
+    svc.linkConversation(conv.id, 'task', task.id)
+    svc.updateConversation(conv.id, {
+      status: 'decided',
+      decisionSummary: 'Go with approach X'
+    })
+    svc.addConversationAction({
+      conversationId: conv.id,
+      assignee: 'ARCH',
+      description: 'Implement X',
+      linkedTaskId: task.id
+    })
+
+    const found = svc.findConversationsByLink('task', task.id)
+    expect(found.map(c => c.id)).toContain(conv.id)
+
+    const actions = svc.getConversationActions(conv.id)
+    expect(actions[0].linkedTaskId).toBe(task.id)
+    expect(actions[0].description).toBe('Implement X')
   })
 
   it('deleteConversation cascades all related rows', () => {

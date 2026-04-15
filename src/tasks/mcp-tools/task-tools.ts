@@ -36,9 +36,23 @@ export const register: Register = (server, svc) => {
         try { fileContent = fs.readFileSync(task.filePath, 'utf-8') } catch { /* ignore */ }
       }
 
+      const conversations = svc.findConversationsByLink('task', id).map(c => ({
+        id: c.id,
+        title: c.title,
+        status: c.status,
+        decisionSummary: c.decisionSummary,
+        actions: svc.getConversationActions(c.id).map(a => ({
+          assignee: a.assignee,
+          description: a.description,
+          status: a.status,
+          linkedTaskId: a.linkedTaskId
+        }))
+      }))
+
       return textResponse({
         task, feature, phase,
         dependencies: deps, subtasks, tags, relationships: rels,
+        conversations,
         fileContent
       })
     }

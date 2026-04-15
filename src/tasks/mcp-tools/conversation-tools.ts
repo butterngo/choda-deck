@@ -1,12 +1,12 @@
 import { z } from 'zod'
 import { textResponse, type Register } from './types'
 import { now } from '../repositories/shared'
+import { exportConversationMarkdown } from './conversation-exporter'
 
 const participantTypeSchema = z.enum(['human', 'agent', 'role'])
 const messageTypeSchema = z.enum(['question', 'answer', 'proposal', 'review', 'decision', 'action', 'comment'])
 const conversationStatusSchema = z.enum(['open', 'discussing', 'decided', 'implemented', 'stale'])
 const priorityEnum = z.enum(['critical', 'high', 'medium', 'low'])
-const linkedTypeSchema = z.enum(['task', 'adr', 'feature', 'commit'])
 
 const metadataSchema = z.object({
   codeChanges: z.array(z.string()).optional(),
@@ -67,11 +67,14 @@ export const register: Register = (server, svc) => {
         svc.linkConversation(conv.id, 'task', taskId)
       }
 
+      const exportedTo = exportConversationMarkdown(svc, conv.id)
+
       return textResponse({
         conversationId: conv.id,
         title: conv.title,
         status: conv.status,
-        createdAt: conv.createdAt
+        createdAt: conv.createdAt,
+        exportedTo
       })
     }
   )
@@ -100,6 +103,7 @@ export const register: Register = (server, svc) => {
       if (conv && conv.status === 'open' && type !== 'comment') {
         svc.updateConversation(conversationId, { status: 'discussing' })
       }
+      exportConversationMarkdown(svc, conversationId)
       return textResponse(msg)
     }
   )
@@ -137,12 +141,15 @@ export const register: Register = (server, svc) => {
         createActionAndMaybeSpawnTask(svc, conv.projectId, conversationId, action)
       )
 
+      const exportedTo = exportConversationMarkdown(svc, conversationId)
+
       return textResponse({
         conversationId,
         status: 'decided',
         decisionSummary: decision,
         decidedAt,
-        actions: createdActions
+        actions: createdActions,
+        exportedTo
       })
     }
   )
