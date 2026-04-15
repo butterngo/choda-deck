@@ -2,6 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { SqliteTaskService } from './sqlite-task-service'
 import { exportConversationMarkdown } from './mcp-tools/conversation-exporter'
 import { buildProjectContext } from './mcp-tools/project-context-builder'
+import { abandonStaleSession, applyTaskUpdates, loadLastHandoff } from './mcp-tools/session-tools'
+import { exportHandoffMarkdown } from './mcp-tools/session-handoff-exporter'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
@@ -764,6 +766,89 @@ describe('SqliteTaskService', () => {
 
   it('project_context returns null for unknown project', () => {
     expect(buildProjectContext(svc, 'nonexistent-proj', 'full', '/tmp')).toBeNull()
+  })
+
+  it('session lifecycle: start → end with tasks → round-trip sees handoff', () => {
+    const projectId = 'sess-proj'
+    svc.ensureProject(projectId, projectId, '/tmp/sess')
+    const task = svc.createTask({ id: 'TASK-SESS-1', projectId, title: 'work', status: 'IN-PROGRESS' })
+
+    // session_start
+    expect(abandonStaleSession(svc, projectId)).toBeNull() // no stale active
+    const first = svc.createSession({ projectId, status: 'active' })
+    expect(loadLastHandoff(svc, projectId)).toBeNull() // no prior completed
+
+    // session_end: tasks updated + handoff
+    const updates = applyTaskUpdates(svc, [{ id: task.id, status: 'DONE' }])
+    expect(updates).toEqual([{
+      id: task.id, title: 'work', oldStatus: 'IN-PROGRESS', newStatus: 'DONE'
+    }])
+    svc.updateSession(first.id, {
+      status: 'completed',
+      endedAt: new Date().toISOString(),
+      handoff: {
+        commits: ['abc123 — feat: something'],
+        resumePoint: 'Write more tests',
+        tasksUpdated: updates.map(u => u.id)
+      }
+    })
+    expect(svc.getTask(task.id)?.status).toBe('DONE')
+
+    // next session_start sees previous handoff
+    const last = loadLastHandoff(svc, projectId)
+    expect(last?.sessionId).toBe(first.id)
+    expect(last?.handoff.resumePoint).toBe('Write more tests')
+  })
+
+  it('session_start marks previous active session as abandoned', () => {
+    const projectId = 'abandon-proj'
+    svc.ensureProject(projectId, projectId, '/tmp/abandon')
+    const stale = svc.createSession({ projectId, status: 'active' })
+
+    const abandoned = abandonStaleSession(svc, projectId)
+    expect(abandoned?.id).toBe(stale.id)
+    expect(svc.getSession(stale.id)?.status).toBe('abandoned')
+    expect(svc.getSession(stale.id)?.endedAt).not.toBeNull()
+  })
+
+  it('exportHandoffMarkdown writes formatted handoff.md', () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'choda-handoff-'))
+    try {
+      const projectId = 'handoff-proj'
+      svc.ensureProject(projectId, projectId, '/tmp/handoff')
+      const session = svc.createSession({
+        projectId,
+        status: 'completed',
+        handoff: {
+          commits: ['abc123 — feat: X', 'def456 — fix: Y'],
+          decisions: ['ADR-016 accepted'],
+          resumePoint: 'Test SaleChannelNode with WireMock',
+          looseEnds: ['stash@{0} unresolved'],
+          tasksUpdated: ['TASK-158']
+        }
+      })
+      svc.updateSession(session.id, { endedAt: new Date().toISOString() })
+
+      const filePath = exportHandoffMarkdown(svc, session.id, tmpRoot)
+      expect(filePath).not.toBeNull()
+      const body = fs.readFileSync(filePath!, 'utf-8')
+      expect(body).toContain(`session: ${session.id}`)
+      expect(body).toContain(`project: ${projectId}`)
+      expect(body).toContain('## What was done')
+      expect(body).toContain('- abc123 — feat: X')
+      expect(body).toContain('## Decisions made')
+      expect(body).toContain('- ADR-016 accepted')
+      expect(body).toContain('## Resume point\n\nTest SaleChannelNode with WireMock')
+      expect(body).toContain('- stash@{0} unresolved')
+      expect(body).toContain('- TASK-158')
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('exportHandoffMarkdown returns null without contentRoot or unknown session', () => {
+    expect(exportHandoffMarkdown(svc, 'SESSION-000', '')).toBeNull()
+    expect(exportHandoffMarkdown(svc, 'nonexistent', '/tmp')).toBeNull()
   })
 
   it('deleteConversation cascades all related rows', () => {
