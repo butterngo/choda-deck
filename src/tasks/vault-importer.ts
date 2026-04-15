@@ -68,6 +68,29 @@ function archiveDir(contentRoot: string, projectId: string): string {
   return path.join(contentRoot, '90-Archive', projectId)
 }
 
+function fileExists(contentRoot: string, relPath: string): boolean {
+  return fs.existsSync(path.join(contentRoot, relPath))
+}
+
+function recentDecisionFiles(contentRoot: string, relDir: string, limit: number): string[] {
+  const abs = path.join(contentRoot, relDir)
+  if (!fs.existsSync(abs)) return []
+  const entries = fs.readdirSync(abs)
+    .filter(f => f.endsWith('.md'))
+    .map(f => {
+      const full = path.join(abs, f)
+      return { rel: `${relDir}/${f}`, mtime: fs.statSync(full).mtimeMs }
+    })
+    .sort((a, b) => b.mtime - a.mtime)
+    .slice(0, limit)
+  return entries.map(e => e.rel)
+}
+
+function decisionLabel(relPath: string): string {
+  const base = path.basename(relPath, '.md')
+  return base.replace(/[_-]+/g, ' ')
+}
+
 // ── Import result ─────────────────────────────────────────────────────────
 
 interface ImportResult {
@@ -106,6 +129,7 @@ export class VaultImporter {
 
     for (const projectId of projectIds) {
       this.taskService.ensureProject(projectId, projectId, projectDir(this.contentRoot, projectId))
+      this.ensureDefaultContextSources(projectId)
 
       this.importTasks(projectId, result)
       this.importArchive(projectId, result)
@@ -114,6 +138,49 @@ export class VaultImporter {
     }
 
     return result
+  }
+
+  // ── Default context sources ────────────────────────────────────────────
+
+  private ensureDefaultContextSources(projectId: string): void {
+    const existing = new Set(this.taskService.findContextSources(projectId).map(s => s.sourcePath))
+    const candidates = this.defaultContextSourceCandidates(projectId)
+
+    for (const c of candidates) {
+      if (existing.has(c.sourcePath)) continue
+      this.taskService.createContextSource({
+        projectId,
+        sourceType: 'file',
+        sourcePath: c.sourcePath,
+        label: c.label,
+        category: c.category,
+        priority: c.priority
+      })
+    }
+  }
+
+  private defaultContextSourceCandidates(projectId: string): Array<{
+    label: string
+    sourcePath: string
+    category: 'what' | 'how' | 'decisions'
+    priority: number
+  }> {
+    const out: Array<{ label: string; sourcePath: string; category: 'what' | 'how' | 'decisions'; priority: number }> = []
+    const base = `10-Projects/${projectId}`
+
+    if (fileExists(this.contentRoot, `${base}/context.md`)) {
+      out.push({ label: 'System Overview', sourcePath: `${base}/context.md`, category: 'what', priority: 10 })
+    }
+
+    const archCandidates = [`${base}/docs/architecture.md`, `${base}/workflow-engine/docs/architecture.md`]
+    const arch = archCandidates.find(p => fileExists(this.contentRoot, p))
+    if (arch) out.push({ label: 'Architecture', sourcePath: arch, category: 'how', priority: 20 })
+
+    for (const rel of recentDecisionFiles(this.contentRoot, `${base}/docs/decisions`, 3)) {
+      out.push({ label: decisionLabel(rel), sourcePath: rel, category: 'decisions', priority: 30 })
+    }
+
+    return out
   }
 
   // ── Task import ─────────────────────────────────────────────────────────

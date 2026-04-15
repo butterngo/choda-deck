@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { SqliteTaskService } from './sqlite-task-service'
 import { exportConversationMarkdown } from './mcp-tools/conversation-exporter'
+import { buildProjectContext } from './mcp-tools/project-context-builder'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
@@ -704,6 +705,65 @@ describe('SqliteTaskService', () => {
     const actions = svc.getConversationActions(conv.id)
     expect(actions[0].linkedTaskId).toBe(task.id)
     expect(actions[0].description).toBe('Implement X')
+  })
+
+  it('project_context builder compiles WHO + WHAT + HOW + META', () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'choda-ctx-'))
+    try {
+      const projectId = 'ctx-proj'
+      const cwd = path.join(tmpRoot, '10-Projects', projectId)
+      fs.mkdirSync(path.join(cwd, 'docs', 'decisions'), { recursive: true })
+      fs.writeFileSync(path.join(cwd, 'context.md'), '# Overview\n\nProject does X.\n')
+      fs.writeFileSync(path.join(cwd, 'docs', 'architecture.md'), '# Arch\n\nElectron + SQLite.\n')
+      fs.writeFileSync(path.join(cwd, 'docs', 'decisions', 'ADR-001.md'), '# ADR-001\n\nChose SQLite.\n')
+
+      svc.ensureProject(projectId, projectId, cwd)
+
+      svc.createContextSource({
+        projectId, sourceType: 'file',
+        sourcePath: `10-Projects/${projectId}/context.md`,
+        label: 'System Overview', category: 'what', priority: 10
+      })
+      svc.createContextSource({
+        projectId, sourceType: 'file',
+        sourcePath: `10-Projects/${projectId}/docs/architecture.md`,
+        label: 'Architecture', category: 'how', priority: 20
+      })
+      svc.createContextSource({
+        projectId, sourceType: 'file',
+        sourcePath: `10-Projects/${projectId}/docs/decisions/ADR-001.md`,
+        label: 'ADR-001', category: 'decisions', priority: 30
+      })
+
+      const ph = svc.createPhase({ id: 'PH-CTX', projectId, title: 'Phase X', startDate: '2026-04-01' })
+      svc.createTask({ id: 'TASK-CTX-1', projectId, title: 'in flight', status: 'IN-PROGRESS' })
+      svc.createSession({ id: 'SESSION-CTX', projectId, status: 'completed', handoff: { resumePoint: 'TASK-CTX-1' } })
+      svc.createConversation({
+        id: 'CONV-CTX-OPEN', projectId,
+        title: 'pending decision', createdBy: 'ARCH',
+        participants: [{ name: 'ARCH', type: 'role' }]
+      })
+
+      const bundle = buildProjectContext(svc, projectId, 'full', tmpRoot)
+      expect(bundle).not.toBeNull()
+      expect(bundle!.project.id).toBe(projectId)
+      expect(bundle!.currentState.activePhase?.id).toBe(ph.id)
+      expect(bundle!.currentState.activeTasks.map(t => t.id)).toContain('TASK-CTX-1')
+      expect(bundle!.currentState.lastSession?.id).toBe('SESSION-CTX')
+      expect(bundle!.currentState.openConversations.map(c => c.id)).toContain('CONV-CTX-OPEN')
+      expect(bundle!.architecture).toContain('Electron + SQLite')
+      expect(bundle!.recentDecisions.length).toBe(1)
+      expect(bundle!.contextSources.length).toBe(3)
+
+      const summary = buildProjectContext(svc, projectId, 'summary', tmpRoot)
+      expect(summary!.architecture!.length).toBeLessThanOrEqual(bundle!.architecture!.length)
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('project_context returns null for unknown project', () => {
+    expect(buildProjectContext(svc, 'nonexistent-proj', 'full', '/tmp')).toBeNull()
   })
 
   it('deleteConversation cascades all related rows', () => {

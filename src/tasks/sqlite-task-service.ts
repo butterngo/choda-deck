@@ -74,6 +74,10 @@ export class SqliteTaskService implements
     this.projects.ensure(id, name, cwd)
   }
 
+  getProject(id: string): { id: string; name: string; cwd: string } | null {
+    return this.projects.get(id)
+  }
+
   // ── Task operations ────────────────────────────────────────────────────────
   createTask(input: CreateTaskInput): Task { return this.tasks.create(input) }
   updateTask(id: string, input: UpdateTaskInput): Task { return this.tasks.update(id, input) }
