@@ -11,10 +11,11 @@ interface TaskItem {
 }
 
 interface DailyFocusViewProps {
+  workspaceId: string
   visible: boolean
 }
 
-function DailyFocusView({ visible }: DailyFocusViewProps): React.JSX.Element {
+function DailyFocusView({ workspaceId, visible }: DailyFocusViewProps): React.JSX.Element {
   const [pinnedTasks, setPinnedTasks] = useState<TaskItem[]>([])
   const [dueTasks, setDueTasks] = useState<TaskItem[]>([])
   const [inProgressTasks, setInProgressTasks] = useState<TaskItem[]>([])
@@ -28,7 +29,7 @@ function DailyFocusView({ visible }: DailyFocusViewProps): React.JSX.Element {
       window.api.task.list({ status: 'IN-PROGRESS' })
     ])
     setPinnedTasks(pinned as TaskItem[])
-    setDueTasks((due as TaskItem[]).filter(t => !t.pinned)) // avoid duplicates
+    setDueTasks((due as TaskItem[]).filter(t => !t.pinned))
     setInProgressTasks(wip as TaskItem[])
   }, [today])
 
@@ -61,6 +62,11 @@ function DailyFocusView({ visible }: DailyFocusViewProps): React.JSX.Element {
       <div className="deck-focus-header">
         <span className="deck-focus-title">Daily Focus — {today}</span>
         <button className="deck-sidebar-btn" onClick={loadData} title="Refresh">↻</button>
+        <button
+          className="deck-sidebar-btn"
+          onClick={() => window.api.pty.input(workspaceId, '/daily\n')}
+          title="Run /daily in terminal"
+        >/daily</button>
       </div>
 
       {isEmpty && (

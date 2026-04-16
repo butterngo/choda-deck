@@ -36,13 +36,44 @@ body,
   padding: 8px 0;
   flex-shrink: 0;
   overflow-y: auto;
+  transition: width 0.15s ease;
+}
+
+.deck-sidebar--collapsed {
+  width: 36px;
+  padding: 8px 0;
+  overflow: hidden;
+}
+
+.deck-sidebar-hamburger {
+  background: transparent;
+  border: none;
+  color: #666;
+  width: 28px;
+  height: 28px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.deck-sidebar-hamburger:hover {
+  background: #2a2d2e;
+  color: #d4d4d4;
+}
+
+.deck-sidebar--collapsed .deck-sidebar-hamburger {
+  margin: 0 auto;
 }
 
 .deck-sidebar-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 4px 12px 8px;
+  gap: 4px;
+  padding: 4px 8px 8px;
 }
 
 .deck-sidebar-title {
@@ -207,12 +238,44 @@ body,
 }
 
 .deck-sidebar-project-header {
-  padding: 6px 12px 2px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 8px 2px 4px;
+}
+
+.deck-sidebar-project-arrow-btn {
+  background: transparent;
+  border: none;
+  color: #555;
+  cursor: pointer;
+  font-size: 10px;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 2px;
+  padding: 0;
+}
+
+.deck-sidebar-project-arrow-btn:hover {
+  color: #d4d4d4;
+  background: #3a3d3e;
+}
+
+.deck-sidebar-project-name {
+  flex: 1;
   font-size: 11px;
   font-weight: 600;
-  color: #888;
   text-transform: uppercase;
   letter-spacing: 0.3px;
+  color: #888;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 4px;
 }
 
 /* Main content */
@@ -221,6 +284,8 @@ body,
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .deck-header {
@@ -335,6 +400,7 @@ body,
 .deck-dot--green { background: #4caf50; }
 .deck-dot--red { background: #f44336; }
 .deck-dot--grey { background: #666; }
+.deck-dot--yellow { background: #f0a500; }
 
 .deck-plugin-empty {
   color: #666;
@@ -626,6 +692,18 @@ body,
   font-family: 'Cascadia Code', Consolas, monospace;
 }
 
+.deck-detail-dep--link {
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 2px 4px;
+  margin: 0 -4px;
+}
+
+.deck-detail-dep--link:hover {
+  color: #61dafb;
+  background: #1a2d3a;
+}
+
 .deck-detail-subtask {
   display: flex;
   align-items: center;
@@ -739,6 +817,41 @@ body,
 .deck-kanban-badge--medium { background: #1a3a5c; color: #8cf; }
 .deck-kanban-badge--low { background: #2a2d2e; color: #888; }
 .deck-kanban-badge--epic { background: #2d1a4a; color: #c8f; }
+
+.deck-kanban-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.deck-kanban-label {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: #2a2d2e;
+  color: #888;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.1s;
+}
+
+.deck-kanban-label:hover {
+  color: #ccc;
+  border-color: #555;
+}
+
+.deck-kanban-label--active {
+  background: #1a3a5c;
+  color: #8cf;
+  border-color: #3a6a9c;
+}
+
+.deck-sidebar-btn--active {
+  background: #1a3a5c;
+  color: #8cf;
+  border-color: #3a6a9c;
+}
 
 /* Epic filter dropdown */
 .deck-kanban-epic-filter {
@@ -974,8 +1087,19 @@ body,
   font-size: 13px;
 }
 
-.deck-roadmap-task:hover {
+.deck-roadmap-task:hover,
+.deck-roadmap-task-row:hover {
   background: #2a2d2e;
+}
+
+.deck-roadmap-task-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 36px;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 4px;
 }
 
 .deck-roadmap-task-id {
@@ -1228,6 +1352,21 @@ body,
   color: #666;
 }
 
+.deck-focus-log {
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 11px;
+  color: #d4d4d4;
+  background: #141414;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 8px;
+  margin: 0;
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .deck-terminal {
   flex: 1;
   padding: 4px;
@@ -1315,6 +1454,94 @@ body,
   line-height: 1.6;
   white-space: pre;
 }
+
+/* ── Project/Workspace form ──────────────────────────────────────────── */
+
+.deck-form-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.deck-form-panel {
+  background: #252526;
+  border: 1px solid #444;
+  border-radius: 8px;
+  padding: 20px 24px;
+  min-width: 360px;
+  max-width: 480px;
+}
+
+.deck-form-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #d4d4d4;
+  margin-bottom: 16px;
+}
+
+.deck-form-label {
+  display: block;
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 12px;
+}
+
+.deck-form-input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: #1e1e1e;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #d4d4d4;
+  font-size: 13px;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  outline: none;
+}
+
+.deck-form-input:focus {
+  border-color: #61dafb;
+}
+
+.deck-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.deck-btn-primary {
+  background: #264f78;
+  border-color: #61dafb;
+  color: #d4d4d4;
+}
+
+.deck-btn-primary:hover {
+  background: #2d6da3;
+}
+
+.deck-sidebar-add-ws-btn {
+  background: transparent;
+  border: none;
+  color: #555;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.deck-sidebar-add-ws-btn:hover {
+  color: #d4d4d4;
+}
+
 
 /* Search bar */
 .deck-search {
@@ -1469,12 +1696,149 @@ body,
   min-height: 0;
 }
 
+.deck-files-content.wiki-split {
+  flex-direction: row;
+}
+
+/* Wiki delete button */
+.deck-wiki-delete-btn {
+  background: transparent;
+  border: 1px solid #444;
+  color: #888;
+  width: 26px;
+  height: 26px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+}
+
+.deck-wiki-delete-btn:hover {
+  background: #5a1d1d;
+  border-color: #f44;
+  color: #f88;
+}
+
+/* Wiki mode buttons */
+.deck-wiki-mode-btns {
+  display: flex;
+  gap: 2px;
+  margin-left: 4px;
+}
+
+.deck-wiki-mode-btn {
+  background: transparent;
+  border: 1px solid #444;
+  color: #888;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.deck-wiki-mode-btn:hover {
+  background: #333;
+  color: #d4d4d4;
+}
+
+.deck-wiki-mode-btn.active {
+  background: #0e639c;
+  border-color: #0e639c;
+  color: #fff;
+}
+
+/* Wiki save area */
+.deck-wiki-save-area {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+}
+
+.deck-wiki-dirty-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e2b93b;
+  flex-shrink: 0;
+}
+
+.deck-wiki-save-btn {
+  background: transparent;
+  border: 1px solid #444;
+  color: #888;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.deck-wiki-save-btn:hover:not(:disabled) {
+  background: #333;
+  color: #d4d4d4;
+}
+
+.deck-wiki-save-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.deck-wiki-save-status {
+  font-size: 11px;
+  color: #6a9955;
+}
+
+.deck-wiki-save-status.error {
+  color: #f88;
+}
+
+/* Wiki editor pane */
+.deck-wiki-editor-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid #333;
+}
+
+.deck-wiki-textarea {
+  flex: 1;
+  width: 100%;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 16px;
+  font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  box-sizing: border-box;
+}
+
+/* Wiki preview pane (split mode) */
+.deck-wiki-preview-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* Markdown viewer */
 .deck-md {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -1596,6 +1960,15 @@ body,
 .deck-md-body img {
   max-width: 100%;
   border-radius: 4px;
+}
+
+.deck-md-mermaid {
+  margin: 0 0 12px;
+  text-align: center;
+}
+
+.deck-md-mermaid svg {
+  max-width: 100%;
 }
 
 .deck-md-empty {

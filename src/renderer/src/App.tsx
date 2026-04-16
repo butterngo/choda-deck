@@ -4,7 +4,6 @@ import './assets/deck.css'
 import Sidebar from './Sidebar'
 import ViewRouter, { terminalViewType } from './ViewRouter'
 import KanbanBoard from './KanbanBoard'
-import RoadmapView from './RoadmapView'
 import DailyFocusView from './DailyFocusView'
 import FilesView from './FilesView'
 import type { ProjectConfig, WorkspaceConfig } from '../../preload/index'
@@ -21,28 +20,21 @@ const VIEW_TYPES: ViewType[] = [
   terminalViewType,
   {
     id: 'tasks',
-    label: 'Tasks',
+    label: 'Board',
     render: (project, _workspace, visible) => (
       <KanbanBoard projectId={project.id} visible={visible} />
     )
   },
   {
-    id: 'roadmap',
-    label: 'Roadmap',
-    render: (project, _workspace, visible) => (
-      <RoadmapView projectId={project.id} visible={visible} />
-    )
-  },
-  {
     id: 'focus',
     label: 'Focus',
-    render: (_project, _workspace, visible) => (
-      <DailyFocusView visible={visible} />
+    render: (_project, workspace, visible) => (
+      <DailyFocusView workspaceId={workspace.id} visible={visible} />
     )
   },
   {
     id: 'files',
-    label: 'Files',
+    label: 'Wiki',
     render: (_project, _workspace, visible) => (
       <FilesView visible={visible} />
     )
@@ -122,6 +114,9 @@ function App(): React.JSX.Element {
           projects={projects}
           activeWorkspaceId={active?.workspaceId || ''}
           onSelect={handleSelect}
+          onProjectsChanged={() => {
+            window.api.project.list().then(setProjects)
+          }}
         />
         <main className="deck-main">
           <header className="deck-header">

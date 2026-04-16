@@ -64,7 +64,13 @@ export interface ChodaApi {
     search: (query: string, rootPath: string) => Promise<Array<{ path: string; name: string; matches: Array<{ line: number; text: string }> }>>
     resolve: (wikilink: string, rootPath: string) => Promise<string | null>
     write: (filePath: string, content: string) => Promise<{ ok: boolean }>
+    delete: (filePath: string) => Promise<{ ok: boolean }>
     contentRoot: () => Promise<string>
+    daily: {
+      run: () => Promise<{ ok: boolean; error?: string }>
+      onChunk: (callback: (data: string) => void) => () => void
+      onDone: (callback: (exitCode: number) => void) => () => void
+    }
   }
 }
 

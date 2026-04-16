@@ -118,8 +118,24 @@ const api = {
       ipcRenderer.invoke('vault:resolve', wikilink, rootPath),
     write: (filePath: string, content: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('vault:write', filePath, content),
+    delete: (filePath: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('vault:delete', filePath),
     contentRoot: (): Promise<string> =>
-      ipcRenderer.invoke('vault:contentRoot')
+      ipcRenderer.invoke('vault:contentRoot'),
+    daily: {
+      run: (): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('vault:daily:run'),
+      onChunk: (callback: (data: string) => void): (() => void) => {
+        const listener = (_event: IpcRendererEvent, data: string): void => callback(data)
+        ipcRenderer.on('vault:daily:chunk', listener)
+        return () => ipcRenderer.removeListener('vault:daily:chunk', listener)
+      },
+      onDone: (callback: (exitCode: number) => void): (() => void) => {
+        const listener = (_event: IpcRendererEvent, code: number): void => callback(code)
+        ipcRenderer.on('vault:daily:done', listener)
+        return () => ipcRenderer.removeListener('vault:daily:done', listener)
+      }
+    }
   },
 }
 

@@ -1,6 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { spawn as spawnProcess } from 'child_process'
 import * as pty from 'node-pty'
 import icon from '../../resources/icon.png?asset'
 import { SqliteTaskService } from '../tasks/sqlite-task-service'
@@ -398,8 +399,37 @@ app.whenReady().then(async () => {
     return { ok: true }
   })
 
+  ipcMain.handle('vault:delete', (_event, filePath: string) => {
+    vaultService.deleteFile(filePath)
+    return { ok: true }
+  })
+
   ipcMain.handle('vault:contentRoot', () => {
     return config.contentRoot
+  })
+
+  ipcMain.handle('vault:daily:run', (event) => {
+    const vaultPath = config.contentRoot
+    if (!vaultPath) return { ok: false, error: 'No contentRoot configured' }
+
+    const proc = spawnProcess('claude', ['--print', '/daily'], {
+      cwd: vaultPath,
+      shell: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: process.env as { [key: string]: string }
+    })
+
+    proc.stdout.on('data', (chunk: Buffer) => {
+      if (!event.sender.isDestroyed()) event.sender.send('vault:daily:chunk', chunk.toString())
+    })
+    proc.stderr.on('data', (chunk: Buffer) => {
+      if (!event.sender.isDestroyed()) event.sender.send('vault:daily:chunk', chunk.toString())
+    })
+    proc.on('close', (code) => {
+      if (!event.sender.isDestroyed()) event.sender.send('vault:daily:done', code ?? 0)
+    })
+
+    return { ok: true }
   })
 
   createWindow()
