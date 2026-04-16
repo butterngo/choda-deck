@@ -84,9 +84,21 @@ function createCoreTables(db: Database.Database): void {
 }
 
 function runLegacyMigrations(db: Database.Database): void {
-  try { db.exec('ALTER TABLE phases ADD COLUMN start_date TEXT') } catch { /* exists */ }
-  try { db.exec('ALTER TABLE phases ADD COLUMN completed_date TEXT') } catch { /* exists */ }
-  try { db.exec('ALTER TABLE tasks ADD COLUMN feature_id TEXT') } catch { /* exists */ }
+  try {
+    db.exec('ALTER TABLE phases ADD COLUMN start_date TEXT')
+  } catch {
+    /* exists */
+  }
+  try {
+    db.exec('ALTER TABLE phases ADD COLUMN completed_date TEXT')
+  } catch {
+    /* exists */
+  }
+  try {
+    db.exec('ALTER TABLE tasks ADD COLUMN feature_id TEXT')
+  } catch {
+    /* exists */
+  }
 
   try {
     db.exec(`
@@ -94,11 +106,47 @@ function runLegacyMigrations(db: Database.Database): void {
         SELECT e.feature_id FROM epics e WHERE e.id = tasks.epic_id
       ) WHERE epic_id IS NOT NULL AND feature_id IS NULL
     `)
-  } catch { /* epics table may not exist */ }
+  } catch {
+    /* epics table may not exist */
+  }
 
   db.exec('DROP TABLE IF EXISTS epics')
   db.exec('DROP TABLE IF EXISTS task_dependencies')
-  try { db.exec('DROP INDEX IF EXISTS idx_tasks_epic') } catch { /* ok */ }
+  try {
+    db.exec('DROP INDEX IF EXISTS idx_tasks_epic')
+  } catch {
+    /* ok */
+  }
+
+  // M1 conversation schema migration
+  try {
+    db.exec("ALTER TABLE conversations ADD COLUMN created_by TEXT NOT NULL DEFAULT ''")
+  } catch {
+    /* exists */
+  }
+  try {
+    db.exec('ALTER TABLE conversations ADD COLUMN decided_at TEXT')
+  } catch {
+    /* exists */
+  }
+
+  // conversation_messages: rename author → author_name, add metadata_json
+  migrateConversationMessages(db)
+}
+
+function migrateConversationMessages(db: Database.Database): void {
+  const cols = db.pragma('table_info(conversation_messages)') as Array<{ name: string }>
+  const colNames = cols.map((c) => c.name)
+  if (colNames.includes('author') && !colNames.includes('author_name')) {
+    db.exec('ALTER TABLE conversation_messages RENAME COLUMN author TO author_name')
+  }
+  if (!colNames.includes('metadata_json')) {
+    try {
+      db.exec('ALTER TABLE conversation_messages ADD COLUMN metadata_json TEXT')
+    } catch {
+      /* exists */
+    }
+  }
 }
 
 function createM1Tables(db: Database.Database): void {
@@ -202,8 +250,14 @@ function createIndexes(db: Database.Database): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(project_id, status)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_context_sources_project ON context_sources(project_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_project ON conversations(project_id)')
-  db.exec('CREATE INDEX IF NOT EXISTS idx_conv_messages_conv ON conversation_messages(conversation_id)')
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_conv_messages_conv ON conversation_messages(conversation_id)'
+  )
   db.exec('CREATE INDEX IF NOT EXISTS idx_conv_links_conv ON conversation_links(conversation_id)')
-  db.exec('CREATE INDEX IF NOT EXISTS idx_conv_participants_conv ON conversation_participants(conversation_id)')
-  db.exec('CREATE INDEX IF NOT EXISTS idx_conv_actions_conv ON conversation_actions(conversation_id)')
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_conv_participants_conv ON conversation_participants(conversation_id)'
+  )
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_conv_actions_conv ON conversation_actions(conversation_id)'
+  )
 }

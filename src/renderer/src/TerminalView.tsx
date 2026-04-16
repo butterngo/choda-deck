@@ -30,10 +30,22 @@ function TerminalView({ workspaceId, cwd, visible }: TerminalViewProps): React.J
         fontSize: 14,
         allowProposedApi: true,
         scrollback: 10000,
+        rightClickSelectsWord: true,
         theme: {
           background: '#1e1e1e',
-          foreground: '#d4d4d4'
+          foreground: '#d4d4d4',
+          selectionBackground: '#264f78'
         }
+      })
+
+      // Ctrl+C copies selection if present, otherwise sends SIGINT
+      term.attachCustomKeyEventHandler((ev) => {
+        if (ev.ctrlKey && ev.key === 'c' && ev.type === 'keydown' && term.hasSelection()) {
+          navigator.clipboard.writeText(term.getSelection())
+          term.clearSelection()
+          return false
+        }
+        return true
       })
       const fitAddon = new FitAddon()
       term.loadAddon(fitAddon)
@@ -142,11 +154,7 @@ function TerminalView({ workspaceId, cwd, visible }: TerminalViewProps): React.J
     <div className={`deck-terminal-wrapper${visible ? '' : ' deck-terminal--hidden'}`}>
       {showBanner && (
         <div className={`deck-banner deck-banner--${state === 'crashed' ? 'error' : 'info'}`}>
-          <span>
-            {state === 'crashed'
-              ? 'Session crashed — '
-              : 'Session ended — '}
-          </span>
+          <span>{state === 'crashed' ? 'Session crashed — ' : 'Session ended — '}</span>
           <button className="deck-banner-btn" onClick={handleRestart}>
             Restart
           </button>
