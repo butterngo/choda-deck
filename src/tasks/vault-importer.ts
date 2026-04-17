@@ -44,9 +44,10 @@ function normalizePriority(raw: string | undefined): TaskPriority | null {
 }
 
 function extractId(filename: string, prefixes: string[]): string | null {
-  const pattern = new RegExp(`^((?:${prefixes.join('|')})-\\d+[a-z]?)`)
-  const match = filename.match(pattern)
-  return match ? match[1] : null
+  const base = path.basename(filename, '.md')
+  const part = base.split('_')[0]
+  const valid = new RegExp(`^(?:${prefixes.join('|')})-`)
+  return valid.test(part) ? part : null
 }
 
 function normalizeList(raw: unknown): string[] {
