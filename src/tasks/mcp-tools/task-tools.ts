@@ -68,8 +68,16 @@ export const register: Register = (server, svc) => {
       }
 
       let fileContent: string | null = null
-      if (task.filePath && fs.existsSync(task.filePath)) {
-        try { fileContent = fs.readFileSync(task.filePath, 'utf-8') } catch { /* ignore */ }
+      let fileHint: string | null = null
+      if (task.filePath) {
+        if (fs.existsSync(task.filePath)) {
+          try { fileContent = fs.readFileSync(task.filePath, 'utf-8') } catch { /* ignore */ }
+        } else {
+          fileHint = `filePath set but file not found: ${task.filePath}`
+        }
+      } else if (CONTENT_ROOT) {
+        const expected = path.join(CONTENT_ROOT, '10-Projects', task.projectId, 'tasks', `${task.id}.md`)
+        fileHint = `no spec file attached — expected location: ${expected}`
       }
 
       const conversations = svc.findConversationsByLink('task', id).map(c => ({
@@ -89,7 +97,8 @@ export const register: Register = (server, svc) => {
         task, feature, phase,
         dependencies: deps, subtasks, tags, relationships: rels,
         conversations,
-        fileContent
+        fileContent,
+        fileHint
       })
     }
   )
@@ -170,6 +179,37 @@ export const register: Register = (server, svc) => {
         }
       }
       return textResponse(task)
+    }
+  )
+
+  server.registerTool(
+    'tasks_update_batch',
+    {
+      description: 'Update multiple tasks with the same patch (e.g. bulk mark DONE)',
+      inputSchema: {
+        ids: z.array(z.string()).describe('List of task IDs to update'),
+        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE']).optional(),
+        priority: z.enum(['critical', 'high', 'medium', 'low']).nullable().optional(),
+        labels: z.array(z.string()).optional(),
+        pinned: z.boolean().optional()
+      }
+    },
+    async ({ ids, ...patch }) => {
+      const results = ids.map(id => {
+        const task = svc.updateTask(id, patch)
+        if (patch.status === 'DONE' && task.filePath && CONTENT_ROOT) {
+          const archiveDir = path.join(CONTENT_ROOT, '90-Archive', task.projectId)
+          if (!fs.existsSync(archiveDir)) fs.mkdirSync(archiveDir, { recursive: true })
+          const dest = path.join(archiveDir, path.basename(task.filePath))
+          if (task.filePath !== dest && fs.existsSync(task.filePath)) {
+            fs.renameSync(task.filePath, dest)
+            svc.updateTask(id, { filePath: dest })
+            task.filePath = dest
+          }
+        }
+        return task
+      })
+      return textResponse(results)
     }
   )
 }
