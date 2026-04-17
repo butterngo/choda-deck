@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 import '@xterm/xterm/css/xterm.css'
 import './assets/deck.css'
 import Sidebar from './Sidebar'
-import ViewRouter, { terminalViewType } from './ViewRouter'
+import ViewRouter from './ViewRouter'
 import KanbanBoard from './KanbanBoard'
 import DailyFocusView from './DailyFocusView'
 import FilesView from './FilesView'
+import ActivityView from './ActivityView'
 import type { ProjectConfig, WorkspaceConfig } from '../../preload/index'
 import type { ViewType } from './ViewRouter'
 
@@ -17,7 +18,6 @@ interface ActiveSelection {
 
 // Register all view types — future views (notes, graph) added here
 const VIEW_TYPES: ViewType[] = [
-  terminalViewType,
   {
     id: 'tasks',
     label: 'Board',
@@ -33,11 +33,16 @@ const VIEW_TYPES: ViewType[] = [
     )
   },
   {
+    id: 'activity',
+    label: 'Activity',
+    render: (project, _workspace, visible) => (
+      <ActivityView projectId={project.id} visible={visible} />
+    )
+  },
+  {
     id: 'files',
     label: 'Wiki',
-    render: (_project, _workspace, visible) => (
-      <FilesView visible={visible} />
-    )
+    render: (_project, _workspace, visible) => <FilesView visible={visible} />
   }
 ]
 
@@ -54,7 +59,9 @@ function App(): React.JSX.Element {
         setActive({ projectId: list[0].id, workspaceId: list[0].workspaces[0].id })
       }
     })
-    return () => { disposed = true }
+    return () => {
+      disposed = true
+    }
   }, [])
 
   // Flatten workspaces for keyboard shortcuts
@@ -84,7 +91,7 @@ function App(): React.JSX.Element {
         e.preventDefault()
         setActive((curr) => {
           if (!curr) return curr
-          const idx = allWorkspaces.findIndex(w => w.workspace.id === curr.workspaceId)
+          const idx = allWorkspaces.findIndex((w) => w.workspace.id === curr.workspaceId)
           const next = e.shiftKey
             ? (idx - 1 + allWorkspaces.length) % allWorkspaces.length
             : (idx + 1) % allWorkspaces.length
@@ -104,8 +111,8 @@ function App(): React.JSX.Element {
     setActive({ projectId, workspaceId })
   }
 
-  const activeProject = active ? projects.find(p => p.id === active.projectId) : null
-  const activeWorkspace = activeProject?.workspaces.find(w => w.id === active?.workspaceId)
+  const activeProject = active ? projects.find((p) => p.id === active.projectId) : null
+  const activeWorkspace = activeProject?.workspaces.find((w) => w.id === active?.workspaceId)
 
   return (
     <div className="deck-root">

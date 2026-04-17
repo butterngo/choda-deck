@@ -17,8 +17,12 @@ export interface ProjectConfig {
 // Custom APIs for renderer — PTY bridge for xterm.js
 const api = {
   pty: {
-    spawn: (id: string, cwd: string, cols: number, rows: number): Promise<{ ok: boolean; id: string }> =>
-      ipcRenderer.invoke('pty:spawn', id, cwd, cols, rows),
+    spawn: (
+      id: string,
+      cwd: string,
+      cols: number,
+      rows: number
+    ): Promise<{ ok: boolean; id: string }> => ipcRenderer.invoke('pty:spawn', id, cwd, cols, rows),
     input: (id: string, data: string): void => {
       ipcRenderer.send('pty:input', id, data)
     },
@@ -43,7 +47,13 @@ const api = {
   },
   project: {
     list: (): Promise<ProjectConfig[]> => ipcRenderer.invoke('project:list'),
-    add: (projectId: string, name: string, workspaceId: string, workspaceLabel: string, cwd: string): Promise<{ ok: boolean; error?: string; project?: ProjectConfig }> =>
+    add: (
+      projectId: string,
+      name: string,
+      workspaceId: string,
+      workspaceLabel: string,
+      cwd: string
+    ): Promise<{ ok: boolean; error?: string; project?: ProjectConfig }> =>
       ipcRenderer.invoke('project:add', projectId, name, workspaceId, workspaceLabel, cwd),
     remove: (projectId: string, workspaceId?: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('project:remove', projectId, workspaceId)
@@ -51,26 +61,28 @@ const api = {
   task: {
     list: (filter: Record<string, unknown>): Promise<unknown[]> =>
       ipcRenderer.invoke('task:list', filter),
-    get: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('task:get', id),
-    detail: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('task:detail', id),
+    get: (id: string): Promise<unknown> => ipcRenderer.invoke('task:get', id),
+    detail: (id: string): Promise<unknown> => ipcRenderer.invoke('task:detail', id),
     create: (input: Record<string, unknown>): Promise<unknown> =>
       ipcRenderer.invoke('task:create', input),
     update: (id: string, input: Record<string, unknown>): Promise<unknown> =>
       ipcRenderer.invoke('task:update', id, input),
-    delete: (id: string): Promise<void> =>
-      ipcRenderer.invoke('task:delete', id),
+    delete: (id: string): Promise<void> => ipcRenderer.invoke('task:delete', id),
     subtasks: (parentId: string): Promise<unknown[]> =>
       ipcRenderer.invoke('task:subtasks', parentId),
-    pinned: (): Promise<unknown[]> =>
-      ipcRenderer.invoke('task:pinned'),
-    due: (date: string): Promise<unknown[]> =>
-      ipcRenderer.invoke('task:due', date),
+    pinned: (): Promise<unknown[]> => ipcRenderer.invoke('task:pinned'),
+    due: (date: string): Promise<unknown[]> => ipcRenderer.invoke('task:due', date),
     refresh: (): Promise<{ imported: number; skipped: number; errors: string[] }> =>
       ipcRenderer.invoke('task:refresh'),
-    import: (statusMap?: Record<string, string>): Promise<{ tasks: number; phases: number; documents: number; skipped: number; errors: string[] }> =>
-      ipcRenderer.invoke('vault:import', statusMap),
+    import: (
+      statusMap?: Record<string, string>
+    ): Promise<{
+      tasks: number
+      phases: number
+      documents: number
+      skipped: number
+      errors: string[]
+    }> => ipcRenderer.invoke('vault:import', statusMap),
     onChanged: (callback: () => void): (() => void) => {
       const listener = (): void => callback()
       ipcRenderer.on('task:changed', listener)
@@ -78,53 +90,78 @@ const api = {
     }
   },
   phase: {
-    list: (projectId: string): Promise<unknown[]> =>
-      ipcRenderer.invoke('phase:list', projectId),
-    get: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('phase:get', id),
+    list: (projectId: string): Promise<unknown[]> => ipcRenderer.invoke('phase:list', projectId),
+    get: (id: string): Promise<unknown> => ipcRenderer.invoke('phase:get', id),
     create: (input: Record<string, unknown>): Promise<unknown> =>
       ipcRenderer.invoke('phase:create', input),
     update: (id: string, input: Record<string, unknown>): Promise<unknown> =>
       ipcRenderer.invoke('phase:update', id, input),
     delete: (id: string, cascade?: boolean): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('phase:delete', id, cascade),
-    progress: (phaseId: string): Promise<{ total: number; done: number; inProgress: number; status: string; percent: number }> =>
-      ipcRenderer.invoke('phase:progress', phaseId)
+    progress: (
+      phaseId: string
+    ): Promise<{
+      total: number
+      done: number
+      inProgress: number
+      status: string
+      percent: number
+    }> => ipcRenderer.invoke('phase:progress', phaseId)
   },
   feature: {
-    list: (projectId: string): Promise<unknown[]> =>
-      ipcRenderer.invoke('feature:list', projectId),
+    list: (projectId: string): Promise<unknown[]> => ipcRenderer.invoke('feature:list', projectId),
     listByPhase: (phaseId: string): Promise<unknown[]> =>
       ipcRenderer.invoke('feature:listByPhase', phaseId),
-    get: (id: string): Promise<unknown> =>
-      ipcRenderer.invoke('feature:get', id),
+    get: (id: string): Promise<unknown> => ipcRenderer.invoke('feature:get', id),
     create: (input: Record<string, unknown>): Promise<unknown> =>
       ipcRenderer.invoke('feature:create', input),
     update: (id: string, input: Record<string, unknown>): Promise<unknown> =>
       ipcRenderer.invoke('feature:update', id, input),
-    delete: (id: string): Promise<void> =>
-      ipcRenderer.invoke('feature:delete', id),
-    progress: (featureId: string): Promise<{ total: number; done: number; inProgress: number; status: string; percent: number }> =>
-      ipcRenderer.invoke('feature:progress', featureId)
+    delete: (id: string): Promise<void> => ipcRenderer.invoke('feature:delete', id),
+    progress: (
+      featureId: string
+    ): Promise<{
+      total: number
+      done: number
+      inProgress: number
+      status: string
+      percent: number
+    }> => ipcRenderer.invoke('feature:progress', featureId)
+  },
+  session: {
+    list: (projectId: string): Promise<unknown[]> => ipcRenderer.invoke('session:list', projectId),
+    get: (id: string): Promise<unknown> => ipcRenderer.invoke('session:get', id),
+    delete: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('session:delete', id)
+  },
+  conversation: {
+    list: (projectId: string, status?: string): Promise<unknown[]> =>
+      ipcRenderer.invoke('conversation:list', projectId, status),
+    read: (id: string): Promise<unknown> => ipcRenderer.invoke('conversation:read', id),
+    delete: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('conversation:delete', id)
   },
   vault: {
-    tree: (rootPath: string): Promise<Array<{ name: string; path: string; type: 'file' | 'directory'; children?: unknown[] }>> =>
-      ipcRenderer.invoke('vault:tree', rootPath),
+    tree: (
+      rootPath: string
+    ): Promise<
+      Array<{ name: string; path: string; type: 'file' | 'directory'; children?: unknown[] }>
+    > => ipcRenderer.invoke('vault:tree', rootPath),
     read: (filePath: string): Promise<{ content: string; size: number; mtime: string }> =>
       ipcRenderer.invoke('vault:read', filePath),
-    search: (query: string, rootPath: string): Promise<Array<{ path: string; name: string; matches: Array<{ line: number; text: string }> }>> =>
-      ipcRenderer.invoke('vault:search', query, rootPath),
+    search: (
+      query: string,
+      rootPath: string
+    ): Promise<
+      Array<{ path: string; name: string; matches: Array<{ line: number; text: string }> }>
+    > => ipcRenderer.invoke('vault:search', query, rootPath),
     resolve: (wikilink: string, rootPath: string): Promise<string | null> =>
       ipcRenderer.invoke('vault:resolve', wikilink, rootPath),
     write: (filePath: string, content: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('vault:write', filePath, content),
     delete: (filePath: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('vault:delete', filePath),
-    contentRoot: (): Promise<string> =>
-      ipcRenderer.invoke('vault:contentRoot'),
+    contentRoot: (): Promise<string> => ipcRenderer.invoke('vault:contentRoot'),
     daily: {
-      run: (): Promise<{ ok: boolean; error?: string }> =>
-        ipcRenderer.invoke('vault:daily:run'),
+      run: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('vault:daily:run'),
       onChunk: (callback: (data: string) => void): (() => void) => {
         const listener = (_event: IpcRendererEvent, data: string): void => callback(data)
         ipcRenderer.on('vault:daily:chunk', listener)
@@ -136,7 +173,7 @@ const api = {
         return () => ipcRenderer.removeListener('vault:daily:done', listener)
       }
     }
-  },
+  }
 }
 
 if (process.contextIsolated) {

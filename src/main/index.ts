@@ -69,7 +69,9 @@ function loadConfig(): ProjectsConfig {
     // Old hierarchy schema: [{ id, name, taskPath, workspaces }]
     return {
       contentRoot: '',
-      projects: (arr as Array<{ id: string; name: string; taskPath?: string; workspaces: WorkspaceEntry[] }>).map((p) => ({
+      projects: (
+        arr as Array<{ id: string; name: string; taskPath?: string; workspaces: WorkspaceEntry[] }>
+      ).map((p) => ({
         id: p.id,
         name: p.name,
         workspaces: p.workspaces
@@ -87,9 +89,11 @@ function saveConfig(config: ProjectsConfig): void {
   writeFileSync(filePath, JSON.stringify(config, null, 2), 'utf-8')
 }
 
-function findWorkspace(workspaceId: string): { project: ProjectEntry; workspace: WorkspaceEntry } | null {
+function findWorkspace(
+  workspaceId: string
+): { project: ProjectEntry; workspace: WorkspaceEntry } | null {
   for (const p of projects) {
-    const ws = p.workspaces.find(w => w.id === workspaceId)
+    const ws = p.workspaces.find((w) => w.id === workspaceId)
     if (ws) return { project: p, workspace: ws }
   }
   return null
@@ -142,7 +146,13 @@ function ensurePath(): void {
 // Map of session id -> running pty process
 const sessions = new Map<string, pty.IPty>()
 
-function createPtySession(id: string, cwd: string, cols: number, rows: number, webContents: Electron.WebContents): void {
+function createPtySession(
+  id: string,
+  cwd: string,
+  cols: number,
+  rows: number,
+  webContents: Electron.WebContents
+): void {
   if (sessions.has(id)) {
     // Already exists — don't respawn
     return
@@ -250,33 +260,46 @@ app.whenReady().then(async () => {
   // Project management IPC
   ipcMain.handle('project:list', () => projects)
 
-  ipcMain.handle('project:add', (_event, projectId: string, name: string, workspaceId: string, workspaceLabel: string, cwd: string) => {
-    let project = projects.find(p => p.id === projectId)
-    if (!project) {
-      project = { id: projectId, name, workspaces: [] }
-      projects.push(project)
+  ipcMain.handle(
+    'project:add',
+    (
+      _event,
+      projectId: string,
+      name: string,
+      workspaceId: string,
+      workspaceLabel: string,
+      cwd: string
+    ) => {
+      let project = projects.find((p) => p.id === projectId)
+      if (!project) {
+        project = { id: projectId, name, workspaces: [] }
+        projects.push(project)
+      }
+      if (project.workspaces.some((w) => w.id === workspaceId)) {
+        return { ok: false, error: `Workspace "${workspaceId}" already exists` }
+      }
+      project.workspaces.push({ id: workspaceId, label: workspaceLabel, cwd })
+      config.projects = projects
+      saveConfig(config)
+      return { ok: true, project }
     }
-    if (project.workspaces.some(w => w.id === workspaceId)) {
-      return { ok: false, error: `Workspace "${workspaceId}" already exists` }
-    }
-    project.workspaces.push({ id: workspaceId, label: workspaceLabel, cwd })
-    config.projects = projects
-    saveConfig(config)
-    return { ok: true, project }
-  })
+  )
 
   ipcMain.handle('project:remove', (_event, projectId: string, workspaceId?: string) => {
-    const projIdx = projects.findIndex(p => p.id === projectId)
+    const projIdx = projects.findIndex((p) => p.id === projectId)
     if (projIdx === -1) {
       return { ok: false, error: `Project "${projectId}" not found` }
     }
     if (workspaceId) {
       // Remove workspace only
       const project = projects[projIdx]
-      const wsIdx = project.workspaces.findIndex(w => w.id === workspaceId)
+      const wsIdx = project.workspaces.findIndex((w) => w.id === workspaceId)
       if (wsIdx === -1) return { ok: false, error: `Workspace "${workspaceId}" not found` }
       const session = sessions.get(workspaceId)
-      if (session) { session.kill(); sessions.delete(workspaceId) }
+      if (session) {
+        session.kill()
+        sessions.delete(workspaceId)
+      }
       project.workspaces.splice(wsIdx, 1)
       if (project.workspaces.length === 0) projects.splice(projIdx, 1)
     } else {
@@ -284,7 +307,10 @@ app.whenReady().then(async () => {
       const project = projects[projIdx]
       for (const ws of project.workspaces) {
         const session = sessions.get(ws.id)
-        if (session) { session.kill(); sessions.delete(ws.id) }
+        if (session) {
+          session.kill()
+          sessions.delete(ws.id)
+        }
       }
       projects.splice(projIdx, 1)
     }
@@ -304,14 +330,22 @@ app.whenReady().then(async () => {
     taskService.ensureProject(p.id, p.name, config.contentRoot)
   }
 
-
   // Vault import — manual trigger, not auto on boot
   let importer: VaultImporter | null = null
 
   ipcMain.handle('vault:import', async (_event, statusMap?: Record<string, string>) => {
-    if (!config.contentRoot) return { tasks: 0, phases: 0, documents: 0, tags: 0, relationships: 0, skipped: 0, errors: ['No contentRoot configured'] }
+    if (!config.contentRoot)
+      return {
+        tasks: 0,
+        phases: 0,
+        documents: 0,
+        tags: 0,
+        relationships: 0,
+        skipped: 0,
+        errors: ['No contentRoot configured']
+      }
     importer = new VaultImporter(taskService, config.contentRoot, statusMap)
-    const result = importer.importAll(projects.map(p => p.id))
+    const result = importer.importAll(projects.map((p) => p.id))
     return result
   })
 
@@ -324,8 +358,17 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle('task:refresh', () => {
-    if (!importer) return { tasks: 0, phases: 0, documents: 0, tags: 0, relationships: 0, skipped: 0, errors: ['No import active'] }
-    return importer.importAll(projects.map(p => p.id))
+    if (!importer)
+      return {
+        tasks: 0,
+        phases: 0,
+        documents: 0,
+        tags: 0,
+        relationships: 0,
+        skipped: 0,
+        errors: ['No import active']
+      }
+    return importer.importAll(projects.map((p) => p.id))
   })
 
   ipcMain.handle('task:list', (_event, filter) => taskService.findTasks(filter))
@@ -337,7 +380,11 @@ app.whenReady().then(async () => {
     const subtasks = taskService.getSubtasks(id)
     let fileContent: string | null = null
     if (task.filePath && existsSync(task.filePath)) {
-      try { fileContent = readFileSync(task.filePath, 'utf-8') } catch { /* ignore */ }
+      try {
+        fileContent = readFileSync(task.filePath, 'utf-8')
+      } catch {
+        /* ignore */
+      }
     }
     return { task, dependencies: deps, subtasks, fileContent }
   })
@@ -362,18 +409,50 @@ app.whenReady().then(async () => {
     taskService.deletePhase(id)
     return { ok: true }
   })
-  ipcMain.handle('phase:progress', (_event, phaseId: string) => taskService.getPhaseProgress(phaseId))
+  ipcMain.handle('phase:progress', (_event, phaseId: string) =>
+    taskService.getPhaseProgress(phaseId)
+  )
 
   ipcMain.handle('feature:list', (_event, projectId: string) => taskService.findFeatures(projectId))
-  ipcMain.handle('feature:listByPhase', (_event, phaseId: string) => taskService.findFeaturesByPhase(phaseId))
+  ipcMain.handle('feature:listByPhase', (_event, phaseId: string) =>
+    taskService.findFeaturesByPhase(phaseId)
+  )
   ipcMain.handle('feature:get', (_event, id: string) => taskService.getFeature(id))
   ipcMain.handle('feature:create', (_event, input) => taskService.createFeature(input))
-  ipcMain.handle('feature:update', (_event, id: string, input) => taskService.updateFeature(id, input))
+  ipcMain.handle('feature:update', (_event, id: string, input) =>
+    taskService.updateFeature(id, input)
+  )
   ipcMain.handle('feature:delete', (_event, id: string) => taskService.deleteFeature(id))
-  ipcMain.handle('feature:progress', (_event, featureId: string) => taskService.getFeatureProgress(featureId))
+  ipcMain.handle('feature:progress', (_event, featureId: string) =>
+    taskService.getFeatureProgress(featureId)
+  )
 
   ipcMain.handle('task:pinned', () => taskService.getPinnedTasks())
   ipcMain.handle('task:due', (_event, date: string) => taskService.getDueTasks(date))
+
+  ipcMain.handle('session:list', (_event, projectId: string) => taskService.findSessions(projectId))
+  ipcMain.handle('session:get', (_event, id: string) => taskService.getSession(id))
+  ipcMain.handle('session:delete', (_event, id: string) => {
+    taskService.deleteSession(id)
+    return { ok: true }
+  })
+  ipcMain.handle('conversation:list', (_event, projectId: string, status?: string) =>
+    taskService.findConversations(
+      projectId,
+      status as Parameters<typeof taskService.findConversations>[1]
+    )
+  )
+  ipcMain.handle('conversation:read', (_event, id: string) => {
+    const conv = taskService.getConversation(id)
+    if (!conv) return null
+    const messages = taskService.getConversationMessages(id)
+    const actions = taskService.getConversationActions(id)
+    return { ...conv, messages, actions }
+  })
+  ipcMain.handle('conversation:delete', (_event, id: string) => {
+    taskService.deleteConversation(id)
+    return { ok: true }
+  })
 
   // ── Vault file browser IPC (Phase B) ───────────────────────────────────────
   const vaultService = new VaultService()
@@ -450,7 +529,11 @@ app.on('window-all-closed', async () => {
           // Send Ctrl+C (SIGINT equivalent)
           session.write('\x03')
           const timeout = setTimeout(() => {
-            try { session.kill() } catch { /* ignore */ }
+            try {
+              session.kill()
+            } catch {
+              /* ignore */
+            }
             resolve()
           }, 2000)
           session.onExit(() => {
