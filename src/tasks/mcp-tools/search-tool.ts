@@ -11,10 +11,16 @@ export const register: Register = (server, svc) => {
     async ({ query }) => {
       const tasks = svc.findTasks({ query })
       const items = svc.findByTag(query)
+      const q = query.toLowerCase()
+      const inbox = svc
+        .findInbox({})
+        .filter((i) => i.content.toLowerCase().includes(q))
+        .slice(0, 20)
 
       return textResponse({
         tasks: tasks.slice(0, 20),
-        taggedItems: items.slice(0, 20)
+        taggedItems: items.slice(0, 20),
+        inbox
       })
     }
   )

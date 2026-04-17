@@ -61,7 +61,7 @@ export interface Relationship {
 export interface Task {
   id: string
   projectId: string
-  featureId: string | null
+  phaseId: string | null
   parentTaskId: string | null
   title: string
   status: TaskStatus
@@ -70,6 +70,7 @@ export interface Task {
   dueDate: string | null
   pinned: boolean
   filePath: string | null
+  body: string | null
   createdAt: string
   updatedAt: string
 }
@@ -82,7 +83,7 @@ export interface TaskDependency {
 export interface CreateTaskInput {
   id?: string
   projectId: string
-  featureId?: string
+  phaseId?: string
   parentTaskId?: string
   title: string
   status?: TaskStatus
@@ -90,25 +91,27 @@ export interface CreateTaskInput {
   labels?: string[]
   dueDate?: string
   filePath?: string
+  body?: string
 }
 
 export interface UpdateTaskInput {
   title?: string
   status?: TaskStatus
   priority?: TaskPriority | null
-  featureId?: string | null
+  phaseId?: string | null
   parentTaskId?: string | null
   labels?: string[]
   dueDate?: string | null
   pinned?: boolean
   filePath?: string | null
+  body?: string | null
 }
 
 export interface TaskFilter {
   projectId?: string
   status?: TaskStatus
   priority?: TaskPriority
-  featureId?: string
+  phaseId?: string
   parentTaskId?: string
   pinned?: boolean
   dueBefore?: string
@@ -184,6 +187,8 @@ export interface SessionHandoff {
 export interface Session {
   id: string
   projectId: string
+  workspaceId: string | null
+  taskId: string | null
   startedAt: string
   endedAt: string | null
   status: SessionStatus
@@ -194,6 +199,8 @@ export interface Session {
 export interface CreateSessionInput {
   id?: string
   projectId: string
+  workspaceId?: string
+  taskId?: string
   startedAt?: string
   status?: SessionStatus
   handoff?: SessionHandoff
@@ -202,6 +209,7 @@ export interface CreateSessionInput {
 export interface UpdateSessionInput {
   endedAt?: string | null
   status?: SessionStatus
+  taskId?: string | null
   handoff?: SessionHandoff | null
 }
 
@@ -243,10 +251,16 @@ export interface UpdateContextSourceInput {
 
 // ── Conversations (L2 — Conversation Protocol) ──────────────────────────────
 
-export type ConversationStatus = 'open' | 'discussing' | 'decided' | 'implemented' | 'stale'
+export type ConversationStatus = 'open' | 'discussing' | 'decided' | 'closed' | 'stale'
 export type ConversationMessageType =
-  | 'question' | 'answer' | 'proposal' | 'review' | 'decision' | 'action' | 'comment'
-export type ConversationLinkType = 'task' | 'adr' | 'feature' | 'commit'
+  | 'question'
+  | 'answer'
+  | 'proposal'
+  | 'review'
+  | 'decision'
+  | 'action'
+  | 'comment'
+export type ConversationLinkType = 'task' | 'adr' | 'feature' | 'commit' | 'inbox'
 export type ConversationParticipantType = 'human' | 'agent' | 'role'
 export type ConversationActionStatus = 'pending' | 'done'
 
@@ -339,4 +353,42 @@ export interface CreateConversationActionInput {
 export interface UpdateConversationActionInput {
   status?: ConversationActionStatus
   linkedTaskId?: string | null
+}
+
+// ── Inbox ────────────────────────────────────────────────────────────────────
+
+export type InboxStatus = 'raw' | 'researching' | 'ready' | 'converted' | 'archived'
+
+export const INBOX_STATUSES: InboxStatus[] = [
+  'raw',
+  'researching',
+  'ready',
+  'converted',
+  'archived'
+]
+
+export interface InboxItem {
+  id: string
+  projectId: string | null
+  content: string
+  status: InboxStatus
+  linkedTaskId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateInboxInput {
+  projectId?: string | null
+  content: string
+}
+
+export interface UpdateInboxInput {
+  content?: string
+  status?: InboxStatus
+  linkedTaskId?: string | null
+}
+
+export interface InboxFilter {
+  projectId?: string | null
+  status?: InboxStatus
 }

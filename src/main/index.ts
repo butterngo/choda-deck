@@ -378,15 +378,7 @@ app.whenReady().then(async () => {
     if (!task) return null
     const deps = taskService.getDependencies(id)
     const subtasks = taskService.getSubtasks(id)
-    let fileContent: string | null = null
-    if (task.filePath && existsSync(task.filePath)) {
-      try {
-        fileContent = readFileSync(task.filePath, 'utf-8')
-      } catch {
-        /* ignore */
-      }
-    }
-    return { task, dependencies: deps, subtasks, fileContent }
+    return { task, dependencies: deps, subtasks, body: task.body }
   })
   ipcMain.handle('task:create', (_event, input) => taskService.createTask(input))
   ipcMain.handle('task:update', (_event, id: string, input) => taskService.updateTask(id, input))
@@ -451,6 +443,102 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('conversation:delete', (_event, id: string) => {
     taskService.deleteConversation(id)
+    return { ok: true }
+  })
+
+  // ── Inbox ───────────────────────────────────────────────────────────────────
+  ipcMain.handle(
+    'inbox:list',
+    (_event, filter?: { projectId?: string | null; status?: string }) => {
+      const f: Parameters<typeof taskService.findInbox>[0] = {}
+      if (filter?.projectId !== undefined) f.projectId = filter.projectId
+      if (filter?.status) f.status = filter.status as Parameters<typeof taskService.findInbox>[0]['status']
+      return taskService.findInbox(f)
+    }
+  )
+  ipcMain.handle('inbox:get', (_event, id: string) => {
+    const item = taskService.getInbox(id)
+    if (!item) return null
+    const conversations = taskService.findConversationsByLink('inbox', id).map((c) => ({
+      id: c.id,
+      title: c.title,
+      status: c.status,
+      decisionSummary: c.decisionSummary,
+      messages: taskService.getConversationMessages(c.id)
+    }))
+    return { item, conversations }
+  })
+  ipcMain.handle(
+    'inbox:add',
+    (_event, input: { projectId?: string | null; content: string }) =>
+      taskService.createInbox({
+        projectId: input.projectId ?? null,
+        content: input.content
+      })
+  )
+  ipcMain.handle('inbox:archive', (_event, id: string) => {
+    const item = taskService.getInbox(id)
+    if (!item) return null
+    taskService.updateInbox(id, { status: 'archived' })
+    const convs = taskService.findConversationsByLink('inbox', id)
+    for (const c of convs) {
+      if (c.status !== 'closed') {
+        taskService.updateConversation(c.id, {
+          status: 'closed',
+          decisionSummary: 'Archived',
+          closedAt: new Date().toISOString()
+        })
+      }
+    }
+    return taskService.getInbox(id)
+  })
+  ipcMain.handle(
+    'inbox:convert',
+    (
+      _event,
+      id: string,
+      taskInput: {
+        title: string
+        priority?: 'critical' | 'high' | 'medium' | 'low'
+        labels?: string[]
+        body?: string
+      }
+    ) => {
+      const item = taskService.getInbox(id)
+      if (!item) return { ok: false, error: 'not found' }
+      if (!item.projectId) return { ok: false, error: 'inbox item has no projectId' }
+      if (item.status === 'converted' || item.status === 'archived') {
+        return { ok: false, error: `status is ${item.status}` }
+      }
+      const task = taskService.createTask({
+        projectId: item.projectId,
+        title: taskInput.title,
+        priority: taskInput.priority,
+        labels: taskInput.labels,
+        status: 'TODO'
+      })
+      if (taskInput.body) taskService.updateTask(task.id, { body: taskInput.body })
+      taskService.updateInbox(id, { status: 'converted', linkedTaskId: task.id })
+      const convs = taskService.findConversationsByLink('inbox', id)
+      for (const c of convs) {
+        if (c.status !== 'closed') {
+          taskService.updateConversation(c.id, {
+            status: 'closed',
+            decisionSummary: `Converted to ${task.id}: ${taskInput.title}`,
+            closedAt: new Date().toISOString()
+          })
+        }
+      }
+      return { ok: true, taskId: task.id, task: taskService.getTask(task.id) }
+    }
+  )
+  ipcMain.handle('inbox:delete', (_event, id: string) => {
+    const item = taskService.getInbox(id)
+    if (!item) return { ok: false, error: 'not found' }
+    if (item.status !== 'raw' && item.status !== 'archived') {
+      return { ok: false, error: `status is ${item.status}` }
+    }
+    taskService.deleteInbox(id)
     return { ok: true }
   })
 

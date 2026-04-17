@@ -3,21 +3,50 @@ import type { TaskService } from './task-service.interface'
 import type { SessionOperations } from './interfaces/session-repository.interface'
 import type { ContextSourceOperations } from './interfaces/context-source-repository.interface'
 import type { ConversationOperations } from './interfaces/conversation-repository.interface'
+import type { InboxOperations } from './interfaces/inbox-repository.interface'
 import type {
-  Task, CreateTaskInput, UpdateTaskInput, TaskFilter, TaskDependency,
-  Phase, CreatePhaseInput, UpdatePhaseInput,
-  Feature, CreateFeatureInput, UpdateFeatureInput,
-  Document, DocumentType, CreateDocumentInput, UpdateDocumentInput,
-  Relationship, RelationType,
+  Task,
+  CreateTaskInput,
+  UpdateTaskInput,
+  TaskFilter,
+  TaskDependency,
+  Phase,
+  CreatePhaseInput,
+  UpdatePhaseInput,
+  Feature,
+  CreateFeatureInput,
+  UpdateFeatureInput,
+  Document,
+  DocumentType,
+  CreateDocumentInput,
+  UpdateDocumentInput,
+  Relationship,
+  RelationType,
   DerivedProgress,
-  Session, SessionStatus, CreateSessionInput, UpdateSessionInput,
-  ContextSource, CreateContextSourceInput, UpdateContextSourceInput,
-  Conversation, ConversationStatus,
-  ConversationMessage, ConversationLink, ConversationLinkType,
-  ConversationParticipant, ConversationParticipantType,
+  Session,
+  SessionStatus,
+  CreateSessionInput,
+  UpdateSessionInput,
+  ContextSource,
+  CreateContextSourceInput,
+  UpdateContextSourceInput,
+  Conversation,
+  ConversationStatus,
+  ConversationMessage,
+  ConversationLink,
+  ConversationLinkType,
+  ConversationParticipant,
+  ConversationParticipantType,
   ConversationAction,
-  CreateConversationInput, UpdateConversationInput,
-  CreateConversationMessageInput, CreateConversationActionInput, UpdateConversationActionInput
+  CreateConversationInput,
+  UpdateConversationInput,
+  CreateConversationMessageInput,
+  CreateConversationActionInput,
+  UpdateConversationActionInput,
+  InboxItem,
+  CreateInboxInput,
+  UpdateInboxInput,
+  InboxFilter
 } from './task-types'
 
 import { initSchema } from './repositories/schema'
@@ -31,9 +60,15 @@ import { RelationshipRepository } from './repositories/relationship-repository'
 import { SessionRepository } from './repositories/session-repository'
 import { ContextSourceRepository } from './repositories/context-source-repository'
 import { ConversationRepository } from './repositories/conversation-repository'
+import { InboxRepository } from './repositories/inbox-repository'
 
-export class SqliteTaskService implements
-  TaskService, SessionOperations, ContextSourceOperations, ConversationOperations
+export class SqliteTaskService
+  implements
+    TaskService,
+    SessionOperations,
+    ContextSourceOperations,
+    ConversationOperations,
+    InboxOperations
 {
   private readonly db: Database.Database
   private readonly projects: ProjectRepository
@@ -46,6 +81,7 @@ export class SqliteTaskService implements
   private readonly sessions: SessionRepository
   private readonly contextSources: ContextSourceRepository
   private readonly conversations: ConversationRepository
+  private readonly inbox: InboxRepository
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath)
@@ -63,12 +99,19 @@ export class SqliteTaskService implements
     this.sessions = new SessionRepository(this.db)
     this.contextSources = new ContextSourceRepository(this.db)
     this.conversations = new ConversationRepository(this.db)
+    this.inbox = new InboxRepository(this.db)
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
-  initialize(): void { /* schema bootstrapped in constructor */ }
-  async initializeAsync(): Promise<void> { /* no-op */ }
-  close(): void { this.db.close() }
+  initialize(): void {
+    /* schema bootstrapped in constructor */
+  }
+  async initializeAsync(): Promise<void> {
+    /* no-op */
+  }
+  close(): void {
+    this.db.close()
+  }
 
   ensureProject(id: string, name: string, cwd: string): void {
     this.projects.ensure(id, name, cwd)
@@ -78,76 +121,195 @@ export class SqliteTaskService implements
     return this.projects.get(id)
   }
 
+  listProjects() {
+    return this.projects.list()
+  }
+  addWorkspace(projectId: string, id: string, label: string, cwd: string) {
+    return this.projects.addWorkspace(projectId, id, label, cwd)
+  }
+  getWorkspace(id: string) {
+    return this.projects.getWorkspace(id)
+  }
+  findWorkspaces(projectId: string) {
+    return this.projects.findWorkspaces(projectId)
+  }
+
   // ── Task operations ────────────────────────────────────────────────────────
-  createTask(input: CreateTaskInput): Task { return this.tasks.create(input) }
-  updateTask(id: string, input: UpdateTaskInput): Task { return this.tasks.update(id, input) }
-  deleteTask(id: string): void { this.tasks.delete(id) }
-  getTask(id: string): Task | null { return this.tasks.get(id) }
-  findTasks(filter: TaskFilter): Task[] { return this.tasks.find(filter) }
-  getSubtasks(parentId: string): Task[] { return this.tasks.getSubtasks(parentId) }
-  getPinnedTasks(): Task[] { return this.tasks.getPinned() }
-  getDueTasks(date: string): Task[] { return this.tasks.getDue(date) }
-  addDependency(sourceId: string, targetId: string): void { this.tasks.addDependency(sourceId, targetId) }
-  removeDependency(sourceId: string, targetId: string): void { this.tasks.removeDependency(sourceId, targetId) }
-  getDependencies(taskId: string): TaskDependency[] { return this.tasks.getDependencies(taskId) }
+  createTask(input: CreateTaskInput): Task {
+    return this.tasks.create(input)
+  }
+  updateTask(id: string, input: UpdateTaskInput): Task {
+    return this.tasks.update(id, input)
+  }
+  deleteTask(id: string): void {
+    this.tasks.delete(id)
+  }
+  getTask(id: string): Task | null {
+    return this.tasks.get(id)
+  }
+  findTasks(filter: TaskFilter): Task[] {
+    return this.tasks.find(filter)
+  }
+  getSubtasks(parentId: string): Task[] {
+    return this.tasks.getSubtasks(parentId)
+  }
+  getPinnedTasks(): Task[] {
+    return this.tasks.getPinned()
+  }
+  getDueTasks(date: string): Task[] {
+    return this.tasks.getDue(date)
+  }
+  addDependency(sourceId: string, targetId: string): void {
+    this.tasks.addDependency(sourceId, targetId)
+  }
+  removeDependency(sourceId: string, targetId: string): void {
+    this.tasks.removeDependency(sourceId, targetId)
+  }
+  getDependencies(taskId: string): TaskDependency[] {
+    return this.tasks.getDependencies(taskId)
+  }
 
   // ── Phase operations ───────────────────────────────────────────────────────
-  createPhase(input: CreatePhaseInput): Phase { return this.phases.create(input) }
-  updatePhase(id: string, input: UpdatePhaseInput): Phase { return this.phases.update(id, input) }
-  deletePhase(id: string): void { this.phases.delete(id) }
-  getPhase(id: string): Phase | null { return this.phases.get(id) }
-  findPhases(projectId: string): Phase[] { return this.phases.findByProject(projectId) }
-  getPhaseProgress(phaseId: string): DerivedProgress { return this.phases.getProgress(phaseId) }
+  createPhase(input: CreatePhaseInput): Phase {
+    return this.phases.create(input)
+  }
+  updatePhase(id: string, input: UpdatePhaseInput): Phase {
+    return this.phases.update(id, input)
+  }
+  deletePhase(id: string): void {
+    this.phases.delete(id)
+  }
+  getPhase(id: string): Phase | null {
+    return this.phases.get(id)
+  }
+  findPhases(projectId: string): Phase[] {
+    return this.phases.findByProject(projectId)
+  }
+  getPhaseProgress(phaseId: string): DerivedProgress {
+    return this.phases.getProgress(phaseId)
+  }
 
   // ── Feature operations ─────────────────────────────────────────────────────
-  createFeature(input: CreateFeatureInput): Feature { return this.features.create(input) }
-  updateFeature(id: string, input: UpdateFeatureInput): Feature { return this.features.update(id, input) }
-  deleteFeature(id: string): void { this.features.delete(id) }
-  getFeature(id: string): Feature | null { return this.features.get(id) }
-  findFeatures(projectId: string): Feature[] { return this.features.findByProject(projectId) }
-  findFeaturesByPhase(phaseId: string): Feature[] { return this.features.findByPhase(phaseId) }
-  getFeatureProgress(featureId: string): DerivedProgress { return this.features.getProgress(featureId) }
+  createFeature(input: CreateFeatureInput): Feature {
+    return this.features.create(input)
+  }
+  updateFeature(id: string, input: UpdateFeatureInput): Feature {
+    return this.features.update(id, input)
+  }
+  deleteFeature(id: string): void {
+    this.features.delete(id)
+  }
+  getFeature(id: string): Feature | null {
+    return this.features.get(id)
+  }
+  findFeatures(projectId: string): Feature[] {
+    return this.features.findByProject(projectId)
+  }
+  findFeaturesByPhase(phaseId: string): Feature[] {
+    return this.features.findByPhase(phaseId)
+  }
+  getFeatureProgress(featureId: string): DerivedProgress {
+    return this.features.getProgress(featureId)
+  }
 
   // ── Document operations ────────────────────────────────────────────────────
-  createDocument(input: CreateDocumentInput): Document { return this.documents.create(input) }
-  updateDocument(id: string, input: UpdateDocumentInput): Document { return this.documents.update(id, input) }
-  deleteDocument(id: string): void { this.documents.delete(id) }
-  getDocument(id: string): Document | null { return this.documents.get(id) }
-  findDocuments(projectId: string, type?: DocumentType): Document[] { return this.documents.findByProject(projectId, type) }
+  createDocument(input: CreateDocumentInput): Document {
+    return this.documents.create(input)
+  }
+  updateDocument(id: string, input: UpdateDocumentInput): Document {
+    return this.documents.update(id, input)
+  }
+  deleteDocument(id: string): void {
+    this.documents.delete(id)
+  }
+  getDocument(id: string): Document | null {
+    return this.documents.get(id)
+  }
+  findDocuments(projectId: string, type?: DocumentType): Document[] {
+    return this.documents.findByProject(projectId, type)
+  }
 
   // ── Tags ───────────────────────────────────────────────────────────────────
-  addTag(itemId: string, tag: string): void { this.tagsRepo.add(itemId, tag) }
-  removeTag(itemId: string, tag: string): void { this.tagsRepo.remove(itemId, tag) }
-  getTags(itemId: string): string[] { return this.tagsRepo.getForItem(itemId) }
-  findByTag(tag: string): string[] { return this.tagsRepo.findItemsByTag(tag) }
+  addTag(itemId: string, tag: string): void {
+    this.tagsRepo.add(itemId, tag)
+  }
+  removeTag(itemId: string, tag: string): void {
+    this.tagsRepo.remove(itemId, tag)
+  }
+  getTags(itemId: string): string[] {
+    return this.tagsRepo.getForItem(itemId)
+  }
+  findByTag(tag: string): string[] {
+    return this.tagsRepo.findItemsByTag(tag)
+  }
 
   // ── Relationships ──────────────────────────────────────────────────────────
-  addRelationship(fromId: string, toId: string, type: RelationType): void { this.relationships.add(fromId, toId, type) }
-  removeRelationship(fromId: string, toId: string, type: RelationType): void { this.relationships.remove(fromId, toId, type) }
-  getRelationships(itemId: string): Relationship[] { return this.relationships.getForItem(itemId) }
-  getRelationshipsFrom(itemId: string, type?: RelationType): Relationship[] { return this.relationships.getFrom(itemId, type) }
+  addRelationship(fromId: string, toId: string, type: RelationType): void {
+    this.relationships.add(fromId, toId, type)
+  }
+  removeRelationship(fromId: string, toId: string, type: RelationType): void {
+    this.relationships.remove(fromId, toId, type)
+  }
+  getRelationships(itemId: string): Relationship[] {
+    return this.relationships.getForItem(itemId)
+  }
+  getRelationshipsFrom(itemId: string, type?: RelationType): Relationship[] {
+    return this.relationships.getFrom(itemId, type)
+  }
 
   // ── Session operations (M1) ────────────────────────────────────────────────
-  createSession(input: CreateSessionInput): Session { return this.sessions.create(input) }
-  updateSession(id: string, input: UpdateSessionInput): Session { return this.sessions.update(id, input) }
-  getSession(id: string): Session | null { return this.sessions.get(id) }
-  findSessions(projectId: string, status?: SessionStatus): Session[] { return this.sessions.findByProject(projectId, status) }
-  getActiveSession(projectId: string): Session | null { return this.sessions.getActive(projectId) }
-  deleteSession(id: string): void { this.sessions.delete(id) }
+  createSession(input: CreateSessionInput): Session {
+    return this.sessions.create(input)
+  }
+  updateSession(id: string, input: UpdateSessionInput): Session {
+    return this.sessions.update(id, input)
+  }
+  getSession(id: string): Session | null {
+    return this.sessions.get(id)
+  }
+  findSessions(projectId: string, status?: SessionStatus): Session[] {
+    return this.sessions.findByProject(projectId, status)
+  }
+  getActiveSession(projectId: string, workspaceId?: string): Session | null {
+    return this.sessions.getActive(projectId, workspaceId)
+  }
+  deleteSession(id: string): void {
+    this.sessions.delete(id)
+  }
 
   // ── Context source operations (M1) ─────────────────────────────────────────
-  createContextSource(input: CreateContextSourceInput): ContextSource { return this.contextSources.create(input) }
-  updateContextSource(id: string, input: UpdateContextSourceInput): ContextSource { return this.contextSources.update(id, input) }
-  getContextSource(id: string): ContextSource | null { return this.contextSources.get(id) }
-  findContextSources(projectId: string, activeOnly = false): ContextSource[] { return this.contextSources.findByProject(projectId, activeOnly) }
-  deleteContextSource(id: string): void { this.contextSources.delete(id) }
+  createContextSource(input: CreateContextSourceInput): ContextSource {
+    return this.contextSources.create(input)
+  }
+  updateContextSource(id: string, input: UpdateContextSourceInput): ContextSource {
+    return this.contextSources.update(id, input)
+  }
+  getContextSource(id: string): ContextSource | null {
+    return this.contextSources.get(id)
+  }
+  findContextSources(projectId: string, activeOnly = false): ContextSource[] {
+    return this.contextSources.findByProject(projectId, activeOnly)
+  }
+  deleteContextSource(id: string): void {
+    this.contextSources.delete(id)
+  }
 
   // ── Conversation operations (M1) ───────────────────────────────────────────
-  createConversation(input: CreateConversationInput): Conversation { return this.conversations.create(input) }
-  updateConversation(id: string, input: UpdateConversationInput): Conversation { return this.conversations.update(id, input) }
-  getConversation(id: string): Conversation | null { return this.conversations.get(id) }
-  findConversations(projectId: string, status?: ConversationStatus): Conversation[] { return this.conversations.findByProject(projectId, status) }
-  deleteConversation(id: string): void { this.conversations.delete(id) }
+  createConversation(input: CreateConversationInput): Conversation {
+    return this.conversations.create(input)
+  }
+  updateConversation(id: string, input: UpdateConversationInput): Conversation {
+    return this.conversations.update(id, input)
+  }
+  getConversation(id: string): Conversation | null {
+    return this.conversations.get(id)
+  }
+  findConversations(projectId: string, status?: ConversationStatus): Conversation[] {
+    return this.conversations.findByProject(projectId, status)
+  }
+  deleteConversation(id: string): void {
+    this.conversations.delete(id)
+  }
 
   addConversationParticipant(
     conversationId: string,
@@ -181,10 +343,18 @@ export class SqliteTaskService implements
     return this.conversations.getActions(conversationId)
   }
 
-  linkConversation(conversationId: string, linkedType: ConversationLinkType, linkedId: string): void {
+  linkConversation(
+    conversationId: string,
+    linkedType: ConversationLinkType,
+    linkedId: string
+  ): void {
     this.conversations.link(conversationId, linkedType, linkedId)
   }
-  unlinkConversation(conversationId: string, linkedType: ConversationLinkType, linkedId: string): void {
+  unlinkConversation(
+    conversationId: string,
+    linkedType: ConversationLinkType,
+    linkedId: string
+  ): void {
     this.conversations.unlink(conversationId, linkedType, linkedId)
   }
   getConversationLinks(conversationId: string): ConversationLink[] {
@@ -192,5 +362,22 @@ export class SqliteTaskService implements
   }
   findConversationsByLink(linkedType: ConversationLinkType, linkedId: string): Conversation[] {
     return this.conversations.findByLink(linkedType, linkedId)
+  }
+
+  // ── Inbox ──────────────────────────────────────────────────────────────────
+  createInbox(input: CreateInboxInput): InboxItem {
+    return this.inbox.create(input)
+  }
+  updateInbox(id: string, input: UpdateInboxInput): InboxItem {
+    return this.inbox.update(id, input)
+  }
+  getInbox(id: string): InboxItem | null {
+    return this.inbox.get(id)
+  }
+  findInbox(filter: InboxFilter): InboxItem[] {
+    return this.inbox.find(filter)
+  }
+  deleteInbox(id: string): void {
+    this.inbox.delete(id)
   }
 }

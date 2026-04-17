@@ -139,6 +139,26 @@ const api = {
     read: (id: string): Promise<unknown> => ipcRenderer.invoke('conversation:read', id),
     delete: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('conversation:delete', id)
   },
+  inbox: {
+    list: (filter?: { projectId?: string | null; status?: string }): Promise<unknown[]> =>
+      ipcRenderer.invoke('inbox:list', filter),
+    get: (id: string): Promise<unknown> => ipcRenderer.invoke('inbox:get', id),
+    add: (input: { projectId?: string | null; content: string }): Promise<unknown> =>
+      ipcRenderer.invoke('inbox:add', input),
+    archive: (id: string): Promise<unknown> => ipcRenderer.invoke('inbox:archive', id),
+    convert: (
+      id: string,
+      taskInput: {
+        title: string
+        priority?: 'critical' | 'high' | 'medium' | 'low'
+        labels?: string[]
+        body?: string
+      }
+    ): Promise<{ ok: boolean; taskId?: string; error?: string }> =>
+      ipcRenderer.invoke('inbox:convert', id, taskInput),
+    delete: (id: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('inbox:delete', id)
+  },
   vault: {
     tree: (
       rootPath: string

@@ -23,6 +23,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     dueDate: (row.due_date as string) || null,
     pinned: row.pinned === 1,
     filePath: (row.file_path as string) || null,
+    body: (row.body as string) || null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string
   }
@@ -35,29 +36,39 @@ export class TaskRepository {
   ) {}
 
   private nextTaskId(projectId: string): string {
-    const rows = this.db.prepare(
-      "SELECT id FROM tasks WHERE project_id = ? AND id GLOB 'TASK-[0-9]*'"
-    ).all(projectId) as Array<{ id: string }>
-    let max = 0
-    for (const { id } of rows) {
-      const n = parseInt(id.slice(5), 10)
-      if (!isNaN(n) && n > max) max = n
-    }
-    return `TASK-${String(max + 1).padStart(3, '0')}`
+    const row = this.db
+      .prepare(
+        `INSERT INTO project_task_counters (project_id, last_number) VALUES (?, 1)
+         ON CONFLICT(project_id) DO UPDATE SET last_number = last_number + 1
+         RETURNING last_number`
+      )
+      .get(projectId) as { last_number: number }
+    return `TASK-${String(row.last_number).padStart(3, '0')}`
   }
 
   create(input: CreateTaskInput): Task {
     const ts = now()
     const id = input.id || this.nextTaskId(input.projectId)
-    this.db.prepare(
-      `INSERT INTO tasks (id, project_id, phase_id, parent_task_id, title, status, priority, labels, due_date, file_path, pinned, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
-    ).run(
-      id, input.projectId, input.phaseId || null, input.parentTaskId || null, input.title,
-      input.status || 'TODO', input.priority || null,
-      input.labels ? JSON.stringify(input.labels) : null,
-      input.dueDate || null, input.filePath || null, ts, ts
-    )
+    this.db
+      .prepare(
+        `INSERT INTO tasks (id, project_id, phase_id, parent_task_id, title, status, priority, labels, due_date, file_path, body, pinned, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+      )
+      .run(
+        id,
+        input.projectId,
+        input.phaseId || null,
+        input.parentTaskId || null,
+        input.title,
+        input.status || 'TODO',
+        input.priority || null,
+        input.labels ? JSON.stringify(input.labels) : null,
+        input.dueDate || null,
+        input.filePath || null,
+        input.body || null,
+        ts,
+        ts
+      )
     return this.get(id)!
   }
 
@@ -65,18 +76,51 @@ export class TaskRepository {
     const sets: string[] = ['updated_at = ?']
     const params: Param[] = [now()]
 
-    if (input.title !== undefined) { sets.push('title = ?'); params.push(input.title) }
-    if (input.status !== undefined) { sets.push('status = ?'); params.push(input.status) }
-    if (input.priority !== undefined) { sets.push('priority = ?'); params.push(input.priority) }
-    if (input.phaseId !== undefined) { sets.push('phase_id = ?'); params.push(input.phaseId) }
-    if (input.parentTaskId !== undefined) { sets.push('parent_task_id = ?'); params.push(input.parentTaskId) }
-    if (input.labels !== undefined) { sets.push('labels = ?'); params.push(JSON.stringify(input.labels)) }
-    if (input.dueDate !== undefined) { sets.push('due_date = ?'); params.push(input.dueDate) }
-    if (input.pinned !== undefined) { sets.push('pinned = ?'); params.push(input.pinned ? 1 : 0) }
-    if (input.filePath !== undefined) { sets.push('file_path = ?'); params.push(input.filePath) }
+    if (input.title !== undefined) {
+      sets.push('title = ?')
+      params.push(input.title)
+    }
+    if (input.status !== undefined) {
+      sets.push('status = ?')
+      params.push(input.status)
+    }
+    if (input.priority !== undefined) {
+      sets.push('priority = ?')
+      params.push(input.priority)
+    }
+    if (input.phaseId !== undefined) {
+      sets.push('phase_id = ?')
+      params.push(input.phaseId)
+    }
+    if (input.parentTaskId !== undefined) {
+      sets.push('parent_task_id = ?')
+      params.push(input.parentTaskId)
+    }
+    if (input.labels !== undefined) {
+      sets.push('labels = ?')
+      params.push(JSON.stringify(input.labels))
+    }
+    if (input.dueDate !== undefined) {
+      sets.push('due_date = ?')
+      params.push(input.dueDate)
+    }
+    if (input.pinned !== undefined) {
+      sets.push('pinned = ?')
+      params.push(input.pinned ? 1 : 0)
+    }
+    if (input.filePath !== undefined) {
+      sets.push('file_path = ?')
+      params.push(input.filePath)
+    }
+    if (input.body !== undefined) {
+      sets.push('body = ?')
+      params.push(input.body)
+    }
 
     params.push(id)
-    this.db.prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`).run(...params as (string | number | null)[])
+    this.db
+      .prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`)
+      .run(...(params as (string | number | null)[]))
     const task = this.get(id)
     if (!task) throw new Error(`Task not found: ${id}`)
     return task
@@ -90,28 +134,38 @@ export class TaskRepository {
   }
 
   get(id: string): Task | null {
-    const row = this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Record<string, unknown> | undefined
+    const row = this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined
     return row ? rowToTask(row) : null
   }
 
   find(filter: TaskFilter): Task[] {
     const { sql, params } = buildTaskQuery(filter)
-    const rows = this.db.prepare(sql).all(...params as (string | number | null)[]) as Array<Record<string, unknown>>
+    const rows = this.db.prepare(sql).all(...(params as (string | number | null)[])) as Array<
+      Record<string, unknown>
+    >
     return rows.map(rowToTask)
   }
 
   getSubtasks(parentId: string): Task[] {
-    const rows = this.db.prepare('SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at').all(parentId) as Array<Record<string, unknown>>
+    const rows = this.db
+      .prepare('SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at')
+      .all(parentId) as Array<Record<string, unknown>>
     return rows.map(rowToTask)
   }
 
   getPinned(): Task[] {
-    const rows = this.db.prepare('SELECT * FROM tasks WHERE pinned = 1 ORDER BY project_id, created_at').all() as Array<Record<string, unknown>>
+    const rows = this.db
+      .prepare('SELECT * FROM tasks WHERE pinned = 1 ORDER BY project_id, created_at')
+      .all() as Array<Record<string, unknown>>
     return rows.map(rowToTask)
   }
 
   getDue(date: string): Task[] {
-    const rows = this.db.prepare("SELECT * FROM tasks WHERE due_date <= ? AND status != 'DONE' ORDER BY due_date").all(date) as Array<Record<string, unknown>>
+    const rows = this.db
+      .prepare("SELECT * FROM tasks WHERE due_date <= ? AND status != 'DONE' ORDER BY due_date")
+      .all(date) as Array<Record<string, unknown>>
     return rows.map(rowToTask)
   }
 
@@ -125,10 +179,12 @@ export class TaskRepository {
   }
 
   getDependencies(taskId: string): TaskDependency[] {
-    const rows = this.db.prepare(
-      "SELECT from_id, to_id FROM relationships WHERE (from_id = ? OR to_id = ?) AND type = 'DEPENDS_ON'"
-    ).all(taskId, taskId) as Array<{ from_id: string; to_id: string }>
-    return rows.map(row => ({ sourceId: row.from_id, targetId: row.to_id }))
+    const rows = this.db
+      .prepare(
+        "SELECT from_id, to_id FROM relationships WHERE (from_id = ? OR to_id = ?) AND type = 'DEPENDS_ON'"
+      )
+      .all(taskId, taskId) as Array<{ from_id: string; to_id: string }>
+    return rows.map((row) => ({ sourceId: row.from_id, targetId: row.to_id }))
   }
 }
 
@@ -136,14 +192,37 @@ function buildTaskQuery(filter: TaskFilter): { sql: string; params: Param[] } {
   const wheres: string[] = []
   const params: Param[] = []
 
-  if (filter.projectId) { wheres.push('project_id = ?'); params.push(filter.projectId) }
-  if (filter.status) { wheres.push('status = ?'); params.push(filter.status) }
-  if (filter.priority) { wheres.push('priority = ?'); params.push(filter.priority) }
-  if (filter.phaseId) { wheres.push('phase_id = ?'); params.push(filter.phaseId) }
-  if (filter.parentTaskId) { wheres.push('parent_task_id = ?'); params.push(filter.parentTaskId) }
-  if (filter.pinned) { wheres.push('pinned = 1') }
-  if (filter.dueBefore) { wheres.push('due_date <= ?'); params.push(filter.dueBefore) }
-  if (filter.query) { wheres.push('title LIKE ?'); params.push(`%${filter.query}%`) }
+  if (filter.projectId) {
+    wheres.push('project_id = ?')
+    params.push(filter.projectId)
+  }
+  if (filter.status) {
+    wheres.push('status = ?')
+    params.push(filter.status)
+  }
+  if (filter.priority) {
+    wheres.push('priority = ?')
+    params.push(filter.priority)
+  }
+  if (filter.phaseId) {
+    wheres.push('phase_id = ?')
+    params.push(filter.phaseId)
+  }
+  if (filter.parentTaskId) {
+    wheres.push('parent_task_id = ?')
+    params.push(filter.parentTaskId)
+  }
+  if (filter.pinned) {
+    wheres.push('pinned = 1')
+  }
+  if (filter.dueBefore) {
+    wheres.push('due_date <= ?')
+    params.push(filter.dueBefore)
+  }
+  if (filter.query) {
+    wheres.push('title LIKE ?')
+    params.push(`%${filter.query}%`)
+  }
 
   const where = wheres.length > 0 ? `WHERE ${wheres.join(' AND ')}` : ''
   const limit = filter.limit ? `LIMIT ${filter.limit}` : ''

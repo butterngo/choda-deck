@@ -16,6 +16,15 @@ function createCoreTables(db: Database.Database): void {
     )
   `)
   db.exec(`
+    CREATE TABLE IF NOT EXISTS workspaces (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      cwd TEXT NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id)
+    )
+  `)
+  db.exec(`
     CREATE TABLE IF NOT EXISTS phases (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
@@ -130,6 +139,60 @@ function runLegacyMigrations(db: Database.Database): void {
     /* exists */
   }
 
+  // session: add workspace_id, task_id
+  try {
+    db.exec('ALTER TABLE sessions ADD COLUMN workspace_id TEXT')
+  } catch {
+    /* exists */
+  }
+  try {
+    db.exec('ALTER TABLE sessions ADD COLUMN task_id TEXT')
+  } catch {
+    /* exists */
+  }
+
+  // tasks: direct phase link (Phase → Task hierarchy)
+  try {
+    db.exec('ALTER TABLE tasks ADD COLUMN phase_id TEXT')
+  } catch {
+    /* exists */
+  }
+
+  // tasks: body content (SQLite becomes source of truth for content)
+  try {
+    db.exec('ALTER TABLE tasks ADD COLUMN body TEXT')
+  } catch {
+    /* exists */
+  }
+
+  // per-project task ID counter (atomic auto-increment)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_task_counters (
+      project_id TEXT PRIMARY KEY,
+      last_number INTEGER NOT NULL DEFAULT 0
+    )
+  `)
+  // Seed counters from existing TASK-NNN ids (one-time per project)
+  const existing = db
+    .prepare(
+      "SELECT project_id, id FROM tasks WHERE id GLOB 'TASK-[0-9]*' AND length(id) <= 12"
+    )
+    .all() as Array<{ project_id: string; id: string }>
+  const maxByProject: Record<string, number> = {}
+  for (const r of existing) {
+    const n = parseInt(r.id.slice(5), 10)
+    if (!isNaN(n) && (!maxByProject[r.project_id] || n > maxByProject[r.project_id])) {
+      maxByProject[r.project_id] = n
+    }
+  }
+  const upsert = db.prepare(
+    `INSERT INTO project_task_counters (project_id, last_number) VALUES (?, ?)
+     ON CONFLICT(project_id) DO UPDATE SET last_number = MAX(last_number, excluded.last_number)`
+  )
+  for (const [projectId, n] of Object.entries(maxByProject)) {
+    upsert.run(projectId, n)
+  }
+
   // conversation_messages: rename author → author_name, add metadata_json
   migrateConversationMessages(db)
 }
@@ -154,6 +217,8 @@ function createM1Tables(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
+      workspace_id TEXT,
+      task_id TEXT,
       started_at TEXT NOT NULL,
       ended_at TEXT,
       status TEXT NOT NULL DEFAULT 'active',
@@ -232,6 +297,23 @@ function createM1Tables(db: Database.Database): void {
       FOREIGN KEY (conversation_id) REFERENCES conversations(id)
     )
   `)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS inbox_items (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      content TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'raw',
+      linked_task_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_inbox_counters (
+      project_id TEXT PRIMARY KEY,
+      last_number INTEGER NOT NULL DEFAULT 0
+    )
+  `)
 }
 
 function createIndexes(db: Database.Database): void {
@@ -241,6 +323,7 @@ function createIndexes(db: Database.Database): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(project_id, status)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_feature ON tasks(feature_id)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_phase ON tasks(phase_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_tags_item ON tags(item_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_relationships_from ON relationships(from_id)')
@@ -260,4 +343,6 @@ function createIndexes(db: Database.Database): void {
   db.exec(
     'CREATE INDEX IF NOT EXISTS idx_conv_actions_conv ON conversation_actions(conversation_id)'
   )
+  db.exec('CREATE INDEX IF NOT EXISTS idx_inbox_project ON inbox_items(project_id)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_inbox_status ON inbox_items(project_id, status)')
 }

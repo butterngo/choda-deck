@@ -17,6 +17,7 @@ import * as searchTool from './mcp-tools/search-tool'
 import * as conversationTools from './mcp-tools/conversation-tools'
 import * as projectTools from './mcp-tools/project-tools'
 import * as sessionTools from './mcp-tools/session-tools'
+import * as inboxTools from './mcp-tools/inbox-tools'
 
 const DB_PATH = process.env.CHODA_DB_PATH || './choda-deck.db'
 
@@ -36,6 +37,7 @@ async function main(): Promise<void> {
   conversationTools.register(server, svc)
   projectTools.register(server, svc)
   sessionTools.register(server, svc)
+  inboxTools.register(server, svc)
 
   const transport = new StdioServerTransport()
   await server.connect(transport)

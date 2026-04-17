@@ -97,6 +97,22 @@ export interface ChodaApi {
     read: (id: string) => Promise<unknown>
     delete: (id: string) => Promise<{ ok: boolean }>
   }
+  inbox: {
+    list: (filter?: { projectId?: string | null; status?: string }) => Promise<unknown[]>
+    get: (id: string) => Promise<unknown>
+    add: (input: { projectId?: string | null; content: string }) => Promise<unknown>
+    archive: (id: string) => Promise<unknown>
+    convert: (
+      id: string,
+      taskInput: {
+        title: string
+        priority?: 'critical' | 'high' | 'medium' | 'low'
+        labels?: string[]
+        body?: string
+      }
+    ) => Promise<{ ok: boolean; taskId?: string; error?: string }>
+    delete: (id: string) => Promise<{ ok: boolean; error?: string }>
+  }
   vault: {
     tree: (
       rootPath: string

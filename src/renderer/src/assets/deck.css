@@ -595,12 +595,13 @@ body,
 .deck-detail-modal {
   background: #252526;
   border: 1px solid #444;
-  border-radius: 0;
-  width: 100vw;
-  height: 100vh;
+  border-radius: 8px;
+  width: min(900px, 90vw);
+  max-height: 85vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
 .deck-detail-header {
@@ -2348,3 +2349,18 @@ body,
   color: #fff;
   border-color: #991b1b;
 }
+
+.deck-detail-modal--fullscreen { width: 100vw !important; max-width: none !important; max-height: 100vh !important; height: 100vh !important; border-radius: 0 !important; }
+
+/* ── InboxView ─────────────────────────────────────────────────────────────── */
+.deck-inbox { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.deck-inbox-toolbar { padding: 10px 12px; border-bottom: 1px solid #2d2d2d; display: flex; flex-direction: column; gap: 8px; }
+.deck-inbox-filters { display: flex; gap: 8px; }
+.deck-inbox-add { display: flex; gap: 8px; }
+.deck-inbox-input { flex: 1; background: #1e1e1e; border: 1px solid #333; color: #d4d4d4; font-size: 13px; padding: 6px 10px; border-radius: 3px; }
+.deck-inbox-input:focus { outline: none; border-color: #3b82f6; }
+.deck-inbox-select { background: #1e1e1e; border: 1px solid #333; color: #d4d4d4; font-size: 12px; padding: 4px 8px; border-radius: 3px; cursor: pointer; }
+.deck-inbox-select:focus { outline: none; border-color: #3b82f6; }
+.deck-inbox-actions { display: flex; gap: 8px; margin-top: 12px; }
+.deck-sidebar-btn--danger { border-color: #7f1d1d !important; color: #fca5a5; }
+.deck-sidebar-btn--danger:hover { background: #7f1d1d !important; color: #fff !important; border-color: #991b1b !important; }
