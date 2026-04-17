@@ -157,6 +157,19 @@ export const register: Register = (server, svc) => {
         pinned: z.boolean().optional()
       }
     },
-    async ({ id, ...input }) => textResponse(svc.updateTask(id, input))
+    async ({ id, ...input }) => {
+      const task = svc.updateTask(id, input)
+      if (input.status === 'DONE' && task.filePath && CONTENT_ROOT) {
+        const archiveDir = path.join(CONTENT_ROOT, '90-Archive', task.projectId)
+        if (!fs.existsSync(archiveDir)) fs.mkdirSync(archiveDir, { recursive: true })
+        const dest = path.join(archiveDir, path.basename(task.filePath))
+        if (task.filePath !== dest && fs.existsSync(task.filePath)) {
+          fs.renameSync(task.filePath, dest)
+          svc.updateTask(id, { filePath: dest })
+          task.filePath = dest
+        }
+      }
+      return textResponse(task)
+    }
   )
 }
