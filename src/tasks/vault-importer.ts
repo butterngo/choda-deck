@@ -164,6 +164,7 @@ export class VaultImporter {
 
       this.importTasks(projectId, result)
       this.importArchive(projectId, result)
+      this.reconcileTaskFilePaths(projectId)
       this.importPhases(projectId, result)
       this.importDocuments(projectId, result)
       this.importConversations(projectId, result)
@@ -364,6 +365,14 @@ export class VaultImporter {
     const priority = normalizePriority(fm.priority)
     const title = fm.title || taskId
 
+    // Resolve phase from frontmatter (e.g. phase: sprint-1)
+    const phaseRef = fm.phase ? String(fm.phase) : null
+    const phaseId = phaseRef
+      ? this.taskService.getPhase(phaseRef)
+        ? phaseRef
+        : undefined
+      : undefined
+
     const existing = this.taskService.getTask(taskId)
     if (existing) {
       this.taskService.updateTask(taskId, {
@@ -371,7 +380,8 @@ export class VaultImporter {
         status,
         priority,
         labels: fm.labels || undefined,
-        filePath
+        filePath,
+        ...(phaseId !== undefined ? { phaseId } : {})
       })
     } else {
       this.taskService.createTask({
@@ -381,7 +391,8 @@ export class VaultImporter {
         status,
         priority: priority || undefined,
         labels: fm.labels,
-        filePath
+        filePath,
+        phaseId
       })
     }
 
@@ -396,6 +407,15 @@ export class VaultImporter {
     this.importRelationships(taskId, fm, result)
 
     return true
+  }
+
+  private reconcileTaskFilePaths(projectId: string): void {
+    const tasks = this.taskService.findTasks({ projectId })
+    for (const task of tasks) {
+      if (task.filePath && !fs.existsSync(task.filePath)) {
+        this.taskService.updateTask(task.id, { filePath: null })
+      }
+    }
   }
 
   // ── Phase import ────────────────────────────────────────────────────────

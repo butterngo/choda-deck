@@ -1,10 +1,46 @@
 import { z } from 'zod'
 import * as fs from 'fs'
 import * as path from 'path'
-import type { Feature, Phase } from '../task-types'
+import type { Feature, Phase, Task } from '../task-types'
 import { textResponse, type Register } from './types'
 
 const CONTENT_ROOT = process.env.CHODA_CONTENT_ROOT || ''
+
+function renderTaskFile(task: Task): string {
+  const frontmatter = [
+    '---',
+    `id: ${task.id}`,
+    `title: ${task.title}`,
+    `status: ${(task.status || 'todo').toLowerCase()}`,
+    task.priority ? `priority: ${task.priority}` : '',
+    task.featureId ? `feature: ${task.featureId}` : '',
+    task.dueDate ? `due-date: ${task.dueDate}` : '',
+    '---'
+  ].filter(l => l !== '').join('\n')
+
+  const body = `# ${task.id}: ${task.title}
+
+## Why
+
+<!-- What friction, constraint, or motivation drives this task? -->
+
+## Acceptance criteria
+
+- [ ]
+
+## Scope
+
+-
+
+## Out of scope
+
+-
+
+## Notes
+`
+
+  return `${frontmatter}\n\n${body}`
+}
 
 export const register: Register = (server, svc) => {
   server.registerTool(
@@ -96,22 +132,9 @@ export const register: Register = (server, svc) => {
       if (CONTENT_ROOT && task.id) {
         const dir = path.join(CONTENT_ROOT, '10-Projects', input.projectId, 'tasks')
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-        const slug = task.title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
-        const filePath = path.join(dir, `${task.id}_${slug}.md`)
-        const lines = [
-          '---',
-          `id: ${task.id}`,
-          `title: ${task.title}`,
-          `status: ${(task.status || 'todo').toLowerCase()}`,
-          task.priority ? `priority: ${task.priority}` : '',
-          task.featureId ? `feature: ${task.featureId}` : '',
-          task.dueDate ? `due-date: ${task.dueDate}` : '',
-          '---',
-          '',
-          `# ${task.id}: ${task.title}`,
-          ''
-        ].filter(l => l !== '').join('\n')
-        fs.writeFileSync(filePath, lines, 'utf-8')
+        const filePath = path.join(dir, `${task.id}.md`)
+        fs.writeFileSync(filePath, renderTaskFile(task), 'utf-8')
+        svc.updateTask(task.id, { filePath })
       }
 
       return textResponse(task)

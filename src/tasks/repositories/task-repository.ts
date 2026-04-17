@@ -7,14 +7,14 @@ import type {
   UpdateTaskInput,
   TaskFilter
 } from '../task-types'
-import { now, generateId, type Param } from './shared'
+import { now, type Param } from './shared'
 import type { RelationshipRepository } from './relationship-repository'
 
 function rowToTask(row: Record<string, unknown>): Task {
   return {
     id: row.id as string,
     projectId: row.project_id as string,
-    featureId: (row.feature_id as string) || null,
+    phaseId: (row.phase_id as string) || null,
     parentTaskId: (row.parent_task_id as string) || null,
     title: row.title as string,
     status: row.status as TaskStatus,
@@ -34,14 +34,26 @@ export class TaskRepository {
     private readonly relationships: RelationshipRepository
   ) {}
 
+  private nextTaskId(projectId: string): string {
+    const rows = this.db.prepare(
+      "SELECT id FROM tasks WHERE project_id = ? AND id GLOB 'TASK-[0-9]*'"
+    ).all(projectId) as Array<{ id: string }>
+    let max = 0
+    for (const { id } of rows) {
+      const n = parseInt(id.slice(5), 10)
+      if (!isNaN(n) && n > max) max = n
+    }
+    return `TASK-${String(max + 1).padStart(3, '0')}`
+  }
+
   create(input: CreateTaskInput): Task {
     const ts = now()
-    const id = input.id || generateId('TASK')
+    const id = input.id || this.nextTaskId(input.projectId)
     this.db.prepare(
-      `INSERT INTO tasks (id, project_id, feature_id, parent_task_id, title, status, priority, labels, due_date, file_path, pinned, created_at, updated_at)
+      `INSERT INTO tasks (id, project_id, phase_id, parent_task_id, title, status, priority, labels, due_date, file_path, pinned, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
     ).run(
-      id, input.projectId, input.featureId || null, input.parentTaskId || null, input.title,
+      id, input.projectId, input.phaseId || null, input.parentTaskId || null, input.title,
       input.status || 'TODO', input.priority || null,
       input.labels ? JSON.stringify(input.labels) : null,
       input.dueDate || null, input.filePath || null, ts, ts
@@ -56,7 +68,7 @@ export class TaskRepository {
     if (input.title !== undefined) { sets.push('title = ?'); params.push(input.title) }
     if (input.status !== undefined) { sets.push('status = ?'); params.push(input.status) }
     if (input.priority !== undefined) { sets.push('priority = ?'); params.push(input.priority) }
-    if (input.featureId !== undefined) { sets.push('feature_id = ?'); params.push(input.featureId) }
+    if (input.phaseId !== undefined) { sets.push('phase_id = ?'); params.push(input.phaseId) }
     if (input.parentTaskId !== undefined) { sets.push('parent_task_id = ?'); params.push(input.parentTaskId) }
     if (input.labels !== undefined) { sets.push('labels = ?'); params.push(JSON.stringify(input.labels)) }
     if (input.dueDate !== undefined) { sets.push('due_date = ?'); params.push(input.dueDate) }
@@ -127,7 +139,7 @@ function buildTaskQuery(filter: TaskFilter): { sql: string; params: Param[] } {
   if (filter.projectId) { wheres.push('project_id = ?'); params.push(filter.projectId) }
   if (filter.status) { wheres.push('status = ?'); params.push(filter.status) }
   if (filter.priority) { wheres.push('priority = ?'); params.push(filter.priority) }
-  if (filter.featureId) { wheres.push('feature_id = ?'); params.push(filter.featureId) }
+  if (filter.phaseId) { wheres.push('phase_id = ?'); params.push(filter.phaseId) }
   if (filter.parentTaskId) { wheres.push('parent_task_id = ?'); params.push(filter.parentTaskId) }
   if (filter.pinned) { wheres.push('pinned = 1') }
   if (filter.dueBefore) { wheres.push('due_date <= ?'); params.push(filter.dueBefore) }
