@@ -4,7 +4,6 @@ import './assets/deck.css'
 import Sidebar from './Sidebar'
 import ViewRouter from './ViewRouter'
 import KanbanBoard from './KanbanBoard'
-import DailyFocusView from './DailyFocusView'
 import FilesView from './FilesView'
 import ActivityView from './ActivityView'
 import type { ProjectConfig, WorkspaceConfig } from '../../preload/index'
@@ -23,13 +22,6 @@ const VIEW_TYPES: ViewType[] = [
     label: 'Board',
     render: (project, _workspace, visible) => (
       <KanbanBoard projectId={project.id} visible={visible} />
-    )
-  },
-  {
-    id: 'focus',
-    label: 'Focus',
-    render: (_project, workspace, visible) => (
-      <DailyFocusView workspaceId={workspace.id} visible={visible} />
     )
   },
   {
