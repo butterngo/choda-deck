@@ -37,21 +37,9 @@ function createCoreTables(db: Database.Database): void {
     )
   `)
   db.exec(`
-    CREATE TABLE IF NOT EXISTS features (
-      id TEXT PRIMARY KEY,
-      project_id TEXT NOT NULL,
-      phase_id TEXT,
-      title TEXT NOT NULL,
-      priority TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `)
-  db.exec(`
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
-      feature_id TEXT,
       parent_task_id TEXT,
       title TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'TODO',
@@ -103,28 +91,23 @@ function runLegacyMigrations(db: Database.Database): void {
   } catch {
     /* exists */
   }
-  try {
-    db.exec('ALTER TABLE tasks ADD COLUMN feature_id TEXT')
-  } catch {
-    /* exists */
-  }
-
-  try {
-    db.exec(`
-      UPDATE tasks SET feature_id = (
-        SELECT e.feature_id FROM epics e WHERE e.id = tasks.epic_id
-      ) WHERE epic_id IS NOT NULL AND feature_id IS NULL
-    `)
-  } catch {
-    /* epics table may not exist */
-  }
-
   db.exec('DROP TABLE IF EXISTS epics')
   db.exec('DROP TABLE IF EXISTS task_dependencies')
   try {
     db.exec('DROP INDEX IF EXISTS idx_tasks_epic')
   } catch {
     /* ok */
+  }
+
+  // Feature entity removed (TASK-516) — Phase → Task hierarchy is direct
+  db.exec('DROP INDEX IF EXISTS idx_tasks_feature')
+  db.exec('DROP INDEX IF EXISTS idx_features_project')
+  db.exec('DROP INDEX IF EXISTS idx_features_phase')
+  db.exec('DROP TABLE IF EXISTS features')
+  try {
+    db.exec('ALTER TABLE tasks DROP COLUMN feature_id')
+  } catch {
+    /* already dropped */
   }
 
   // M1 conversation schema migration
@@ -320,11 +303,8 @@ function createM1Tables(db: Database.Database): void {
 
 function createIndexes(db: Database.Database): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_phases_project ON phases(project_id)')
-  db.exec('CREATE INDEX IF NOT EXISTS idx_features_project ON features(project_id)')
-  db.exec('CREATE INDEX IF NOT EXISTS idx_features_phase ON features(phase_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(project_id, status)')
-  db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_feature ON tasks(feature_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_phase ON tasks(phase_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_tags_item ON tags(item_id)')

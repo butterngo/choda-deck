@@ -80,7 +80,6 @@ export class PhaseRepository {
   }
 
   delete(id: string): void {
-    this.db.prepare('UPDATE features SET phase_id = NULL WHERE phase_id = ?').run(id)
     this.db.prepare('UPDATE tasks SET phase_id = NULL WHERE phase_id = ?').run(id)
     this.db.prepare('DELETE FROM phases WHERE id = ?').run(id)
   }

@@ -6,7 +6,7 @@ export const register: Register = (server, svc) => {
     'search',
     {
       description:
-        'Search across tasks, phases, features, documents, and active inbox items (raw/researching/ready).',
+        'Search across tasks, phases, documents, and active inbox items (raw/researching/ready).',
       inputSchema: { query: z.string().describe('Search query') }
     },
     async ({ query }) => {

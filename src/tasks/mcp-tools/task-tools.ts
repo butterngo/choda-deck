@@ -29,8 +29,7 @@ export const register: Register = (server, svc) => {
   server.registerTool(
     'task_context',
     {
-      description:
-        'Get full context for a task: task details + feature + phase + dependencies + body',
+      description: 'Get full context for a task: task details + phase + dependencies + body',
       inputSchema: { id: z.string().describe('Task ID (e.g. TASK-401)') }
     },
     async ({ id }) => {
@@ -87,7 +86,6 @@ export const register: Register = (server, svc) => {
           .enum(['critical', 'high', 'medium', 'low'])
           .optional()
           .describe('Filter by priority'),
-        featureId: z.string().optional().describe('Filter by feature ID'),
         query: z.string().optional().describe('Search title'),
         limit: z.number().optional().describe('Max results')
       }

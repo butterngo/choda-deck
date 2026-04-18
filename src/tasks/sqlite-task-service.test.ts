@@ -111,8 +111,6 @@ describe('SqliteTaskService', () => {
     expect(subs.map((s) => s.id).sort()).toEqual(['TASK-SUB1', 'TASK-SUB2'])
   })
 
-  // ── Task → Feature link ─────────────────────────────────────────────
-
   // ── Dependencies ───────────────────────────────────────────────────────
 
   it('addDependency + getDependencies', () => {
@@ -180,39 +178,9 @@ describe('SqliteTaskService', () => {
     expect(phases[1].id).toBe('PH-B')
   })
 
-  it('deletePhase unlinks features', () => {
+  it('deletePhase removes the phase', () => {
     svc.deletePhase('PH-B')
     expect(svc.getPhase('PH-B')).toBeNull()
-  })
-
-  // ── Features ───────────────────────────────────────────────────────────
-
-  it('createFeature + getFeature', () => {
-    const feat = svc.createFeature({
-      id: 'FEAT-001',
-      projectId: 'test-proj',
-      phaseId: 'PH-A',
-      title: 'Schema',
-      priority: 'critical'
-    })
-    expect(feat.id).toBe('FEAT-001')
-    expect(feat.phaseId).toBe('PH-A')
-    expect(feat.priority).toBe('critical')
-  })
-
-  it('findFeaturesByPhase', () => {
-    svc.createFeature({ id: 'FEAT-002', projectId: 'test-proj', phaseId: 'PH-A', title: 'Roadmap' })
-    const feats = svc.findFeaturesByPhase('PH-A')
-    expect(feats.length).toBe(2)
-  })
-
-  // ── Derived progress ──────────────────────────────────────────────────
-
-  it('empty feature is planned', () => {
-    svc.createFeature({ id: 'FEAT-EMPTY', projectId: 'test-proj', title: 'Empty' })
-    const progress = svc.getFeatureProgress('FEAT-EMPTY')
-    expect(progress.status).toBe('planned')
-    expect(progress.percent).toBe(0)
   })
 
   // ── Documents ──────────────────────────────────────────────────────────

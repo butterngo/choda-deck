@@ -269,24 +269,6 @@ export class VaultImporter {
       }
     }
 
-    // Features
-    const featDir = path.join(this.contentRoot, base, 'features')
-    if (fs.existsSync(featDir)) {
-      const feats = fs
-        .readdirSync(featDir)
-        .filter((f) => f.endsWith('.md'))
-        .slice(0, 5)
-      for (const f of feats) {
-        const rel = `${base}/features/${f}`
-        out.push({
-          label: `Feature: ${f.replace('.md', '').replace(/[-_]/g, ' ')}`,
-          sourcePath: rel,
-          category: 'what',
-          priority: 40
-        })
-      }
-    }
-
     return out
   }
 
@@ -301,8 +283,7 @@ export class VaultImporter {
           !d.name.startsWith('.') &&
           d.name !== 'tasks' &&
           d.name !== 'phases' &&
-          d.name !== 'docs' &&
-          d.name !== 'features'
+          d.name !== 'docs'
       )
       .map((d) => d.name)
   }

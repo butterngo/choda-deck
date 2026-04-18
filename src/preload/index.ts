@@ -108,26 +108,6 @@ const api = {
       percent: number
     }> => ipcRenderer.invoke('phase:progress', phaseId)
   },
-  feature: {
-    list: (projectId: string): Promise<unknown[]> => ipcRenderer.invoke('feature:list', projectId),
-    listByPhase: (phaseId: string): Promise<unknown[]> =>
-      ipcRenderer.invoke('feature:listByPhase', phaseId),
-    get: (id: string): Promise<unknown> => ipcRenderer.invoke('feature:get', id),
-    create: (input: Record<string, unknown>): Promise<unknown> =>
-      ipcRenderer.invoke('feature:create', input),
-    update: (id: string, input: Record<string, unknown>): Promise<unknown> =>
-      ipcRenderer.invoke('feature:update', id, input),
-    delete: (id: string): Promise<void> => ipcRenderer.invoke('feature:delete', id),
-    progress: (
-      featureId: string
-    ): Promise<{
-      total: number
-      done: number
-      inProgress: number
-      status: string
-      percent: number
-    }> => ipcRenderer.invoke('feature:progress', featureId)
-  },
   session: {
     list: (projectId: string): Promise<unknown[]> => ipcRenderer.invoke('session:list', projectId),
     get: (id: string): Promise<unknown> => ipcRenderer.invoke('session:get', id),

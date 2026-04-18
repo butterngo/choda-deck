@@ -27,16 +27,6 @@ export interface Phase {
   updatedAt: string
 }
 
-export interface Feature {
-  id: string
-  projectId: string
-  phaseId: string | null
-  title: string
-  priority: TaskPriority | null
-  createdAt: string
-  updatedAt: string
-}
-
 export interface Document {
   id: string
   projectId: string
@@ -134,20 +124,6 @@ export interface UpdatePhaseInput {
   position?: number
   startDate?: string | null
   completedDate?: string | null
-}
-
-export interface CreateFeatureInput {
-  id?: string
-  projectId: string
-  phaseId?: string
-  title: string
-  priority?: TaskPriority
-}
-
-export interface UpdateFeatureInput {
-  title?: string
-  phaseId?: string | null
-  priority?: TaskPriority | null
 }
 
 export interface CreateDocumentInput {
@@ -260,7 +236,7 @@ export type ConversationMessageType =
   | 'decision'
   | 'action'
   | 'comment'
-export type ConversationLinkType = 'task' | 'adr' | 'feature' | 'commit' | 'inbox'
+export type ConversationLinkType = 'task' | 'adr' | 'commit' | 'inbox'
 export type ConversationParticipantType = 'human' | 'agent' | 'role'
 export type ConversationActionStatus = 'pending' | 'done'
 

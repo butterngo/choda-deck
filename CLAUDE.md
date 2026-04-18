@@ -57,7 +57,7 @@ Use `choda-tasks` MCP tools (`task_context`, `task_list`) for task details.
 
 ## MCP Tools Available
 
-`choda-tasks` server (10 tools): `task_context`, `task_list`, `task_create`, `task_update`, `phase_list`, `phase_create`, `feature_list`, `feature_create`, `roadmap`, `search`.
+`choda-tasks` server (8 tools): `task_context`, `task_list`, `task_create`, `task_update`, `phase_list`, `phase_create`, `roadmap`, `search`.
 
 M1 will add: `project_context`, `session_start`, `session_end`, conversation protocol tools, skill registry tools.
 

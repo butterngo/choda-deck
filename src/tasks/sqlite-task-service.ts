@@ -13,9 +13,6 @@ import type {
   Phase,
   CreatePhaseInput,
   UpdatePhaseInput,
-  Feature,
-  CreateFeatureInput,
-  UpdateFeatureInput,
   Document,
   DocumentType,
   CreateDocumentInput,
@@ -53,7 +50,6 @@ import { initSchema } from './repositories/schema'
 import { ProjectRepository } from './repositories/project-repository'
 import { TaskRepository } from './repositories/task-repository'
 import { PhaseRepository } from './repositories/phase-repository'
-import { FeatureRepository } from './repositories/feature-repository'
 import { DocumentRepository } from './repositories/document-repository'
 import { TagRepository } from './repositories/tag-repository'
 import { RelationshipRepository } from './repositories/relationship-repository'
@@ -75,7 +71,6 @@ export class SqliteTaskService
   private readonly projects: ProjectRepository
   private readonly tasks: TaskRepository
   private readonly phases: PhaseRepository
-  private readonly features: FeatureRepository
   private readonly documents: DocumentRepository
   private readonly tagsRepo: TagRepository
   private readonly relationships: RelationshipRepository
@@ -96,7 +91,6 @@ export class SqliteTaskService
     this.counters = new CounterRepository(this.db)
     this.tasks = new TaskRepository(this.db, this.relationships, this.counters)
     this.phases = new PhaseRepository(this.db)
-    this.features = new FeatureRepository(this.db)
     this.documents = new DocumentRepository(this.db)
     this.tagsRepo = new TagRepository(this.db)
     this.sessions = new SessionRepository(this.db)
@@ -195,29 +189,6 @@ export class SqliteTaskService
   }
   getPhaseProgress(phaseId: string): DerivedProgress {
     return this.phases.getProgress(phaseId)
-  }
-
-  // ── Feature operations ─────────────────────────────────────────────────────
-  createFeature(input: CreateFeatureInput): Feature {
-    return this.features.create(input)
-  }
-  updateFeature(id: string, input: UpdateFeatureInput): Feature {
-    return this.features.update(id, input)
-  }
-  deleteFeature(id: string): void {
-    this.features.delete(id)
-  }
-  getFeature(id: string): Feature | null {
-    return this.features.get(id)
-  }
-  findFeatures(projectId: string): Feature[] {
-    return this.features.findByProject(projectId)
-  }
-  findFeaturesByPhase(phaseId: string): Feature[] {
-    return this.features.findByPhase(phaseId)
-  }
-  getFeatureProgress(featureId: string): DerivedProgress {
-    return this.features.getProgress(featureId)
   }
 
   // ── Document operations ────────────────────────────────────────────────────

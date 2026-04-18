@@ -1,6 +1,5 @@
 import type { TaskOperations } from './interfaces/task-repository.interface'
 import type { PhaseOperations } from './interfaces/phase-repository.interface'
-import type { FeatureOperations } from './interfaces/feature-repository.interface'
 import type { DocumentOperations } from './interfaces/document-repository.interface'
 import type { TagOperations } from './interfaces/tag-repository.interface'
 import type { RelationshipOperations } from './interfaces/relationship-repository.interface'
@@ -9,7 +8,6 @@ import type { Lifecycle } from './interfaces/lifecycle.interface'
 export type {
   TaskOperations,
   PhaseOperations,
-  FeatureOperations,
   DocumentOperations,
   TagOperations,
   RelationshipOperations,
@@ -23,7 +21,6 @@ export interface TaskService
   extends
     TaskOperations,
     PhaseOperations,
-    FeatureOperations,
     DocumentOperations,
     TagOperations,
     RelationshipOperations,

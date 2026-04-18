@@ -436,32 +436,14 @@ app.whenReady().then(async () => {
   ipcMain.handle('phase:update', (_event, id: string, input) => taskService.updatePhase(id, input))
   ipcMain.handle('phase:delete', (_event, id: string, cascade?: boolean) => {
     if (cascade) {
-      const features = taskService.findFeaturesByPhase(id)
-      for (const f of features) {
-        const tasks = taskService.findTasks({ featureId: f.id })
-        for (const t of tasks) taskService.deleteTask(t.id)
-        taskService.deleteFeature(f.id)
-      }
+      const tasks = taskService.findTasks({ phaseId: id })
+      for (const t of tasks) taskService.deleteTask(t.id)
     }
     taskService.deletePhase(id)
     return { ok: true }
   })
   ipcMain.handle('phase:progress', (_event, phaseId: string) =>
     taskService.getPhaseProgress(phaseId)
-  )
-
-  ipcMain.handle('feature:list', (_event, projectId: string) => taskService.findFeatures(projectId))
-  ipcMain.handle('feature:listByPhase', (_event, phaseId: string) =>
-    taskService.findFeaturesByPhase(phaseId)
-  )
-  ipcMain.handle('feature:get', (_event, id: string) => taskService.getFeature(id))
-  ipcMain.handle('feature:create', (_event, input) => taskService.createFeature(input))
-  ipcMain.handle('feature:update', (_event, id: string, input) =>
-    taskService.updateFeature(id, input)
-  )
-  ipcMain.handle('feature:delete', (_event, id: string) => taskService.deleteFeature(id))
-  ipcMain.handle('feature:progress', (_event, featureId: string) =>
-    taskService.getFeatureProgress(featureId)
   )
 
   ipcMain.handle('task:pinned', () => taskService.getPinnedTasks())
