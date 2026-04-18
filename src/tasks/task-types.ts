@@ -378,7 +378,7 @@ export interface InboxItem {
 }
 
 export interface CreateInboxInput {
-  projectId?: string | null
+  projectId: string
   content: string
 }
 

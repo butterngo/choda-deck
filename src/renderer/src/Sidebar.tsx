@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { ProjectConfig } from '../../preload/index'
 import ProjectForm from './ProjectForm'
+import SettingsModal from './SettingsModal'
 
 const HELP_TEXT = `Keyboard Shortcuts
 ─────────────────
@@ -17,7 +18,6 @@ Views (per workspace)
 ─────────────────
 Terminal       Live claude session
 Tasks          Kanban board (read-only)
-Roadmap        Phase/Feature progress overview
 Focus          Today's tasks`
 
 type FormState =
@@ -39,6 +39,7 @@ function Sidebar({
   onProjectsChanged
 }: SidebarProps): React.JSX.Element {
   const [showHelp, setShowHelp] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [form, setForm] = useState<FormState>({ open: false })
   const [collapsed, setCollapsed] = useState(false)
 
@@ -102,11 +103,20 @@ function Sidebar({
           >
             +
           </button>
+          <button
+            className="deck-sidebar-add-btn"
+            onClick={() => setShowSettings(true)}
+            title="Settings"
+          >
+            ⚙
+          </button>
           <button className="deck-sidebar-add-btn" onClick={() => setShowHelp(true)} title="Help">
             ?
           </button>
         </div>
       </div>
+
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
 
       {showHelp && (
         <div className="deck-help-overlay" onClick={() => setShowHelp(false)}>

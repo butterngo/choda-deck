@@ -13,15 +13,15 @@ After a `/discussion` session or any conversation where architectural decisions 
 
 ## Quick rules
 
-| Rule                 | Detail                                                                   |
-| -------------------- | ------------------------------------------------------------------------ |
-| Template source      | `30-Knowledge/adr-standard.md` — always read before generating |
-| Output location      | `docs/decisions/ADR-XXXX-<slug>.md` in current project                   |
-| Auto-increment ID    | Scan `docs/decisions/` for highest ADR number, increment by 1            |
-| Status default       | `proposed` — user promotes to `accepted` after review                    |
-| AI-Context required  | One-line summary, mandatory per adr-standard                             |
-| One decision per ADR | If conversation had multiple decisions, generate multiple ADRs           |
-| Update index         | Append new entry to `docs/decisions/index.md` after creating ADR         |
+| Rule                 | Detail                                                           |
+| -------------------- | ---------------------------------------------------------------- |
+| Template source      | `30-Knowledge/adr-standard.md` — always read before generating   |
+| Output location      | `docs/decisions/ADR-XXXX-<slug>.md` in current project           |
+| Auto-increment ID    | Scan `docs/decisions/` for highest ADR number, increment by 1    |
+| Status default       | `proposed` — user promotes to `accepted` after review            |
+| AI-Context required  | One-line summary, mandatory per adr-standard                     |
+| One decision per ADR | If conversation had multiple decisions, generate multiple ADRs   |
+| Update index         | Append new entry to `docs/decisions/index.md` after creating ADR |
 
 ## Usage
 

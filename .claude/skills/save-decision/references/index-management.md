@@ -21,13 +21,14 @@ If `docs/decisions/index.md` does not exist, create it:
 
 > AI-Context: Index of all architectural decisions for <Project>. Read this before @importing any ADR.
 
-| ID | Title | Status | Date |
-|---|---|---|---|
+| ID  | Title | Status | Date |
+| --- | ----- | ------ | ---- |
 ```
 
 ## Status updates
 
 When user changes an ADR status (accepted, deprecated, superseded):
+
 - Update the ADR file frontmatter
 - Update the corresponding row in index.md
 - If superseded, add `superseded-by ADR-XXXX` to old ADR frontmatter

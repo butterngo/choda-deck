@@ -1676,8 +1676,8 @@ Examples of tooltip usage below:
 ```html
 <script>
   window.callback = function () {
-    alert('A callback was triggered');
-  };
+    alert('A callback was triggered')
+  }
 </script>
 ```
 
@@ -1752,15 +1752,15 @@ Beginner's tip—a full example using interactive links in a html context:
 
   <script>
     window.callback = function () {
-      alert('A callback was triggered');
-    };
+      alert('A callback was triggered')
+    }
     const config = {
       startOnLoad: true,
       htmlLabels: true,
       flowchart: { useMaxWidth: true, curve: 'cardinal' },
-      securityLevel: 'loose',
-    };
-    mermaid.initialize(config);
+      securityLevel: 'loose'
+    }
+    mermaid.initialize(config)
   </script>
 </body>
 ```

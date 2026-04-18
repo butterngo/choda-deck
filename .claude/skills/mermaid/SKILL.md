@@ -17,16 +17,16 @@ Generate Mermaid diagram code based on user requirements.
 
 ## Diagram types
 
-| Type | Reference | Use cases |
-|---|---|---|
-| Flowchart | [flowchart.md](references/flowchart.md) | Processes, decisions |
-| Sequence | [sequenceDiagram.md](references/sequenceDiagram.md) | Interactions, API calls |
-| Class | [classDiagram.md](references/classDiagram.md) | Class structure |
-| State | [stateDiagram.md](references/stateDiagram.md) | State machines |
-| ER | [entityRelationshipDiagram.md](references/entityRelationshipDiagram.md) | Database design |
-| Gantt | [gantt.md](references/gantt.md) | Timelines |
-| C4 | [c4.md](references/c4.md) | System architecture |
-| Mindmap | [mindmap.md](references/mindmap.md) | Hierarchical structures |
+| Type      | Reference                                                               | Use cases               |
+| --------- | ----------------------------------------------------------------------- | ----------------------- |
+| Flowchart | [flowchart.md](references/flowchart.md)                                 | Processes, decisions    |
+| Sequence  | [sequenceDiagram.md](references/sequenceDiagram.md)                     | Interactions, API calls |
+| Class     | [classDiagram.md](references/classDiagram.md)                           | Class structure         |
+| State     | [stateDiagram.md](references/stateDiagram.md)                           | State machines          |
+| ER        | [entityRelationshipDiagram.md](references/entityRelationshipDiagram.md) | Database design         |
+| Gantt     | [gantt.md](references/gantt.md)                                         | Timelines               |
+| C4        | [c4.md](references/c4.md)                                               | System architecture     |
+| Mindmap   | [mindmap.md](references/mindmap.md)                                     | Hierarchical structures |
 
 Full list: see [all-diagram-types.md](references/all-diagram-types.md)
 

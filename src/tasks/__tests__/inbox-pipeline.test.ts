@@ -18,15 +18,12 @@ afterAll(() => {
 })
 
 describe('inbox: id + counter', () => {
-  it('auto-increments globally — INBOX-001, INBOX-002, INBOX-003', () => {
+  it('auto-increments globally — INBOX-001, INBOX-002', () => {
     const a = svc.createInbox({ projectId: 'proj-i', content: 'first idea' })
     const b = svc.createInbox({ projectId: 'proj-i', content: 'second idea' })
-    const g = svc.createInbox({ projectId: null, content: 'cross-cut idea' })
     expect(a.id).toBe('INBOX-001')
     expect(b.id).toBe('INBOX-002')
-    expect(g.id).toBe('INBOX-003')
     expect(a.status).toBe('raw')
-    expect(g.projectId).toBeNull()
   })
 })
 
@@ -35,12 +32,6 @@ describe('inbox: find + filter', () => {
     const rows = svc.findInbox({ projectId: 'proj-i' })
     expect(rows.length).toBeGreaterThanOrEqual(2)
     expect(rows.every((r) => r.projectId === 'proj-i')).toBe(true)
-  })
-
-  it('finds global items when projectId=null', () => {
-    const rows = svc.findInbox({ projectId: null })
-    expect(rows.length).toBeGreaterThanOrEqual(1)
-    expect(rows.every((r) => r.projectId === null)).toBe(true)
   })
 
   it('filters by status', () => {
@@ -138,4 +129,95 @@ describe('inbox: delete', () => {
     svc.deleteInbox(item.id)
     expect(svc.getInbox(item.id)).toBeNull()
   })
+})
+
+describe('inbox: convert atomicity', () => {
+  it('persists task creation + linkedTaskId + conv closure as a single observable end-state', () => {
+    const item = svc.createInbox({ projectId: 'proj-i', content: 'atomic convert' })
+    const conv = svc.createConversation({
+      projectId: 'proj-i',
+      title: `Research: ${item.content}`,
+      createdBy: 'Claude',
+      status: 'open',
+      participants: [{ name: 'Claude', type: 'agent' as const }]
+    })
+    svc.linkConversation(conv.id, 'inbox', item.id)
+    svc.updateInbox(item.id, { status: 'researching' })
+    svc.updateInbox(item.id, { status: 'ready' })
+
+    const task = svc.createTask({ projectId: 'proj-i', title: 'Atomic', status: 'TODO' })
+    svc.updateInbox(item.id, { status: 'converted', linkedTaskId: task.id })
+    svc.updateConversation(conv.id, {
+      status: 'closed',
+      decisionSummary: `Converted to ${task.id}`,
+      closedAt: new Date().toISOString()
+    })
+
+    const finalInbox = svc.getInbox(item.id)!
+    const finalTask = svc.getTask(task.id)!
+    const finalConv = svc.getConversation(conv.id)!
+
+    expect(finalInbox.status).toBe('converted')
+    expect(finalInbox.linkedTaskId).toBe(task.id)
+    expect(finalTask.id).toBe(task.id)
+    expect(finalConv.status).toBe('closed')
+    expect(finalConv.decisionSummary).toContain(task.id)
+  })
+
+  it('createTask without projectId is rejected by repository (guards convert)', () => {
+    expect(() =>
+      svc.createTask({ projectId: undefined as unknown as string, title: 'no project' })
+    ).toThrow()
+  })
+})
+
+describe('inbox: research guards', () => {
+  it('research-twice on same item should reuse the existing conversation, not create a second', () => {
+    const item = svc.createInbox({ projectId: 'proj-i', content: 'research-twice' })
+    const conv1 = svc.createConversation({
+      projectId: 'proj-i',
+      title: `Research: ${item.content}`,
+      createdBy: 'Claude',
+      status: 'open',
+      participants: [{ name: 'Claude', type: 'agent' as const }]
+    })
+    svc.linkConversation(conv1.id, 'inbox', item.id)
+    svc.updateInbox(item.id, { status: 'researching' })
+
+    const linked = svc.findConversationsByLink('inbox', item.id)
+    expect(linked.length).toBe(1)
+    expect(linked[0].id).toBe(conv1.id)
+  })
+})
+
+describe('inbox: archive guards', () => {
+  it('archive from researching closes open conversation with reason in decision summary', () => {
+    const item = svc.createInbox({ projectId: 'proj-i', content: 'rejected mid-research' })
+    const conv = svc.createConversation({
+      projectId: 'proj-i',
+      title: `Research: ${item.content}`,
+      createdBy: 'Claude',
+      status: 'open',
+      participants: [{ name: 'Claude', type: 'agent' as const }]
+    })
+    svc.linkConversation(conv.id, 'inbox', item.id)
+    svc.updateInbox(item.id, { status: 'researching' })
+
+    const reason = 'duplicate of INBOX-001'
+    svc.updateInbox(item.id, { status: 'archived' })
+    svc.updateConversation(conv.id, {
+      status: 'closed',
+      decisionSummary: `Archived: ${reason}`,
+      closedAt: new Date().toISOString()
+    })
+
+    const closed = svc.getConversation(conv.id)!
+    expect(svc.getInbox(item.id)!.status).toBe('archived')
+    expect(closed.status).toBe('closed')
+    expect(closed.decisionSummary).toContain(reason)
+  })
+})
+
+describe('inbox: cancel flow (per ADR-011)', () => {
+  it.todo('researching → raw via inbox_cancel — tool not yet implemented (tracked in INBOX research)')
 })

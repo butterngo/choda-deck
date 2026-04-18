@@ -13,21 +13,23 @@ export const register: Register = (server, svc) => {
       const features = svc.findFeatures(projectId)
       const tasks = svc.findTasks({ projectId })
 
-      const tree = phases.map(ph => ({
+      const tree = phases.map((ph) => ({
         ...ph,
         progress: svc.getPhaseProgress(ph.id),
-        features: features.filter(f => f.phaseId === ph.id).map(f => ({
-          ...f,
-          progress: svc.getFeatureProgress(f.id),
-          tasks: tasks.filter(t => t.featureId === f.id)
-        }))
+        features: features
+          .filter((f) => f.phaseId === ph.id)
+          .map((f) => ({
+            ...f,
+            progress: svc.getFeatureProgress(f.id),
+            tasks: tasks.filter((t) => t.featureId === f.id)
+          }))
       }))
 
       return textResponse({
         phases: tree,
         unassigned: {
-          features: features.filter(f => !f.phaseId),
-          tasks: tasks.filter(t => !t.featureId)
+          features: features.filter((f) => !f.phaseId),
+          tasks: tasks.filter((t) => !t.featureId)
         }
       })
     }

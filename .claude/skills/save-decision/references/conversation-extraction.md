@@ -4,15 +4,15 @@
 
 Scan the current conversation for:
 
-| Section | Look for |
-|---|---|
-| Context | Problem statement, constraints, requirements mentioned early in discussion |
-| Options | Alternatives discussed, compared, benchmarked |
-| Decision | Explicit "let's go with X", "chose X", or final implementation choice |
-| Why not others | Reasons given for rejecting alternatives |
-| Consequences | Trade-offs acknowledged, risks flagged |
-| Impact | Files modified, modules touched, dependencies changed |
-| Revisit when | "If X happens we should reconsider", scaling thresholds, tech debt notes |
+| Section        | Look for                                                                   |
+| -------------- | -------------------------------------------------------------------------- |
+| Context        | Problem statement, constraints, requirements mentioned early in discussion |
+| Options        | Alternatives discussed, compared, benchmarked                              |
+| Decision       | Explicit "let's go with X", "chose X", or final implementation choice      |
+| Why not others | Reasons given for rejecting alternatives                                   |
+| Consequences   | Trade-offs acknowledged, risks flagged                                     |
+| Impact         | Files modified, modules touched, dependencies changed                      |
+| Revisit when   | "If X happens we should reconsider", scaling thresholds, tech debt notes   |
 
 ## Extraction rules
 

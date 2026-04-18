@@ -19,11 +19,12 @@ export type { SessionOperations } from './interfaces/session-repository.interfac
 export type { ContextSourceOperations } from './interfaces/context-source-repository.interface'
 export type { ConversationOperations } from './interfaces/conversation-repository.interface'
 
-export interface TaskService extends
-  TaskOperations,
-  PhaseOperations,
-  FeatureOperations,
-  DocumentOperations,
-  TagOperations,
-  RelationshipOperations,
-  Lifecycle {}
+export interface TaskService
+  extends
+    TaskOperations,
+    PhaseOperations,
+    FeatureOperations,
+    DocumentOperations,
+    TagOperations,
+    RelationshipOperations,
+    Lifecycle {}

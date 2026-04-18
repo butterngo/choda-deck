@@ -28,8 +28,18 @@ describe('VaultService', () => {
 
     // Build a small vault structure
     mkFile('# Project A\n\nSome content about SQLite.', '10-Projects', 'project-a.md')
-    mkFile('# Task 1\n\nImplement feature.\n\nDepends on [[project-a]].', '10-Projects', 'tasks', 'TASK-001.md')
-    mkFile('# ADR-001\n\nWe chose SQLite for task management.', '10-Projects', 'decisions', 'ADR-001.md')
+    mkFile(
+      '# Task 1\n\nImplement feature.\n\nDepends on [[project-a]].',
+      '10-Projects',
+      'tasks',
+      'TASK-001.md'
+    )
+    mkFile(
+      '# ADR-001\n\nWe chose SQLite for task management.',
+      '10-Projects',
+      'decisions',
+      'ADR-001.md'
+    )
     mkFile('# Daily\n\nToday I worked on sqlite queries.', '00-Daily', 'daily.md')
     mkFile('plain text file', 'readme.txt')
     mkDir('.git')
@@ -48,7 +58,7 @@ describe('VaultService', () => {
 
   it('returns recursive directory tree', () => {
     const tree = svc.readTree(TEST_ROOT)
-    const names = tree.map(n => n.name)
+    const names = tree.map((n) => n.name)
 
     expect(names).toContain('00-Daily')
     expect(names).toContain('10-Projects')
@@ -58,14 +68,14 @@ describe('VaultService', () => {
 
   it('includes files in tree', () => {
     const tree = svc.readTree(TEST_ROOT)
-    const files = tree.filter(n => n.type === 'file')
-    expect(files.some(f => f.name === 'readme.txt')).toBe(true)
+    const files = tree.filter((n) => n.type === 'file')
+    expect(files.some((f) => f.name === 'readme.txt')).toBe(true)
   })
 
   it('sorts directories before files', () => {
     const tree = svc.readTree(TEST_ROOT)
-    const firstDir = tree.findIndex(n => n.type === 'directory')
-    const firstFile = tree.findIndex(n => n.type === 'file')
+    const firstDir = tree.findIndex((n) => n.type === 'directory')
+    const firstFile = tree.findIndex((n) => n.type === 'file')
     if (firstDir >= 0 && firstFile >= 0) {
       expect(firstDir).toBeLessThan(firstFile)
     }
@@ -73,14 +83,14 @@ describe('VaultService', () => {
 
   it('includes nested children', () => {
     const tree = svc.readTree(TEST_ROOT)
-    const projects = tree.find(n => n.name === '10-Projects')
+    const projects = tree.find((n) => n.name === '10-Projects')
     expect(projects).toBeDefined()
     expect(projects!.children).toBeDefined()
-    expect(projects!.children!.some(c => c.name === 'project-a.md')).toBe(true)
+    expect(projects!.children!.some((c) => c.name === 'project-a.md')).toBe(true)
 
-    const tasks = projects!.children!.find(c => c.name === 'tasks')
+    const tasks = projects!.children!.find((c) => c.name === 'tasks')
     expect(tasks).toBeDefined()
-    expect(tasks!.children!.some(c => c.name === 'TASK-001.md')).toBe(true)
+    expect(tasks!.children!.some((c) => c.name === 'TASK-001.md')).toBe(true)
   })
 
   // ── readFile ────────────────────────────────────────────────────────────
@@ -107,7 +117,7 @@ describe('VaultService', () => {
     const results = svc.search('SQLite', TEST_ROOT)
     expect(results.length).toBeGreaterThanOrEqual(2)
 
-    const paths = results.map(r => r.name)
+    const paths = results.map((r) => r.name)
     expect(paths).toContain('project-a.md')
     expect(paths).toContain('ADR-001.md')
   })
@@ -119,7 +129,7 @@ describe('VaultService', () => {
 
   it('returns line numbers and text', () => {
     const results = svc.search('Project A', TEST_ROOT)
-    const match = results.find(r => r.name === 'project-a.md')
+    const match = results.find((r) => r.name === 'project-a.md')
     expect(match).toBeDefined()
     expect(match!.matches.length).toBeGreaterThan(0)
     expect(match!.matches[0].line).toBe(1)

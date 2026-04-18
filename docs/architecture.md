@@ -8,23 +8,23 @@ Architecture style: **process-isolated, IPC-mediated, session-as-entity**. The u
 
 ## Layers / Components
 
-| Component | Role |
-|---|---|
-| `src/main/index.ts` | Main process. Electron lifecycle, BrowserWindow, PTY session map, IPC handlers |
-| `src/preload/index.ts` | Preload script. Exposes `window.api.pty.{spawn,input,resize,kill,onData,onExit}` via contextBridge |
-| `src/renderer/src/App.tsx` | Renderer orchestrator. Holds project list + active ID, keyboard shortcuts |
-| `src/renderer/src/Sidebar.tsx` | Project sidebar. Add/remove projects, help overlay |
-| `src/renderer/src/TerminalView.tsx` | Per-project terminal. xterm.js + FitAddon + restart banner |
-| `src/graph/graph-types.ts` | Graph types: NodeType, RelationType, GraphNode, GraphEdge, buildUid() |
-| `src/graph/graph-service.interface.ts` | GraphService interface — provider-agnostic contract |
-| `src/graph/neo4j-graph-service.ts` | Neo4j implementation of GraphService |
-| `src/graph/vault-parser.ts` | Parse vault markdown → JSON (nodes + edges) |
-| `src/graph/neo4j-import.ts` | Import vault-graph.json → Neo4j (idempotent MERGE) |
-| `src/graph/graph-cli.ts` | CLI for graph queries + workspace management |
-| `src/graph/mcp-graph-server.ts` | MCP server — 5 graph tools for Claude sessions |
-| `scripts/spike-pty.mjs` | Plain-Node PTY validation harness (no Electron) — diagnostic tool for native-module / PTY issues |
-| `scripts/dev.mjs` | Dev wrapper that unsets `ELECTRON_RUN_AS_NODE` before invoking `electron-vite dev` (fix for commit `7187791`) |
-| `electron.vite.config.ts` | Build pipeline config for main/preload/renderer |
+| Component                              | Role                                                                                                          |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `src/main/index.ts`                    | Main process. Electron lifecycle, BrowserWindow, PTY session map, IPC handlers                                |
+| `src/preload/index.ts`                 | Preload script. Exposes `window.api.pty.{spawn,input,resize,kill,onData,onExit}` via contextBridge            |
+| `src/renderer/src/App.tsx`             | Renderer orchestrator. Holds project list + active ID, keyboard shortcuts                                     |
+| `src/renderer/src/Sidebar.tsx`         | Project sidebar. Add/remove projects, help overlay                                                            |
+| `src/renderer/src/TerminalView.tsx`    | Per-project terminal. xterm.js + FitAddon + restart banner                                                    |
+| `src/graph/graph-types.ts`             | Graph types: NodeType, RelationType, GraphNode, GraphEdge, buildUid()                                         |
+| `src/graph/graph-service.interface.ts` | GraphService interface — provider-agnostic contract                                                           |
+| `src/graph/neo4j-graph-service.ts`     | Neo4j implementation of GraphService                                                                          |
+| `src/graph/vault-parser.ts`            | Parse vault markdown → JSON (nodes + edges)                                                                   |
+| `src/graph/neo4j-import.ts`            | Import vault-graph.json → Neo4j (idempotent MERGE)                                                            |
+| `src/graph/graph-cli.ts`               | CLI for graph queries + workspace management                                                                  |
+| `src/graph/mcp-graph-server.ts`        | MCP server — 5 graph tools for Claude sessions                                                                |
+| `scripts/spike-pty.mjs`                | Plain-Node PTY validation harness (no Electron) — diagnostic tool for native-module / PTY issues              |
+| `scripts/dev.mjs`                      | Dev wrapper that unsets `ELECTRON_RUN_AS_NODE` before invoking `electron-vite dev` (fix for commit `7187791`) |
+| `electron.vite.config.ts`              | Build pipeline config for main/preload/renderer                                                               |
 
 ## Key flows
 
@@ -82,52 +82,61 @@ window-all-closed
 
 ## Integration points
 
-| System | Direction | Protocol | Purpose |
-|---|---|---|---|
-| `claude.cmd` CLI | out (spawn) | ConPTY on Windows, pty on POSIX | Interactive Claude Code session per project |
-| Electron main ↔ renderer | bidirectional | IPC via contextBridge | `pty:*` channels for stream + control |
-| OS filesystem | read | fs (indirect via claude) | Claude accesses project cwd |
-| `%APPDATA%/choda-deck/projects.json` | read (future) | JSON | User project list (V2 — MVP still hardcoded) |
+| System                               | Direction     | Protocol                        | Purpose                                      |
+| ------------------------------------ | ------------- | ------------------------------- | -------------------------------------------- |
+| `claude.cmd` CLI                     | out (spawn)   | ConPTY on Windows, pty on POSIX | Interactive Claude Code session per project  |
+| Electron main ↔ renderer             | bidirectional | IPC via contextBridge           | `pty:*` channels for stream + control        |
+| OS filesystem                        | read          | fs (indirect via claude)        | Claude accesses project cwd                  |
+| `%APPDATA%/choda-deck/projects.json` | read (future) | JSON                            | User project list (V2 — MVP still hardcoded) |
 
 ## Data model
 
-| Entity | Description |
-|---|---|
-| `Session` (implicit) | `{ id, cwd, pty, cols, rows }` held in `sessions: Map<string, pty.IPty>` in main |
-| `ProjectConfig` (preload type) | `{ id, name, workspaces: WorkspaceConfig[] }` loaded from `projects.json` |
-| `WorkspaceConfig` (preload type) | `{ id, label, cwd, shell? }` — per-project terminal config |
+| Entity                           | Description                                                                      |
+| -------------------------------- | -------------------------------------------------------------------------------- |
+| `Session` (implicit)             | `{ id, cwd, pty, cols, rows }` held in `sessions: Map<string, pty.IPty>` in main |
+| `ProjectConfig` (preload type)   | `{ id, name, workspaces: WorkspaceConfig[] }` loaded from `projects.json`        |
+| `WorkspaceConfig` (preload type) | `{ id, label, cwd, shell? }` — per-project terminal config                       |
 
 ## IPC contract
 
 Channel naming: `pty:<verb>` for commands, `pty:<verb>:<sessionId>` for per-session event streams.
 
-| Channel | Kind | Direction | Payload |
-|---|---|---|---|
-| `pty:spawn` | invoke | R→M | `(id, cwd, cols, rows)` → `{ ok, id }` |
-| `pty:input` | send | R→M | `(id, data: string)` |
-| `pty:resize` | send | R→M | `(id, cols, rows)` |
-| `pty:kill` | send | R→M | `(id)` |
-| `pty:data:${id}` | on | M→R | `data: string` (stream) |
-| `pty:exit:${id}` | on | M→R | `exitCode: number` |
-| `vault:tree` | invoke | R→M | `(rootPath)` → `FileNode[]` |
-| `vault:read` | invoke | R→M | `(filePath)` → `{ content, size, mtime }` |
-| `vault:search` | invoke | R→M | `(query, rootPath)` → `SearchResult[]` |
-| `vault:resolve` | invoke | R→M | `(wikilink, rootPath)` → `string \| null` |
-| `vault:contentRoot` | invoke | R→M | `()` → `string` |
-| `project:list` | invoke | R→M | `()` → `ProjectConfig[]` |
-| `project:add` | invoke | R→M | `(id, cwd)` → `{ ok, error?, project? }` |
-| `project:remove` | invoke | R→M | `(id)` → `{ ok, error? }` |
+| Channel             | Kind   | Direction | Payload                                                                  |
+| ------------------- | ------ | --------- | ------------------------------------------------------------------------ |
+| `pty:spawn`         | invoke | R→M       | `(id, cwd, cols, rows)` → `{ ok, id }`                                   |
+| `pty:input`         | send   | R→M       | `(id, data: string)`                                                     |
+| `pty:resize`        | send   | R→M       | `(id, cols, rows)`                                                       |
+| `pty:kill`          | send   | R→M       | `(id)`                                                                   |
+| `pty:data:${id}`    | on     | M→R       | `data: string` (stream)                                                  |
+| `pty:exit:${id}`    | on     | M→R       | `exitCode: number`                                                       |
+| `vault:tree`        | invoke | R→M       | `(rootPath)` → `FileNode[]`                                              |
+| `vault:read`        | invoke | R→M       | `(filePath)` → `{ content, size, mtime }`                                |
+| `vault:search`      | invoke | R→M       | `(query, rootPath)` → `SearchResult[]`                                   |
+| `vault:resolve`     | invoke | R→M       | `(wikilink, rootPath)` → `string \| null`                                |
+| `vault:contentRoot` | invoke | R→M       | `()` → `string`                                                          |
+| `project:list`      | invoke | R→M       | `()` → `ProjectConfig[]`                                                 |
+| `project:add`       | invoke | R→M       | `(id, cwd)` → `{ ok, error?, project? }`                                 |
+| `project:remove`    | invoke | R→M       | `(id)` → `{ ok, error? }`                                                |
+| `inbox:list`        | invoke | R→M       | `(filter?: { projectId?, status? })` → `InboxItem[]`                     |
+| `inbox:get`         | invoke | R→M       | `(id)` → `{ item, conversations }`                                       |
+| `inbox:add`         | invoke | R→M       | `({ projectId?, content })` → `InboxItem`                                |
+| `inbox:update`      | invoke | R→M       | `(id, content)` → `{ ok, error?, item? }`                                |
+| `inbox:research`    | invoke | R→M       | `(id, researcher?)` → `{ ok, error?, conversationId?, status? }`         |
+| `inbox:ready`       | invoke | R→M       | `(id)` → `{ ok, error?, item? }`                                         |
+| `inbox:archive`     | invoke | R→M       | `(id, reason?)` → `InboxItem \| null`                                    |
+| `inbox:convert`     | invoke | R→M       | `(id, { title, priority?, labels?, body? })` → `{ ok, taskId?, error? }` |
+| `inbox:delete`      | invoke | R→M       | `(id)` → `{ ok, error? }`                                                |
 
 ## Quality attributes
 
-| Attribute | How it is ensured |
-|---|---|
-| Responsiveness | xterm.js renders direct on canvas; IPC batches data chunks; FitAddon debounce (50ms) |
-| Session persistence | Sessions live in main process `Map`; xterm instances mounted once in renderer, never disposed on tab switch |
-| Graceful shutdown | `window-all-closed` sends Ctrl+C, waits 2s, then force kills. Sessions cleaned up before `app.quit()` |
-| Crash resilience | Per-tab state machine `idle | running | exited-ok | crashed`; banner + manual restart button on failure |
-| Cross-environment reliability | PATH augmented at startup with common CLI install dirs (npm global, homebrew, etc.) |
-| Security | `contextIsolation: true`, `sandbox: false` (required for preload Node APIs); renderer has no direct Node access, only `window.api` surface |
+| Attribute                     | How it is ensured                                                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------- | --------- | --------------------------------------------------- |
+| Responsiveness                | xterm.js renders direct on canvas; IPC batches data chunks; FitAddon debounce (50ms)                                                       |
+| Session persistence           | Sessions live in main process `Map`; xterm instances mounted once in renderer, never disposed on tab switch                                |
+| Graceful shutdown             | `window-all-closed` sends Ctrl+C, waits 2s, then force kills. Sessions cleaned up before `app.quit()`                                      |
+| Crash resilience              | Per-tab state machine `idle                                                                                                                | running | exited-ok | crashed`; banner + manual restart button on failure |
+| Cross-environment reliability | PATH augmented at startup with common CLI install dirs (npm global, homebrew, etc.)                                                        |
+| Security                      | `contextIsolation: true`, `sandbox: false` (required for preload Node APIs); renderer has no direct Node access, only `window.api` surface |
 
 ## Graph layer
 

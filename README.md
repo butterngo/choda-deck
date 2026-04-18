@@ -16,13 +16,13 @@ Choda Deck treats a **project** as the unit of navigation and the **interactive 
 
 ## Stack
 
-| Layer | Choice | Why |
-|---|---|---|
-| Shell | Electron | Mature, rich ecosystem, proven for terminal apps (VS Code, Hyper) |
-| Renderer framework | React + TypeScript | Familiar, large ecosystem, matches primary dev stack |
-| Build tooling | electron-vite + Vite 7 | Fast HMR, out-of-the-box main/preload/renderer pipeline |
-| Terminal renderer | [xterm.js](https://xtermjs.org/) | Industry standard, used by VS Code, Hyper, Theia |
-| PTY layer | [node-pty](https://github.com/microsoft/node-pty) | Official Microsoft fork, ConPTY on Windows, prebuilt binaries |
+| Layer              | Choice                                            | Why                                                               |
+| ------------------ | ------------------------------------------------- | ----------------------------------------------------------------- |
+| Shell              | Electron                                          | Mature, rich ecosystem, proven for terminal apps (VS Code, Hyper) |
+| Renderer framework | React + TypeScript                                | Familiar, large ecosystem, matches primary dev stack              |
+| Build tooling      | electron-vite + Vite 7                            | Fast HMR, out-of-the-box main/preload/renderer pipeline           |
+| Terminal renderer  | [xterm.js](https://xtermjs.org/)                  | Industry standard, used by VS Code, Hyper, Theia                  |
+| PTY layer          | [node-pty](https://github.com/microsoft/node-pty) | Official Microsoft fork, ConPTY on Windows, prebuilt binaries     |
 
 ## Dev
 

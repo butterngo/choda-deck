@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 interface Session {
   id: string
@@ -59,21 +59,22 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })
 }
 
-function statusBadge(status: string): string {
-  const map: Record<string, string> = {
-    open: '#f59e0b',
-    discussing: '#3b82f6',
-    decided: '#8b5cf6',
-    closed: '#6b7280',
-    stale: '#ef4444',
-    active: '#10b981',
-    completed: '#6b7280',
-    abandoned: '#ef4444'
-  }
-  return map[status] ?? '#6b7280'
+function badgeClass(status: string): string {
+  return `deck-badge deck-badge--${status.toLowerCase()}`
 }
 
-export default function ActivityView({ projectId, visible }: ActivityViewProps): React.JSX.Element {
+function withinRange(iso: string, from: string, to: string): boolean {
+  if (!from && !to) return true
+  const t = new Date(iso).getTime()
+  if (from && t < new Date(from).getTime()) return false
+  if (to && t > new Date(to).getTime() + 86400000 - 1) return false
+  return true
+}
+
+export default function ActivityView({
+  projectId,
+  visible
+}: ActivityViewProps): React.JSX.Element {
   const [sessions, setSessions] = useState<Session[]>([])
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [tab, setTab] = useState<'conversations' | 'sessions'>('conversations')
@@ -82,6 +83,9 @@ export default function ActivityView({ projectId, visible }: ActivityViewProps):
   const [selectedSession, setSelectedSession] = useState<Session | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [reloadTick, setReloadTick] = useState(0)
+  const today = new Date().toISOString().slice(0, 10)
+  const [fromDate, setFromDate] = useState(today)
+  const [toDate, setToDate] = useState(today)
 
   useEffect(() => {
     if (!visible) return
@@ -99,6 +103,15 @@ export default function ActivityView({ projectId, visible }: ActivityViewProps):
       cancelled = true
     }
   }, [projectId, visible, reloadTick])
+
+  const filteredConversations = useMemo(
+    () => conversations.filter((c) => withinRange(c.createdAt, fromDate, toDate)),
+    [conversations, fromDate, toDate]
+  )
+  const filteredSessions = useMemo(
+    () => sessions.filter((s) => withinRange(s.startedAt, fromDate, toDate)),
+    [sessions, fromDate, toDate]
+  )
 
   async function openConversation(id: string): Promise<void> {
     const detail = (await window.api.conversation.read(id)) as ConversationDetail | null
@@ -125,42 +138,68 @@ export default function ActivityView({ projectId, visible }: ActivityViewProps):
     setReloadTick((t) => t + 1)
   }
 
+  function clearDates(): void {
+    setFromDate('')
+    setToDate('')
+  }
+
   if (!visible) return <></>
 
   return (
     <div className="deck-activity">
-      <div className="deck-activity-tabs">
-        <button
-          className={`deck-tab${tab === 'conversations' ? ' deck-tab--active' : ''}`}
-          onClick={() => setTab('conversations')}
-        >
-          Conversations ({conversations.length})
-        </button>
-        <button
-          className={`deck-tab${tab === 'sessions' ? ' deck-tab--active' : ''}`}
-          onClick={() => setTab('sessions')}
-        >
-          Sessions ({sessions.length})
-        </button>
+      <div className="deck-activity-toolbar">
+        <div className="deck-activity-tabs">
+          <button
+            className={`deck-tab${tab === 'conversations' ? ' deck-tab--active' : ''}`}
+            onClick={() => setTab('conversations')}
+          >
+            Conversations ({filteredConversations.length})
+          </button>
+          <button
+            className={`deck-tab${tab === 'sessions' ? ' deck-tab--active' : ''}`}
+            onClick={() => setTab('sessions')}
+          >
+            Sessions ({filteredSessions.length})
+          </button>
+        </div>
+        <div className="deck-activity-date-filter">
+          <label className="deck-activity-date-label">From</label>
+          <input
+            type="date"
+            className="deck-inbox-input deck-activity-date-input"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+          />
+          <label className="deck-activity-date-label">To</label>
+          <input
+            type="date"
+            className="deck-inbox-input deck-activity-date-input"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+          />
+          {(fromDate || toDate) && (
+            <button className="deck-sidebar-btn" onClick={clearDates}>
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
       {loading && <div className="deck-activity-empty">Loading…</div>}
 
       {!loading && tab === 'conversations' && (
         <div className="deck-activity-list">
-          {conversations.length === 0 && (
-            <div className="deck-activity-empty">No conversations yet</div>
+          {filteredConversations.length === 0 && (
+            <div className="deck-activity-empty">No conversations in range</div>
           )}
-          {conversations.map((c) => (
+          {filteredConversations.map((c) => (
             <div
               key={c.id}
               className="deck-activity-card deck-activity-card--clickable"
               onClick={() => openConversation(c.id)}
             >
               <div className="deck-activity-card-header">
-                <span className="deck-activity-badge" style={{ background: statusBadge(c.status) }}>
-                  {c.status}
-                </span>
+                <span className={badgeClass(c.status)}>{c.status}</span>
                 <span className="deck-activity-id">{c.id}</span>
                 <button
                   className="deck-activity-icon-btn"
@@ -195,17 +234,17 @@ export default function ActivityView({ projectId, visible }: ActivityViewProps):
 
       {!loading && tab === 'sessions' && (
         <div className="deck-activity-list">
-          {sessions.length === 0 && <div className="deck-activity-empty">No sessions yet</div>}
-          {sessions.map((s) => (
+          {filteredSessions.length === 0 && (
+            <div className="deck-activity-empty">No sessions in range</div>
+          )}
+          {filteredSessions.map((s) => (
             <div
               key={s.id}
               className="deck-activity-card deck-activity-card--clickable"
               onClick={() => setSelectedSession(s)}
             >
               <div className="deck-activity-card-header">
-                <span className="deck-activity-badge" style={{ background: statusBadge(s.status) }}>
-                  {s.status}
-                </span>
+                <span className={badgeClass(s.status)}>{s.status}</span>
                 <span className="deck-activity-id">{s.id}</span>
                 <button
                   className="deck-activity-icon-btn"
@@ -242,12 +281,7 @@ export default function ActivityView({ projectId, visible }: ActivityViewProps):
         <div className="deck-activity-overlay" onClick={() => setSelectedConv(null)}>
           <div className="deck-activity-panel" onClick={(e) => e.stopPropagation()}>
             <div className="deck-activity-panel-header">
-              <span
-                className="deck-activity-badge"
-                style={{ background: statusBadge(selectedConv.status) }}
-              >
-                {selectedConv.status}
-              </span>
+              <span className={badgeClass(selectedConv.status)}>{selectedConv.status}</span>
               <span className="deck-activity-id">{selectedConv.id}</span>
               <button
                 className="deck-activity-icon-btn"
@@ -303,12 +337,7 @@ export default function ActivityView({ projectId, visible }: ActivityViewProps):
                 </div>
                 {selectedConv.actions.map((a) => (
                   <div key={a.id} className="deck-activity-action">
-                    <span
-                      className="deck-activity-badge"
-                      style={{ background: statusBadge(a.status) }}
-                    >
-                      {a.status}
-                    </span>
+                    <span className={badgeClass(a.status)}>{a.status}</span>
                     <strong>{a.assignee}</strong>: {a.description}
                     {a.linkedTaskId && (
                       <span className="deck-activity-meta"> → {a.linkedTaskId}</span>
@@ -325,12 +354,7 @@ export default function ActivityView({ projectId, visible }: ActivityViewProps):
         <div className="deck-activity-overlay" onClick={() => setSelectedSession(null)}>
           <div className="deck-activity-panel" onClick={(e) => e.stopPropagation()}>
             <div className="deck-activity-panel-header">
-              <span
-                className="deck-activity-badge"
-                style={{ background: statusBadge(selectedSession.status) }}
-              >
-                {selectedSession.status}
-              </span>
+              <span className={badgeClass(selectedSession.status)}>{selectedSession.status}</span>
               <span className="deck-activity-id">{selectedSession.id}</span>
               <button
                 className="deck-activity-icon-btn"

@@ -165,36 +165,44 @@ function runLegacyMigrations(db: Database.Database): void {
     /* exists */
   }
 
-  // per-project task ID counter (atomic auto-increment)
+  // Global counter table — replaces per-project counters.
+  // IDs (TASK-NNN, INBOX-NNN) must be globally unique because PKs are single column.
+  // Per-project resetting would collide across projects.
   db.exec(`
-    CREATE TABLE IF NOT EXISTS project_task_counters (
-      project_id TEXT PRIMARY KEY,
+    CREATE TABLE IF NOT EXISTS global_counters (
+      entity_type TEXT PRIMARY KEY,
       last_number INTEGER NOT NULL DEFAULT 0
     )
   `)
-  // Seed counters from existing TASK-NNN ids (one-time per project)
-  const existing = db
-    .prepare(
-      "SELECT project_id, id FROM tasks WHERE id GLOB 'TASK-[0-9]*' AND length(id) <= 12"
-    )
-    .all() as Array<{ project_id: string; id: string }>
-  const maxByProject: Record<string, number> = {}
-  for (const r of existing) {
-    const n = parseInt(r.id.slice(5), 10)
-    if (!isNaN(n) && (!maxByProject[r.project_id] || n > maxByProject[r.project_id])) {
-      maxByProject[r.project_id] = n
-    }
-  }
-  const upsert = db.prepare(
-    `INSERT INTO project_task_counters (project_id, last_number) VALUES (?, ?)
-     ON CONFLICT(project_id) DO UPDATE SET last_number = MAX(last_number, excluded.last_number)`
-  )
-  for (const [projectId, n] of Object.entries(maxByProject)) {
-    upsert.run(projectId, n)
-  }
+  seedGlobalCounter(db, 'task', "SELECT id FROM tasks WHERE id GLOB 'TASK-[0-9]*'", 5)
+  seedGlobalCounter(db, 'inbox', "SELECT id FROM inbox_items WHERE id GLOB 'INBOX-[0-9]*'", 6)
+  db.exec('DROP TABLE IF EXISTS project_task_counters')
+  db.exec('DROP TABLE IF EXISTS project_inbox_counters')
 
   // conversation_messages: rename author → author_name, add metadata_json
   migrateConversationMessages(db)
+}
+
+function seedGlobalCounter(
+  db: Database.Database,
+  entityType: string,
+  selectIdSql: string,
+  prefixLen: number
+): void {
+  let max = 0
+  try {
+    const rows = db.prepare(selectIdSql).all() as Array<{ id: string }>
+    for (const r of rows) {
+      const n = parseInt(r.id.slice(prefixLen), 10)
+      if (!isNaN(n) && n > max) max = n
+    }
+  } catch {
+    /* table may not exist yet on first bootstrap */
+  }
+  db.prepare(
+    `INSERT INTO global_counters (entity_type, last_number) VALUES (?, ?)
+     ON CONFLICT(entity_type) DO UPDATE SET last_number = MAX(last_number, excluded.last_number)`
+  ).run(entityType, max)
 }
 
 function migrateConversationMessages(db: Database.Database): void {
@@ -306,12 +314,6 @@ function createM1Tables(db: Database.Database): void {
       linked_task_id TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS project_inbox_counters (
-      project_id TEXT PRIMARY KEY,
-      last_number INTEGER NOT NULL DEFAULT 0
     )
   `)
 }

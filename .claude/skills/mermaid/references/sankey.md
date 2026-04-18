@@ -277,10 +277,10 @@ You can customize link colors, node alignments and diagram dimensions.
       width: 800,
       height: 400,
       linkColor: 'source',
-      nodeAlignment: 'left',
-    },
-  };
-  mermaid.initialize(config);
+      nodeAlignment: 'left'
+    }
+  }
+  mermaid.initialize(config)
 </script>
 ```
 

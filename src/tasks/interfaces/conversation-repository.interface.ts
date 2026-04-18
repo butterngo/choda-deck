@@ -38,7 +38,11 @@ export interface ConversationOperations {
   getConversationActions(conversationId: string): ConversationAction[]
 
   linkConversation(conversationId: string, linkedType: ConversationLinkType, linkedId: string): void
-  unlinkConversation(conversationId: string, linkedType: ConversationLinkType, linkedId: string): void
+  unlinkConversation(
+    conversationId: string,
+    linkedType: ConversationLinkType,
+    linkedId: string
+  ): void
   getConversationLinks(conversationId: string): ConversationLink[]
   findConversationsByLink(linkedType: ConversationLinkType, linkedId: string): Conversation[]
 }

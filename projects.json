@@ -2,17 +2,6 @@
   "contentRoot": "C:\\Users\\hngo1_mantu\\vault",
   "projects": [
     {
-      "id": "choda",
-      "name": "Choda",
-      "workspaces": [
-        {
-          "id": "choda-vault",
-          "label": "Vault",
-          "cwd": "C:\\Users\\hngo1_mantu\\vault"
-        }
-      ]
-    },
-    {
       "id": "automation-rule",
       "name": "Automation Rule",
       "workspaces": [
@@ -47,6 +36,17 @@
           "id": "task-management-api",
           "label": "BE",
           "cwd": "C:\\dev\\test\\TaskManagment"
+        }
+      ]
+    },
+    {
+      "id": "mantu",
+      "name": "Mantu",
+      "workspaces": [
+        {
+          "id": "ActivityManagement",
+          "label": "Main",
+          "cwd": "C:\\dev\\ActivityManagement"
         }
       ]
     }

@@ -145,7 +145,20 @@ const api = {
     get: (id: string): Promise<unknown> => ipcRenderer.invoke('inbox:get', id),
     add: (input: { projectId?: string | null; content: string }): Promise<unknown> =>
       ipcRenderer.invoke('inbox:add', input),
-    archive: (id: string): Promise<unknown> => ipcRenderer.invoke('inbox:archive', id),
+    update: (
+      id: string,
+      content: string
+    ): Promise<{ ok: boolean; error?: string; item?: unknown }> =>
+      ipcRenderer.invoke('inbox:update', id, content),
+    research: (
+      id: string,
+      researcher?: string
+    ): Promise<{ ok: boolean; error?: string; conversationId?: string; status?: string }> =>
+      ipcRenderer.invoke('inbox:research', id, researcher),
+    ready: (id: string): Promise<{ ok: boolean; error?: string; item?: unknown }> =>
+      ipcRenderer.invoke('inbox:ready', id),
+    archive: (id: string, reason?: string): Promise<unknown> =>
+      ipcRenderer.invoke('inbox:archive', id, reason),
     convert: (
       id: string,
       taskInput: {
@@ -158,6 +171,17 @@ const api = {
       ipcRenderer.invoke('inbox:convert', id, taskInput),
     delete: (id: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('inbox:delete', id)
+  },
+  backup: {
+    list: (): Promise<Array<{ filename: string; date: string; size: number; mtimeMs: number }>> =>
+      ipcRenderer.invoke('backups:list'),
+    createNow: (): Promise<{
+      ok: boolean
+      backup?: { filename: string; date: string; size: number; mtimeMs: number }
+      error?: string
+    }> => ipcRenderer.invoke('backups:create-now'),
+    restore: (filename: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('backups:restore', filename)
   },
   vault: {
     tree: (

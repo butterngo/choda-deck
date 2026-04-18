@@ -7,15 +7,33 @@ export const register: Register = (server, svc) => {
     {
       description: 'Add a raw idea to inbox. Returns INBOX-NNN with status=raw.',
       inputSchema: {
-        projectId: z
-          .string()
-          .optional()
-          .describe('Project ID (omit for cross-cutting / global inbox)'),
+        projectId: z.string().describe('Project ID (required)'),
         content: z.string().describe('Raw idea content')
       }
     },
-    async ({ projectId, content }) =>
-      textResponse(svc.createInbox({ projectId: projectId ?? null, content }))
+    async ({ projectId, content }) => textResponse(svc.createInbox({ projectId, content }))
+  )
+
+  server.registerTool(
+    'inbox_update',
+    {
+      description:
+        'Update inbox item content (text only, not status). Allowed in raw/researching/ready. Blocked in converted/archived to preserve trace.',
+      inputSchema: {
+        id: z.string().describe('Inbox item ID'),
+        content: z.string().describe('New content text')
+      }
+    },
+    async ({ id, content }) => {
+      const item = svc.getInbox(id)
+      if (!item) return textResponse(`Inbox ${id} not found`)
+      if (item.status === 'converted' || item.status === 'archived') {
+        return textResponse(
+          `Inbox ${id} is ${item.status} — content locked to preserve trace history`
+        )
+      }
+      return textResponse(svc.updateInbox(id, { content }))
+    }
   )
 
   server.registerTool(

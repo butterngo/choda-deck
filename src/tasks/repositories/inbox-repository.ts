@@ -7,8 +7,7 @@ import type {
   UpdateInboxInput
 } from '../task-types'
 import { now, type Param } from './shared'
-
-const COUNTER_KEY = '__all__'
+import type { CounterRepository } from './counter-repository'
 
 function rowToInbox(row: Record<string, unknown>): InboxItem {
   return {
@@ -23,17 +22,13 @@ function rowToInbox(row: Record<string, unknown>): InboxItem {
 }
 
 export class InboxRepository {
-  constructor(private readonly db: Database.Database) {}
+  constructor(
+    private readonly db: Database.Database,
+    private readonly counters: CounterRepository
+  ) {}
 
   private nextInboxId(): string {
-    const row = this.db
-      .prepare(
-        `INSERT INTO project_inbox_counters (project_id, last_number) VALUES (?, 1)
-         ON CONFLICT(project_id) DO UPDATE SET last_number = last_number + 1
-         RETURNING last_number`
-      )
-      .get(COUNTER_KEY) as { last_number: number }
-    return `INBOX-${String(row.last_number).padStart(3, '0')}`
+    return `INBOX-${String(this.counters.nextNumber('inbox')).padStart(3, '0')}`
   }
 
   create(input: CreateInboxInput): InboxItem {

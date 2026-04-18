@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 type InboxStatus = 'raw' | 'researching' | 'ready' | 'converted' | 'archived'
 
@@ -38,45 +38,41 @@ interface InboxViewProps {
   visible: boolean
 }
 
+const ACTIVE_STATUSES: InboxStatus[] = ['raw', 'researching', 'ready']
+const TERMINAL_STATUSES: InboxStatus[] = ['converted', 'archived']
+const COLLAPSIBLE_TYPES = new Set(['system', 'tool'])
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })
 }
 
-function statusColor(status: string): string {
-  const map: Record<string, string> = {
-    raw: '#f59e0b',
-    researching: '#3b82f6',
-    ready: '#10b981',
-    converted: '#6b7280',
-    archived: '#6b6b6b',
-    open: '#f59e0b',
-    closed: '#6b7280'
-  }
-  return map[status] ?? '#6b7280'
+function badgeClass(status: string): string {
+  return `deck-badge deck-badge--${status.toLowerCase()}`
 }
 
 export default function InboxView({ projectId, visible }: InboxViewProps): React.JSX.Element {
   const [items, setItems] = useState<InboxItem[]>([])
   const [scope, setScope] = useState<'project' | 'global'>('project')
-  const [statusFilter, setStatusFilter] = useState<InboxStatus | 'all'>('all')
+  const [showArchived, setShowArchived] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [addContent, setAddContent] = useState('')
   const [selected, setSelected] = useState<InboxDetail | null>(null)
   const [converting, setConverting] = useState(false)
   const [convertTitle, setConvertTitle] = useState('')
   const [convertPriority, setConvertPriority] = useState<'critical' | 'high' | 'medium' | 'low'>(
     'medium'
   )
+  const [editing, setEditing] = useState(false)
+  const [editContent, setEditContent] = useState('')
+  const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set())
   const [reloadTick, setReloadTick] = useState(0)
 
   useEffect(() => {
     if (!visible) return
     let cancelled = false
     setLoading(true)
-    const filter: { projectId?: string | null; status?: string } = {
+    const filter: { projectId?: string | null } = {
       projectId: scope === 'global' ? null : projectId
     }
-    if (statusFilter !== 'all') filter.status = statusFilter
     window.api.inbox
       .list(filter)
       .then((rows) => {
@@ -88,28 +84,37 @@ export default function InboxView({ projectId, visible }: InboxViewProps): React
     return () => {
       cancelled = true
     }
-  }, [projectId, scope, statusFilter, visible, reloadTick])
+  }, [projectId, scope, visible, reloadTick])
 
-  async function handleAdd(): Promise<void> {
-    const content = addContent.trim()
-    if (!content) return
-    await window.api.inbox.add({
-      projectId: scope === 'global' ? null : projectId,
-      content
-    })
-    setAddContent('')
-    setReloadTick((t) => t + 1)
+  const visibleItems = useMemo(() => {
+    const allowed = showArchived
+      ? new Set<InboxStatus>([...ACTIVE_STATUSES, ...TERMINAL_STATUSES])
+      : new Set<InboxStatus>(ACTIVE_STATUSES)
+    return items.filter((i) => allowed.has(i.status))
+  }, [items, showArchived])
+
+  async function refreshSelected(id: string): Promise<void> {
+    const detail = (await window.api.inbox.get(id)) as InboxDetail | null
+    if (detail) setSelected(detail)
   }
 
   async function openDetail(id: string): Promise<void> {
-    const detail = (await window.api.inbox.get(id)) as InboxDetail | null
-    if (detail) setSelected(detail)
+    setEditing(false)
+    setConverting(false)
+    setExpandedMessages(new Set())
+    await refreshSelected(id)
+  }
+
+  function closeDetail(): void {
+    setSelected(null)
+    setEditing(false)
+    setConverting(false)
   }
 
   async function handleArchive(id: string): Promise<void> {
     if (!confirm(`Archive ${id}?`)) return
     await window.api.inbox.archive(id)
-    setSelected(null)
+    closeDetail()
     setReloadTick((t) => t + 1)
   }
 
@@ -120,7 +125,43 @@ export default function InboxView({ projectId, visible }: InboxViewProps): React
       alert(res.error || 'Delete failed')
       return
     }
-    setSelected(null)
+    closeDetail()
+    setReloadTick((t) => t + 1)
+  }
+
+  async function handleResearch(id: string): Promise<void> {
+    const res = await window.api.inbox.research(id)
+    if (!res.ok) {
+      alert(res.error || 'Research failed')
+      return
+    }
+    await refreshSelected(id)
+    setReloadTick((t) => t + 1)
+  }
+
+  async function handleReady(id: string): Promise<void> {
+    const res = await window.api.inbox.ready(id)
+    if (!res.ok) {
+      alert(res.error || 'Mark ready failed')
+      return
+    }
+    await refreshSelected(id)
+    setReloadTick((t) => t + 1)
+  }
+
+  async function handleSaveEdit(id: string): Promise<void> {
+    const content = editContent.trim()
+    if (!content) {
+      alert('Content cannot be empty')
+      return
+    }
+    const res = await window.api.inbox.update(id, content)
+    if (!res.ok) {
+      alert(res.error || 'Update failed')
+      return
+    }
+    setEditing(false)
+    await refreshSelected(id)
     setReloadTick((t) => t + 1)
   }
 
@@ -141,8 +182,17 @@ export default function InboxView({ projectId, visible }: InboxViewProps): React
     }
     setConverting(false)
     setConvertTitle('')
-    setSelected(null)
+    closeDetail()
     setReloadTick((t) => t + 1)
+  }
+
+  function toggleMessage(id: string): void {
+    setExpandedMessages((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
   if (!visible) return <></>
@@ -159,35 +209,14 @@ export default function InboxView({ projectId, visible }: InboxViewProps): React
             <option value="project">Project: {projectId}</option>
             <option value="global">Global (cross-cutting)</option>
           </select>
-          <select
-            className="deck-inbox-select"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as InboxStatus | 'all')}
-          >
-            <option value="all">All statuses</option>
-            <option value="raw">Raw</option>
-            <option value="researching">Researching</option>
-            <option value="ready">Ready</option>
-            <option value="converted">Converted</option>
-            <option value="archived">Archived</option>
-          </select>
-        </div>
-        <div className="deck-inbox-add">
-          <input
-            className="deck-inbox-input"
-            placeholder="Capture a raw idea…"
-            value={addContent}
-            onChange={(e) => setAddContent(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                handleAdd()
-              }
-            }}
-          />
-          <button className="deck-sidebar-btn" onClick={handleAdd}>
-            Add
-          </button>
+          <label className="deck-inbox-toggle">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+            />
+            Show archived
+          </label>
         </div>
       </div>
 
@@ -195,20 +224,19 @@ export default function InboxView({ projectId, visible }: InboxViewProps): React
 
       {!loading && (
         <div className="deck-activity-list">
-          {items.length === 0 && <div className="deck-activity-empty">No inbox items</div>}
-          {items.map((item) => (
+          {visibleItems.length === 0 && (
+            <div className="deck-activity-empty">
+              No inbox items — capture via /capture or inbox_add MCP tool
+            </div>
+          )}
+          {visibleItems.map((item) => (
             <div
               key={item.id}
               className="deck-activity-card deck-activity-card--clickable"
               onClick={() => openDetail(item.id)}
             >
               <div className="deck-activity-card-header">
-                <span
-                  className="deck-activity-badge"
-                  style={{ background: statusColor(item.status) }}
-                >
-                  {item.status}
-                </span>
+                <span className={badgeClass(item.status)}>{item.status}</span>
                 <span className="deck-activity-id">{item.id}</span>
                 {item.linkedTaskId && (
                   <span className="deck-activity-meta">→ {item.linkedTaskId}</span>
@@ -222,17 +250,12 @@ export default function InboxView({ projectId, visible }: InboxViewProps): React
       )}
 
       {selected && (
-        <div className="deck-activity-overlay" onClick={() => setSelected(null)}>
+        <div className="deck-activity-overlay" onClick={closeDetail}>
           <div className="deck-activity-panel" onClick={(e) => e.stopPropagation()}>
             <div className="deck-activity-panel-header">
-              <span
-                className="deck-activity-badge"
-                style={{ background: statusColor(selected.item.status) }}
-              >
-                {selected.item.status}
-              </span>
+              <span className={badgeClass(selected.item.status)}>{selected.item.status}</span>
               <span className="deck-activity-id">{selected.item.id}</span>
-              <button className="deck-activity-close" onClick={() => setSelected(null)}>
+              <button className="deck-activity-close" onClick={closeDetail}>
                 ×
               </button>
             </div>
@@ -244,7 +267,29 @@ export default function InboxView({ projectId, visible }: InboxViewProps): React
 
             <div className="deck-activity-section">
               <div className="deck-activity-section-title">Content</div>
-              <div className="deck-activity-message-content">{selected.item.content}</div>
+              {editing ? (
+                <>
+                  <textarea
+                    className="deck-inbox-input deck-inbox-textarea"
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    rows={4}
+                  />
+                  <div className="deck-inbox-actions">
+                    <button
+                      className="deck-sidebar-btn"
+                      onClick={() => handleSaveEdit(selected.item.id)}
+                    >
+                      Save
+                    </button>
+                    <button className="deck-sidebar-btn" onClick={() => setEditing(false)}>
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="deck-activity-message-content">{selected.item.content}</div>
+              )}
             </div>
 
             {selected.conversations.map((c) => (
@@ -255,16 +300,39 @@ export default function InboxView({ projectId, visible }: InboxViewProps): React
                 {c.decisionSummary && (
                   <div className="deck-activity-decision">{c.decisionSummary}</div>
                 )}
-                {c.messages.map((m) => (
-                  <div key={m.id} className="deck-activity-message">
-                    <div className="deck-activity-message-header">
-                      <strong>{m.authorName}</strong>
-                      <span className="deck-activity-message-type">{m.messageType}</span>
-                      <span className="deck-activity-date">{formatDate(m.createdAt)}</span>
+                {c.messages.map((m) => {
+                  const collapsible = COLLAPSIBLE_TYPES.has(m.messageType)
+                  const expanded = expandedMessages.has(m.id)
+                  if (collapsible && !expanded) {
+                    return (
+                      <div
+                        key={m.id}
+                        className="deck-activity-message deck-activity-message--collapsed"
+                        onClick={() => toggleMessage(m.id)}
+                      >
+                        <span className="deck-activity-message-type">{m.messageType}</span>
+                        <span className="deck-activity-message-preview">
+                          {m.content.slice(0, 80)}
+                          {m.content.length > 80 ? '…' : ''}
+                        </span>
+                      </div>
+                    )
+                  }
+                  return (
+                    <div
+                      key={m.id}
+                      className="deck-activity-message"
+                      onClick={collapsible ? () => toggleMessage(m.id) : undefined}
+                    >
+                      <div className="deck-activity-message-header">
+                        <strong>{m.authorName}</strong>
+                        <span className="deck-activity-message-type">{m.messageType}</span>
+                        <span className="deck-activity-date">{formatDate(m.createdAt)}</span>
+                      </div>
+                      <div className="deck-activity-message-content">{m.content}</div>
                     </div>
-                    <div className="deck-activity-message-content">{m.content}</div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             ))}
 
@@ -281,9 +349,7 @@ export default function InboxView({ projectId, visible }: InboxViewProps): React
                   className="deck-inbox-select"
                   value={convertPriority}
                   onChange={(e) =>
-                    setConvertPriority(
-                      e.target.value as 'critical' | 'high' | 'medium' | 'low'
-                    )
+                    setConvertPriority(e.target.value as 'critical' | 'high' | 'medium' | 'low')
                   }
                 >
                   <option value="critical">critical</option>
@@ -301,35 +367,68 @@ export default function InboxView({ projectId, visible }: InboxViewProps): React
                 </div>
               </div>
             ) : (
-              <div className="deck-inbox-actions">
-                {selected.item.status !== 'converted' && selected.item.status !== 'archived' && (
-                  <button
-                    className="deck-sidebar-btn"
-                    onClick={() => {
-                      setConvertTitle(selected.item.content.slice(0, 80))
-                      setConverting(true)
-                    }}
-                  >
-                    Convert to task
-                  </button>
-                )}
-                {selected.item.status !== 'converted' && selected.item.status !== 'archived' && (
-                  <button
-                    className="deck-sidebar-btn"
-                    onClick={() => handleArchive(selected.item.id)}
-                  >
-                    Archive
-                  </button>
-                )}
-                {(selected.item.status === 'raw' || selected.item.status === 'archived') && (
-                  <button
-                    className="deck-sidebar-btn deck-sidebar-btn--danger"
-                    onClick={() => handleDelete(selected.item.id)}
-                  >
-                    Delete
-                  </button>
-                )}
-              </div>
+              !editing && (
+                <div className="deck-inbox-actions">
+                  {selected.item.status === 'raw' && (
+                    <button
+                      className="deck-sidebar-btn"
+                      onClick={() => handleResearch(selected.item.id)}
+                    >
+                      Start research
+                    </button>
+                  )}
+                  {selected.item.status === 'researching' && (
+                    <button
+                      className="deck-sidebar-btn"
+                      onClick={() => handleReady(selected.item.id)}
+                    >
+                      Mark ready
+                    </button>
+                  )}
+                  {selected.item.status !== 'converted' &&
+                    selected.item.status !== 'archived' && (
+                      <button
+                        className="deck-sidebar-btn"
+                        onClick={() => {
+                          setEditContent(selected.item.content)
+                          setEditing(true)
+                        }}
+                      >
+                        Edit
+                      </button>
+                    )}
+                  {(selected.item.status === 'ready' ||
+                    selected.item.status === 'researching' ||
+                    selected.item.status === 'raw') && (
+                    <button
+                      className="deck-sidebar-btn"
+                      onClick={() => {
+                        setConvertTitle(selected.item.content.slice(0, 80))
+                        setConverting(true)
+                      }}
+                    >
+                      Convert to task
+                    </button>
+                  )}
+                  {selected.item.status !== 'converted' &&
+                    selected.item.status !== 'archived' && (
+                      <button
+                        className="deck-sidebar-btn"
+                        onClick={() => handleArchive(selected.item.id)}
+                      >
+                        Archive
+                      </button>
+                    )}
+                  {(selected.item.status === 'raw' || selected.item.status === 'archived') && (
+                    <button
+                      className="deck-sidebar-btn deck-sidebar-btn--danger"
+                      onClick={() => handleDelete(selected.item.id)}
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              )
             )}
           </div>
         </div>

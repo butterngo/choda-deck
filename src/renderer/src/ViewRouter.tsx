@@ -27,7 +27,6 @@ function ViewRouter({
 }: ViewRouterProps): React.JSX.Element {
   const [activeTab, setActiveTab] = useState(viewTypes[0]?.id || 'terminal')
 
-  // Listen for tab switch requests (e.g. from RoadmapView → Kanban)
   useEffect(() => {
     function handleSwitch(e: Event): void {
       const detail = (e as CustomEvent).detail

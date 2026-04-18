@@ -1,7 +1,7 @@
 ---
 paths:
-  - "src/renderer/**/*.tsx"
-  - "src/renderer/**/*.ts"
+  - 'src/renderer/**/*.tsx'
+  - 'src/renderer/**/*.ts'
 ---
 
 # React conventions — Choda Deck renderer
@@ -51,6 +51,7 @@ useEffect(() => {
 ```
 
 Rules:
+
 - **`disposed` flag** after every `await` in an async boot — prevents setState on unmounted component
 - **Null checks before disposing** — cleanup may run before boot completes
 - **Dispose in reverse creation order** — listeners first, resize observer, then terminal
@@ -70,6 +71,7 @@ If you add a new resource (another listener, a timer, a subscription), add its c
 MVP does NOT have a global state library yet. Decision deferred to research item **R6**.
 
 For now:
+
 - Local `useState` per component
 - Props for parent→child
 - Refs for imperative / non-reactive values

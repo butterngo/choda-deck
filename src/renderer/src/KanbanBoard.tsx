@@ -1,7 +1,9 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import TaskDetailPanel from './TaskDetailPanel'
+import PriorityPicker, { type Priority } from './components/PriorityPicker'
 
 const STATUSES = ['TODO', 'READY', 'IN-PROGRESS', 'DONE'] as const
+const PRIORITIES = ['critical', 'high', 'medium', 'low'] as const
 
 interface TaskItem {
   id: string
@@ -9,20 +11,8 @@ interface TaskItem {
   status: string
   priority: string | null
   labels: string[]
-  featureId: string | null
-  parentTaskId: string | null
-}
-
-interface PhaseItem {
-  id: string
-  title: string
-  status: string
-}
-
-interface FeatureItem {
-  id: string
-  title: string
   phaseId: string | null
+  parentTaskId: string | null
 }
 
 interface KanbanBoardProps {
@@ -32,11 +22,10 @@ interface KanbanBoardProps {
 
 function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Element {
   const [tasks, setTasks] = useState<TaskItem[]>([])
-  const [phases, setPhases] = useState<PhaseItem[]>([])
-  const [features, setFeatures] = useState<FeatureItem[]>([])
-  const [activePhaseId, setActivePhaseId] = useState<string | null>(null)
-  const [phaseStatus, setPhaseStatus] = useState<Record<string, string>>({})
   const [filterText, setFilterText] = useState('')
+  const [filterPriority, setFilterPriority] = useState<string>('')
+  const [filterLabel, setFilterLabel] = useState<string>('')
+  const [showDone, setShowDone] = useState(false)
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
   const [subtasks, setSubtasks] = useState<Record<string, TaskItem[]>>({})
   const [showImport, setShowImport] = useState(false)
@@ -44,56 +33,11 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [dragTaskId, setDragTaskId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
-  const [filterFeatureId, setFilterFeatureId] = useState<string | null>(null)
-
-  // Listen for feature filter from RoadmapView
-  useEffect(() => {
-    function handleFilter(e: Event): void {
-      const detail = (e as CustomEvent).detail
-      if (detail?.featureId) {
-        setFilterFeatureId(detail.featureId)
-        // Also set the phase that contains this feature
-        if (detail.phaseId) setActivePhaseId(detail.phaseId)
-      }
-    }
-    window.addEventListener('deck:filter-feature', handleFilter)
-    return () => window.removeEventListener('deck:filter-feature', handleFilter)
-  }, [])
 
   const loadData = useCallback(async () => {
-    const [taskList, phaseList, featureList] = await Promise.all([
-      window.api.task.list({ projectId }),
-      window.api.phase.list(projectId),
-      window.api.feature.list(projectId)
-    ])
+    const taskList = await window.api.task.list({ projectId })
     setTasks(taskList as TaskItem[])
-    setPhases(phaseList as PhaseItem[])
-    setFeatures(featureList as FeatureItem[])
-
-    // Load phase derived status
-    const ps: Record<string, string> = {}
-    for (const ph of phaseList as PhaseItem[]) {
-      const prog = await window.api.phase.progress(ph.id)
-      ps[ph.id] = prog.status
-    }
-    setPhaseStatus(ps)
-
-    // Auto-select active phase: first open phase with non-DONE tasks
-    if (!activePhaseId) {
-      const allTasks = taskList as TaskItem[]
-      const allFeatures = featureList as FeatureItem[]
-      for (const ph of phaseList as PhaseItem[]) {
-        if (ph.status === 'closed') continue
-        const phFeatureIds = allFeatures.filter(f => f.phaseId === ph.id).map(f => f.id)
-        const phTasks = allTasks.filter(t => t.featureId && phFeatureIds.includes(t.featureId))
-        const hasActive = phTasks.some(t => t.status !== 'DONE')
-        if (hasActive) {
-          setActivePhaseId(ph.id)
-          break
-        }
-      }
-    }
-  }, [projectId, activePhaseId])
+  }, [projectId])
 
   useEffect(() => {
     if (!visible) return
@@ -102,6 +46,15 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
     return () => cleanup()
   }, [visible, projectId, loadData])
 
+  // All unique labels across tasks
+  const allLabels = useMemo(() => {
+    const set = new Set<string>()
+    for (const t of tasks) {
+      for (const l of t.labels) set.add(l)
+    }
+    return Array.from(set).sort()
+  }, [tasks])
+
   async function toggleExpand(taskId: string): Promise<void> {
     const next = new Set(expandedCards)
     if (next.has(taskId)) {
@@ -109,7 +62,7 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
     } else {
       next.add(taskId)
       if (!subtasks[taskId]) {
-        const subs = await window.api.task.subtasks(taskId) as TaskItem[]
+        const subs = (await window.api.task.subtasks(taskId)) as TaskItem[]
         setSubtasks((prev) => ({ ...prev, [taskId]: subs }))
       }
     }
@@ -117,19 +70,27 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
   }
 
   const STATUS_TO_FM: Record<string, string> = {
-    'TODO': 'todo', 'READY': 'ready', 'IN-PROGRESS': 'in-progress', 'DONE': 'done'
+    TODO: 'todo',
+    READY: 'ready',
+    'IN-PROGRESS': 'in-progress',
+    DONE: 'done'
   }
 
   async function handleDrop(newStatus: string): Promise<void> {
-    if (!dragTaskId || dragTaskId === newStatus) return
-    const task = tasks.find(t => t.id === dragTaskId)
-    if (!task || task.status === newStatus) { setDragTaskId(null); setDropTarget(null); return }
+    if (!dragTaskId) return
+    const task = tasks.find((t) => t.id === dragTaskId)
+    if (!task || task.status === newStatus) {
+      setDragTaskId(null)
+      setDropTarget(null)
+      return
+    }
 
-    // Update SQLite
     await window.api.task.update(dragTaskId, { status: newStatus })
 
-    // Sync .md frontmatter
-    const detail = await window.api.task.detail(dragTaskId) as { task: { filePath: string | null }; fileContent: string | null } | null
+    const detail = (await window.api.task.detail(dragTaskId)) as {
+      task: { filePath: string | null }
+      fileContent: string | null
+    } | null
     if (detail?.task.filePath && detail.fileContent) {
       const fmStatus = STATUS_TO_FM[newStatus] || newStatus.toLowerCase()
       const updated = detail.fileContent.replace(
@@ -144,66 +105,115 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
     loadData()
   }
 
+  async function handlePriorityChange(taskId: string, next: Priority): Promise<void> {
+    const prev = tasks.find((t) => t.id === taskId)?.priority ?? null
+    setTasks((list) => list.map((t) => (t.id === taskId ? { ...t, priority: next } : t)))
+    try {
+      await window.api.task.update(taskId, { priority: next })
+    } catch (err) {
+      setTasks((list) => list.map((t) => (t.id === taskId ? { ...t, priority: prev } : t)))
+      alert(`Failed to update priority: ${(err as Error).message}`)
+    }
+  }
+
   async function handleImport(): Promise<void> {
     const result = await window.api.task.import()
-    setImportResult(`Imported ${result.tasks} tasks, ${result.phases} phases, ${result.documents} docs, ${result.errors.length} errors`)
+    setImportResult(
+      `Imported ${result.tasks} tasks, ${result.phases} phases, ${result.documents} docs, ${result.errors.length} errors`
+    )
     setShowImport(false)
     loadData()
   }
 
-  // Get tasks: filter by feature if set, otherwise by phase
-  let visibleTasks: TaskItem[]
-  if (filterFeatureId) {
-    visibleTasks = tasks.filter(t => t.featureId === filterFeatureId)
-  } else if (activePhaseId) {
-    const activeFeatureIds = features
-      .filter(f => f.phaseId === activePhaseId)
-      .map(f => f.id)
-    visibleTasks = tasks.filter(t => t.featureId && activeFeatureIds.includes(t.featureId))
-  } else {
-    visibleTasks = tasks
-  }
+  // Apply filters
+  const visibleStatuses = showDone ? STATUSES : STATUSES.filter((s) => s !== 'DONE')
 
-  // Filter: text + root tasks only
-  const rootTasks = visibleTasks.filter((t) => !t.parentTaskId)
+  const rootTasks = tasks.filter((t) => !t.parentTaskId)
   const filtered = rootTasks.filter((t) => {
-    if (filterText && !t.title.toLowerCase().includes(filterText.toLowerCase())) return false
+    if (!showDone && t.status === 'DONE') return false
+    if (filterPriority && t.priority !== filterPriority) return false
+    if (filterLabel && !t.labels.includes(filterLabel)) return false
+    if (
+      filterText &&
+      !t.title.toLowerCase().includes(filterText.toLowerCase()) &&
+      !t.id.toLowerCase().includes(filterText.toLowerCase())
+    )
+      return false
     return true
   })
+
+  const activeFilterCount = [filterPriority, filterLabel, filterText].filter(Boolean).length
 
   return (
     <div className="deck-kanban">
       <div className="deck-kanban-toolbar">
+        {/* Priority filter */}
         <select
           className="deck-sidebar-input"
-          value={activePhaseId || ''}
-          onChange={(e) => { setActivePhaseId(e.target.value || null); setFilterFeatureId(null) }}
+          value={filterPriority}
+          onChange={(e) => setFilterPriority(e.target.value)}
+          title="Filter by priority"
         >
-          <option value="">All phases</option>
-          {phases.map((ph) => (
-            <option key={ph.id} value={ph.id}>{ph.title} [{phaseStatus[ph.id] || '...'}]</option>
+          <option value="">All priorities</option>
+          {PRIORITIES.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
           ))}
         </select>
+
+        {/* Label filter */}
         <select
           className="deck-sidebar-input"
-          value={filterFeatureId || ''}
-          onChange={(e) => setFilterFeatureId(e.target.value || null)}
+          value={filterLabel}
+          onChange={(e) => setFilterLabel(e.target.value)}
+          title="Filter by label"
         >
-          <option value="">All features</option>
-          {features
-            .filter(f => !activePhaseId || f.phaseId === activePhaseId)
-            .map((f) => (
-              <option key={f.id} value={f.id}>{f.title}</option>
-            ))
-          }
+          <option value="">All labels</option>
+          {allLabels.map((l) => (
+            <option key={l} value={l}>
+              {l}
+            </option>
+          ))}
         </select>
+
+        {/* Text search */}
         <input
           className="deck-sidebar-input deck-kanban-search"
-          placeholder="Filter tasks..."
+          placeholder="Search tasks..."
           value={filterText}
           onChange={(e) => setFilterText(e.target.value)}
         />
-        <button className="deck-sidebar-btn" onClick={() => setShowImport(true)} title="Import from vault">
+
+        {/* Clear filters */}
+        {activeFilterCount > 0 && (
+          <button
+            className="deck-sidebar-btn"
+            onClick={() => {
+              setFilterPriority('')
+              setFilterLabel('')
+              setFilterText('')
+            }}
+            title="Clear filters"
+          >
+            ✕ {activeFilterCount}
+          </button>
+        )}
+
+        {/* Show Done toggle */}
+        <button
+          className={`deck-sidebar-btn${showDone ? ' deck-sidebar-btn--active' : ''}`}
+          onClick={() => setShowDone((v) => !v)}
+          title={showDone ? 'Hide done' : 'Show done'}
+        >
+          {showDone ? 'Hide Done' : 'Done'}
+        </button>
+
+        <button
+          className="deck-sidebar-btn"
+          onClick={() => setShowImport(true)}
+          title="Import from vault"
+        >
           Import
         </button>
         <button className="deck-sidebar-btn" onClick={loadData} title="Refresh">
@@ -214,30 +224,41 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
       {importResult && (
         <div className="deck-kanban-import-result">
           {importResult}
-          <button className="deck-sidebar-remove-btn" onClick={() => setImportResult(null)}>x</button>
+          <button className="deck-sidebar-remove-btn" onClick={() => setImportResult(null)}>
+            x
+          </button>
         </div>
       )}
 
       {showImport && (
         <div className="deck-kanban-create">
           <div className="deck-sidebar-form-actions">
-            <button className="deck-sidebar-btn deck-sidebar-btn--ok" onClick={handleImport}>Import from vault</button>
-            <button className="deck-sidebar-btn" onClick={() => setShowImport(false)}>Cancel</button>
+            <button className="deck-sidebar-btn deck-sidebar-btn--ok" onClick={handleImport}>
+              Import from vault
+            </button>
+            <button className="deck-sidebar-btn" onClick={() => setShowImport(false)}>
+              Cancel
+            </button>
           </div>
         </div>
       )}
 
-      {/* Kanban columns */}
       <div className="deck-kanban-columns">
-        {STATUSES.map((status) => {
+        {visibleStatuses.map((status) => {
           const columnTasks = filtered.filter((t) => t.status === status)
           return (
             <div
               key={status}
               className={`deck-kanban-column${dropTarget === status ? ' deck-kanban-column--drop' : ''}`}
-              onDragOver={(e) => { e.preventDefault(); setDropTarget(status) }}
+              onDragOver={(e) => {
+                e.preventDefault()
+                setDropTarget(status)
+              }}
               onDragLeave={() => setDropTarget(null)}
-              onDrop={(e) => { e.preventDefault(); handleDrop(status) }}
+              onDrop={(e) => {
+                e.preventDefault()
+                handleDrop(status)
+              }}
             >
               <div className="deck-kanban-column-header">
                 <span className="deck-kanban-column-title">{status}</span>
@@ -255,23 +276,46 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
                       className={`deck-kanban-card${dragTaskId === task.id ? ' deck-kanban-card--dragging' : ''}`}
                       draggable
                       onDragStart={() => setDragTaskId(task.id)}
-                      onDragEnd={() => { setDragTaskId(null); setDropTarget(null) }}
+                      onDragEnd={() => {
+                        setDragTaskId(null)
+                        setDropTarget(null)
+                      }}
                       onClick={() => setSelectedTaskId(task.id)}
                     >
                       <div className="deck-kanban-card-header">
                         <span className="deck-kanban-card-id">{task.id}</span>
-                        {task.priority && (
-                          <span className={`deck-kanban-badge deck-kanban-badge--${task.priority}`}>
-                            {task.priority}
-                          </span>
-                        )}
+                        <PriorityPicker
+                          value={task.priority}
+                          onChange={(next) => handlePriorityChange(task.id, next)}
+                        />
                       </div>
                       <div className="deck-kanban-card-title">{task.title}</div>
+
+                      {task.labels.length > 0 && (
+                        <div className="deck-kanban-labels">
+                          {task.labels.map((l) => (
+                            <span
+                              key={l}
+                              className={`deck-kanban-label${filterLabel === l ? ' deck-kanban-label--active' : ''}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setFilterLabel(filterLabel === l ? '' : l)
+                              }}
+                              title={`Filter by ${l}`}
+                            >
+                              {l}
+                            </span>
+                          ))}
+                        </div>
+                      )}
 
                       {hasSubtasks && (
                         <button
                           className="deck-kanban-subtask-toggle"
-                          onClick={() => toggleExpand(task.id)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleExpand(task.id)
+                          }}
                         >
                           {isExpanded ? '▾' : '▸'} subtasks
                         </button>
@@ -281,7 +325,9 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
                         <div className="deck-kanban-subtasks">
                           {subs.map((sub) => (
                             <div key={sub.id} className="deck-kanban-subtask">
-                              <span className={`deck-dot ${sub.status === 'DONE' ? 'deck-dot--green' : 'deck-dot--grey'}`} />
+                              <span
+                                className={`deck-dot ${sub.status === 'DONE' ? 'deck-dot--green' : 'deck-dot--grey'}`}
+                              />
                               <span className="deck-kanban-subtask-title">{sub.title}</span>
                             </div>
                           ))}
@@ -295,7 +341,12 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
           )
         })}
       </div>
-      <TaskDetailPanel taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} onChanged={loadData} />
+      <TaskDetailPanel
+        taskId={selectedTaskId}
+        onClose={() => setSelectedTaskId(null)}
+        onChanged={loadData}
+        onTaskClick={(id) => setSelectedTaskId(id)}
+      />
     </div>
   )
 }

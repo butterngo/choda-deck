@@ -1,7 +1,7 @@
 ---
 paths:
-  - "**/*.ts"
-  - "**/*.tsx"
+  - '**/*.ts'
+  - '**/*.tsx'
 ---
 
 # TypeScript conventions — Choda Deck
@@ -70,6 +70,7 @@ Apply SOLID when designing/refactoring modules. These are the practical checks f
 One class / one module = one reason to change. `src/tasks/repositories/` is the canonical example: each repository owns exactly one table family (task, phase, feature, conversation, …) — the facade `SqliteTaskService` composes them.
 
 Red flags that signal an SRP violation:
+
 - A class touches more than one table (or more than one HTTP endpoint, or more than one IPC namespace) outside a thin facade.
 - A file mixes row mappers, SQL, business rules, and filesystem I/O.
 - A method name contains "and" or "or" — usually two responsibilities glued together.
@@ -96,14 +97,15 @@ High-level code depends on abstractions. The facade references interfaces (`Task
 
 These are guidelines, not hard CI gates — but treat exceeding them as a refactor signal, not a free pass.
 
-| Unit | Soft limit | Hard limit | If exceeded |
-|---|---|---|---|
-| File (`.ts`/`.tsx`) | 200 lines | 300 lines | Split by responsibility (see Repository pattern example) |
-| Class | 150 lines | 250 lines | Extract helpers or split into composed classes |
-| Function / method | 30 lines | 60 lines | Extract private helpers; name each intent |
-| Interface | 10 methods | 20 methods | Segregate per I principle above |
+| Unit                | Soft limit | Hard limit | If exceeded                                              |
+| ------------------- | ---------- | ---------- | -------------------------------------------------------- |
+| File (`.ts`/`.tsx`) | 200 lines  | 300 lines  | Split by responsibility (see Repository pattern example) |
+| Class               | 150 lines  | 250 lines  | Extract helpers or split into composed classes           |
+| Function / method   | 30 lines   | 60 lines   | Extract private helpers; name each intent                |
+| Interface           | 10 methods | 20 methods | Segregate per I principle above                          |
 
 Exceptions (flag in code comment):
+
 - Schema DDL files (`repositories/schema.ts`) — many table definitions are ok in one place; splitting fragments the source of truth.
 - Pure type definitions (`task-types.ts`) — data shapes don't need per-file splitting.
 

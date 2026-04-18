@@ -1,12 +1,19 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'fs'
 import { spawn as spawnProcess } from 'child_process'
 import * as pty from 'node-pty'
 import icon from '../../resources/icon.png?asset'
 import { SqliteTaskService } from '../tasks/sqlite-task-service'
 import { VaultImporter } from '../tasks/vault-importer'
 import { VaultService } from '../vault/vault-service'
+import {
+  backupDir,
+  listBackups,
+  runBackup,
+  shouldRunDailyBackup,
+  type BackupInfo
+} from './backup-service'
 
 const is = {
   get dev(): boolean {
@@ -323,12 +330,50 @@ app.whenReady().then(async () => {
   const dbPath = app.isPackaged
     ? join(app.getPath('userData'), 'choda-deck.db')
     : join(__dirname, '../../choda-deck.db')
+  const userDataPath = app.isPackaged
+    ? app.getPath('userData')
+    : join(__dirname, '../..')
   const taskService = new SqliteTaskService(dbPath)
 
   // Ensure projects exist in SQLite
   for (const p of projects) {
     taskService.ensureProject(p.id, p.name, config.contentRoot)
   }
+
+  // Daily backup — 24h gate, failures log-only
+  try {
+    if (shouldRunDailyBackup(userDataPath)) {
+      const info = runBackup(taskService, userDataPath)
+      console.log(`[backup] created ${info.filename} (${info.size} bytes)`)
+    }
+  } catch (err) {
+    console.error('[backup] daily backup failed:', err)
+  }
+
+  ipcMain.handle('backups:list', (): BackupInfo[] => listBackups(userDataPath))
+
+  ipcMain.handle('backups:create-now', (): { ok: boolean; backup?: BackupInfo; error?: string } => {
+    try {
+      const info = runBackup(taskService, userDataPath)
+      return { ok: true, backup: info }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle('backups:restore', (_event, filename: string): { ok: boolean; error?: string } => {
+    const source = join(backupDir(userDataPath), filename)
+    if (!existsSync(source)) return { ok: false, error: 'Backup file not found' }
+    try {
+      taskService.close()
+      copyFileSync(source, dbPath)
+      app.relaunch()
+      app.exit(0)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
 
   // Vault import — manual trigger, not auto on boot
   let importer: VaultImporter | null = null
@@ -468,15 +513,67 @@ app.whenReady().then(async () => {
     }))
     return { item, conversations }
   })
-  ipcMain.handle(
-    'inbox:add',
-    (_event, input: { projectId?: string | null; content: string }) =>
-      taskService.createInbox({
-        projectId: input.projectId ?? null,
-        content: input.content
-      })
+  ipcMain.handle('inbox:add', (_event, input: { projectId: string; content: string }) =>
+    taskService.createInbox({
+      projectId: input.projectId,
+      content: input.content
+    })
   )
-  ipcMain.handle('inbox:archive', (_event, id: string) => {
+  ipcMain.handle(
+    'inbox:update',
+    (_event, id: string, content: string): { ok: boolean; error?: string; item?: unknown } => {
+      const item = taskService.getInbox(id)
+      if (!item) return { ok: false, error: 'not found' }
+      if (item.status === 'converted' || item.status === 'archived') {
+        return { ok: false, error: `status is ${item.status} — content locked` }
+      }
+      const updated = taskService.updateInbox(id, { content })
+      return { ok: true, item: updated }
+    }
+  )
+  ipcMain.handle(
+    'inbox:research',
+    (
+      _event,
+      id: string,
+      researcher = 'Claude'
+    ): { ok: boolean; error?: string; conversationId?: string; status?: string } => {
+      const item = taskService.getInbox(id)
+      if (!item) return { ok: false, error: 'not found' }
+      if (item.status !== 'raw') return { ok: false, error: `status is ${item.status}, not raw` }
+      const existing = taskService.findConversationsByLink('inbox', id)
+      if (existing.length > 0) {
+        return { ok: true, conversationId: existing[0].id, status: 'researching' }
+      }
+      const projectId = item.projectId ?? 'global'
+      const conv = taskService.createConversation({
+        projectId,
+        title: `Research: ${item.content.slice(0, 80)}`,
+        createdBy: researcher,
+        status: 'open',
+        participants: [
+          { name: 'Butter', type: 'human' },
+          { name: researcher, type: 'agent' }
+        ]
+      })
+      taskService.linkConversation(conv.id, 'inbox', id)
+      taskService.updateInbox(id, { status: 'researching' })
+      return { ok: true, conversationId: conv.id, status: 'researching' }
+    }
+  )
+  ipcMain.handle(
+    'inbox:ready',
+    (_event, id: string): { ok: boolean; error?: string; item?: unknown } => {
+      const item = taskService.getInbox(id)
+      if (!item) return { ok: false, error: 'not found' }
+      if (item.status !== 'researching') {
+        return { ok: false, error: `status is ${item.status}, not researching` }
+      }
+      const updated = taskService.updateInbox(id, { status: 'ready' })
+      return { ok: true, item: updated }
+    }
+  )
+  ipcMain.handle('inbox:archive', (_event, id: string, reason?: string) => {
     const item = taskService.getInbox(id)
     if (!item) return null
     taskService.updateInbox(id, { status: 'archived' })
@@ -485,7 +582,7 @@ app.whenReady().then(async () => {
       if (c.status !== 'closed') {
         taskService.updateConversation(c.id, {
           status: 'closed',
-          decisionSummary: 'Archived',
+          decisionSummary: reason ? `Archived: ${reason}` : 'Archived',
           closedAt: new Date().toISOString()
         })
       }

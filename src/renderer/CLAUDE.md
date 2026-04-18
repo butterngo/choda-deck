@@ -2,7 +2,7 @@
 
 ## Purpose
 
-React 19 + TypeScript UI for Choda Deck. Hosts the xterm.js terminal(s), sidebar, and all visual state. Talks to the outside world **only** through `window.api` — no direct Node, no direct IPC, no fs. Uses a polymorphic `<ViewRouter>` main pane (Terminal, Tasks, Roadmap, Focus tabs) plus a project/workspace sidebar.
+React 19 + TypeScript UI for Choda Deck. Hosts the xterm.js terminal(s), sidebar, and all visual state. Talks to the outside world **only** through `window.api` — no direct Node, no direct IPC, no fs. Uses a polymorphic `<ViewRouter>` main pane (Terminal, Tasks, Focus tabs) plus a project/workspace sidebar.
 
 ## What belongs here
 

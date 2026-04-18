@@ -61,6 +61,7 @@ import { SessionRepository } from './repositories/session-repository'
 import { ContextSourceRepository } from './repositories/context-source-repository'
 import { ConversationRepository } from './repositories/conversation-repository'
 import { InboxRepository } from './repositories/inbox-repository'
+import { CounterRepository } from './repositories/counter-repository'
 
 export class SqliteTaskService
   implements
@@ -82,6 +83,7 @@ export class SqliteTaskService
   private readonly contextSources: ContextSourceRepository
   private readonly conversations: ConversationRepository
   private readonly inbox: InboxRepository
+  private readonly counters: CounterRepository
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath)
@@ -91,7 +93,8 @@ export class SqliteTaskService
 
     this.projects = new ProjectRepository(this.db)
     this.relationships = new RelationshipRepository(this.db)
-    this.tasks = new TaskRepository(this.db, this.relationships)
+    this.counters = new CounterRepository(this.db)
+    this.tasks = new TaskRepository(this.db, this.relationships, this.counters)
     this.phases = new PhaseRepository(this.db)
     this.features = new FeatureRepository(this.db)
     this.documents = new DocumentRepository(this.db)
@@ -99,7 +102,7 @@ export class SqliteTaskService
     this.sessions = new SessionRepository(this.db)
     this.contextSources = new ContextSourceRepository(this.db)
     this.conversations = new ConversationRepository(this.db)
-    this.inbox = new InboxRepository(this.db)
+    this.inbox = new InboxRepository(this.db, this.counters)
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -111,6 +114,11 @@ export class SqliteTaskService
   }
   close(): void {
     this.db.close()
+  }
+
+  backup(absolutePath: string): void {
+    const escaped = absolutePath.replace(/'/g, "''")
+    this.db.exec(`VACUUM INTO '${escaped}'`)
   }
 
   ensureProject(id: string, name: string, cwd: string): void {

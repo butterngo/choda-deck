@@ -1,12 +1,10 @@
 import { z } from 'zod'
 import { textResponse, type Register } from './types'
 import { buildProjectContext } from './project-context-builder'
-import { exportHandoffMarkdown } from './session-handoff-exporter'
+import { loadSessionRules } from '../rules/session-rules-loader'
 import { now } from '../repositories/shared'
 import type { SqliteTaskService } from '../sqlite-task-service'
 import type { SessionHandoff, Task, TaskStatus } from '../task-types'
-
-const taskStatusSchema = z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE'])
 
 const handoffInputSchema = {
   sessionId: z.string(),
@@ -14,10 +12,6 @@ const handoffInputSchema = {
   decisions: z.array(z.string()).optional(),
   resumePoint: z.string(),
   looseEnds: z.array(z.string()).optional(),
-  tasksUpdated: z.array(z.object({
-    id: z.string(),
-    status: taskStatusSchema
-  })).optional(),
   notes: z.string().optional()
 }
 
@@ -25,26 +19,78 @@ export const register: Register = (server, svc) => {
   server.registerTool(
     'session_start',
     {
-      description: 'Start a new work session for a project. Creates the session, abandons any stale active session, and returns the last handoff + current active context to resume on.',
-      inputSchema: { projectId: z.string().describe('Project ID') }
+      description:
+        'Start a new work session for a project workspace. Abandons stale session for this workspace, returns last handoff + active context.',
+      inputSchema: {
+        projectId: z.string().describe('Project ID'),
+        workspaceId: z.string().optional().describe('Workspace ID (e.g. workflow-engine)')
+      }
     },
-    async ({ projectId }) => {
+    async ({ projectId, workspaceId }) => {
       const project = svc.getProject(projectId)
       if (!project) return textResponse(`Project ${projectId} not found`)
 
-      const abandoned = abandonStaleSession(svc, projectId)
-      const session = svc.createSession({ projectId, startedAt: now(), status: 'active' })
-      const lastHandoff = loadLastHandoff(svc, projectId)
+      const abandoned = abandonStaleSession(svc, projectId, workspaceId)
+      const session = svc.createSession({
+        projectId,
+        workspaceId,
+        startedAt: now(),
+        status: 'active'
+      })
+      const lastHandoff = loadLastHandoff(svc, projectId, workspaceId)
       const bundle = buildProjectContext(svc, projectId, 'summary')
+      const rules = loadSessionRules()
 
       return textResponse({
         sessionId: session.id,
+        workspaceId: session.workspaceId,
+        mode: 'planning',
         abandonedSession: abandoned,
         lastHandoff,
         projectSummary: buildProjectSummary(bundle),
         activeTasks: bundle?.currentState.activeTasks ?? [],
         openConversations: bundle?.currentState.openConversations ?? [],
-        suggestion: buildSuggestion(lastHandoff, bundle?.currentState.activeTasks ?? [])
+        suggestion: buildSuggestion(lastHandoff, bundle?.currentState.activeTasks ?? []),
+        rules: {
+          onSessionStart: rules.sessionStart,
+          onSessionEnd: rules.sessionEnd
+        }
+      })
+    }
+  )
+
+  server.registerTool(
+    'session_pick',
+    {
+      description:
+        'Pick a task for the current session. Sets task to IN-PROGRESS. Only 1 task per session (WIP=1).',
+      inputSchema: {
+        sessionId: z.string(),
+        taskId: z.string().describe('Task ID to work on')
+      }
+    },
+    async ({ sessionId, taskId }) => {
+      const session = svc.getSession(sessionId)
+      if (!session) return textResponse(`Session ${sessionId} not found`)
+      if (session.status !== 'active') {
+        return textResponse(`Session ${sessionId} is ${session.status}, not active`)
+      }
+      if (session.taskId) {
+        return textResponse(`Session already has task ${session.taskId}. Finish it first.`)
+      }
+
+      const task = svc.getTask(taskId)
+      if (!task) return textResponse(`Task ${taskId} not found`)
+
+      svc.updateSession(sessionId, { taskId })
+      svc.updateTask(taskId, { status: 'IN-PROGRESS' })
+
+      return textResponse({
+        sessionId,
+        taskId,
+        taskTitle: task.title,
+        mode: 'focused',
+        status: 'IN-PROGRESS'
       })
     }
   )
@@ -52,21 +98,28 @@ export const register: Register = (server, svc) => {
   server.registerTool(
     'session_end',
     {
-      description: 'End a work session: persist handoff (commits, decisions, resumePoint, looseEnds), optionally update task statuses, and auto-generate handoff.md in the vault.',
+      description: 'End a work session. If session has a task, marks it DONE. Persists handoff.',
       inputSchema: handoffInputSchema
     },
     async (input) => {
       const session = svc.getSession(input.sessionId)
       if (!session) return textResponse(`Session ${input.sessionId} not found`)
 
-      const tasksUpdated = applyTaskUpdates(svc, input.tasksUpdated)
+      let taskUpdated: { id: string; title: string; newStatus: TaskStatus } | null = null
+      if (session.taskId) {
+        const task = svc.getTask(session.taskId)
+        if (task) {
+          svc.updateTask(session.taskId, { status: 'DONE' })
+          taskUpdated = { id: task.id, title: task.title, newStatus: 'DONE' }
+        }
+      }
 
       const handoff: SessionHandoff = {
         commits: input.commits,
         decisions: input.decisions,
         resumePoint: input.resumePoint,
         looseEnds: input.looseEnds,
-        tasksUpdated: tasksUpdated.map(t => t.id)
+        tasksUpdated: taskUpdated ? [taskUpdated.id] : []
       }
 
       const updated = svc.updateSession(input.sessionId, {
@@ -75,39 +128,40 @@ export const register: Register = (server, svc) => {
         handoff
       })
 
-      const exportedTo = exportHandoffMarkdown(svc, updated.id)
-
       return textResponse({
         sessionId: updated.id,
         status: updated.status,
         endedAt: updated.endedAt,
-        tasksUpdated,
-        exportedTo,
+        taskUpdated,
         notes: input.notes
       })
     }
   )
 }
 
-export function abandonStaleSession(svc: SqliteTaskService, projectId: string): { id: string; startedAt: string } | null {
-  const active = svc.getActiveSession(projectId)
+export function abandonStaleSession(
+  svc: SqliteTaskService,
+  projectId: string,
+  workspaceId?: string
+): { id: string; startedAt: string } | null {
+  const active = svc.getActiveSession(projectId, workspaceId)
   if (!active) return null
   svc.updateSession(active.id, { status: 'abandoned', endedAt: now() })
   return { id: active.id, startedAt: active.startedAt }
 }
 
-export function loadLastHandoff(svc: SqliteTaskService, projectId: string): {
-  sessionId: string
-  endedAt: string | null
-  handoff: SessionHandoff
-} | null {
+export function loadLastHandoff(
+  svc: SqliteTaskService,
+  projectId: string,
+  workspaceId?: string
+): { sessionId: string; endedAt: string | null; handoff: SessionHandoff } | null {
   const completed = svc.findSessions(projectId, 'completed')
-  const latest = completed[0]
-  if (!latest) return null
+  const match = workspaceId ? completed.find((s) => s.workspaceId === workspaceId) : completed[0]
+  if (!match) return null
   return {
-    sessionId: latest.id,
-    endedAt: latest.endedAt,
-    handoff: latest.handoff ?? {}
+    sessionId: match.id,
+    endedAt: match.endedAt,
+    handoff: match.handoff ?? {}
   }
 }
 
@@ -148,7 +202,12 @@ export function applyTaskUpdates(
     const before = svc.getTask(u.id)
     if (!before) continue
     const after = svc.updateTask(u.id, { status: u.status })
-    out.push({ id: after.id, title: after.title, oldStatus: before.status, newStatus: after.status })
+    out.push({
+      id: after.id,
+      title: after.title,
+      oldStatus: before.status,
+      newStatus: after.status
+    })
   }
   return out
 }

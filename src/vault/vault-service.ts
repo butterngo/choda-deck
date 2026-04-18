@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'fs'
+import { readdirSync, readFileSync, statSync, writeFileSync, unlinkSync } from 'fs'
 import { join, basename, extname } from 'path'
 import type { FileNode, FileStat, SearchResult } from './vault-types'
 
@@ -35,12 +35,20 @@ export class VaultService {
     if (!this.wikilinkCache || this.cacheRoot !== rootPath) {
       this.buildWikilinkCache(rootPath)
     }
-    const key = wikilink.toLowerCase().replace(/\[\[|\]\]/g, '').trim()
-    return this.wikilinkCache!.get(key) || null
+    // Strip [[]], alias (|text), path prefix (folder/), and .md extension
+    const raw = wikilink.replace(/\[\[|\]\]/g, '').trim()
+    const withoutAlias = raw.split('|')[0].trim()
+    const filename = withoutAlias.split(/[/\\]/).pop()!.trim()
+    const withoutExt = filename.replace(/\.md$/i, '')
+    return this.wikilinkCache!.get(withoutExt.toLowerCase()) || null
   }
 
   writeFile(filePath: string, content: string): void {
     writeFileSync(filePath, content, 'utf-8')
+  }
+
+  deleteFile(filePath: string): void {
+    unlinkSync(filePath)
   }
 
   invalidateCache(): void {
@@ -55,8 +63,8 @@ export class VaultService {
     const nodes: FileNode[] = []
 
     // Sort: directories first, then files, alphabetical within each group
-    const dirs = entries.filter(e => e.isDirectory() && !IGNORED_DIRS.has(e.name))
-    const files = entries.filter(e => e.isFile() && !e.name.startsWith('.'))
+    const dirs = entries.filter((e) => e.isDirectory() && !IGNORED_DIRS.has(e.name))
+    const files = entries.filter((e) => e.isFile() && !e.name.startsWith('.'))
 
     dirs.sort((a, b) => a.name.localeCompare(b.name))
     files.sort((a, b) => a.name.localeCompare(b.name))

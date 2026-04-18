@@ -30,6 +30,7 @@ Follow the 6-step process from @30-Knowledge/system-design-process.md:
 6. **Validate** — walk through use cases, check trade-offs (ATAM), capture ADRs
 
 **At each step:**
+
 - Present options with trade-offs (use ATAM from knowledge doc)
 - Wait for Butter to decide before proceeding
 - Use `mermaid` skill for C4 diagrams (always create L1 Context + L2 Container)
@@ -58,12 +59,12 @@ When Butter asks "what pattern fits", use @30-Knowledge/architecture-patterns.md
 
 Always diagram at least L1 + L2. Use `mermaid` skill.
 
-| Level | When | Mermaid type |
-|---|---|---|
-| L1 Context | Always | `C4Context` |
-| L2 Container | Always | `C4Container` |
+| Level        | When              | Mermaid type  |
+| ------------ | ----------------- | ------------- |
+| L1 Context   | Always            | `C4Context`   |
+| L2 Container | Always            | `C4Container` |
 | L3 Component | Complex container | `C4Component` |
-| L4 Code | Rarely | Class diagram |
+| L4 Code      | Rarely            | Class diagram |
 
 ## Output format
 
@@ -73,25 +74,31 @@ Always diagram at least L1 + L2. Use `mermaid` skill.
 ## System Design: [Name]
 
 ### Requirements
+
 - [key requirements + constraints]
 
 ### Architecture
+
 - Pattern: [chosen pattern + why]
 - [C4 L1 diagram]
 - [C4 L2 diagram]
 
 ### Components
+
 | Component | Responsibility | Tech |
-|---|---|---|
+| --------- | -------------- | ---- |
 
 ### Key Decisions
+
 - ADR-001: [decision title] (captured via save-decision)
 
 ### Trade-offs
+
 | Decision | Helps | Hurts | Verdict |
-|---|---|---|---|
+| -------- | ----- | ----- | ------- |
 
 ### Next steps
+
 - [ ] [implementation tasks]
 ```
 
@@ -101,15 +108,19 @@ Always diagram at least L1 + L2. Use `mermaid` skill.
 ## Architecture Review: [Project]
 
 ### Summary
+
 [X] pass / [Y] fail / [Z] N/A
 
 ### Critical
+
 - [ ] [failed items that block release]
 
 ### Warnings
+
 - [ ] [items to address soon]
 
 ### Passed
+
 - [items that passed]
 ```
 

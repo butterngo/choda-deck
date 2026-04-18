@@ -341,7 +341,7 @@ tickInterval 1day
 The pattern is:
 
 ```javascript
-/^([1-9][0-9]*)(millisecond|second|minute|hour|day|week|month)$/;
+;/^([1-9][0-9]*)(millisecond|second|minute|hour|day|week|month)$/
 ```
 
 More info in: <https://github.com/d3/d3-time#interval_every>
@@ -528,8 +528,8 @@ mermaid.ganttConfig = {
   tickInterval: '1week', // Axis ticks
   topAxis: true, // When this flag is set, date labels will be added to the top of the chart
   displayMode: 'compact', // Turns compact mode on
-  weekday: 'sunday', // On which day a week-based interval should start
-};
+  weekday: 'sunday' // On which day a week-based interval should start
+}
 ```
 
 ### Possible configuration params:
@@ -571,16 +571,16 @@ Beginner's tip—a full example using interactive links in an HTML context:
 
   <script>
     const printArguments = function (arg1, arg2, arg3) {
-      alert('printArguments called with arguments: ' + arg1 + ', ' + arg2 + ', ' + arg3);
-    };
+      alert('printArguments called with arguments: ' + arg1 + ', ' + arg2 + ', ' + arg3)
+    }
     const printTask = function (taskId) {
-      alert('taskId: ' + taskId);
-    };
+      alert('taskId: ' + taskId)
+    }
     const config = {
       startOnLoad: true,
-      securityLevel: 'loose',
-    };
-    mermaid.initialize(config);
+      securityLevel: 'loose'
+    }
+    mermaid.initialize(config)
   </script>
 </body>
 ```

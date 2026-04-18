@@ -1,4 +1,10 @@
-import type { Task, CreateTaskInput, UpdateTaskInput, TaskFilter, TaskDependency } from '../task-types'
+import type {
+  Task,
+  CreateTaskInput,
+  UpdateTaskInput,
+  TaskFilter,
+  TaskDependency
+} from '../task-types'
 
 export interface TaskOperations {
   createTask(input: CreateTaskInput): Task

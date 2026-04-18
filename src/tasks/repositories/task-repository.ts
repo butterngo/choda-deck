@@ -9,6 +9,7 @@ import type {
 } from '../task-types'
 import { now, type Param } from './shared'
 import type { RelationshipRepository } from './relationship-repository'
+import type { CounterRepository } from './counter-repository'
 
 function rowToTask(row: Record<string, unknown>): Task {
   return {
@@ -32,23 +33,17 @@ function rowToTask(row: Record<string, unknown>): Task {
 export class TaskRepository {
   constructor(
     private readonly db: Database.Database,
-    private readonly relationships: RelationshipRepository
+    private readonly relationships: RelationshipRepository,
+    private readonly counters: CounterRepository
   ) {}
 
-  private nextTaskId(projectId: string): string {
-    const row = this.db
-      .prepare(
-        `INSERT INTO project_task_counters (project_id, last_number) VALUES (?, 1)
-         ON CONFLICT(project_id) DO UPDATE SET last_number = last_number + 1
-         RETURNING last_number`
-      )
-      .get(projectId) as { last_number: number }
-    return `TASK-${String(row.last_number).padStart(3, '0')}`
+  private nextTaskId(): string {
+    return `TASK-${String(this.counters.nextNumber('task')).padStart(3, '0')}`
   }
 
   create(input: CreateTaskInput): Task {
     const ts = now()
-    const id = input.id || this.nextTaskId(input.projectId)
+    const id = input.id || this.nextTaskId()
     this.db
       .prepare(
         `INSERT INTO tasks (id, project_id, phase_id, parent_task_id, title, status, priority, labels, due_date, file_path, body, pinned, created_at, updated_at)

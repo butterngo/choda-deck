@@ -5,7 +5,8 @@ export const register: Register = (server, svc) => {
   server.registerTool(
     'search',
     {
-      description: 'Search across tasks, phases, features, and documents',
+      description:
+        'Search across tasks, phases, features, documents, and active inbox items (raw/researching/ready).',
       inputSchema: { query: z.string().describe('Search query') }
     },
     async ({ query }) => {
@@ -14,7 +15,11 @@ export const register: Register = (server, svc) => {
       const q = query.toLowerCase()
       const inbox = svc
         .findInbox({})
-        .filter((i) => i.content.toLowerCase().includes(q))
+        .filter(
+          (i) =>
+            (i.status === 'raw' || i.status === 'researching' || i.status === 'ready') &&
+            i.content.toLowerCase().includes(q)
+        )
         .slice(0, 20)
 
       return textResponse({

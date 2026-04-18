@@ -17,7 +17,7 @@ export const register: Register = (server, svc) => {
         : projectId
           ? svc.findFeatures(projectId)
           : []
-      const result = features.map(f => ({
+      const result = features.map((f) => ({
         ...f,
         progress: svc.getFeatureProgress(f.id)
       }))

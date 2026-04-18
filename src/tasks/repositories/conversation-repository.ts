@@ -50,7 +50,7 @@ function rowToMessage(row: Record<string, unknown>): ConversationMessage {
     content: row.content as string,
     messageType: row.message_type as ConversationMessageType,
     metadata: row.metadata_json
-      ? JSON.parse(row.metadata_json as string) as ConversationMessageMetadata
+      ? (JSON.parse(row.metadata_json as string) as ConversationMessageMetadata)
       : null,
     createdAt: row.created_at as string
   }
@@ -75,10 +75,12 @@ export class ConversationRepository {
 
   create(input: CreateConversationInput): Conversation {
     const id = input.id || generateId('CONV')
-    this.db.prepare(
-      `INSERT INTO conversations (id, project_id, title, status, created_by)
+    this.db
+      .prepare(
+        `INSERT INTO conversations (id, project_id, title, status, created_by)
        VALUES (?, ?, ?, ?, ?)`
-    ).run(id, input.projectId, input.title, input.status || 'open', input.createdBy)
+      )
+      .run(id, input.projectId, input.title, input.status || 'open', input.createdBy)
 
     if (input.participants) {
       for (const p of input.participants) {
@@ -93,29 +95,53 @@ export class ConversationRepository {
     const sets: string[] = []
     const params: Param[] = []
 
-    if (input.title !== undefined) { sets.push('title = ?'); params.push(input.title) }
-    if (input.status !== undefined) { sets.push('status = ?'); params.push(input.status) }
-    if (input.decisionSummary !== undefined) { sets.push('decision_summary = ?'); params.push(input.decisionSummary) }
-    if (input.decidedAt !== undefined) { sets.push('decided_at = ?'); params.push(input.decidedAt) }
-    if (input.closedAt !== undefined) { sets.push('closed_at = ?'); params.push(input.closedAt) }
+    if (input.title !== undefined) {
+      sets.push('title = ?')
+      params.push(input.title)
+    }
+    if (input.status !== undefined) {
+      sets.push('status = ?')
+      params.push(input.status)
+    }
+    if (input.decisionSummary !== undefined) {
+      sets.push('decision_summary = ?')
+      params.push(input.decisionSummary)
+    }
+    if (input.decidedAt !== undefined) {
+      sets.push('decided_at = ?')
+      params.push(input.decidedAt)
+    }
+    if (input.closedAt !== undefined) {
+      sets.push('closed_at = ?')
+      params.push(input.closedAt)
+    }
 
     if (sets.length === 0) return this.requireGet(id)
 
     params.push(id)
-    this.db.prepare(`UPDATE conversations SET ${sets.join(', ')} WHERE id = ?`)
-      .run(...params as (string | number | null)[])
+    this.db
+      .prepare(`UPDATE conversations SET ${sets.join(', ')} WHERE id = ?`)
+      .run(...(params as (string | number | null)[]))
     return this.requireGet(id)
   }
 
   get(id: string): Conversation | null {
-    const row = this.db.prepare('SELECT * FROM conversations WHERE id = ?').get(id) as Record<string, unknown> | undefined
+    const row = this.db.prepare('SELECT * FROM conversations WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined
     return row ? rowToConversation(row) : null
   }
 
   findByProject(projectId: string, status?: ConversationStatus): Conversation[] {
     const rows = status
-      ? this.db.prepare('SELECT * FROM conversations WHERE project_id = ? AND status = ? ORDER BY created_at DESC').all(projectId, status) as Array<Record<string, unknown>>
-      : this.db.prepare('SELECT * FROM conversations WHERE project_id = ? ORDER BY created_at DESC').all(projectId) as Array<Record<string, unknown>>
+      ? (this.db
+          .prepare(
+            'SELECT * FROM conversations WHERE project_id = ? AND status = ? ORDER BY created_at DESC'
+          )
+          .all(projectId, status) as Array<Record<string, unknown>>)
+      : (this.db
+          .prepare('SELECT * FROM conversations WHERE project_id = ? ORDER BY created_at DESC')
+          .all(projectId) as Array<Record<string, unknown>>)
     return rows.map(rowToConversation)
   }
 
@@ -141,23 +167,29 @@ export class ConversationRepository {
     type: ConversationParticipantType,
     role?: string | null
   ): void {
-    this.db.prepare(
-      `INSERT OR REPLACE INTO conversation_participants
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO conversation_participants
        (conversation_id, participant_name, participant_type, participant_role)
        VALUES (?, ?, ?, ?)`
-    ).run(conversationId, name, type, role ?? null)
+      )
+      .run(conversationId, name, type, role ?? null)
   }
 
   removeParticipant(conversationId: string, name: string): void {
-    this.db.prepare(
-      'DELETE FROM conversation_participants WHERE conversation_id = ? AND participant_name = ?'
-    ).run(conversationId, name)
+    this.db
+      .prepare(
+        'DELETE FROM conversation_participants WHERE conversation_id = ? AND participant_name = ?'
+      )
+      .run(conversationId, name)
   }
 
   getParticipants(conversationId: string): ConversationParticipant[] {
-    const rows = this.db.prepare(
-      'SELECT * FROM conversation_participants WHERE conversation_id = ? ORDER BY participant_name'
-    ).all(conversationId) as Array<Record<string, unknown>>
+    const rows = this.db
+      .prepare(
+        'SELECT * FROM conversation_participants WHERE conversation_id = ? ORDER BY participant_name'
+      )
+      .all(conversationId) as Array<Record<string, unknown>>
     return rows.map(rowToParticipant)
   }
 
@@ -165,26 +197,32 @@ export class ConversationRepository {
 
   addMessage(input: CreateConversationMessageInput): ConversationMessage {
     const id = input.id || generateId('MSG')
-    this.db.prepare(
-      `INSERT INTO conversation_messages
+    this.db
+      .prepare(
+        `INSERT INTO conversation_messages
        (id, conversation_id, author_name, content, message_type, metadata_json)
        VALUES (?, ?, ?, ?, ?, ?)`
-    ).run(
-      id,
-      input.conversationId,
-      input.authorName,
-      input.content,
-      input.messageType || 'comment',
-      input.metadata ? JSON.stringify(input.metadata) : null
-    )
-    const row = this.db.prepare('SELECT * FROM conversation_messages WHERE id = ?').get(id) as Record<string, unknown>
+      )
+      .run(
+        id,
+        input.conversationId,
+        input.authorName,
+        input.content,
+        input.messageType || 'comment',
+        input.metadata ? JSON.stringify(input.metadata) : null
+      )
+    const row = this.db
+      .prepare('SELECT * FROM conversation_messages WHERE id = ?')
+      .get(id) as Record<string, unknown>
     return rowToMessage(row)
   }
 
   getMessages(conversationId: string): ConversationMessage[] {
-    const rows = this.db.prepare(
-      'SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY created_at, id'
-    ).all(conversationId) as Array<Record<string, unknown>>
+    const rows = this.db
+      .prepare(
+        'SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY created_at, id'
+      )
+      .all(conversationId) as Array<Record<string, unknown>>
     return rows.map(rowToMessage)
   }
 
@@ -192,19 +230,23 @@ export class ConversationRepository {
 
   addAction(input: CreateConversationActionInput): ConversationAction {
     const id = input.id || generateId('ACT')
-    this.db.prepare(
-      `INSERT INTO conversation_actions
+    this.db
+      .prepare(
+        `INSERT INTO conversation_actions
        (id, conversation_id, assignee, description, status, linked_task_id)
        VALUES (?, ?, ?, ?, ?, ?)`
-    ).run(
-      id,
-      input.conversationId,
-      input.assignee,
-      input.description,
-      input.status || 'pending',
-      input.linkedTaskId || null
-    )
-    const row = this.db.prepare('SELECT * FROM conversation_actions WHERE id = ?').get(id) as Record<string, unknown>
+      )
+      .run(
+        id,
+        input.conversationId,
+        input.assignee,
+        input.description,
+        input.status || 'pending',
+        input.linkedTaskId || null
+      )
+    const row = this.db
+      .prepare('SELECT * FROM conversation_actions WHERE id = ?')
+      .get(id) as Record<string, unknown>
     return rowToAction(row)
   }
 
@@ -212,46 +254,65 @@ export class ConversationRepository {
     const sets: string[] = []
     const params: Param[] = []
 
-    if (input.status !== undefined) { sets.push('status = ?'); params.push(input.status) }
-    if (input.linkedTaskId !== undefined) { sets.push('linked_task_id = ?'); params.push(input.linkedTaskId) }
+    if (input.status !== undefined) {
+      sets.push('status = ?')
+      params.push(input.status)
+    }
+    if (input.linkedTaskId !== undefined) {
+      sets.push('linked_task_id = ?')
+      params.push(input.linkedTaskId)
+    }
 
     if (sets.length > 0) {
       params.push(id)
-      this.db.prepare(`UPDATE conversation_actions SET ${sets.join(', ')} WHERE id = ?`)
-        .run(...params as (string | number | null)[])
+      this.db
+        .prepare(`UPDATE conversation_actions SET ${sets.join(', ')} WHERE id = ?`)
+        .run(...(params as (string | number | null)[]))
     }
 
-    const row = this.db.prepare('SELECT * FROM conversation_actions WHERE id = ?').get(id) as Record<string, unknown> | undefined
+    const row = this.db.prepare('SELECT * FROM conversation_actions WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined
     if (!row) throw new Error(`ConversationAction not found: ${id}`)
     return rowToAction(row)
   }
 
   getActions(conversationId: string): ConversationAction[] {
-    const rows = this.db.prepare(
-      'SELECT * FROM conversation_actions WHERE conversation_id = ? ORDER BY created_at, id'
-    ).all(conversationId) as Array<Record<string, unknown>>
+    const rows = this.db
+      .prepare(
+        'SELECT * FROM conversation_actions WHERE conversation_id = ? ORDER BY created_at, id'
+      )
+      .all(conversationId) as Array<Record<string, unknown>>
     return rows.map(rowToAction)
   }
 
   // ── Links ──────────────────────────────────────────────────────────────────
 
   link(conversationId: string, linkedType: ConversationLinkType, linkedId: string): void {
-    this.db.prepare(
-      'INSERT OR IGNORE INTO conversation_links (conversation_id, linked_type, linked_id) VALUES (?, ?, ?)'
-    ).run(conversationId, linkedType, linkedId)
+    this.db
+      .prepare(
+        'INSERT OR IGNORE INTO conversation_links (conversation_id, linked_type, linked_id) VALUES (?, ?, ?)'
+      )
+      .run(conversationId, linkedType, linkedId)
   }
 
   unlink(conversationId: string, linkedType: ConversationLinkType, linkedId: string): void {
-    this.db.prepare(
-      'DELETE FROM conversation_links WHERE conversation_id = ? AND linked_type = ? AND linked_id = ?'
-    ).run(conversationId, linkedType, linkedId)
+    this.db
+      .prepare(
+        'DELETE FROM conversation_links WHERE conversation_id = ? AND linked_type = ? AND linked_id = ?'
+      )
+      .run(conversationId, linkedType, linkedId)
   }
 
   getLinks(conversationId: string): ConversationLink[] {
-    const rows = this.db.prepare(
-      'SELECT * FROM conversation_links WHERE conversation_id = ?'
-    ).all(conversationId) as Array<{ conversation_id: string; linked_type: string; linked_id: string }>
-    return rows.map(r => ({
+    const rows = this.db
+      .prepare('SELECT * FROM conversation_links WHERE conversation_id = ?')
+      .all(conversationId) as Array<{
+      conversation_id: string
+      linked_type: string
+      linked_id: string
+    }>
+    return rows.map((r) => ({
       conversationId: r.conversation_id,
       linkedType: r.linked_type as ConversationLinkType,
       linkedId: r.linked_id
@@ -259,12 +320,14 @@ export class ConversationRepository {
   }
 
   findByLink(linkedType: ConversationLinkType, linkedId: string): Conversation[] {
-    const rows = this.db.prepare(
-      `SELECT c.* FROM conversations c
+    const rows = this.db
+      .prepare(
+        `SELECT c.* FROM conversations c
        JOIN conversation_links l ON l.conversation_id = c.id
        WHERE l.linked_type = ? AND l.linked_id = ?
        ORDER BY c.created_at DESC`
-    ).all(linkedType, linkedId) as Array<Record<string, unknown>>
+      )
+      .all(linkedType, linkedId) as Array<Record<string, unknown>>
     return rows.map(rowToConversation)
   }
 }

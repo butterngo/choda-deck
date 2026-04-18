@@ -1,4 +1,9 @@
-import type { Feature, CreateFeatureInput, UpdateFeatureInput, DerivedProgress } from '../task-types'
+import type {
+  Feature,
+  CreateFeatureInput,
+  UpdateFeatureInput,
+  DerivedProgress
+} from '../task-types'
 
 export interface FeatureOperations {
   createFeature(input: CreateFeatureInput): Feature

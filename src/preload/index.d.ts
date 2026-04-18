@@ -101,7 +101,16 @@ export interface ChodaApi {
     list: (filter?: { projectId?: string | null; status?: string }) => Promise<unknown[]>
     get: (id: string) => Promise<unknown>
     add: (input: { projectId?: string | null; content: string }) => Promise<unknown>
-    archive: (id: string) => Promise<unknown>
+    update: (
+      id: string,
+      content: string
+    ) => Promise<{ ok: boolean; error?: string; item?: unknown }>
+    research: (
+      id: string,
+      researcher?: string
+    ) => Promise<{ ok: boolean; error?: string; conversationId?: string; status?: string }>
+    ready: (id: string) => Promise<{ ok: boolean; error?: string; item?: unknown }>
+    archive: (id: string, reason?: string) => Promise<unknown>
     convert: (
       id: string,
       taskInput: {
@@ -112,6 +121,15 @@ export interface ChodaApi {
       }
     ) => Promise<{ ok: boolean; taskId?: string; error?: string }>
     delete: (id: string) => Promise<{ ok: boolean; error?: string }>
+  }
+  backup: {
+    list: () => Promise<Array<{ filename: string; date: string; size: number; mtimeMs: number }>>
+    createNow: () => Promise<{
+      ok: boolean
+      backup?: { filename: string; date: string; size: number; mtimeMs: number }
+      error?: string
+    }>
+    restore: (filename: string) => Promise<{ ok: boolean; error?: string }>
   }
   vault: {
     tree: (
