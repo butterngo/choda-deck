@@ -5,6 +5,7 @@ export function initSchema(db: Database.Database): void {
   runLegacyMigrations(db)
   createM1Tables(db)
   createIndexes(db)
+  cleanupPoisonedTaskIds(db)
 }
 
 function createCoreTables(db: Database.Database): void {
@@ -166,6 +167,11 @@ function runLegacyMigrations(db: Database.Database): void {
   migrateConversationMessages(db)
 }
 
+// Any parsed ID above this is assumed to be a legacy timestamp-style ID
+// (Date.now() ~ 1.7e12) rather than a real counter value. Seeding from such
+// IDs poisons the counter permanently — every new ID becomes timestamp+1.
+const COUNTER_SANE_MAX = 100_000
+
 function seedGlobalCounter(
   db: Database.Database,
   entityType: string,
@@ -177,10 +183,21 @@ function seedGlobalCounter(
     const rows = db.prepare(selectIdSql).all() as Array<{ id: string }>
     for (const r of rows) {
       const n = parseInt(r.id.slice(prefixLen), 10)
-      if (!isNaN(n) && n > max) max = n
+      if (!isNaN(n) && n > max && n <= COUNTER_SANE_MAX) max = n
     }
   } catch {
     /* table may not exist yet on first bootstrap */
+  }
+  const existing = db
+    .prepare('SELECT last_number FROM global_counters WHERE entity_type = ?')
+    .get(entityType) as { last_number: number } | undefined
+  if (existing && existing.last_number > COUNTER_SANE_MAX) {
+    // Counter was poisoned by a legacy timestamp-style ID — force reset down.
+    db.prepare('UPDATE global_counters SET last_number = ? WHERE entity_type = ?').run(
+      max,
+      entityType
+    )
+    return
   }
   db.prepare(
     `INSERT INTO global_counters (entity_type, last_number) VALUES (?, ?)
@@ -327,4 +344,51 @@ function createIndexes(db: Database.Database): void {
   )
   db.exec('CREATE INDEX IF NOT EXISTS idx_inbox_project ON inbox_items(project_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_inbox_status ON inbox_items(project_id, status)')
+}
+
+// Rename any existing task rows whose ID exceeds COUNTER_SANE_MAX (legacy
+// timestamp-style IDs) to fresh sequential IDs. Updates all known FK columns
+// that reference task IDs. Idempotent — no-op once no poisoned IDs remain.
+function cleanupPoisonedTaskIds(db: Database.Database): void {
+  const rows = db.prepare("SELECT id FROM tasks WHERE id GLOB 'TASK-[0-9]*'").all() as Array<{
+    id: string
+  }>
+  const poisoned = rows
+    .map((r) => r.id)
+    .filter((id) => {
+      const n = parseInt(id.slice(5), 10)
+      return !isNaN(n) && n > COUNTER_SANE_MAX
+    })
+  if (poisoned.length === 0) return
+
+  const renameTx = db.transaction((oldIds: string[]) => {
+    for (const oldId of oldIds) {
+      const row = db
+        .prepare(
+          `INSERT INTO global_counters (entity_type, last_number) VALUES ('task', 1)
+           ON CONFLICT(entity_type) DO UPDATE SET last_number = last_number + 1
+           RETURNING last_number`
+        )
+        .get() as { last_number: number }
+      const newId = `TASK-${String(row.last_number).padStart(3, '0')}`
+      db.prepare('UPDATE tasks SET id = ? WHERE id = ?').run(newId, oldId)
+      db.prepare('UPDATE tasks SET parent_task_id = ? WHERE parent_task_id = ?').run(newId, oldId)
+      db.prepare('UPDATE sessions SET task_id = ? WHERE task_id = ?').run(newId, oldId)
+      db.prepare(
+        "UPDATE conversation_links SET linked_id = ? WHERE linked_type = 'task' AND linked_id = ?"
+      ).run(newId, oldId)
+      db.prepare('UPDATE conversation_actions SET linked_task_id = ? WHERE linked_task_id = ?').run(
+        newId,
+        oldId
+      )
+      db.prepare('UPDATE inbox_items SET linked_task_id = ? WHERE linked_task_id = ?').run(
+        newId,
+        oldId
+      )
+      db.prepare('UPDATE tags SET item_id = ? WHERE item_id = ?').run(newId, oldId)
+      db.prepare('UPDATE relationships SET from_id = ? WHERE from_id = ?').run(newId, oldId)
+      db.prepare('UPDATE relationships SET to_id = ? WHERE to_id = ?').run(newId, oldId)
+    }
+  })
+  renameTx(poisoned)
 }
