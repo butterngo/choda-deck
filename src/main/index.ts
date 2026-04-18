@@ -14,6 +14,7 @@ import {
   shouldRunDailyBackup,
   type BackupInfo
 } from './backup-service'
+import { ensureMcpRegistered, getMcpRegisterStatus, unregisterMcp } from './mcp-register'
 
 const is = {
   get dev(): boolean {
@@ -678,7 +679,19 @@ app.whenReady().then(async () => {
     return { ok: true }
   })
 
+  // MCP auto-register IPC
+  ipcMain.handle('mcp:register-status', () => getMcpRegisterStatus())
+  ipcMain.handle('mcp:unregister', () => unregisterMcp())
+
   createWindow()
+
+  // Auto-register choda-tasks MCP in ~/.claude.json if path changed / absent.
+  // Silent no-op if user has no .claude.json.
+  try {
+    ensureMcpRegistered()
+  } catch (err) {
+    console.error('[mcp-register] Unexpected error:', err)
+  }
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

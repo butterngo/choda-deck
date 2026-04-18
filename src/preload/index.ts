@@ -163,6 +163,12 @@ const api = {
     restore: (filename: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('backups:restore', filename)
   },
+  mcp: {
+    status: (): Promise<{ registered: boolean; path?: string }> =>
+      ipcRenderer.invoke('mcp:register-status'),
+    unregister: (): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('mcp:unregister')
+  },
   vault: {
     tree: (
       rootPath: string

@@ -1345,6 +1345,78 @@ body,
   color: #888;
 }
 
+/* MCP panel */
+.deck-mcp {
+  margin-top: 20px;
+}
+
+.deck-mcp-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.deck-mcp-title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: #d4d4d4;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.deck-mcp-empty {
+  padding: 12px;
+  text-align: center;
+  color: #888;
+  font-size: 12px;
+  border: 1px dashed #333;
+  border-radius: 4px;
+}
+
+.deck-mcp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #1e1e1e;
+  border: 1px solid #2d2d2d;
+  border-radius: 4px;
+}
+
+.deck-mcp-row-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.deck-mcp-row-label {
+  font-size: 12px;
+  color: #d4d4d4;
+}
+
+.deck-mcp-row-path {
+  font-size: 11px;
+  color: #888;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deck-mcp-status {
+  padding: 6px 10px;
+  margin-top: 8px;
+  background: #1e1e1e;
+  border: 1px solid #2d2d2d;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #aaa;
+}
+
 /* ── Project/Workspace form ──────────────────────────────────────────── */
 
 .deck-form-overlay {

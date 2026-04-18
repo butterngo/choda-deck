@@ -33,6 +33,46 @@ npm run dev
 
 Requires Node 20+ and a working `claude` CLI on PATH (Windows: `claude.cmd` via npm global).
 
+## Building the Windows installer
+
+Windows is the only officially supported platform right now. Mac/Linux targets remain in `electron-builder.yml` but are untested — PRs welcome.
+
+```bash
+npm install
+npm run build:win
+```
+
+Outputs land in `dist/`:
+
+- `choda-deck-<version>-setup.exe` — NSIS installer (per-machine, asks for install directory)
+- `choda-deck-<version>-portable.exe` — single-file portable build
+
+The installer is **unsigned** — Windows SmartScreen will show "Windows protected your PC" on first run. Click **More info → Run anyway**. Code signing is a future task.
+
+If you tweak `build/icon.svg`, regenerate the icon set:
+
+```bash
+npm run icons
+```
+
+This rewrites `build/icon.png`, `build/icon.ico`, and `resources/icon.png` via `scripts/build-icons.mjs` (uses `sharp` + `png-to-ico`).
+
+### Where user data lives
+
+After install, Choda Deck stores everything in `%APPDATA%\Choda Deck\`:
+
+- `choda-deck.db` — SQLite source of truth (tasks, conversations, sessions)
+- `projects.json` — project/workspace registry
+- `backups/` — automatic daily SQLite backups
+
+Uninstalling via Add/Remove Programs removes the app binaries but **leaves user data intact**. Delete `%APPDATA%\Choda Deck\` manually for a clean wipe.
+
+### First-launch MCP auto-register
+
+On first launch, Choda Deck checks `~/.claude.json` and registers its bundled MCP server as `choda-tasks` (or updates the path on reinstall). If `~/.claude.json` is absent the app silently skips — it never creates the file.
+
+Unregister from **Settings → Claude Code MCP → Unregister** (the NSIS uninstaller cannot edit JSON, so this button is the clean exit path).
+
 ## Spike smoke test
 
 A plain-Node PTY validation that doesn't involve Electron at all — useful when diagnosing native module or PTY issues:

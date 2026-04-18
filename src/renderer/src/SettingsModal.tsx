@@ -1,4 +1,5 @@
 import BackupsPanel from './BackupsPanel'
+import McpPanel from './McpPanel'
 
 interface SettingsModalProps {
   onClose: () => void
@@ -16,6 +17,7 @@ function SettingsModal({ onClose }: SettingsModalProps): React.JSX.Element {
         </div>
         <div className="deck-settings-body">
           <BackupsPanel />
+          <McpPanel />
         </div>
       </div>
     </div>

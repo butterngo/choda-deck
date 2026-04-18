@@ -116,6 +116,10 @@ export interface ChodaApi {
     }>
     restore: (filename: string) => Promise<{ ok: boolean; error?: string }>
   }
+  mcp: {
+    status: () => Promise<{ registered: boolean; path?: string }>
+    unregister: () => Promise<{ ok: boolean; error?: string }>
+  }
   vault: {
     tree: (
       rootPath: string
