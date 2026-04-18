@@ -42,6 +42,16 @@ function Sidebar({
   const [showSettings, setShowSettings] = useState(false)
   const [form, setForm] = useState<FormState>({ open: false })
   const [collapsed, setCollapsed] = useState(false)
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
+
+  function toggleProject(projectId: string): void {
+    setExpandedProjects((prev) => {
+      const next = new Set(prev)
+      if (next.has(projectId)) next.delete(projectId)
+      else next.add(projectId)
+      return next
+    })
+  }
 
   function activeProjectId(): string | null {
     for (const p of projects) {
@@ -138,20 +148,41 @@ function Sidebar({
         />
       )}
 
-      {projects.map((project) => {
-        const isActive = project.id === activeProjectId()
-        const firstWs = project.workspaces[0]
-        return (
-          <div key={project.id} className="deck-sidebar-project">
-            <button
-              className={`deck-sidebar-project-name-btn${isActive ? ' deck-sidebar-item--active' : ''}`}
-              onClick={() => firstWs && onSelect(project.id, firstWs.id)}
-            >
-              {project.name}
-            </button>
-          </div>
-        )
-      })}
+      {(() => {
+        let wsIndex = 0
+        return projects.map((project) => {
+          const isProjectActive = project.id === activeProjectId()
+          const isCollapsed = !expandedProjects.has(project.id)
+          if (isCollapsed) wsIndex += project.workspaces.length
+          return (
+            <div key={project.id} className="deck-sidebar-project">
+              <button
+                className={`deck-sidebar-project-header${isProjectActive ? ' deck-sidebar-project-header--active' : ''}`}
+                onClick={() => toggleProject(project.id)}
+                title={isCollapsed ? 'Expand' : 'Collapse'}
+              >
+                <span className="deck-sidebar-chevron">{isCollapsed ? '▶' : '▼'}</span>
+                <span className="deck-sidebar-project-name">{project.name}</span>
+              </button>
+              {!isCollapsed &&
+                project.workspaces.map((ws) => {
+                  const idx = wsIndex++
+                  const isActive = ws.id === activeWorkspaceId
+                  return (
+                    <button
+                      key={ws.id}
+                      className={`deck-sidebar-item-btn${isActive ? ' deck-sidebar-item--active' : ''}`}
+                      onClick={() => onSelect(project.id, ws.id)}
+                    >
+                      {idx < 9 && <span className="deck-sidebar-key">{idx + 1}</span>}
+                      <span className="deck-sidebar-label">{ws.label}</span>
+                    </button>
+                  )
+                })}
+            </div>
+          )
+        })
+      })()}
     </aside>
   )
 }

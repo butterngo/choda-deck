@@ -239,9 +239,42 @@ body,
 
 .deck-sidebar-project-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 2px 8px 2px 4px;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 8px 4px 6px;
+  background: none;
+  border: none;
+  color: #9ea0a2;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  text-align: left;
+}
+.deck-sidebar-project-header:hover {
+  background: #2a2d2e;
+  color: #d4d4d4;
+}
+.deck-sidebar-project-header--active {
+  color: #fff;
+}
+.deck-sidebar-chevron {
+  display: inline-block;
+  width: 10px;
+  font-size: 9px;
+  color: #707070;
+  flex-shrink: 0;
+}
+.deck-sidebar-project-header:hover .deck-sidebar-chevron {
+  color: #d4d4d4;
+}
+.deck-sidebar-project-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .deck-sidebar-project-arrow-btn {
