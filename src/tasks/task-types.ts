@@ -236,7 +236,7 @@ export type ConversationMessageType =
   | 'decision'
   | 'action'
   | 'comment'
-export type ConversationLinkType = 'task' | 'adr' | 'commit' | 'inbox'
+export type ConversationLinkType = 'task' | 'adr' | 'commit' | 'inbox' | 'session'
 export type ConversationParticipantType = 'human' | 'agent' | 'role'
 export type ConversationActionStatus = 'pending' | 'done'
 

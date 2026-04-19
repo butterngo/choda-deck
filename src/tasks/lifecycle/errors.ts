@@ -49,3 +49,17 @@ export class ConversationConflictError extends LifecycleError {
     this.name = 'ConversationConflictError'
   }
 }
+
+export class SessionNotFoundError extends LifecycleError {
+  constructor(id: string) {
+    super('SESSION_NOT_FOUND', `Session ${id} not found`)
+    this.name = 'SessionNotFoundError'
+  }
+}
+
+export class SessionStatusError extends LifecycleError {
+  constructor(id: string, current: string, message: string) {
+    super('SESSION_INVALID_STATUS', `Session ${id} is ${current} — ${message}`)
+    this.name = 'SessionStatusError'
+  }
+}
