@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { textResponse, type Register } from './types'
 import { now } from '../repositories/shared'
+import { LifecycleError } from '../lifecycle/errors'
 
 const participantTypeSchema = z.enum(['human', 'agent', 'role'])
 const messageTypeSchema = z.enum([
@@ -42,6 +43,15 @@ const actionInputSchema = z.object({
     .optional()
 })
 
+function tryLifecycle<T>(fn: () => T): ReturnType<typeof textResponse> {
+  try {
+    return textResponse(fn())
+  } catch (e) {
+    if (e instanceof LifecycleError) return textResponse(e.message)
+    throw e
+  }
+}
+
 export const register: Register = (server, svc) => {
   server.registerTool(
     'conversation_open',
@@ -73,35 +83,16 @@ export const register: Register = (server, svc) => {
           .describe('Seed message that starts the discussion')
       }
     },
-    async (input) => {
-      const blocking = checkConversationGuards(svc, input.projectId)
-      if (blocking) return textResponse(blocking)
-
-      const conv = svc.createConversation({
-        projectId: input.projectId,
-        title: input.title,
-        createdBy: input.createdBy,
-        participants: input.participants
+    async (input) =>
+      tryLifecycle(() => {
+        const conv = svc.openConversation(input)
+        return {
+          conversationId: conv.id,
+          title: conv.title,
+          status: conv.status,
+          createdAt: conv.createdAt
+        }
       })
-
-      svc.addConversationMessage({
-        conversationId: conv.id,
-        authorName: input.createdBy,
-        content: input.initialMessage.content,
-        messageType: input.initialMessage.type
-      })
-
-      for (const taskId of input.linkedTasks ?? []) {
-        svc.linkConversation(conv.id, 'task', taskId)
-      }
-
-      return textResponse({
-        conversationId: conv.id,
-        title: conv.title,
-        status: conv.status,
-        createdAt: conv.createdAt
-      })
-    }
   )
 
   server.registerTool(
@@ -145,54 +136,31 @@ export const register: Register = (server, svc) => {
         actions: z.array(actionInputSchema).optional()
       }
     },
-    async ({ conversationId, author, decision, actions }) => {
-      const conv = svc.getConversation(conversationId)
-      if (!conv) return textResponse(`Conversation ${conversationId} not found`)
-
-      svc.addConversationMessage({
-        conversationId,
-        authorName: author,
-        content: decision,
-        messageType: 'decision'
+    async ({ conversationId, author, decision, actions }) =>
+      tryLifecycle(() => {
+        const r = svc.decideConversation(conversationId, { author, decision, actions })
+        return {
+          conversationId,
+          status: r.conversation.status,
+          decisionSummary: r.conversation.decisionSummary,
+          decidedAt: r.conversation.decidedAt,
+          actions: r.actions
+        }
       })
-
-      const decidedAt = now()
-      svc.updateConversation(conversationId, {
-        status: 'decided',
-        decisionSummary: decision,
-        decidedAt
-      })
-
-      const createdActions = (actions ?? []).map((action) =>
-        createActionAndMaybeSpawnTask(svc, conv.projectId, conversationId, action)
-      )
-
-      return textResponse({
-        conversationId,
-        status: 'decided',
-        decisionSummary: decision,
-        decidedAt,
-        actions: createdActions
-      })
-    }
   )
 
   server.registerTool(
     'conversation_close',
     {
       description:
-        'Close a decided conversation (status → implemented). Must close all decided conversations before opening a new one.',
+        'Close a decided conversation (status → closed). Must close all decided conversations before opening a new one.',
       inputSchema: { conversationId: z.string() }
     },
-    async ({ conversationId }) => {
-      const conv = svc.getConversation(conversationId)
-      if (!conv) return textResponse(`Conversation ${conversationId} not found`)
-      if (conv.status !== 'decided') {
-        return textResponse(`Cannot close: status is ${conv.status}, must be decided first`)
-      }
-      svc.updateConversation(conversationId, { status: 'closed', closedAt: now() })
-      return textResponse({ conversationId, status: 'closed' })
-    }
+    async ({ conversationId }) =>
+      tryLifecycle(() => {
+        const conv = svc.closeConversation(conversationId)
+        return { conversationId, status: conv.status }
+      })
   )
 
   server.registerTool(
@@ -202,22 +170,11 @@ export const register: Register = (server, svc) => {
         'Reopen a decided conversation back to discussing. Only works if no other conversation is currently open/discussing for this project.',
       inputSchema: { conversationId: z.string() }
     },
-    async ({ conversationId }) => {
-      const conv = svc.getConversation(conversationId)
-      if (!conv) return textResponse(`Conversation ${conversationId} not found`)
-      if (conv.status !== 'decided') {
-        return textResponse(`Cannot reopen: status is ${conv.status}, must be decided`)
-      }
-      const active = [
-        ...svc.findConversations(conv.projectId, 'open'),
-        ...svc.findConversations(conv.projectId, 'discussing')
-      ]
-      if (active.length > 0) {
-        return textResponse(`Cannot reopen: ${active[0].id} is already ${active[0].status}`)
-      }
-      svc.updateConversation(conversationId, { status: 'discussing' })
-      return textResponse({ conversationId, status: 'discussing' })
-    }
+    async ({ conversationId }) =>
+      tryLifecycle(() => {
+        const conv = svc.reopenConversation(conversationId)
+        return { conversationId, status: conv.status }
+      })
   )
 
   server.registerTool(
@@ -302,54 +259,4 @@ export const register: Register = (server, svc) => {
       })
     }
   )
-}
-
-function checkConversationGuards(svc: Parameters<Register>[1], projectId: string): string | null {
-  const discussing = [
-    ...svc.findConversations(projectId, 'open'),
-    ...svc.findConversations(projectId, 'discussing')
-  ]
-  if (discussing.length > 0) {
-    return `Cannot open: ${discussing[0].id} "${discussing[0].title}" is ${discussing[0].status}. Finish it first.`
-  }
-  const decided = svc.findConversations(projectId, 'decided')
-  if (decided.length > 0) {
-    const ids = decided.map((c) => c.id).join(', ')
-    return `Cannot open: ${decided.length} decided conversation(s) not closed yet (${ids}). Use conversation_close first.`
-  }
-  return null
-}
-
-type ActionInput = z.infer<typeof actionInputSchema>
-
-function createActionAndMaybeSpawnTask(
-  svc: Parameters<Register>[1],
-  projectId: string,
-  conversationId: string,
-  action: ActionInput
-): { id: string; assignee: string; description: string; linkedTaskId: string | null } {
-  let linkedTaskId: string | undefined
-  if (action.spawnTask) {
-    const task = svc.createTask({
-      projectId,
-      title: action.spawnTask.title,
-      priority: action.spawnTask.priority,
-      labels: [`assignee:${action.assignee}`]
-    })
-    linkedTaskId = task.id
-    svc.linkConversation(conversationId, 'task', task.id)
-  }
-
-  const created = svc.addConversationAction({
-    conversationId,
-    assignee: action.assignee,
-    description: action.description,
-    linkedTaskId
-  })
-  return {
-    id: created.id,
-    assignee: created.assignee,
-    description: created.description,
-    linkedTaskId: created.linkedTaskId
-  }
 }
