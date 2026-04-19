@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { textResponse, type Register } from './types'
 import { buildProjectContext } from './project-context-builder'
 import { loadSessionRules } from '../rules/session-rules-loader'
-import { now } from '../repositories/shared'
+import { LifecycleError } from '../lifecycle/errors'
 import type { SqliteTaskService } from '../sqlite-task-service'
 import type { SessionHandoff, Task, TaskStatus } from '../task-types'
 
@@ -18,6 +18,15 @@ const handoffInputSchema = {
   notes: z.string().optional()
 }
 
+function tryLifecycle<T>(fn: () => T): ReturnType<typeof textResponse> {
+  try {
+    return textResponse(fn())
+  } catch (e) {
+    if (e instanceof LifecycleError) return textResponse(e.message)
+    throw e
+  }
+}
+
 export const register: Register = (server, svc) => {
   server.registerTool(
     'session_start',
@@ -29,35 +38,36 @@ export const register: Register = (server, svc) => {
         workspaceId: z.string().optional().describe('Workspace ID (e.g. workflow-engine)')
       }
     },
-    async ({ projectId, workspaceId }) => {
-      const project = svc.getProject(projectId)
-      if (!project) return textResponse(`Project ${projectId} not found`)
+    async ({ projectId, workspaceId }) =>
+      tryLifecycle(() => {
+        const project = svc.getProject(projectId)
+        if (!project) throw new Error(`Project ${projectId} not found`)
 
-      const session = svc.createSession({
-        projectId,
-        workspaceId,
-        startedAt: now(),
-        status: 'active'
-      })
-      const lastHandoff = loadLastHandoff(svc, projectId, workspaceId)
-      const bundle = buildProjectContext(svc, projectId, 'summary')
-      const rules = loadSessionRules()
+        const { session, conversationId, contextSources } = svc.startSession({
+          projectId,
+          workspaceId
+        })
+        const lastHandoff = loadLastHandoff(svc, projectId, workspaceId)
+        const bundle = buildProjectContext(svc, projectId, 'summary')
+        const rules = loadSessionRules()
 
-      return textResponse({
-        sessionId: session.id,
-        workspaceId: session.workspaceId,
-        mode: 'planning',
-        lastHandoff,
-        projectSummary: buildProjectSummary(bundle),
-        activeTasks: bundle?.currentState.activeTasks ?? [],
-        openConversations: bundle?.currentState.openConversations ?? [],
-        suggestion: buildSuggestion(lastHandoff, bundle?.currentState.activeTasks ?? []),
-        rules: {
-          onSessionStart: rules.sessionStart,
-          onSessionEnd: rules.sessionEnd
+        return {
+          sessionId: session.id,
+          workspaceId: session.workspaceId,
+          conversationId,
+          contextSources,
+          mode: 'planning',
+          lastHandoff,
+          projectSummary: buildProjectSummary(bundle),
+          activeTasks: bundle?.currentState.activeTasks ?? [],
+          openConversations: bundle?.currentState.openConversations ?? [],
+          suggestion: buildSuggestion(lastHandoff, bundle?.currentState.activeTasks ?? []),
+          rules: {
+            onSessionStart: rules.sessionStart,
+            onSessionEnd: rules.sessionEnd
+          }
         }
       })
-    }
   )
 
   server.registerTool(
@@ -102,41 +112,27 @@ export const register: Register = (server, svc) => {
       description: 'End a work session. If session has a task, marks it DONE. Persists handoff.',
       inputSchema: handoffInputSchema
     },
-    async (input) => {
-      const session = svc.getSession(input.sessionId)
-      if (!session) return textResponse(`Session ${input.sessionId} not found`)
-
-      let taskUpdated: { id: string; title: string; newStatus: TaskStatus } | null = null
-      if (session.taskId) {
-        const task = svc.getTask(session.taskId)
-        if (task) {
-          svc.updateTask(session.taskId, { status: 'DONE' })
-          taskUpdated = { id: task.id, title: task.title, newStatus: 'DONE' }
+    async (input) =>
+      tryLifecycle(() => {
+        const handoff: SessionHandoff = {
+          commits: input.commits,
+          decisions: input.decisions,
+          resumePoint: input.resumePoint,
+          looseEnds: input.looseEnds,
+          tasksUpdated: []
         }
-      }
+        const result = svc.endSession(input.sessionId, { handoff })
+        if (result.taskUpdated) handoff.tasksUpdated = [result.taskUpdated.id]
 
-      const handoff: SessionHandoff = {
-        commits: input.commits,
-        decisions: input.decisions,
-        resumePoint: input.resumePoint,
-        looseEnds: input.looseEnds,
-        tasksUpdated: taskUpdated ? [taskUpdated.id] : []
-      }
-
-      const updated = svc.updateSession(input.sessionId, {
-        status: 'completed',
-        endedAt: now(),
-        handoff
+        return {
+          sessionId: result.session.id,
+          status: result.session.status,
+          endedAt: result.session.endedAt,
+          taskUpdated: result.taskUpdated,
+          closedConversationIds: result.closedConversationIds,
+          notes: input.notes
+        }
       })
-
-      return textResponse({
-        sessionId: updated.id,
-        status: updated.status,
-        endedAt: updated.endedAt,
-        taskUpdated,
-        notes: input.notes
-      })
-    }
   )
 }
 

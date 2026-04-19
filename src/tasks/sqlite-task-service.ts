@@ -16,8 +16,16 @@ import type {
   DecideConversationInput,
   DecideConversationResult
 } from './interfaces/conversation-lifecycle.interface'
+import type {
+  SessionLifecycleOperations,
+  StartSessionInput,
+  StartSessionResult,
+  EndSessionInput,
+  EndSessionResult
+} from './interfaces/session-lifecycle.interface'
 import { InboxLifecycleService } from './lifecycle/inbox-lifecycle-service'
 import { ConversationLifecycleService } from './lifecycle/conversation-lifecycle-service'
+import { SessionLifecycleService } from './lifecycle/session-lifecycle-service'
 import type {
   Task,
   CreateTaskInput,
@@ -81,7 +89,8 @@ export class SqliteTaskService
     ConversationOperations,
     InboxOperations,
     InboxLifecycleOperations,
-    ConversationLifecycleOperations
+    ConversationLifecycleOperations,
+    SessionLifecycleOperations
 {
   private readonly db: Database.Database
   private readonly projects: ProjectRepository
@@ -97,6 +106,7 @@ export class SqliteTaskService
   private readonly counters: CounterRepository
   private readonly inboxLifecycle: InboxLifecycleService
   private readonly conversationLifecycle: ConversationLifecycleService
+  private readonly sessionLifecycle: SessionLifecycleService
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath)
@@ -123,6 +133,13 @@ export class SqliteTaskService
     )
     this.conversationLifecycle = new ConversationLifecycleService(
       this.db,
+      this.conversations,
+      this.tasks
+    )
+    this.sessionLifecycle = new SessionLifecycleService(
+      this.db,
+      this.sessions,
+      this.contextSources,
       this.conversations,
       this.tasks
     )
@@ -412,5 +429,13 @@ export class SqliteTaskService
   }
   reopenConversation(id: string): Conversation {
     return this.conversationLifecycle.reopenConversation(id)
+  }
+
+  // ── Session lifecycle (composite, transactional) ──────────────────────────
+  startSession(input: StartSessionInput): StartSessionResult {
+    return this.sessionLifecycle.startSession(input)
+  }
+  endSession(id: string, input: EndSessionInput): EndSessionResult {
+    return this.sessionLifecycle.endSession(id, input)
   }
 }
