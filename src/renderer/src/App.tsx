@@ -1,105 +1,168 @@
-import { useEffect, useRef, useState } from 'react'
-import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
+import { useEffect, useMemo, useState } from 'react'
 import '@xterm/xterm/css/xterm.css'
 import './assets/deck.css'
+import Sidebar from './Sidebar'
+import ViewRouter from './ViewRouter'
+import TerminalView from './TerminalView'
+import KanbanBoard from './KanbanBoard'
+import FilesView from './FilesView'
+import ActivityView from './ActivityView'
+import InboxView from './InboxView'
+import type { ProjectConfig, WorkspaceConfig } from '../../preload/index'
+import type { ViewType } from './ViewRouter'
+
+// Active selection: which workspace is selected + its parent project
+interface ActiveSelection {
+  projectId: string
+  workspaceId: string
+}
 
 function App(): React.JSX.Element {
-  const terminalContainerRef = useRef<HTMLDivElement | null>(null)
-  const terminalRef = useRef<Terminal | null>(null)
-  const fitAddonRef = useRef<FitAddon | null>(null)
-  const [status, setStatus] = useState<string>('initializing...')
-  const [projectLabel, setProjectLabel] = useState<string>('')
-
+  const [projects, setProjects] = useState<ProjectConfig[]>([])
+  const [active, setActive] = useState<ActiveSelection | null>(null)
+  const [vaultRoot, setVaultRoot] = useState<string>('')
+  // Load projects + vault contentRoot on mount
   useEffect(() => {
     let disposed = false
-    let cleanupData: (() => void) | null = null
-    let cleanupExit: (() => void) | null = null
-    let resizeObserver: ResizeObserver | null = null
-
-    async function boot(): Promise<void> {
-      if (!terminalContainerRef.current) return
-
-      const project = await window.api.spike.getProject()
+    window.api.project.list().then((list) => {
       if (disposed) return
-      setProjectLabel(`${project.id} — ${project.cwd}`)
-
-      const term = new Terminal({
-        cursorBlink: true,
-        fontFamily: 'Cascadia Code, Consolas, "Courier New", monospace',
-        fontSize: 14,
-        theme: {
-          background: '#1e1e1e',
-          foreground: '#d4d4d4'
-        }
-      })
-      const fitAddon = new FitAddon()
-      term.loadAddon(fitAddon)
-      term.open(terminalContainerRef.current)
-      fitAddon.fit()
-
-      terminalRef.current = term
-      fitAddonRef.current = fitAddon
-
-      const { cols, rows } = term
-      const spawnResult = await window.api.pty.spawn(project.id, project.cwd, cols, rows)
-      if (disposed) return
-
-      if (!spawnResult.ok) {
-        setStatus('failed to spawn pty')
-        return
+      setProjects(list)
+      if (list.length > 0 && list[0].workspaces.length > 0) {
+        setActive({ projectId: list[0].id, workspaceId: list[0].workspaces[0].id })
       }
-
-      setStatus('running')
-
-      cleanupData = window.api.pty.onData(project.id, (data) => {
-        term.write(data)
-      })
-
-      cleanupExit = window.api.pty.onExit(project.id, (exitCode) => {
-        setStatus(`exited (code ${exitCode})`)
-        term.write(`\r\n\x1b[33m[process exited with code ${exitCode}]\x1b[0m\r\n`)
-      })
-
-      term.onData((data) => {
-        window.api.pty.input(project.id, data)
-      })
-
-      resizeObserver = new ResizeObserver(() => {
-        if (fitAddonRef.current && terminalRef.current) {
-          fitAddonRef.current.fit()
-          const { cols: c, rows: r } = terminalRef.current
-          window.api.pty.resize(project.id, c, r)
-        }
-      })
-      resizeObserver.observe(terminalContainerRef.current)
-    }
-
-    boot().catch((err) => {
-      console.error('boot failed', err)
-      setStatus(`error: ${String(err)}`)
     })
-
+    window.api.vault.contentRoot().then((root) => {
+      if (!disposed) setVaultRoot(root)
+    })
     return () => {
       disposed = true
-      if (cleanupData) cleanupData()
-      if (cleanupExit) cleanupExit()
-      if (resizeObserver) resizeObserver.disconnect()
-      if (terminalRef.current) {
-        terminalRef.current.dispose()
-        terminalRef.current = null
-      }
     }
   }, [])
 
+  const viewTypes: ViewType[] = useMemo(
+    () => [
+      {
+        id: 'terminal',
+        label: 'Terminal',
+        render: (_project, workspace, visible) => (
+          <TerminalView
+            workspaceId={`${workspace.id}-vault`}
+            cwd={vaultRoot || workspace.cwd}
+            visible={visible}
+          />
+        )
+      },
+      {
+        id: 'inbox',
+        label: 'Inbox',
+        render: (project, _workspace, visible) => (
+          <InboxView projectId={project.id} visible={visible} />
+        )
+      },
+      {
+        id: 'tasks',
+        label: 'Board',
+        render: (project, _workspace, visible) => (
+          <KanbanBoard projectId={project.id} visible={visible} />
+        )
+      },
+      {
+        id: 'activity',
+        label: 'Activity',
+        render: (project, _workspace, visible) => (
+          <ActivityView projectId={project.id} visible={visible} />
+        )
+      },
+      {
+        id: 'files',
+        label: 'Wiki',
+        render: (_project, _workspace, visible) => <FilesView visible={visible} />
+      }
+    ],
+    [vaultRoot]
+  )
+
+  // Flatten workspaces for keyboard shortcuts
+  const allWorkspaces: Array<{ project: ProjectConfig; workspace: WorkspaceConfig }> = []
+  for (const p of projects) {
+    for (const ws of p.workspaces) {
+      allWorkspaces.push({ project: p, workspace: ws })
+    }
+  }
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    if (allWorkspaces.length === 0) return
+
+    function handleKeyDown(e: KeyboardEvent): void {
+      if (e.ctrlKey && !e.altKey && e.key >= '1' && e.key <= '9') {
+        const idx = parseInt(e.key) - 1
+        if (idx < allWorkspaces.length) {
+          e.preventDefault()
+          const { project, workspace } = allWorkspaces[idx]
+          setActive({ projectId: project.id, workspaceId: workspace.id })
+        }
+        return
+      }
+
+      if (e.ctrlKey && e.key === 'Tab') {
+        e.preventDefault()
+        setActive((curr) => {
+          if (!curr) return curr
+          const idx = allWorkspaces.findIndex((w) => w.workspace.id === curr.workspaceId)
+          const next = e.shiftKey
+            ? (idx - 1 + allWorkspaces.length) % allWorkspaces.length
+            : (idx + 1) % allWorkspaces.length
+          return {
+            projectId: allWorkspaces[next].project.id,
+            workspaceId: allWorkspaces[next].workspace.id
+          }
+        })
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [allWorkspaces.length])
+
+  function handleSelect(projectId: string, workspaceId: string): void {
+    setActive({ projectId, workspaceId })
+  }
+
+  const activeProject = active ? projects.find((p) => p.id === active.projectId) : null
+  const activeWorkspace = activeProject?.workspaces.find((w) => w.id === active?.workspaceId)
+
   return (
     <div className="deck-root">
-      <header className="deck-header">
-        <div className="deck-title">Choda Deck — spike</div>
-        <div className="deck-project">{projectLabel}</div>
-        <div className="deck-status">{status}</div>
-      </header>
-      <div className="deck-terminal" ref={terminalContainerRef} />
+      <div className="deck-layout">
+        <Sidebar
+          projects={projects}
+          activeWorkspaceId={active?.workspaceId || ''}
+          onSelect={handleSelect}
+          onProjectsChanged={() => {
+            window.api.project.list().then(setProjects)
+          }}
+        />
+        <main className="deck-main">
+          <header className="deck-header">
+            <div className="deck-title">Choda Deck</div>
+            <div className="deck-project">
+              {activeProject && activeWorkspace
+                ? `${activeProject.name} / ${activeWorkspace.label} — ${activeWorkspace.cwd}`
+                : ''}
+            </div>
+          </header>
+          {allWorkspaces.map(({ project, workspace }) => (
+            <ViewRouter
+              key={workspace.id}
+              project={project}
+              workspace={workspace}
+              visible={workspace.id === active?.workspaceId}
+              viewTypes={viewTypes}
+            />
+          ))}
+        </main>
+      </div>
     </div>
   )
 }

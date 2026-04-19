@@ -2,7 +2,7 @@
 
 ## Purpose
 
-React 19 + TypeScript UI for Choda Deck. Hosts the xterm.js terminal(s), sidebar, and all visual state. Talks to the outside world **only** through `window.api` — no direct Node, no direct IPC, no fs. Currently a single-terminal spike; the MVP target is a polymorphic `<ViewRouter>` main pane with a project sidebar.
+React 19 + TypeScript UI for Choda Deck. Hosts the xterm.js terminal(s), sidebar, and all visual state. Talks to the outside world **only** through `window.api` — no direct Node, no direct IPC, no fs. Uses a polymorphic `<ViewRouter>` main pane (Terminal, Tasks, Focus tabs) plus a project/workspace sidebar.
 
 ## What belongs here
 
@@ -22,7 +22,7 @@ React 19 + TypeScript UI for Choda Deck. Hosts the xterm.js terminal(s), sidebar
 
 ## Key types / entry points
 
-- `App.tsx` — current single-terminal spike. Boots one xterm bound to `SPIKE_PROJECT`. Will be decomposed when MVP sidebar lands.
+- `App.tsx` — top-level orchestrator. Loads projects via `window.api.project.list()`, renders Sidebar + ViewRouter.
 - `window.api` — the entire IPC surface (see `src/preload/index.ts`). Always typed through `src/preload/index.d.ts`.
 - `main.tsx` — React root mount. Standard React 19 pattern.
 - `assets/deck.css` — visual theme. Uses `.deck-*` class prefix. Keep the prefix when adding styles.

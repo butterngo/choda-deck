@@ -1,5 +1,6 @@
-appId: com.electron.app
-productName: choda-deck
+appId: dev.choda.deck
+productName: Choda Deck
+copyright: Copyright © 2026 Vu Ngo
 directories:
   buildResources: build
 files:
@@ -9,15 +10,38 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!choda-deck.db*'
+  - '!devchoda-deckchoda-deck.db'
+  - '!backups/**'
+  - '!vault-graph.json'
+  - '!graphify-out/**'
+  - '!excalidraw.log'
+  - '!plugins.json'
+  - '!scripts/**'
+  - '!docs/**'
+  - '!.claude/**'
 asarUnpack:
   - resources/**
+extraResources:
+  - from: dist/mcp-server.cjs
+    to: mcp-server.cjs
 win:
   executableName: choda-deck
+  target:
+    - nsis
+    - portable
 nsis:
+  oneClick: false
+  perMachine: true
+  allowToChangeInstallationDirectory: true
   artifactName: ${name}-${version}-setup.${ext}
-  shortcutName: ${productName}
-  uninstallDisplayName: ${productName}
+  shortcutName: Choda Deck
+  uninstallDisplayName: Choda Deck
   createDesktopShortcut: always
+  installerLanguages:
+    - en_US
+portable:
+  artifactName: ${name}-${version}-portable.${ext}
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
@@ -33,11 +57,7 @@ linux:
     - AppImage
     - snap
     - deb
-  maintainer: electronjs.org
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
-publish:
-  provider: generic
-  url: https://example.com/auto-updates

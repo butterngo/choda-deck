@@ -64,9 +64,7 @@ setTimeout(() => {
 
   const passed =
     buffer.length > 0 &&
-    (buffer.toLowerCase().includes('claude') ||
-      buffer.includes('Welcome') ||
-      buffer.includes('>'))
+    (buffer.toLowerCase().includes('claude') || buffer.includes('Welcome') || buffer.includes('>'))
 
   console.log('\n========== SPIKE RESULT ==========')
   console.log(`bytes captured: ${buffer.length}`)

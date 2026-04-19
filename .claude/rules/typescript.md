@@ -1,7 +1,7 @@
 ---
 paths:
-  - "**/*.ts"
-  - "**/*.tsx"
+  - '**/*.ts'
+  - '**/*.tsx'
 ---
 
 # TypeScript conventions — Choda Deck
@@ -30,7 +30,7 @@ Run `npm run format` before committing if unsure. Do not fight prettier.
 
 ## Type declarations
 
-- **Public API types → `interface`**, not `type`. Example: `SpikeProject` in preload/index.ts:4
+- **Public API types → `interface`**, not `type`. Example: `ProjectConfig`, `WorkspaceConfig` in `src/preload/index.ts`
 - Inline object types OK for local/private use
 - **Return types are explicit on exported / public functions.** See preload/index.ts:
   ```ts
@@ -58,8 +58,56 @@ Run `npm run format` before committing if unsure. Do not fight prettier.
 
 - **camelCase** for variables, functions, methods, props
 - **PascalCase** for types, interfaces, React components
-- **UPPER_SNAKE_CASE** for constants that represent stable config (e.g. `SPIKE_PROJECT` in main/index.ts:14)
-- **No Hungarian notation**, no `I` prefix on interfaces (`SpikeProject`, not `ISpikeProject`)
+- **UPPER_SNAKE_CASE** for constants that represent stable config
+- **No Hungarian notation**, no `I` prefix on interfaces (`ProjectConfig`, not `IProjectConfig`)
+
+## SOLID principles (enforced)
+
+Apply SOLID when designing/refactoring modules. These are the practical checks for this codebase:
+
+### S — Single Responsibility
+
+One class / one module = one reason to change. `src/tasks/repositories/` is the canonical example: each repository owns exactly one table family (task, phase, feature, conversation, …) — the facade `SqliteTaskService` composes them.
+
+Red flags that signal an SRP violation:
+
+- A class touches more than one table (or more than one HTTP endpoint, or more than one IPC namespace) outside a thin facade.
+- A file mixes row mappers, SQL, business rules, and filesystem I/O.
+- A method name contains "and" or "or" — usually two responsibilities glued together.
+
+### O — Open/Closed (via composition, not inheritance)
+
+New functionality = new module, not editing existing ones. When adding an M1 domain (Session, Context, Conversation) we added new repositories, did **not** extend an existing class. Prefer composition (facade holding repos) over deep class hierarchies.
+
+### L — Liskov
+
+Rarely an issue here (no deep class trees). If you subclass, the subclass must be substitutable — don't narrow preconditions or widen postconditions.
+
+### I — Interface segregation
+
+Per-domain interfaces live in `src/tasks/interfaces/` — one per operation cluster (`TaskOperations`, `PhaseOperations`, `ConversationOperations`, `Lifecycle`, …). The composite `TaskService` interface extends them. Consumers depend on the narrow interface they need, not the fat one.
+
+When adding a new domain: add its own `*-repository.interface.ts` file, do **not** bolt methods onto `TaskService` directly.
+
+### D — Dependency inversion
+
+High-level code depends on abstractions. The facade references interfaces (`TaskService`, `SessionOperations`, …), not concrete repository classes from outside the `repositories/` folder. The concrete wiring happens **only** in the facade constructor.
+
+## File + method length limits
+
+These are guidelines, not hard CI gates — but treat exceeding them as a refactor signal, not a free pass.
+
+| Unit                | Soft limit | Hard limit | If exceeded                                              |
+| ------------------- | ---------- | ---------- | -------------------------------------------------------- |
+| File (`.ts`/`.tsx`) | 200 lines  | 300 lines  | Split by responsibility (see Repository pattern example) |
+| Class               | 150 lines  | 250 lines  | Extract helpers or split into composed classes           |
+| Function / method   | 30 lines   | 60 lines   | Extract private helpers; name each intent                |
+| Interface           | 10 methods | 20 methods | Segregate per I principle above                          |
+
+Exceptions (flag in code comment):
+
+- Schema DDL files (`repositories/schema.ts`) — many table definitions are ok in one place; splitting fragments the source of truth.
+- Pure type definitions (`task-types.ts`) — data shapes don't need per-file splitting.
 
 ## Lint
 
