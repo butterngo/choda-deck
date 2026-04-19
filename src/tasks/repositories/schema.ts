@@ -149,6 +149,40 @@ function runLegacyMigrations(db: Database.Database): void {
     /* exists */
   }
 
+  // TASK-538 (ADR-014): harness pipeline columns on sessions
+  try {
+    db.exec('ALTER TABLE sessions ADD COLUMN pipeline_stage TEXT')
+  } catch {
+    /* exists */
+  }
+  try {
+    db.exec('ALTER TABLE sessions ADD COLUMN pipeline_stage_status TEXT')
+  } catch {
+    /* exists */
+  }
+  try {
+    db.exec('ALTER TABLE sessions ADD COLUMN needs_evaluator INTEGER NOT NULL DEFAULT 0')
+  } catch {
+    /* exists */
+  }
+  try {
+    db.exec('ALTER TABLE sessions ADD COLUMN current_iteration INTEGER NOT NULL DEFAULT 0')
+  } catch {
+    /* exists */
+  }
+
+  // TASK-538 (ADR-014): conversation attribution for R3 reverse-direction guard
+  try {
+    db.exec('ALTER TABLE conversations ADD COLUMN owner_session_id TEXT')
+  } catch {
+    /* exists */
+  }
+  try {
+    db.exec('ALTER TABLE conversations ADD COLUMN owner_type TEXT')
+  } catch {
+    /* exists */
+  }
+
   // Global counter table — replaces per-project counters.
   // IDs (TASK-NNN, INBOX-NNN) must be globally unique because PKs are single column.
   // Per-project resetting would collide across projects.
@@ -175,7 +209,7 @@ function migrateSessionsStatus(db: Database.Database): void {
     .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='sessions'")
     .get() as { sql?: string } | undefined
   if (!row?.sql) return // no sessions table yet — createM1Tables will make one with CHECK
-  if (row.sql.includes("CHECK") && row.sql.includes("status IN")) return // already migrated
+  if (row.sql.includes('CHECK') && row.sql.includes('status IN')) return // already migrated
 
   db.exec("UPDATE sessions SET status = 'completed' WHERE status = 'abandoned'")
   db.exec(`
@@ -265,6 +299,10 @@ function createM1Tables(db: Database.Database): void {
       status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed')),
       handoff_json TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      pipeline_stage TEXT,
+      pipeline_stage_status TEXT,
+      needs_evaluator INTEGER NOT NULL DEFAULT 0,
+      current_iteration INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (project_id) REFERENCES projects(id)
     )
   `)
@@ -292,6 +330,8 @@ function createM1Tables(db: Database.Database): void {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       decided_at TEXT,
       closed_at TEXT,
+      owner_session_id TEXT,
+      owner_type TEXT,
       FOREIGN KEY (project_id) REFERENCES projects(id)
     )
   `)
@@ -349,6 +389,19 @@ function createM1Tables(db: Database.Database): void {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `)
+  // TASK-538 (ADR-014): per-stage human approval log for harness pipeline
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS pipeline_approvals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      stage TEXT NOT NULL,
+      iteration INTEGER NOT NULL,
+      decision TEXT NOT NULL,
+      feedback TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (session_id) REFERENCES sessions(id)
+    )
+  `)
 }
 
 function createIndexes(db: Database.Database): void {
@@ -377,6 +430,10 @@ function createIndexes(db: Database.Database): void {
   )
   db.exec('CREATE INDEX IF NOT EXISTS idx_inbox_project ON inbox_items(project_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_inbox_status ON inbox_items(project_id, status)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_approvals_session ON pipeline_approvals(session_id)')
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_conversations_owner_session ON conversations(owner_session_id)'
+  )
 }
 
 // Rename any existing task rows whose ID exceeds COUNTER_SANE_MAX (legacy
