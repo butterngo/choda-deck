@@ -5,29 +5,23 @@ export const register: Register = (server, svc) => {
   server.registerTool(
     'roadmap',
     {
-      description: 'Get full roadmap tree: phases → features → tasks with progress at each level',
+      description: 'Get full roadmap tree: phases → tasks with progress at each phase',
       inputSchema: { projectId: z.string().describe('Project ID') }
     },
     async ({ projectId }) => {
       const phases = svc.findPhases(projectId)
-      const features = svc.findFeatures(projectId)
       const tasks = svc.findTasks({ projectId })
 
-      const tree = phases.map(ph => ({
+      const tree = phases.map((ph) => ({
         ...ph,
         progress: svc.getPhaseProgress(ph.id),
-        features: features.filter(f => f.phaseId === ph.id).map(f => ({
-          ...f,
-          progress: svc.getFeatureProgress(f.id),
-          tasks: tasks.filter(t => t.featureId === f.id)
-        }))
+        tasks: tasks.filter((t) => t.phaseId === ph.id)
       }))
 
       return textResponse({
         phases: tree,
         unassigned: {
-          features: features.filter(f => !f.phaseId),
-          tasks: tasks.filter(t => !t.featureId)
+          tasks: tasks.filter((t) => !t.phaseId)
         }
       })
     }

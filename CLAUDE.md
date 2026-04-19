@@ -1,53 +1,68 @@
 @CLAUDE.local.md
 
-# Choda Deck
+# Choda Deck — AI Development Workflow Engine
 
-Comprehensive AI workspace (Electron + React + xterm.js + node-pty + sql.js). Multi-project terminal with built-in task management (Kanban, Roadmap, Focus views). Long-term: replaces Obsidian as unified surface for vault + AI collaboration (ADR-007).
+## Identity
 
-## Vault context
+Electron desktop app (React 19 + xterm.js + better-sqlite3). Windows-first, TypeScript, MIT OSS.
 
-Knowledge artifacts live in the vault. Always read them before making non-trivial changes.
+## Architecture
 
-- Project context: `vault/10-Projects/choda-deck/context.md`
-- Architecture (components, IPC contract, flows): `docs/architecture.md`
-- Decisions (in vault): `vault/10-Projects/choda-deck/docs/decisions/`
-- Decisions (in repo): `docs/decisions/`
-- Roadmap: `vault/10-Projects/choda-deck/roadmap.md`
+- SQLite (better-sqlite3) = source of truth for structure
+- .md files = content store
+- MCP stdio = AI interaction layer
 
-## Authoritative in-repo specs
+## Current Focus
 
-- `docs/requirements.md` — MVP scope, Q1/Q2 decisions, big-picture vision.
-- `docs/architecture.md` — component overview, IPC contract, data flows.
+ADR-008 accepted. Building Milestone 1: Core Primitives (Conversation + Context + Session).
 
-When docs/vault context disagrees with code: code describes current state, docs describe target state. Do not "fix" code to match doc prose unless the task is explicitly that refactor.
+Next task: TASK-501 — SQLite schema migration (sessions, context_sources, conversations tables)
 
-## Conventions
+## Context Sources
 
-- `.claude/rules/typescript.md` — TS style (single quotes, no semi, 100 cols, explicit return types on public functions)
-- `.claude/rules/react.md` — React 19 patterns actually used (function components, useRef for imperative handles, cleanup in useEffect)
-- `.claude/rules/electron-ipc.md` — IPC channel naming, invoke vs send, per-session event streams, preload surface rules
+- Vault context: read `vault/10-Projects/choda-deck/context.md`
+- Handoff: read `vault/10-Projects/choda-deck/handoff.md`
+- Roadmap: read `vault/10-Projects/choda-deck/roadmap.md`
+- Milestones: `vault/10-Projects/choda-deck/phases/milestone-{1,2,3}-*.md`
+- Tasks: `vault/10-Projects/choda-deck/tasks/` (TASK-501..507 = M1)
+- Architecture decisions: `vault/10-Projects/choda-deck/docs/decisions/` and `docs/decisions/`
+- In-repo architecture: `docs/architecture.md`
+
+Use `choda-tasks` MCP tools (`task_context`, `task_list`) for task details.
+
+## Key Files
+
+- `src/tasks/sqlite-task-service.ts` — SQLite schema + CRUD
+- `src/tasks/mcp-task-server.ts` — MCP server (10 tools)
+- `src/tasks/task-types.ts` — type definitions
+- `src/renderer/src/RoadmapView.tsx` — hierarchy UI
 
 ## Per-layer context
 
 - `src/main/CLAUDE.md` — Electron main process, PTY lifecycle, session map
-- `src/preload/CLAUDE.md` — contextBridge API surface, what can and cannot live here
+- `src/preload/CLAUDE.md` — contextBridge API surface
 - `src/renderer/CLAUDE.md` — React renderer, xterm mount, `window.api`-only rule
 
-## Data architecture
+## Conventions
 
-- **SQLite (sql.js)** = source of truth for structure (tasks, epics, relationships)
-- **.md files** = content store (descriptions, specs, ADRs — git-friendly)
-- Task data in `src/tasks/` — SQLite service, vault importer, type definitions
+- KISS — no unnecessary abstractions
+- Test with vitest
+- File naming: kebab-case
+- TS style: single quotes, no semi, 100 cols, explicit return types on public functions (`.claude/rules/typescript.md`)
+- React 19 patterns (`.claude/rules/react.md`)
+- IPC channel naming + preload rules (`.claude/rules/electron-ipc.md`)
+- Always run `npm run lint` before suggesting done
+- No auto-commits — commits only on explicit request
+- No dev server claims without proof — exercise UI in actual Electron window
 
-## MCP Task Server
+## MCP Tools Available
 
-Task management tools available via MCP stdio for Claude Code:
+`choda-tasks` server (8 tools): `task_context`, `task_list`, `task_create`, `task_update`, `phase_list`, `phase_create`, `roadmap`, `search`.
 
-```bash
-npm run mcp:tasks   # starts MCP server
-```
+M1 will add: `project_context`, `session_start`, `session_end`, conversation protocol tools, skill registry tools.
 
 Register in `.claude.json`:
+
 ```json
 {
   "mcpServers": {
@@ -64,12 +79,4 @@ Register in `.claude.json`:
 }
 ```
 
-Tools: `task_context`, `task_list`, `task_create`, `task_update`, `phase_list`, `phase_create`, `feature_list`, `feature_create`, `roadmap`, `search`.
-
-## Working style
-
-- **KISS first.** Simplest thing that satisfies the requirement. No premature abstractions.
-- **Clarify before implementing** when scope is ambiguous. Ask one focused question, do not guess.
-- **No auto-commits.** Commits only on explicit request.
-- **No dev server claims without proof.** For UI changes, launch `npm run dev`, exercise the feature in the actual Electron window, then report. Type-check alone is not validation.
-- **ViewRouter is live.** `App.tsx` uses `<ViewRouter>` with Terminal, Tasks, Roadmap, Focus tabs. New views plug into ViewRouter.
+ADR-007 (Obsidian replacement) is **superseded** by ADR-008. Files-related tasks TASK-406..417 are archived.

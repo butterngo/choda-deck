@@ -5,7 +5,11 @@ import TerminalView from './TerminalView'
 export interface ViewType {
   id: string
   label: string
-  render: (project: ProjectConfig, workspace: WorkspaceConfig, visible: boolean) => React.JSX.Element
+  render: (
+    project: ProjectConfig,
+    workspace: WorkspaceConfig,
+    visible: boolean
+  ) => React.JSX.Element
 }
 
 interface ViewRouterProps {
@@ -15,10 +19,14 @@ interface ViewRouterProps {
   viewTypes: ViewType[]
 }
 
-function ViewRouter({ project, workspace, visible, viewTypes }: ViewRouterProps): React.JSX.Element {
+function ViewRouter({
+  project,
+  workspace,
+  visible,
+  viewTypes
+}: ViewRouterProps): React.JSX.Element {
   const [activeTab, setActiveTab] = useState(viewTypes[0]?.id || 'terminal')
 
-  // Listen for tab switch requests (e.g. from RoadmapView → Kanban)
   useEffect(() => {
     function handleSwitch(e: Event): void {
       const detail = (e as CustomEvent).detail

@@ -1,12 +1,20 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'fs'
 import { spawn as spawnProcess } from 'child_process'
 import * as pty from 'node-pty'
 import icon from '../../resources/icon.png?asset'
 import { SqliteTaskService } from '../tasks/sqlite-task-service'
 import { VaultImporter } from '../tasks/vault-importer'
 import { VaultService } from '../vault/vault-service'
+import {
+  backupDir,
+  listBackups,
+  runBackup,
+  shouldRunDailyBackup,
+  type BackupInfo
+} from './backup-service'
+import { ensureMcpRegistered, getMcpRegisterStatus, unregisterMcp } from './mcp-register'
 
 const is = {
   get dev(): boolean {
@@ -69,7 +77,9 @@ function loadConfig(): ProjectsConfig {
     // Old hierarchy schema: [{ id, name, taskPath, workspaces }]
     return {
       contentRoot: '',
-      projects: (arr as Array<{ id: string; name: string; taskPath?: string; workspaces: WorkspaceEntry[] }>).map((p) => ({
+      projects: (
+        arr as Array<{ id: string; name: string; taskPath?: string; workspaces: WorkspaceEntry[] }>
+      ).map((p) => ({
         id: p.id,
         name: p.name,
         workspaces: p.workspaces
@@ -87,9 +97,11 @@ function saveConfig(config: ProjectsConfig): void {
   writeFileSync(filePath, JSON.stringify(config, null, 2), 'utf-8')
 }
 
-function findWorkspace(workspaceId: string): { project: ProjectEntry; workspace: WorkspaceEntry } | null {
+function findWorkspace(
+  workspaceId: string
+): { project: ProjectEntry; workspace: WorkspaceEntry } | null {
   for (const p of projects) {
-    const ws = p.workspaces.find(w => w.id === workspaceId)
+    const ws = p.workspaces.find((w) => w.id === workspaceId)
     if (ws) return { project: p, workspace: ws }
   }
   return null
@@ -142,7 +154,13 @@ function ensurePath(): void {
 // Map of session id -> running pty process
 const sessions = new Map<string, pty.IPty>()
 
-function createPtySession(id: string, cwd: string, cols: number, rows: number, webContents: Electron.WebContents): void {
+function createPtySession(
+  id: string,
+  cwd: string,
+  cols: number,
+  rows: number,
+  webContents: Electron.WebContents
+): void {
   if (sessions.has(id)) {
     // Already exists — don't respawn
     return
@@ -250,33 +268,46 @@ app.whenReady().then(async () => {
   // Project management IPC
   ipcMain.handle('project:list', () => projects)
 
-  ipcMain.handle('project:add', (_event, projectId: string, name: string, workspaceId: string, workspaceLabel: string, cwd: string) => {
-    let project = projects.find(p => p.id === projectId)
-    if (!project) {
-      project = { id: projectId, name, workspaces: [] }
-      projects.push(project)
+  ipcMain.handle(
+    'project:add',
+    (
+      _event,
+      projectId: string,
+      name: string,
+      workspaceId: string,
+      workspaceLabel: string,
+      cwd: string
+    ) => {
+      let project = projects.find((p) => p.id === projectId)
+      if (!project) {
+        project = { id: projectId, name, workspaces: [] }
+        projects.push(project)
+      }
+      if (project.workspaces.some((w) => w.id === workspaceId)) {
+        return { ok: false, error: `Workspace "${workspaceId}" already exists` }
+      }
+      project.workspaces.push({ id: workspaceId, label: workspaceLabel, cwd })
+      config.projects = projects
+      saveConfig(config)
+      return { ok: true, project }
     }
-    if (project.workspaces.some(w => w.id === workspaceId)) {
-      return { ok: false, error: `Workspace "${workspaceId}" already exists` }
-    }
-    project.workspaces.push({ id: workspaceId, label: workspaceLabel, cwd })
-    config.projects = projects
-    saveConfig(config)
-    return { ok: true, project }
-  })
+  )
 
   ipcMain.handle('project:remove', (_event, projectId: string, workspaceId?: string) => {
-    const projIdx = projects.findIndex(p => p.id === projectId)
+    const projIdx = projects.findIndex((p) => p.id === projectId)
     if (projIdx === -1) {
       return { ok: false, error: `Project "${projectId}" not found` }
     }
     if (workspaceId) {
       // Remove workspace only
       const project = projects[projIdx]
-      const wsIdx = project.workspaces.findIndex(w => w.id === workspaceId)
+      const wsIdx = project.workspaces.findIndex((w) => w.id === workspaceId)
       if (wsIdx === -1) return { ok: false, error: `Workspace "${workspaceId}" not found` }
       const session = sessions.get(workspaceId)
-      if (session) { session.kill(); sessions.delete(workspaceId) }
+      if (session) {
+        session.kill()
+        sessions.delete(workspaceId)
+      }
       project.workspaces.splice(wsIdx, 1)
       if (project.workspaces.length === 0) projects.splice(projIdx, 1)
     } else {
@@ -284,7 +315,10 @@ app.whenReady().then(async () => {
       const project = projects[projIdx]
       for (const ws of project.workspaces) {
         const session = sessions.get(ws.id)
-        if (session) { session.kill(); sessions.delete(ws.id) }
+        if (session) {
+          session.kill()
+          sessions.delete(ws.id)
+        }
       }
       projects.splice(projIdx, 1)
     }
@@ -297,6 +331,9 @@ app.whenReady().then(async () => {
   const dbPath = app.isPackaged
     ? join(app.getPath('userData'), 'choda-deck.db')
     : join(__dirname, '../../choda-deck.db')
+  const userDataPath = app.isPackaged
+    ? app.getPath('userData')
+    : join(__dirname, '../..')
   const taskService = new SqliteTaskService(dbPath)
 
   // Ensure projects exist in SQLite
@@ -304,14 +341,57 @@ app.whenReady().then(async () => {
     taskService.ensureProject(p.id, p.name, config.contentRoot)
   }
 
+  // Daily backup — 24h gate, failures log-only
+  try {
+    if (shouldRunDailyBackup(userDataPath)) {
+      const info = runBackup(taskService, userDataPath)
+      console.log(`[backup] created ${info.filename} (${info.size} bytes)`)
+    }
+  } catch (err) {
+    console.error('[backup] daily backup failed:', err)
+  }
+
+  ipcMain.handle('backups:list', (): BackupInfo[] => listBackups(userDataPath))
+
+  ipcMain.handle('backups:create-now', (): { ok: boolean; backup?: BackupInfo; error?: string } => {
+    try {
+      const info = runBackup(taskService, userDataPath)
+      return { ok: true, backup: info }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle('backups:restore', (_event, filename: string): { ok: boolean; error?: string } => {
+    const source = join(backupDir(userDataPath), filename)
+    if (!existsSync(source)) return { ok: false, error: 'Backup file not found' }
+    try {
+      taskService.close()
+      copyFileSync(source, dbPath)
+      app.relaunch()
+      app.exit(0)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
 
   // Vault import — manual trigger, not auto on boot
   let importer: VaultImporter | null = null
 
   ipcMain.handle('vault:import', async (_event, statusMap?: Record<string, string>) => {
-    if (!config.contentRoot) return { tasks: 0, phases: 0, documents: 0, tags: 0, relationships: 0, skipped: 0, errors: ['No contentRoot configured'] }
+    if (!config.contentRoot)
+      return {
+        tasks: 0,
+        phases: 0,
+        documents: 0,
+        tags: 0,
+        relationships: 0,
+        skipped: 0,
+        errors: ['No contentRoot configured']
+      }
     importer = new VaultImporter(taskService, config.contentRoot, statusMap)
-    const result = importer.importAll(projects.map(p => p.id))
+    const result = importer.importAll(projects.map((p) => p.id))
     return result
   })
 
@@ -324,8 +404,17 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle('task:refresh', () => {
-    if (!importer) return { tasks: 0, phases: 0, documents: 0, tags: 0, relationships: 0, skipped: 0, errors: ['No import active'] }
-    return importer.importAll(projects.map(p => p.id))
+    if (!importer)
+      return {
+        tasks: 0,
+        phases: 0,
+        documents: 0,
+        tags: 0,
+        relationships: 0,
+        skipped: 0,
+        errors: ['No import active']
+      }
+    return importer.importAll(projects.map((p) => p.id))
   })
 
   ipcMain.handle('task:list', (_event, filter) => taskService.findTasks(filter))
@@ -335,11 +424,7 @@ app.whenReady().then(async () => {
     if (!task) return null
     const deps = taskService.getDependencies(id)
     const subtasks = taskService.getSubtasks(id)
-    let fileContent: string | null = null
-    if (task.filePath && existsSync(task.filePath)) {
-      try { fileContent = readFileSync(task.filePath, 'utf-8') } catch { /* ignore */ }
-    }
-    return { task, dependencies: deps, subtasks, fileContent }
+    return { task, dependencies: deps, subtasks, body: task.body }
   })
   ipcMain.handle('task:create', (_event, input) => taskService.createTask(input))
   ipcMain.handle('task:update', (_event, id: string, input) => taskService.updateTask(id, input))
@@ -352,28 +437,190 @@ app.whenReady().then(async () => {
   ipcMain.handle('phase:update', (_event, id: string, input) => taskService.updatePhase(id, input))
   ipcMain.handle('phase:delete', (_event, id: string, cascade?: boolean) => {
     if (cascade) {
-      const features = taskService.findFeaturesByPhase(id)
-      for (const f of features) {
-        const tasks = taskService.findTasks({ featureId: f.id })
-        for (const t of tasks) taskService.deleteTask(t.id)
-        taskService.deleteFeature(f.id)
-      }
+      const tasks = taskService.findTasks({ phaseId: id })
+      for (const t of tasks) taskService.deleteTask(t.id)
     }
     taskService.deletePhase(id)
     return { ok: true }
   })
-  ipcMain.handle('phase:progress', (_event, phaseId: string) => taskService.getPhaseProgress(phaseId))
-
-  ipcMain.handle('feature:list', (_event, projectId: string) => taskService.findFeatures(projectId))
-  ipcMain.handle('feature:listByPhase', (_event, phaseId: string) => taskService.findFeaturesByPhase(phaseId))
-  ipcMain.handle('feature:get', (_event, id: string) => taskService.getFeature(id))
-  ipcMain.handle('feature:create', (_event, input) => taskService.createFeature(input))
-  ipcMain.handle('feature:update', (_event, id: string, input) => taskService.updateFeature(id, input))
-  ipcMain.handle('feature:delete', (_event, id: string) => taskService.deleteFeature(id))
-  ipcMain.handle('feature:progress', (_event, featureId: string) => taskService.getFeatureProgress(featureId))
+  ipcMain.handle('phase:progress', (_event, phaseId: string) =>
+    taskService.getPhaseProgress(phaseId)
+  )
 
   ipcMain.handle('task:pinned', () => taskService.getPinnedTasks())
   ipcMain.handle('task:due', (_event, date: string) => taskService.getDueTasks(date))
+
+  ipcMain.handle('session:list', (_event, projectId: string) => taskService.findSessions(projectId))
+  ipcMain.handle('session:get', (_event, id: string) => taskService.getSession(id))
+  ipcMain.handle('session:delete', (_event, id: string) => {
+    taskService.deleteSession(id)
+    return { ok: true }
+  })
+  ipcMain.handle('conversation:list', (_event, projectId: string, status?: string) =>
+    taskService.findConversations(
+      projectId,
+      status as Parameters<typeof taskService.findConversations>[1]
+    )
+  )
+  ipcMain.handle('conversation:read', (_event, id: string) => {
+    const conv = taskService.getConversation(id)
+    if (!conv) return null
+    const messages = taskService.getConversationMessages(id)
+    const actions = taskService.getConversationActions(id)
+    return { ...conv, messages, actions }
+  })
+  ipcMain.handle('conversation:delete', (_event, id: string) => {
+    taskService.deleteConversation(id)
+    return { ok: true }
+  })
+
+  // ── Inbox ───────────────────────────────────────────────────────────────────
+  ipcMain.handle(
+    'inbox:list',
+    (_event, filter?: { projectId?: string | null; status?: string }) => {
+      const f: Parameters<typeof taskService.findInbox>[0] = {}
+      if (filter?.projectId !== undefined) f.projectId = filter.projectId
+      if (filter?.status) f.status = filter.status as Parameters<typeof taskService.findInbox>[0]['status']
+      return taskService.findInbox(f)
+    }
+  )
+  ipcMain.handle('inbox:get', (_event, id: string) => {
+    const item = taskService.getInbox(id)
+    if (!item) return null
+    const conversations = taskService.findConversationsByLink('inbox', id).map((c) => ({
+      id: c.id,
+      title: c.title,
+      status: c.status,
+      decisionSummary: c.decisionSummary,
+      messages: taskService.getConversationMessages(c.id)
+    }))
+    return { item, conversations }
+  })
+  ipcMain.handle('inbox:add', (_event, input: { projectId: string; content: string }) =>
+    taskService.createInbox({
+      projectId: input.projectId,
+      content: input.content
+    })
+  )
+  ipcMain.handle(
+    'inbox:update',
+    (_event, id: string, content: string): { ok: boolean; error?: string; item?: unknown } => {
+      const item = taskService.getInbox(id)
+      if (!item) return { ok: false, error: 'not found' }
+      if (item.status === 'converted' || item.status === 'archived') {
+        return { ok: false, error: `status is ${item.status} — content locked` }
+      }
+      const updated = taskService.updateInbox(id, { content })
+      return { ok: true, item: updated }
+    }
+  )
+  ipcMain.handle(
+    'inbox:research',
+    (
+      _event,
+      id: string,
+      researcher = 'Claude'
+    ): { ok: boolean; error?: string; conversationId?: string; status?: string } => {
+      const item = taskService.getInbox(id)
+      if (!item) return { ok: false, error: 'not found' }
+      if (item.status !== 'raw') return { ok: false, error: `status is ${item.status}, not raw` }
+      const existing = taskService.findConversationsByLink('inbox', id)
+      if (existing.length > 0) {
+        return { ok: true, conversationId: existing[0].id, status: 'researching' }
+      }
+      const projectId = item.projectId ?? 'global'
+      const conv = taskService.createConversation({
+        projectId,
+        title: `Research: ${item.content.slice(0, 80)}`,
+        createdBy: researcher,
+        status: 'open',
+        participants: [
+          { name: 'Butter', type: 'human' },
+          { name: researcher, type: 'agent' }
+        ]
+      })
+      taskService.linkConversation(conv.id, 'inbox', id)
+      taskService.updateInbox(id, { status: 'researching' })
+      return { ok: true, conversationId: conv.id, status: 'researching' }
+    }
+  )
+  ipcMain.handle(
+    'inbox:ready',
+    (_event, id: string): { ok: boolean; error?: string; item?: unknown } => {
+      const item = taskService.getInbox(id)
+      if (!item) return { ok: false, error: 'not found' }
+      if (item.status !== 'researching') {
+        return { ok: false, error: `status is ${item.status}, not researching` }
+      }
+      const updated = taskService.updateInbox(id, { status: 'ready' })
+      return { ok: true, item: updated }
+    }
+  )
+  ipcMain.handle('inbox:archive', (_event, id: string, reason?: string) => {
+    const item = taskService.getInbox(id)
+    if (!item) return null
+    taskService.updateInbox(id, { status: 'archived' })
+    const convs = taskService.findConversationsByLink('inbox', id)
+    for (const c of convs) {
+      if (c.status !== 'closed') {
+        taskService.updateConversation(c.id, {
+          status: 'closed',
+          decisionSummary: reason ? `Archived: ${reason}` : 'Archived',
+          closedAt: new Date().toISOString()
+        })
+      }
+    }
+    return taskService.getInbox(id)
+  })
+  ipcMain.handle(
+    'inbox:convert',
+    (
+      _event,
+      id: string,
+      taskInput: {
+        title: string
+        priority?: 'critical' | 'high' | 'medium' | 'low'
+        labels?: string[]
+        body?: string
+      }
+    ) => {
+      const item = taskService.getInbox(id)
+      if (!item) return { ok: false, error: 'not found' }
+      if (!item.projectId) return { ok: false, error: 'inbox item has no projectId' }
+      if (item.status === 'converted' || item.status === 'archived') {
+        return { ok: false, error: `status is ${item.status}` }
+      }
+      const task = taskService.createTask({
+        projectId: item.projectId,
+        title: taskInput.title,
+        priority: taskInput.priority,
+        labels: taskInput.labels,
+        status: 'TODO'
+      })
+      if (taskInput.body) taskService.updateTask(task.id, { body: taskInput.body })
+      taskService.updateInbox(id, { status: 'converted', linkedTaskId: task.id })
+      const convs = taskService.findConversationsByLink('inbox', id)
+      for (const c of convs) {
+        if (c.status !== 'closed') {
+          taskService.updateConversation(c.id, {
+            status: 'closed',
+            decisionSummary: `Converted to ${task.id}: ${taskInput.title}`,
+            closedAt: new Date().toISOString()
+          })
+        }
+      }
+      return { ok: true, taskId: task.id, task: taskService.getTask(task.id) }
+    }
+  )
+  ipcMain.handle('inbox:delete', (_event, id: string) => {
+    const item = taskService.getInbox(id)
+    if (!item) return { ok: false, error: 'not found' }
+    if (item.status !== 'raw' && item.status !== 'archived') {
+      return { ok: false, error: `status is ${item.status}` }
+    }
+    taskService.deleteInbox(id)
+    return { ok: true }
+  })
 
   // ── Vault file browser IPC (Phase B) ───────────────────────────────────────
   const vaultService = new VaultService()
@@ -432,7 +679,19 @@ app.whenReady().then(async () => {
     return { ok: true }
   })
 
+  // MCP auto-register IPC
+  ipcMain.handle('mcp:register-status', () => getMcpRegisterStatus())
+  ipcMain.handle('mcp:unregister', () => unregisterMcp())
+
   createWindow()
+
+  // Auto-register choda-tasks MCP in ~/.claude.json if path changed / absent.
+  // Silent no-op if user has no .claude.json.
+  try {
+    ensureMcpRegistered()
+  } catch (err) {
+    console.error('[mcp-register] Unexpected error:', err)
+  }
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -450,7 +709,11 @@ app.on('window-all-closed', async () => {
           // Send Ctrl+C (SIGINT equivalent)
           session.write('\x03')
           const timeout = setTimeout(() => {
-            try { session.kill() } catch { /* ignore */ }
+            try {
+              session.kill()
+            } catch {
+              /* ignore */
+            }
             resolve()
           }, 2000)
           session.onExit(() => {

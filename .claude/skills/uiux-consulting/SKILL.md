@@ -13,13 +13,13 @@ Design and review UI with a minimal, clean approach. Tailwind-based custom desig
 
 ## Core principles
 
-| Principle | Rule |
-|---|---|
-| Clarity | User knows what to do within 3 seconds |
-| Consistency | Same action = same visual pattern |
-| Hierarchy | Most important action visually dominant |
-| Feedback | Every action gets visible response |
-| Progressive disclosure | Essentials first, details on demand |
+| Principle              | Rule                                    |
+| ---------------------- | --------------------------------------- |
+| Clarity                | User knows what to do within 3 seconds  |
+| Consistency            | Same action = same visual pattern       |
+| Hierarchy              | Most important action visually dominant |
+| Feedback               | Every action gets visible response      |
+| Progressive disclosure | Essentials first, details on demand     |
 
 ## Design system
 

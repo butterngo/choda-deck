@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- App frame -->
+  <rect width="1024" height="1024" rx="224" fill="#0F172A"/>
+
+  <!-- Back card (rotated, peeking out) -->
+  <g transform="rotate(-9 520 360)">
+    <rect x="256" y="168" width="580" height="412" rx="48" fill="#334155"/>
+    <rect x="256" y="168" width="580" height="64" rx="48" fill="#475569"/>
+  </g>
+
+  <!-- Middle card -->
+  <g transform="rotate(-4 512 480)">
+    <rect x="208" y="264" width="612" height="448" rx="52" fill="#475569"/>
+    <rect x="208" y="264" width="612" height="72" rx="52" fill="#64748B"/>
+  </g>
+
+  <!-- Front card (main terminal) -->
+  <rect x="176" y="400" width="672" height="464" rx="58" fill="#1E293B"/>
+  <rect x="176" y="400" width="672" height="84" rx="58" fill="#334155"/>
+  <rect x="176" y="464" width="672" height="20" fill="#334155"/>
+
+  <!-- Title bar dots -->
+  <circle cx="236" cy="442" r="18" fill="#EF4444"/>
+  <circle cx="290" cy="442" r="18" fill="#F59E0B"/>
+  <circle cx="344" cy="442" r="18" fill="#22C55E"/>
+
+  <!-- Prompt '>' (Claude orange) -->
+  <path d="M 244 620 L 360 688 L 244 756" stroke="#FF7A4E" stroke-width="34"
+        fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Cursor block (cyan) -->
+  <rect x="420" y="630" width="64" height="118" rx="6" fill="#22D3EE"/>
+</svg>

@@ -11,12 +11,12 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { SqliteTaskService } from './sqlite-task-service'
 import * as taskTools from './mcp-tools/task-tools'
 import * as phaseTools from './mcp-tools/phase-tools'
-import * as featureTools from './mcp-tools/feature-tools'
 import * as roadmapTool from './mcp-tools/roadmap-tool'
 import * as searchTool from './mcp-tools/search-tool'
 import * as conversationTools from './mcp-tools/conversation-tools'
 import * as projectTools from './mcp-tools/project-tools'
 import * as sessionTools from './mcp-tools/session-tools'
+import * as inboxTools from './mcp-tools/inbox-tools'
 
 const DB_PATH = process.env.CHODA_DB_PATH || './choda-deck.db'
 
@@ -30,12 +30,12 @@ async function main(): Promise<void> {
 
   taskTools.register(server, svc)
   phaseTools.register(server, svc)
-  featureTools.register(server, svc)
   roadmapTool.register(server, svc)
   searchTool.register(server, svc)
   conversationTools.register(server, svc)
   projectTools.register(server, svc)
   sessionTools.register(server, svc)
+  inboxTools.register(server, svc)
 
   const transport = new StdioServerTransport()
   await server.connect(transport)

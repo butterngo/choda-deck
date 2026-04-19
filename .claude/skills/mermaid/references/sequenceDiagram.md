@@ -939,7 +939,7 @@ It is possible to get a sequence number attached to each arrow in a sequence dia
 
 ```html
 <script>
-  mermaid.initialize({ sequence: { showSequenceNumbers: true } });
+  mermaid.initialize({ sequence: { showSequenceNumbers: true } })
 </script>
 ```
 
@@ -1163,8 +1163,8 @@ mermaid.sequenceConfig = {
   boxTextMargin: 5,
   noteMargin: 10,
   messageMargin: 35,
-  mirrorActors: true,
-};
+  mirrorActors: true
+}
 ```
 
 ### Possible configuration parameters:

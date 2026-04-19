@@ -34,9 +34,7 @@ describe('MarkdownViewer', () => {
 | --- | --- |
 | val1 | val2 |`
 
-    render(
-      <MarkdownViewer content={md} filePath="/test.md" onWikilinkClick={() => {}} />
-    )
+    render(<MarkdownViewer content={md} filePath="/test.md" onWikilinkClick={() => {}} />)
 
     expect(screen.getByText('Col A')).toBeDefined()
     expect(screen.getByText('val1')).toBeDefined()
@@ -46,9 +44,7 @@ describe('MarkdownViewer', () => {
     const md = `- [x] Done item
 - [ ] Todo item`
 
-    render(
-      <MarkdownViewer content={md} filePath="/test.md" onWikilinkClick={() => {}} />
-    )
+    render(<MarkdownViewer content={md} filePath="/test.md" onWikilinkClick={() => {}} />)
 
     expect(screen.getByText('Done item')).toBeDefined()
     expect(screen.getByText('Todo item')).toBeDefined()

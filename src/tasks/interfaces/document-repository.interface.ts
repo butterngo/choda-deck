@@ -1,4 +1,9 @@
-import type { Document, DocumentType, CreateDocumentInput, UpdateDocumentInput } from '../task-types'
+import type {
+  Document,
+  DocumentType,
+  CreateDocumentInput,
+  UpdateDocumentInput
+} from '../task-types'
 
 export interface DocumentOperations {
   createDocument(input: CreateDocumentInput): Document

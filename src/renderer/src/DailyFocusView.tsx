@@ -29,7 +29,7 @@ function DailyFocusView({ workspaceId, visible }: DailyFocusViewProps): React.JS
       window.api.task.list({ status: 'IN-PROGRESS' })
     ])
     setPinnedTasks(pinned as TaskItem[])
-    setDueTasks((due as TaskItem[]).filter(t => !t.pinned))
+    setDueTasks((due as TaskItem[]).filter((t) => !t.pinned))
     setInProgressTasks(wip as TaskItem[])
   }, [today])
 
@@ -43,11 +43,15 @@ function DailyFocusView({ workspaceId, visible }: DailyFocusViewProps): React.JS
   function renderTask(task: TaskItem): React.JSX.Element {
     return (
       <div key={task.id} className="deck-focus-task">
-        <span className={`deck-dot ${task.status === 'DONE' ? 'deck-dot--green' : task.status === 'IN-PROGRESS' ? 'deck-dot--blue' : 'deck-dot--grey'}`} />
+        <span
+          className={`deck-dot ${task.status === 'DONE' ? 'deck-dot--green' : task.status === 'IN-PROGRESS' ? 'deck-dot--blue' : 'deck-dot--grey'}`}
+        />
         <span className="deck-focus-task-id">{task.id}</span>
         <span className="deck-focus-task-title">{task.title}</span>
         {task.priority && (
-          <span className={`deck-kanban-badge deck-kanban-badge--${task.priority}`}>{task.priority}</span>
+          <span className={`deck-kanban-badge deck-kanban-badge--${task.priority}`}>
+            {task.priority}
+          </span>
         )}
         <span className="deck-focus-task-project">{task.projectId}</span>
         <span className="deck-focus-task-status">{task.status}</span>
@@ -61,12 +65,16 @@ function DailyFocusView({ workspaceId, visible }: DailyFocusViewProps): React.JS
     <div className="deck-focus">
       <div className="deck-focus-header">
         <span className="deck-focus-title">Daily Focus — {today}</span>
-        <button className="deck-sidebar-btn" onClick={loadData} title="Refresh">↻</button>
+        <button className="deck-sidebar-btn" onClick={loadData} title="Refresh">
+          ↻
+        </button>
         <button
           className="deck-sidebar-btn"
           onClick={() => window.api.pty.input(workspaceId, '/daily\n')}
           title="Run /daily in terminal"
-        >/daily</button>
+        >
+          /daily
+        </button>
       </div>
 
       {isEmpty && (

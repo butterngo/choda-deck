@@ -1,7 +1,33 @@
+import { useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import type { Components } from 'react-markdown'
+import mermaid from 'mermaid'
+
+mermaid.initialize({ startOnLoad: false, theme: 'dark' })
+
+let mermaidIdCounter = 0
+
+function MermaidBlock({ code }: { code: string }): React.JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!ref.current) return
+    const id = `mermaid-${++mermaidIdCounter}`
+    ref.current.innerHTML = ''
+    mermaid
+      .render(id, code)
+      .then(({ svg }) => {
+        if (ref.current) ref.current.innerHTML = svg
+      })
+      .catch(() => {
+        if (ref.current) ref.current.textContent = code
+      })
+  }, [code])
+
+  return <div ref={ref} className="deck-md-mermaid" />
+}
 
 interface MarkdownViewerProps {
   content: string
@@ -62,7 +88,8 @@ function processWikilinks(
 
 function resolveRelativePath(href: string, currentFilePath: string): string | null {
   // Only handle relative .md links (not http://, #anchors, etc.)
-  if (!href || href.startsWith('http') || href.startsWith('#') || href.startsWith('mailto:')) return null
+  if (!href || href.startsWith('http') || href.startsWith('#') || href.startsWith('mailto:'))
+    return null
   // Resolve relative to current file's directory
   const dir = currentFilePath.replace(/[/\\][^/\\]*$/, '')
   // Normalize: join dir + href, collapse ../ and ./
@@ -75,9 +102,21 @@ function resolveRelativePath(href: string, currentFilePath: string): string | nu
   return resolved.join('/')
 }
 
-function MarkdownViewer({ content, filePath, onWikilinkClick, onRelativeLinkClick }: MarkdownViewerProps): React.JSX.Element {
+function MarkdownViewer({
+  content,
+  filePath,
+  onWikilinkClick,
+  onRelativeLinkClick
+}: MarkdownViewerProps): React.JSX.Element {
   // Build custom components that intercept text nodes for wikilinks
   const components: Components = {
+    code: ({ className, children }) => {
+      const lang = /language-(\w+)/.exec(className || '')?.[1]
+      if (lang === 'mermaid') {
+        return <MermaidBlock code={String(children).trim()} />
+      }
+      return <code className={className}>{children}</code>
+    },
     a: ({ href, children }) => {
       if (!href) return <a>{children}</a>
       const resolved = resolveRelativePath(href, filePath)
@@ -97,7 +136,11 @@ function MarkdownViewer({ content, filePath, onWikilinkClick, onRelativeLinkClic
         )
       }
       // External link — open normally
-      return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+      return (
+        <a href={href} target="_blank" rel="noopener noreferrer">
+          {children}
+        </a>
+      )
     },
     p: ({ children }) => {
       const processed = processChildren(children, onWikilinkClick)
@@ -115,7 +158,9 @@ function MarkdownViewer({ content, filePath, onWikilinkClick, onRelativeLinkClic
     h2: ({ children }) => <h2>{processChildren(children, onWikilinkClick)}</h2>,
     h3: ({ children }) => <h3>{processChildren(children, onWikilinkClick)}</h3>,
     h4: ({ children }) => <h4>{processChildren(children, onWikilinkClick)}</h4>,
-    blockquote: ({ children }) => <blockquote>{processChildren(children, onWikilinkClick)}</blockquote>
+    blockquote: ({ children }) => (
+      <blockquote>{processChildren(children, onWikilinkClick)}</blockquote>
+    )
   }
 
   // Extract filename for display

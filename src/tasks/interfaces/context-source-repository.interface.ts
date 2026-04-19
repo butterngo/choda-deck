@@ -1,4 +1,8 @@
-import type { ContextSource, CreateContextSourceInput, UpdateContextSourceInput } from '../task-types'
+import type {
+  ContextSource,
+  CreateContextSourceInput,
+  UpdateContextSourceInput
+} from '../task-types'
 
 export interface ContextSourceOperations {
   createContextSource(input: CreateContextSourceInput): ContextSource

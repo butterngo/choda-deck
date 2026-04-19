@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   test: {
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
-    globals: true,
+    globals: true
     // Use `// @vitest-environment jsdom` docblock in .tsx test files
     // (environmentMatchGlobs has path issues on Windows)
   }

@@ -10,7 +10,7 @@ export const register: Register = (server, svc) => {
     },
     async ({ projectId }) => {
       const phases = svc.findPhases(projectId)
-      const result = phases.map(ph => ({
+      const result = phases.map((ph) => ({
         ...ph,
         progress: svc.getPhaseProgress(ph.id)
       }))

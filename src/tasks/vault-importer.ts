@@ -44,9 +44,10 @@ function normalizePriority(raw: string | undefined): TaskPriority | null {
 }
 
 function extractId(filename: string, prefixes: string[]): string | null {
-  const pattern = new RegExp(`^((?:${prefixes.join('|')})-\\d+[a-z]?)`)
-  const match = filename.match(pattern)
-  return match ? match[1] : null
+  const base = path.basename(filename, '.md')
+  const part = base.split('_')[0]
+  const valid = new RegExp(`^(?:${prefixes.join('|')})-`)
+  return valid.test(part) ? part : null
 }
 
 function normalizeList(raw: unknown): string[] {
@@ -164,6 +165,7 @@ export class VaultImporter {
 
       this.importTasks(projectId, result)
       this.importArchive(projectId, result)
+      this.reconcileTaskFilePaths(projectId)
       this.importPhases(projectId, result)
       this.importDocuments(projectId, result)
       this.importConversations(projectId, result)
@@ -267,24 +269,6 @@ export class VaultImporter {
       }
     }
 
-    // Features
-    const featDir = path.join(this.contentRoot, base, 'features')
-    if (fs.existsSync(featDir)) {
-      const feats = fs
-        .readdirSync(featDir)
-        .filter((f) => f.endsWith('.md'))
-        .slice(0, 5)
-      for (const f of feats) {
-        const rel = `${base}/features/${f}`
-        out.push({
-          label: `Feature: ${f.replace('.md', '').replace(/[-_]/g, ' ')}`,
-          sourcePath: rel,
-          category: 'what',
-          priority: 40
-        })
-      }
-    }
-
     return out
   }
 
@@ -299,8 +283,7 @@ export class VaultImporter {
           !d.name.startsWith('.') &&
           d.name !== 'tasks' &&
           d.name !== 'phases' &&
-          d.name !== 'docs' &&
-          d.name !== 'features'
+          d.name !== 'docs'
       )
       .map((d) => d.name)
   }
@@ -364,6 +347,14 @@ export class VaultImporter {
     const priority = normalizePriority(fm.priority)
     const title = fm.title || taskId
 
+    // Resolve phase from frontmatter (e.g. phase: sprint-1)
+    const phaseRef = fm.phase ? String(fm.phase) : null
+    const phaseId = phaseRef
+      ? this.taskService.getPhase(phaseRef)
+        ? phaseRef
+        : undefined
+      : undefined
+
     const existing = this.taskService.getTask(taskId)
     if (existing) {
       this.taskService.updateTask(taskId, {
@@ -371,7 +362,8 @@ export class VaultImporter {
         status,
         priority,
         labels: fm.labels || undefined,
-        filePath
+        filePath,
+        ...(phaseId !== undefined ? { phaseId } : {})
       })
     } else {
       this.taskService.createTask({
@@ -381,7 +373,8 @@ export class VaultImporter {
         status,
         priority: priority || undefined,
         labels: fm.labels,
-        filePath
+        filePath,
+        phaseId
       })
     }
 
@@ -396,6 +389,15 @@ export class VaultImporter {
     this.importRelationships(taskId, fm, result)
 
     return true
+  }
+
+  private reconcileTaskFilePaths(projectId: string): void {
+    const tasks = this.taskService.findTasks({ projectId })
+    for (const task of tasks) {
+      if (task.filePath && !fs.existsSync(task.filePath)) {
+        this.taskService.updateTask(task.id, { filePath: null })
+      }
+    }
   }
 
   // ── Phase import ────────────────────────────────────────────────────────

@@ -11,8 +11,14 @@ CLAUDE.local.md
 
 # Generated / runtime
 choda-deck.db
+choda-deck.db-shm
+choda-deck.db-wal
+backups/
+devchoda-deckchoda-deck.db
+.playwright-mcp/
 vault-graph.json
 graphify-out/
 .graphify_python
 tsconfig.node.tsbuildinfo
+tsconfig.web.tsbuildinfo
 .claude.json

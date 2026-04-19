@@ -14,7 +14,7 @@ export function exportConversationMarkdown(
   if (!conv) return null
 
   const allForProject = svc.findConversations(conv.projectId)
-  const index = allForProject.findIndex(c => c.id === conversationId)
+  const index = allForProject.findIndex((c) => c.id === conversationId)
   const humanNumber = index >= 0 ? allForProject.length - index : 1
 
   const messages = svc.getConversationMessages(conversationId)

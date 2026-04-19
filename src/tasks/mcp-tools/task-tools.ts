@@ -1,16 +1,35 @@
 import { z } from 'zod'
-import * as fs from 'fs'
-import * as path from 'path'
-import type { Feature, Phase } from '../task-types'
+import type { Phase } from '../task-types'
 import { textResponse, type Register } from './types'
 
-const CONTENT_ROOT = process.env.CHODA_CONTENT_ROOT || ''
+function defaultBody(id: string, title: string): string {
+  return `# ${id}: ${title}
+
+## Why
+
+<!-- What friction, constraint, or motivation drives this task? -->
+
+## Acceptance criteria
+
+- [ ]
+
+## Scope
+
+-
+
+## Out of scope
+
+-
+
+## Notes
+`
+}
 
 export const register: Register = (server, svc) => {
   server.registerTool(
     'task_context',
     {
-      description: 'Get full context for a task: task details + feature + phase + dependencies + file content',
+      description: 'Get full context for a task: task details + phase + dependencies + body',
       inputSchema: { id: z.string().describe('Task ID (e.g. TASK-401)') }
     },
     async ({ id }) => {
@@ -22,26 +41,17 @@ export const register: Register = (server, svc) => {
       const tags = svc.getTags(id)
       const rels = svc.getRelationships(id)
 
-      let feature: Feature | null = null
       let phase: Phase | null = null
-      if (task.featureId) {
-        feature = svc.getFeature(task.featureId)
-        if (feature?.phaseId) {
-          phase = svc.getPhase(feature.phaseId)
-        }
+      if (task.phaseId) {
+        phase = svc.getPhase(task.phaseId)
       }
 
-      let fileContent: string | null = null
-      if (task.filePath && fs.existsSync(task.filePath)) {
-        try { fileContent = fs.readFileSync(task.filePath, 'utf-8') } catch { /* ignore */ }
-      }
-
-      const conversations = svc.findConversationsByLink('task', id).map(c => ({
+      const conversations = svc.findConversationsByLink('task', id).map((c) => ({
         id: c.id,
         title: c.title,
         status: c.status,
         decisionSummary: c.decisionSummary,
-        actions: svc.getConversationActions(c.id).map(a => ({
+        actions: svc.getConversationActions(c.id).map((a) => ({
           assignee: a.assignee,
           description: a.description,
           status: a.status,
@@ -50,10 +60,14 @@ export const register: Register = (server, svc) => {
       }))
 
       return textResponse({
-        task, feature, phase,
-        dependencies: deps, subtasks, tags, relationships: rels,
+        task,
+        phase,
+        dependencies: deps,
+        subtasks,
+        tags,
+        relationships: rels,
         conversations,
-        fileContent
+        body: task.body
       })
     }
   )
@@ -64,9 +78,14 @@ export const register: Register = (server, svc) => {
       description: 'List tasks with optional filters',
       inputSchema: {
         projectId: z.string().optional().describe('Filter by project ID'),
-        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE']).optional().describe('Filter by status'),
-        priority: z.enum(['critical', 'high', 'medium', 'low']).optional().describe('Filter by priority'),
-        featureId: z.string().optional().describe('Filter by feature ID'),
+        status: z
+          .enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE'])
+          .optional()
+          .describe('Filter by status'),
+        priority: z
+          .enum(['critical', 'high', 'medium', 'low'])
+          .optional()
+          .describe('Filter by priority'),
         query: z.string().optional().describe('Search title'),
         limit: z.number().optional().describe('Max results')
       }
@@ -77,44 +96,25 @@ export const register: Register = (server, svc) => {
   server.registerTool(
     'task_create',
     {
-      description: 'Create a new task',
+      description: 'Create a new task (body stored in SQLite)',
       inputSchema: {
         id: z.string().optional().describe('Task ID (auto-generated if omitted)'),
         projectId: z.string().describe('Project ID'),
         title: z.string().describe('Task title'),
         status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE']).optional(),
         priority: z.enum(['critical', 'high', 'medium', 'low']).optional(),
-        featureId: z.string().optional().describe('Feature to assign to'),
+        phaseId: z.string().optional().describe('Phase to assign to'),
         parentTaskId: z.string().optional().describe('Parent task for subtasks'),
         labels: z.array(z.string()).optional(),
-        dueDate: z.string().optional()
+        dueDate: z.string().optional(),
+        body: z.string().optional().describe('Markdown body content (default template if omitted)')
       }
     },
     async (input) => {
       const task = svc.createTask(input)
-
-      if (CONTENT_ROOT && task.id) {
-        const dir = path.join(CONTENT_ROOT, '10-Projects', input.projectId, 'tasks')
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-        const slug = task.title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
-        const filePath = path.join(dir, `${task.id}_${slug}.md`)
-        const lines = [
-          '---',
-          `id: ${task.id}`,
-          `title: ${task.title}`,
-          `status: ${(task.status || 'todo').toLowerCase()}`,
-          task.priority ? `priority: ${task.priority}` : '',
-          task.featureId ? `feature: ${task.featureId}` : '',
-          task.dueDate ? `due-date: ${task.dueDate}` : '',
-          '---',
-          '',
-          `# ${task.id}: ${task.title}`,
-          ''
-        ].filter(l => l !== '').join('\n')
-        fs.writeFileSync(filePath, lines, 'utf-8')
-      }
-
-      return textResponse(task)
+      const body = input.body ?? defaultBody(task.id, task.title)
+      const updated = svc.updateTask(task.id, { body })
+      return textResponse(updated)
     }
   )
 
@@ -127,13 +127,32 @@ export const register: Register = (server, svc) => {
         title: z.string().optional(),
         status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE']).optional(),
         priority: z.enum(['critical', 'high', 'medium', 'low']).nullable().optional(),
-        featureId: z.string().nullable().optional(),
+        phaseId: z.string().nullable().optional(),
         parentTaskId: z.string().nullable().optional(),
         labels: z.array(z.string()).optional(),
         dueDate: z.string().nullable().optional(),
-        pinned: z.boolean().optional()
+        pinned: z.boolean().optional(),
+        body: z.string().nullable().optional()
       }
     },
     async ({ id, ...input }) => textResponse(svc.updateTask(id, input))
+  )
+
+  server.registerTool(
+    'tasks_update_batch',
+    {
+      description: 'Update multiple tasks with the same patch (e.g. bulk mark DONE)',
+      inputSchema: {
+        ids: z.array(z.string()).describe('List of task IDs to update'),
+        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE']).optional(),
+        priority: z.enum(['critical', 'high', 'medium', 'low']).nullable().optional(),
+        labels: z.array(z.string()).optional(),
+        pinned: z.boolean().optional()
+      }
+    },
+    async ({ ids, ...patch }) => {
+      const results = ids.map((id) => svc.updateTask(id, patch))
+      return textResponse(results)
+    }
   )
 }

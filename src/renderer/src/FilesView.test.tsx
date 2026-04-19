@@ -8,9 +8,7 @@ const MOCK_TREE = [
     name: '10-Projects',
     path: '/vault/10-Projects',
     type: 'directory' as const,
-    children: [
-      { name: 'context.md', path: '/vault/10-Projects/context.md', type: 'file' as const }
-    ]
+    children: [{ name: 'context.md', path: '/vault/10-Projects/context.md', type: 'file' as const }]
   },
   { name: 'readme.md', path: '/vault/readme.md', type: 'file' as const }
 ]
@@ -22,7 +20,9 @@ function setupMockApi(overrides?: Partial<typeof window.api.vault>): void {
     vault: {
       contentRoot: vi.fn().mockResolvedValue('/vault'),
       tree: vi.fn().mockResolvedValue(MOCK_TREE),
-      read: vi.fn().mockResolvedValue({ content: MOCK_CONTENT, size: 100, mtime: '2026-04-14T00:00:00Z' }),
+      read: vi
+        .fn()
+        .mockResolvedValue({ content: MOCK_CONTENT, size: 100, mtime: '2026-04-14T00:00:00Z' }),
       search: vi.fn().mockResolvedValue([]),
       resolve: vi.fn().mockResolvedValue('/vault/decisions/ADR-007.md'),
       ...overrides

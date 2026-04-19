@@ -76,10 +76,10 @@ Example with legacy mode enabled (the latest version of KaTeX's stylesheet can b
 
   <body>
     <script type="module">
-      import mermaid from './mermaid.esm.mjs';
+      import mermaid from './mermaid.esm.mjs'
       mermaid.initialize({
-        legacyMathML: true,
-      });
+        legacyMathML: true
+      })
     </script>
   </body>
 </html>

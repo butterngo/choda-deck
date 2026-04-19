@@ -25,9 +25,7 @@ const SAMPLE_TREE: FileNode[] = [
     name: '20-Areas',
     path: '/vault/20-Areas',
     type: 'directory',
-    children: [
-      { name: 'goals.md', path: '/vault/20-Areas/goals.md', type: 'file' }
-    ]
+    children: [{ name: 'goals.md', path: '/vault/20-Areas/goals.md', type: 'file' }]
   },
   { name: 'readme.txt', path: '/vault/readme.txt', type: 'file' }
 ]

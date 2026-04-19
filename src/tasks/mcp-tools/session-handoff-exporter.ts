@@ -56,10 +56,10 @@ function section(title: string, body: string): string {
 
 function bulletList(items?: string[]): string {
   if (!items || items.length === 0) return '_none_'
-  return items.map(i => `- ${i}`).join('\n')
+  return items.map((i) => `- ${i}`).join('\n')
 }
 
 function renderTaskList(ids?: string[]): string {
   if (!ids || ids.length === 0) return '_none_'
-  return ids.map(id => `- ${id}`).join('\n')
+  return ids.map((id) => `- ${id}`).join('\n')
 }

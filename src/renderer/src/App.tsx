@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import '@xterm/xterm/css/xterm.css'
 import './assets/deck.css'
 import Sidebar from './Sidebar'
-import ViewRouter, { terminalViewType } from './ViewRouter'
+import ViewRouter from './ViewRouter'
+import TerminalView from './TerminalView'
 import KanbanBoard from './KanbanBoard'
-import DailyFocusView from './DailyFocusView'
 import FilesView from './FilesView'
+import ActivityView from './ActivityView'
+import InboxView from './InboxView'
 import type { ProjectConfig, WorkspaceConfig } from '../../preload/index'
 import type { ViewType } from './ViewRouter'
 
@@ -15,36 +17,11 @@ interface ActiveSelection {
   workspaceId: string
 }
 
-// Register all view types — future views (notes, graph) added here
-const VIEW_TYPES: ViewType[] = [
-  terminalViewType,
-  {
-    id: 'tasks',
-    label: 'Board',
-    render: (project, _workspace, visible) => (
-      <KanbanBoard projectId={project.id} visible={visible} />
-    )
-  },
-  {
-    id: 'focus',
-    label: 'Focus',
-    render: (_project, workspace, visible) => (
-      <DailyFocusView workspaceId={workspace.id} visible={visible} />
-    )
-  },
-  {
-    id: 'files',
-    label: 'Wiki',
-    render: (_project, _workspace, visible) => (
-      <FilesView visible={visible} />
-    )
-  }
-]
-
 function App(): React.JSX.Element {
   const [projects, setProjects] = useState<ProjectConfig[]>([])
   const [active, setActive] = useState<ActiveSelection | null>(null)
-  // Load projects on mount
+  const [vaultRoot, setVaultRoot] = useState<string>('')
+  // Load projects + vault contentRoot on mount
   useEffect(() => {
     let disposed = false
     window.api.project.list().then((list) => {
@@ -54,8 +31,56 @@ function App(): React.JSX.Element {
         setActive({ projectId: list[0].id, workspaceId: list[0].workspaces[0].id })
       }
     })
-    return () => { disposed = true }
+    window.api.vault.contentRoot().then((root) => {
+      if (!disposed) setVaultRoot(root)
+    })
+    return () => {
+      disposed = true
+    }
   }, [])
+
+  const viewTypes: ViewType[] = useMemo(
+    () => [
+      {
+        id: 'terminal',
+        label: 'Terminal',
+        render: (_project, workspace, visible) => (
+          <TerminalView
+            workspaceId={`${workspace.id}-vault`}
+            cwd={vaultRoot || workspace.cwd}
+            visible={visible}
+          />
+        )
+      },
+      {
+        id: 'inbox',
+        label: 'Inbox',
+        render: (project, _workspace, visible) => (
+          <InboxView projectId={project.id} visible={visible} />
+        )
+      },
+      {
+        id: 'tasks',
+        label: 'Board',
+        render: (project, _workspace, visible) => (
+          <KanbanBoard projectId={project.id} visible={visible} />
+        )
+      },
+      {
+        id: 'activity',
+        label: 'Activity',
+        render: (project, _workspace, visible) => (
+          <ActivityView projectId={project.id} visible={visible} />
+        )
+      },
+      {
+        id: 'files',
+        label: 'Wiki',
+        render: (_project, _workspace, visible) => <FilesView visible={visible} />
+      }
+    ],
+    [vaultRoot]
+  )
 
   // Flatten workspaces for keyboard shortcuts
   const allWorkspaces: Array<{ project: ProjectConfig; workspace: WorkspaceConfig }> = []
@@ -84,7 +109,7 @@ function App(): React.JSX.Element {
         e.preventDefault()
         setActive((curr) => {
           if (!curr) return curr
-          const idx = allWorkspaces.findIndex(w => w.workspace.id === curr.workspaceId)
+          const idx = allWorkspaces.findIndex((w) => w.workspace.id === curr.workspaceId)
           const next = e.shiftKey
             ? (idx - 1 + allWorkspaces.length) % allWorkspaces.length
             : (idx + 1) % allWorkspaces.length
@@ -104,8 +129,8 @@ function App(): React.JSX.Element {
     setActive({ projectId, workspaceId })
   }
 
-  const activeProject = active ? projects.find(p => p.id === active.projectId) : null
-  const activeWorkspace = activeProject?.workspaces.find(w => w.id === active?.workspaceId)
+  const activeProject = active ? projects.find((p) => p.id === active.projectId) : null
+  const activeWorkspace = activeProject?.workspaces.find((w) => w.id === active?.workspaceId)
 
   return (
     <div className="deck-root">
@@ -133,7 +158,7 @@ function App(): React.JSX.Element {
               project={project}
               workspace={workspace}
               visible={workspace.id === active?.workspaceId}
-              viewTypes={VIEW_TYPES}
+              viewTypes={viewTypes}
             />
           ))}
         </main>

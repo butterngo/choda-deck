@@ -55,12 +55,15 @@ function SearchBar({ contentRoot, onSelect }: SearchBarProps): React.JSX.Element
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  const handleSelect = useCallback((path: string) => {
-    onSelect(path)
-    setOpen(false)
-    setQuery('')
-    setResults([])
-  }, [onSelect])
+  const handleSelect = useCallback(
+    (path: string) => {
+      onSelect(path)
+      setOpen(false)
+      setQuery('')
+      setResults([])
+    },
+    [onSelect]
+  )
 
   function handleKeyDown(e: React.KeyboardEvent): void {
     if (!open || results.length === 0) return
@@ -87,7 +90,9 @@ function SearchBar({ contentRoot, onSelect }: SearchBarProps): React.JSX.Element
         placeholder="Search vault..."
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        onFocus={() => { if (results.length > 0) setOpen(true) }}
+        onFocus={() => {
+          if (results.length > 0) setOpen(true)
+        }}
         onKeyDown={handleKeyDown}
       />
       {open && results.length > 0 && (
