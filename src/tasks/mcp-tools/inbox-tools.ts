@@ -1,5 +1,15 @@
 import { z } from 'zod'
 import { textResponse, type Register } from './types'
+import { LifecycleError } from '../lifecycle/errors'
+
+function tryLifecycle<T>(fn: () => T): ReturnType<typeof textResponse> {
+  try {
+    return textResponse(fn())
+  } catch (e) {
+    if (e instanceof LifecycleError) return textResponse(e.message)
+    throw e
+  }
+}
 
 export const register: Register = (server, svc) => {
   server.registerTool(
@@ -96,36 +106,11 @@ export const register: Register = (server, svc) => {
         researcher: z.string().default('Claude').describe('Researcher name')
       }
     },
-    async ({ id, researcher }) => {
-      const item = svc.getInbox(id)
-      if (!item) return textResponse(`Inbox ${id} not found`)
-      if (item.status !== 'raw') {
-        return textResponse(`Inbox ${id} is ${item.status}, not raw — cannot start research`)
-      }
-      const existing = svc.findConversationsByLink('inbox', id)
-      if (existing.length > 0) {
-        return textResponse(`Inbox ${id} already has conversation ${existing[0].id}`)
-      }
-      const projectId = item.projectId ?? 'global'
-      const conv = svc.createConversation({
-        projectId,
-        title: `Research: ${item.content.slice(0, 80)}`,
-        createdBy: researcher,
-        status: 'open',
-        participants: [
-          { name: 'Butter', type: 'human' },
-          { name: researcher, type: 'agent' }
-        ]
-      })
-      svc.linkConversation(conv.id, 'inbox', id)
-      svc.updateInbox(id, { status: 'researching' })
-      return textResponse({
-        inboxId: id,
-        conversationId: conv.id,
-        status: 'researching',
-        hint: `Add research findings via conversation_add. Call inbox_ready when done.`
-      })
-    }
+    async ({ id, researcher }) =>
+      tryLifecycle(() => ({
+        ...svc.startInboxResearch(id, researcher),
+        hint: 'Add research findings via conversation_add. Call inbox_ready when done.'
+      }))
   )
 
   server.registerTool(
@@ -157,40 +142,8 @@ export const register: Register = (server, svc) => {
         body: z.string().optional().describe('Task body (omit for default template)')
       }
     },
-    async ({ id, title, priority, labels, body }) => {
-      const item = svc.getInbox(id)
-      if (!item) return textResponse(`Inbox ${id} not found`)
-      if (item.status === 'converted' || item.status === 'archived') {
-        return textResponse(`Inbox ${id} is ${item.status} — cannot convert`)
-      }
-      if (!item.projectId) {
-        return textResponse(`Inbox ${id} has no projectId — assign one before converting`)
-      }
-      const task = svc.createTask({
-        projectId: item.projectId,
-        title,
-        priority,
-        labels,
-        status: 'TODO'
-      })
-      if (body) svc.updateTask(task.id, { body })
-      svc.updateInbox(id, { status: 'converted', linkedTaskId: task.id })
-      const convs = svc.findConversationsByLink('inbox', id)
-      for (const c of convs) {
-        if (c.status !== 'closed') {
-          svc.updateConversation(c.id, {
-            status: 'closed',
-            decisionSummary: `Converted to ${task.id}: ${title}`,
-            closedAt: new Date().toISOString()
-          })
-        }
-      }
-      return textResponse({
-        inboxId: id,
-        taskId: task.id,
-        task: svc.getTask(task.id)
-      })
-    }
+    async ({ id, title, priority, labels, body }) =>
+      tryLifecycle(() => svc.convertInboxToTask(id, { title, priority, labels, body }))
   )
 
   server.registerTool(
@@ -202,25 +155,7 @@ export const register: Register = (server, svc) => {
         reason: z.string().optional().describe('Why archived')
       }
     },
-    async ({ id, reason }) => {
-      const item = svc.getInbox(id)
-      if (!item) return textResponse(`Inbox ${id} not found`)
-      if (item.status === 'converted') {
-        return textResponse(`Inbox ${id} is already converted — cannot archive`)
-      }
-      svc.updateInbox(id, { status: 'archived' })
-      const convs = svc.findConversationsByLink('inbox', id)
-      for (const c of convs) {
-        if (c.status !== 'closed') {
-          svc.updateConversation(c.id, {
-            status: 'closed',
-            decisionSummary: reason ? `Archived: ${reason}` : 'Archived',
-            closedAt: new Date().toISOString()
-          })
-        }
-      }
-      return textResponse(svc.getInbox(id))
-    }
+    async ({ id, reason }) => tryLifecycle(() => svc.archiveInbox(id, reason))
   )
 
   server.registerTool(

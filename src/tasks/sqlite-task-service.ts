@@ -5,6 +5,13 @@ import type { ContextSourceOperations } from './interfaces/context-source-reposi
 import type { ConversationOperations } from './interfaces/conversation-repository.interface'
 import type { InboxOperations } from './interfaces/inbox-repository.interface'
 import type {
+  InboxLifecycleOperations,
+  InboxConvertInput,
+  InboxConvertResult,
+  InboxResearchResult
+} from './interfaces/inbox-lifecycle.interface'
+import { InboxLifecycleService } from './lifecycle/inbox-lifecycle-service'
+import type {
   Task,
   CreateTaskInput,
   UpdateTaskInput,
@@ -65,7 +72,8 @@ export class SqliteTaskService
     SessionOperations,
     ContextSourceOperations,
     ConversationOperations,
-    InboxOperations
+    InboxOperations,
+    InboxLifecycleOperations
 {
   private readonly db: Database.Database
   private readonly projects: ProjectRepository
@@ -79,6 +87,7 @@ export class SqliteTaskService
   private readonly conversations: ConversationRepository
   private readonly inbox: InboxRepository
   private readonly counters: CounterRepository
+  private readonly inboxLifecycle: InboxLifecycleService
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath)
@@ -97,6 +106,12 @@ export class SqliteTaskService
     this.contextSources = new ContextSourceRepository(this.db)
     this.conversations = new ConversationRepository(this.db)
     this.inbox = new InboxRepository(this.db, this.counters)
+    this.inboxLifecycle = new InboxLifecycleService(
+      this.db,
+      this.inbox,
+      this.conversations,
+      this.tasks
+    )
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -358,5 +373,16 @@ export class SqliteTaskService
   }
   deleteInbox(id: string): void {
     this.inbox.delete(id)
+  }
+
+  // ── Inbox lifecycle (composite, transactional) ─────────────────────────────
+  startInboxResearch(id: string, researcher: string): InboxResearchResult {
+    return this.inboxLifecycle.startInboxResearch(id, researcher)
+  }
+  convertInboxToTask(id: string, input: InboxConvertInput): InboxConvertResult {
+    return this.inboxLifecycle.convertInboxToTask(id, input)
+  }
+  archiveInbox(id: string, reason?: string): InboxItem {
+    return this.inboxLifecycle.archiveInbox(id, reason)
   }
 }
