@@ -10,7 +10,14 @@ import type {
   InboxConvertResult,
   InboxResearchResult
 } from './interfaces/inbox-lifecycle.interface'
+import type {
+  ConversationLifecycleOperations,
+  OpenConversationInput,
+  DecideConversationInput,
+  DecideConversationResult
+} from './interfaces/conversation-lifecycle.interface'
 import { InboxLifecycleService } from './lifecycle/inbox-lifecycle-service'
+import { ConversationLifecycleService } from './lifecycle/conversation-lifecycle-service'
 import type {
   Task,
   CreateTaskInput,
@@ -73,7 +80,8 @@ export class SqliteTaskService
     ContextSourceOperations,
     ConversationOperations,
     InboxOperations,
-    InboxLifecycleOperations
+    InboxLifecycleOperations,
+    ConversationLifecycleOperations
 {
   private readonly db: Database.Database
   private readonly projects: ProjectRepository
@@ -88,6 +96,7 @@ export class SqliteTaskService
   private readonly inbox: InboxRepository
   private readonly counters: CounterRepository
   private readonly inboxLifecycle: InboxLifecycleService
+  private readonly conversationLifecycle: ConversationLifecycleService
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath)
@@ -109,6 +118,11 @@ export class SqliteTaskService
     this.inboxLifecycle = new InboxLifecycleService(
       this.db,
       this.inbox,
+      this.conversations,
+      this.tasks
+    )
+    this.conversationLifecycle = new ConversationLifecycleService(
+      this.db,
       this.conversations,
       this.tasks
     )
@@ -384,5 +398,19 @@ export class SqliteTaskService
   }
   archiveInbox(id: string, reason?: string): InboxItem {
     return this.inboxLifecycle.archiveInbox(id, reason)
+  }
+
+  // ── Conversation lifecycle (composite, transactional) ──────────────────────
+  openConversation(input: OpenConversationInput): Conversation {
+    return this.conversationLifecycle.openConversation(input)
+  }
+  decideConversation(id: string, input: DecideConversationInput): DecideConversationResult {
+    return this.conversationLifecycle.decideConversation(id, input)
+  }
+  closeConversation(id: string): Conversation {
+    return this.conversationLifecycle.closeConversation(id)
+  }
+  reopenConversation(id: string): Conversation {
+    return this.conversationLifecycle.reopenConversation(id)
   }
 }
