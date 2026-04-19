@@ -165,6 +165,39 @@ function runLegacyMigrations(db: Database.Database): void {
 
   // conversation_messages: rename author → author_name, add metadata_json
   migrateConversationMessages(db)
+
+  // TASK-526: collapse session status 3→2 + add CHECK constraint
+  migrateSessionsStatus(db)
+}
+
+function migrateSessionsStatus(db: Database.Database): void {
+  const row = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='sessions'")
+    .get() as { sql?: string } | undefined
+  if (!row?.sql) return // no sessions table yet — createM1Tables will make one with CHECK
+  if (row.sql.includes("CHECK") && row.sql.includes("status IN")) return // already migrated
+
+  db.exec("UPDATE sessions SET status = 'completed' WHERE status = 'abandoned'")
+  db.exec(`
+    CREATE TABLE sessions_new (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      workspace_id TEXT,
+      task_id TEXT,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed')),
+      handoff_json TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (project_id) REFERENCES projects(id)
+    )
+  `)
+  db.exec(`
+    INSERT INTO sessions_new (id, project_id, workspace_id, task_id, started_at, ended_at, status, handoff_json, created_at)
+    SELECT id, project_id, workspace_id, task_id, started_at, ended_at, status, handoff_json, created_at FROM sessions
+  `)
+  db.exec('DROP TABLE sessions')
+  db.exec('ALTER TABLE sessions_new RENAME TO sessions')
 }
 
 // Any parsed ID above this is assumed to be a legacy timestamp-style ID
@@ -229,7 +262,7 @@ function createM1Tables(db: Database.Database): void {
       task_id TEXT,
       started_at TEXT NOT NULL,
       ended_at TEXT,
-      status TEXT NOT NULL DEFAULT 'active',
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed')),
       handoff_json TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (project_id) REFERENCES projects(id)

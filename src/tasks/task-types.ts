@@ -150,7 +150,7 @@ export interface DerivedProgress {
 
 // ── Sessions (L3 — Session Lifecycle) ────────────────────────────────────────
 
-export type SessionStatus = 'active' | 'completed' | 'abandoned'
+export type SessionStatus = 'active' | 'completed'
 
 export interface SessionHandoff {
   commits?: string[]

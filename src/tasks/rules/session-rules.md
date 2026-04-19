@@ -7,9 +7,8 @@ Behavioral contract for session lifecycle tools. Edit this file to update compli
 Before any other action in this session:
 
 1. Echo the lastHandoff block to the user verbatim — resume point, loose ends, decisions, tasks updated. Do not summarize.
-2. If abandonedSession is present, warn the user with the abandoned session id and its start time.
-3. List activeTasks grouped by priority (high → medium → low).
-4. Wait for user acknowledgement before calling session_pick or doing any work.
+2. List activeTasks grouped by priority (high → medium → low).
+3. Wait for user acknowledgement before calling session_pick or doing any work.
 
 ## On session_end
 

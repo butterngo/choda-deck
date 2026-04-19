@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import Database from 'better-sqlite3'
 import { SqliteTaskService } from '../sqlite-task-service'
-import { abandonStaleSession, loadLastHandoff } from '../mcp-tools/session-tools'
+import { loadLastHandoff } from '../mcp-tools/session-tools'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -37,17 +38,19 @@ describe('session per workspace', () => {
     expect(beSess!.id).not.toBe(feSess!.id)
   })
 
-  it('abandonStaleSession scoped to workspace', () => {
-    const abandoned = abandonStaleSession(svc, 'ar', 'workflow-engine')
-    expect(abandoned).not.toBeNull()
+  it('N parallel active sessions per workspace (TASK-526)', () => {
+    // Add 2 more on workflow-engine (already has 1 from test #1)
+    svc.createSession({ projectId: 'ar', workspaceId: 'workflow-engine' })
+    svc.createSession({ projectId: 'ar', workspaceId: 'workflow-engine' })
 
-    // BE abandoned, FE still active
-    expect(svc.getActiveSession('ar', 'workflow-engine')).toBeNull()
-    expect(svc.getActiveSession('ar', 'remote-workflow')).not.toBeNull()
+    const all = svc.findSessions('ar', 'active').filter((s) => s.workspaceId === 'workflow-engine')
+    expect(all.length).toBe(3)
+    expect(all.every((s) => s.status === 'active')).toBe(true)
 
-    // cleanup FE
-    const feSess = svc.getActiveSession('ar', 'remote-workflow')!
-    svc.updateSession(feSess.id, { status: 'abandoned', endedAt: '2026-04-16' })
+    // cleanup so later tests start clean
+    for (const s of all) svc.updateSession(s.id, { status: 'completed', endedAt: '2026-04-19' })
+    const fe = svc.getActiveSession('ar', 'remote-workflow')
+    if (fe) svc.updateSession(fe.id, { status: 'completed', endedAt: '2026-04-19' })
   })
 
   it('loadLastHandoff scoped to workspace', () => {
@@ -69,6 +72,40 @@ describe('session per workspace', () => {
     const feHandoff = loadLastHandoff(svc, 'ar', 'remote-workflow')
     expect(beHandoff!.handoff.resumePoint).toBe('BE resume')
     expect(feHandoff!.handoff.resumePoint).toBe('FE resume')
+  })
+
+  it('migration: legacy abandoned rows collapse to completed', () => {
+    // Use a separate fresh service to simulate a pre-migration DB
+    const legacyDb = path.join(__dirname, '__test-legacy-sessions__.db')
+    if (fs.existsSync(legacyDb)) fs.unlinkSync(legacyDb)
+
+    // Seed a DB with the OLD schema (no CHECK), insert an 'abandoned' row, then re-open via SqliteTaskService
+    // to trigger migrateSessionsStatus.
+    const raw = new Database(legacyDb)
+    raw.exec(`
+      CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, cwd TEXT NOT NULL);
+      INSERT INTO projects VALUES ('lp', 'Legacy', '/tmp/legacy');
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        workspace_id TEXT,
+        task_id TEXT,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        handoff_json TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO sessions (id, project_id, started_at, status) VALUES
+        ('S-OLD', 'lp', '2026-01-01', 'abandoned');
+    `)
+    raw.close()
+
+    const migrated = new SqliteTaskService(legacyDb)
+    const s = migrated.getSession('S-OLD')
+    expect(s?.status).toBe('completed')
+    migrated.close()
+    fs.unlinkSync(legacyDb)
   })
 })
 

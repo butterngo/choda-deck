@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { SqliteTaskService } from './sqlite-task-service'
 import { exportConversationMarkdown } from './mcp-tools/conversation-exporter'
 import { buildProjectContext } from './mcp-tools/project-context-builder'
-import { abandonStaleSession, applyTaskUpdates, loadLastHandoff } from './mcp-tools/session-tools'
+import { applyTaskUpdates, loadLastHandoff } from './mcp-tools/session-tools'
 import { exportHandoffMarkdown } from './mcp-tools/session-handoff-exporter'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -761,7 +761,6 @@ describe('SqliteTaskService', () => {
     })
 
     // session_start
-    expect(abandonStaleSession(svc, projectId)).toBeNull() // no stale active
     const first = svc.createSession({ projectId, status: 'active' })
     expect(loadLastHandoff(svc, projectId)).toBeNull() // no prior completed
 
@@ -792,15 +791,26 @@ describe('SqliteTaskService', () => {
     expect(last?.handoff.resumePoint).toBe('Write more tests')
   })
 
-  it('session_start marks previous active session as abandoned', () => {
-    const projectId = 'abandon-proj'
-    svc.ensureProject(projectId, projectId, '/tmp/abandon')
-    const stale = svc.createSession({ projectId, status: 'active' })
+  it('N parallel active sessions per workspace (TASK-526)', () => {
+    const projectId = 'parallel-proj'
+    svc.ensureProject(projectId, projectId, '/tmp/parallel')
+    const ws = 'workflow-engine'
 
-    const abandoned = abandonStaleSession(svc, projectId)
-    expect(abandoned?.id).toBe(stale.id)
-    expect(svc.getSession(stale.id)?.status).toBe('abandoned')
-    expect(svc.getSession(stale.id)?.endedAt).not.toBeNull()
+    const s1 = svc.createSession({ projectId, workspaceId: ws, status: 'active' })
+    const s2 = svc.createSession({ projectId, workspaceId: ws, status: 'active' })
+    const s3 = svc.createSession({ projectId, workspaceId: ws, status: 'active' })
+
+    expect(svc.getSession(s1.id)?.status).toBe('active')
+    expect(svc.getSession(s2.id)?.status).toBe('active')
+    expect(svc.getSession(s3.id)?.status).toBe('active')
+  })
+
+  it("rejects status='abandoned' (CHECK constraint)", () => {
+    const projectId = 'check-proj'
+    svc.ensureProject(projectId, projectId, '/tmp/check')
+    expect(() =>
+      svc.createSession({ projectId, status: 'abandoned' as never })
+    ).toThrow(/CHECK constraint failed/i)
   })
 
   it('exportHandoffMarkdown writes formatted handoff.md', () => {

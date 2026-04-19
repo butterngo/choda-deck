@@ -6,6 +6,9 @@ import { now } from '../repositories/shared'
 import type { SqliteTaskService } from '../sqlite-task-service'
 import type { SessionHandoff, Task, TaskStatus } from '../task-types'
 
+// Workspaces support N parallel active sessions (TASK-526).
+// Status set: 'active' | 'completed' — no auto-abandon on session_start.
+
 const handoffInputSchema = {
   sessionId: z.string(),
   commits: z.array(z.string()).optional(),
@@ -20,7 +23,7 @@ export const register: Register = (server, svc) => {
     'session_start',
     {
       description:
-        'Start a new work session for a project workspace. Abandons stale session for this workspace, returns last handoff + active context.',
+        'Start a new work session for a project workspace. Returns last handoff + active context. Multiple active sessions per workspace are allowed.',
       inputSchema: {
         projectId: z.string().describe('Project ID'),
         workspaceId: z.string().optional().describe('Workspace ID (e.g. workflow-engine)')
@@ -30,7 +33,6 @@ export const register: Register = (server, svc) => {
       const project = svc.getProject(projectId)
       if (!project) return textResponse(`Project ${projectId} not found`)
 
-      const abandoned = abandonStaleSession(svc, projectId, workspaceId)
       const session = svc.createSession({
         projectId,
         workspaceId,
@@ -45,7 +47,6 @@ export const register: Register = (server, svc) => {
         sessionId: session.id,
         workspaceId: session.workspaceId,
         mode: 'planning',
-        abandonedSession: abandoned,
         lastHandoff,
         projectSummary: buildProjectSummary(bundle),
         activeTasks: bundle?.currentState.activeTasks ?? [],
@@ -137,17 +138,6 @@ export const register: Register = (server, svc) => {
       })
     }
   )
-}
-
-export function abandonStaleSession(
-  svc: SqliteTaskService,
-  projectId: string,
-  workspaceId?: string
-): { id: string; startedAt: string } | null {
-  const active = svc.getActiveSession(projectId, workspaceId)
-  if (!active) return null
-  svc.updateSession(active.id, { status: 'abandoned', endedAt: now() })
-  return { id: active.id, startedAt: active.startedAt }
 }
 
 export function loadLastHandoff(
