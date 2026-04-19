@@ -2,11 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import { SqliteTaskService } from '../sqlite-task-service'
-import {
-  ConversationConflictError,
-  ConversationNotFoundError,
-  ConversationStatusError
-} from './errors'
+import { ConversationNotFoundError, ConversationStatusError } from './errors'
 
 const TEST_DB = path.join(__dirname, '__test-conversation-lifecycle__.db')
 let svc: SqliteTaskService
@@ -69,15 +65,20 @@ describe('openConversation', () => {
     expect(links[0].linkedId).toBe(task.id)
   })
 
-  it('throws ConversationConflictError when active conv exists', () => {
-    openFresh('first')
-    expect(() => openFresh('second')).toThrowError(ConversationConflictError)
+  it('allows N parallel open conversations per project', () => {
+    const id1 = openFresh('first')
+    const id2 = openFresh('second')
+    const id3 = openFresh('third')
+
+    const open = svc.findConversations('proj-c', 'open')
+    expect(open.map((c) => c.id).sort()).toEqual([id1, id2, id3].sort())
   })
 
-  it('throws ConversationConflictError when decided conv not closed', () => {
-    const id = openFresh('first')
-    svc.decideConversation(id, { author: 'Butter', decision: 'yes' })
-    expect(() => openFresh('second')).toThrowError(ConversationConflictError)
+  it('allows opening new conv while another is decided but not closed', () => {
+    const id1 = openFresh('first')
+    svc.decideConversation(id1, { author: 'Butter', decision: 'yes' })
+    const id2 = openFresh('second')
+    expect(svc.getConversation(id2)?.status).toBe('open')
   })
 })
 
@@ -148,13 +149,16 @@ describe('reopenConversation', () => {
   it('happy path: decided → discussing', () => {
     const id = openFresh()
     svc.decideConversation(id, { author: 'Butter', decision: 'go' })
-    svc.closeConversation(id)
-    // reopen a closed one? spec says only decided — so test from decided
-    const id2 = openFresh('second')
-    svc.decideConversation(id2, { author: 'Butter', decision: 'ok' })
+    const conv = svc.reopenConversation(id)
+    expect(conv.status).toBe('discussing')
+  })
 
-    // only decided (not yet closed) can reopen — close the first so no conflict
-    const conv = svc.reopenConversation(id2)
+  it('allows reopen even when another conversation is active', () => {
+    const id1 = openFresh('first')
+    svc.decideConversation(id1, { author: 'Butter', decision: 'go' })
+    openFresh('second') // another open conv exists
+
+    const conv = svc.reopenConversation(id1)
     expect(conv.status).toBe('discussing')
   })
 
