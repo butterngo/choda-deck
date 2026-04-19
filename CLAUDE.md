@@ -55,6 +55,29 @@ Use `choda-tasks` MCP tools (`task_context`, `task_list`) for task details.
 - No auto-commits — commits only on explicit request
 - No dev server claims without proof — exercise UI in actual Electron window
 
+## Git Worktree Workflow
+
+Per-project pattern — worktrees live in `C:\dev\choda-deck.worktrees\` (sibling to the repo, not inside it — no `.gitignore` needed).
+
+```
+C:\dev\
+├── choda-deck\              ← main checkout
+└── choda-deck.worktrees\
+    ├── hotfix\
+    ├── feature-x\
+    └── ...
+```
+
+Commands (run from `C:\dev\choda-deck\`):
+
+```bash
+git worktree add ../choda-deck.worktrees/hotfix main       # create
+git worktree list                                          # inspect
+git worktree remove ../choda-deck.worktrees/hotfix         # cleanup
+```
+
+Use worktrees for parallel branches (hotfix + feature at once) instead of stash/switch churn.
+
 ## MCP Tools Available
 
 `choda-tasks` server (8 tools): `task_context`, `task_list`, `task_create`, `task_update`, `phase_list`, `phase_create`, `roadmap`, `search`.

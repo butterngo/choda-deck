@@ -45,7 +45,10 @@ describe('seedGlobalCounter', () => {
     insertTask('TASK-042')
     insertTask('TASK-1776417858921')
     initSchema(db)
-    expect(getCounter('task')).toBe(42)
+    // Seed picks max=42 from sane IDs only; cleanupPoisonedTaskIds then renames
+    // the legacy row to TASK-043, bumping the counter by one so future inserts
+    // can't collide with the rename output.
+    expect(getCounter('task')).toBe(43)
   })
 
   it('resets poisoned counter back down to sane max', () => {
@@ -85,6 +88,7 @@ describe('cleanupPoisonedTaskIds', () => {
   })
 
   it('updates referring rows in sessions.task_id', () => {
+    db.prepare("INSERT INTO projects (id, name, cwd) VALUES ('p', 'p', 'p')").run()
     insertTask('TASK-1776417858921')
     db.prepare(
       `INSERT INTO sessions (id, project_id, task_id, started_at, status, created_at)
