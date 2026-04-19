@@ -10,11 +10,7 @@ import type {
 } from '../interfaces/conversation-lifecycle.interface'
 import type { Conversation } from '../task-types'
 import { now } from '../repositories/shared'
-import {
-  ConversationNotFoundError,
-  ConversationStatusError,
-  ConversationConflictError
-} from './errors'
+import { ConversationNotFoundError, ConversationStatusError } from './errors'
 
 export class ConversationLifecycleService implements ConversationLifecycleOperations {
   constructor(
@@ -25,8 +21,6 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
 
   openConversation(input: OpenConversationInput): Conversation {
     const tx = this.db.transaction((): Conversation => {
-      this.assertNoBlockingConversations(input.projectId)
-
       const conv = this.conversations.create({
         projectId: input.projectId,
         title: input.title,
@@ -99,37 +93,9 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
       if (conv.status !== 'decided') {
         throw new ConversationStatusError(id, conv.status, 'only decided conversations can reopen')
       }
-      const active = [
-        ...this.conversations.findByProject(conv.projectId, 'open'),
-        ...this.conversations.findByProject(conv.projectId, 'discussing')
-      ]
-      if (active.length > 0) {
-        throw new ConversationConflictError(
-          `Cannot reopen ${id}: ${active[0].id} is already ${active[0].status}`
-        )
-      }
       return this.conversations.update(id, { status: 'discussing' })
     })
     return tx()
-  }
-
-  private assertNoBlockingConversations(projectId: string): void {
-    const active = [
-      ...this.conversations.findByProject(projectId, 'open'),
-      ...this.conversations.findByProject(projectId, 'discussing')
-    ]
-    if (active.length > 0) {
-      throw new ConversationConflictError(
-        `Cannot open: ${active[0].id} "${active[0].title}" is ${active[0].status}. Finish it first.`
-      )
-    }
-    const decided = this.conversations.findByProject(projectId, 'decided')
-    if (decided.length > 0) {
-      const ids = decided.map((c) => c.id).join(', ')
-      throw new ConversationConflictError(
-        `Cannot open: ${decided.length} decided conversation(s) not closed yet (${ids}). Use conversation_close first.`
-      )
-    }
   }
 
   private createActionAndMaybeSpawnTask(

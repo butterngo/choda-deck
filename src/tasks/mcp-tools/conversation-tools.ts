@@ -157,8 +157,7 @@ export const register = (server: McpServer, svc: ConversationToolsDeps): void =>
   server.registerTool(
     'conversation_close',
     {
-      description:
-        'Close a decided conversation (status → closed). Must close all decided conversations before opening a new one.',
+      description: 'Close a decided conversation (status → closed).',
       inputSchema: { conversationId: z.string() }
     },
     async ({ conversationId }) =>
@@ -171,8 +170,7 @@ export const register = (server: McpServer, svc: ConversationToolsDeps): void =>
   server.registerTool(
     'conversation_reopen',
     {
-      description:
-        'Reopen a decided conversation back to discussing. Only works if no other conversation is currently open/discussing for this project.',
+      description: 'Reopen a decided conversation back to discussing.',
       inputSchema: { conversationId: z.string() }
     },
     async ({ conversationId }) =>
