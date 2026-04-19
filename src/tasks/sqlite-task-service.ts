@@ -5,6 +5,10 @@ import type { ContextSourceOperations } from './interfaces/context-source-reposi
 import type { ConversationOperations } from './interfaces/conversation-repository.interface'
 import type { InboxOperations } from './interfaces/inbox-repository.interface'
 import type {
+  ProjectOperations,
+  WorkspaceOperations
+} from './interfaces/project-repository.interface'
+import type {
   InboxLifecycleOperations,
   InboxConvertInput,
   InboxConvertResult,
@@ -70,6 +74,7 @@ import type {
 
 import { initSchema } from './repositories/schema'
 import { ProjectRepository } from './repositories/project-repository'
+import type { ProjectRow, WorkspaceRow } from './repositories/project-repository'
 import { TaskRepository } from './repositories/task-repository'
 import { PhaseRepository } from './repositories/phase-repository'
 import { DocumentRepository } from './repositories/document-repository'
@@ -84,6 +89,8 @@ import { CounterRepository } from './repositories/counter-repository'
 export class SqliteTaskService
   implements
     TaskService,
+    ProjectOperations,
+    WorkspaceOperations,
     SessionOperations,
     ContextSourceOperations,
     ConversationOperations,
@@ -165,20 +172,20 @@ export class SqliteTaskService
     this.projects.ensure(id, name, cwd)
   }
 
-  getProject(id: string): { id: string; name: string; cwd: string } | null {
+  getProject(id: string): ProjectRow | null {
     return this.projects.get(id)
   }
 
-  listProjects() {
+  listProjects(): ProjectRow[] {
     return this.projects.list()
   }
-  addWorkspace(projectId: string, id: string, label: string, cwd: string) {
+  addWorkspace(projectId: string, id: string, label: string, cwd: string): WorkspaceRow {
     return this.projects.addWorkspace(projectId, id, label, cwd)
   }
-  getWorkspace(id: string) {
+  getWorkspace(id: string): WorkspaceRow | null {
     return this.projects.getWorkspace(id)
   }
-  findWorkspaces(projectId: string) {
+  findWorkspaces(projectId: string): WorkspaceRow[] {
     return this.projects.findWorkspaces(projectId)
   }
 

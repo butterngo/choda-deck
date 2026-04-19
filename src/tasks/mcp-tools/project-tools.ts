@@ -1,8 +1,15 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { textResponse, type Register } from './types'
-import { buildProjectContext } from './project-context-builder'
+import { textResponse } from './types'
+import { buildProjectContext, type ProjectContextDeps } from './project-context-builder'
+import type {
+  ProjectOperations,
+  WorkspaceOperations
+} from '../interfaces/project-repository.interface'
 
-export const register: Register = (server, svc) => {
+export type ProjectToolsDeps = ProjectOperations & WorkspaceOperations & ProjectContextDeps
+
+export const register = (server: McpServer, svc: ProjectToolsDeps): void => {
   server.registerTool(
     'project_add',
     {

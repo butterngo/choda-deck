@@ -1,10 +1,10 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import type { SqliteTaskService } from '../sqlite-task-service'
+import type { ConversationOperations } from '../interfaces/conversation-repository.interface'
 import type { Conversation, ConversationMessage, ConversationAction } from '../task-types'
 
 export function exportConversationMarkdown(
-  svc: SqliteTaskService,
+  svc: ConversationOperations,
   conversationId: string,
   contentRoot = process.env.CHODA_CONTENT_ROOT || ''
 ): string | null {

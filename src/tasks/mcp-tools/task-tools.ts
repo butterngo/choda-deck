@@ -1,6 +1,18 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { Phase } from '../task-types'
-import { textResponse, type Register } from './types'
+import { textResponse } from './types'
+import type { TaskOperations } from '../interfaces/task-repository.interface'
+import type { PhaseOperations } from '../interfaces/phase-repository.interface'
+import type { ConversationOperations } from '../interfaces/conversation-repository.interface'
+import type { TagOperations } from '../interfaces/tag-repository.interface'
+import type { RelationshipOperations } from '../interfaces/relationship-repository.interface'
+
+export type TaskToolsDeps = TaskOperations &
+  PhaseOperations &
+  ConversationOperations &
+  TagOperations &
+  RelationshipOperations
 
 function defaultBody(id: string, title: string): string {
   return `# ${id}: ${title}
@@ -25,7 +37,7 @@ function defaultBody(id: string, title: string): string {
 `
 }
 
-export const register: Register = (server, svc) => {
+export const register = (server: McpServer, svc: TaskToolsDeps): void => {
   server.registerTool(
     'task_context',
     {

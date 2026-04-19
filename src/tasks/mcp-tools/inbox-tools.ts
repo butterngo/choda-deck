@@ -1,6 +1,12 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { textResponse, type Register } from './types'
+import { textResponse } from './types'
 import { LifecycleError } from '../lifecycle/errors'
+import type { InboxOperations } from '../interfaces/inbox-repository.interface'
+import type { ConversationOperations } from '../interfaces/conversation-repository.interface'
+import type { InboxLifecycleOperations } from '../interfaces/inbox-lifecycle.interface'
+
+export type InboxToolsDeps = InboxOperations & ConversationOperations & InboxLifecycleOperations
 
 function tryLifecycle<T>(fn: () => T): ReturnType<typeof textResponse> {
   try {
@@ -11,7 +17,7 @@ function tryLifecycle<T>(fn: () => T): ReturnType<typeof textResponse> {
   }
 }
 
-export const register: Register = (server, svc) => {
+export const register = (server: McpServer, svc: InboxToolsDeps): void => {
   server.registerTool(
     'inbox_add',
     {

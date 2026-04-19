@@ -1,13 +1,23 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { textResponse, type Register } from './types'
-import { buildProjectContext } from './project-context-builder'
+import { textResponse } from './types'
+import { buildProjectContext, type ProjectContextDeps } from './project-context-builder'
 import { loadSessionRules } from '../rules/session-rules-loader'
 import { LifecycleError } from '../lifecycle/errors'
-import type { SqliteTaskService } from '../sqlite-task-service'
 import type { SessionHandoff, Task, TaskStatus } from '../task-types'
+import type { ProjectOperations } from '../interfaces/project-repository.interface'
+import type { SessionOperations } from '../interfaces/session-repository.interface'
+import type { TaskOperations } from '../interfaces/task-repository.interface'
+import type { SessionLifecycleOperations } from '../interfaces/session-lifecycle.interface'
 
 // Workspaces support N parallel active sessions (TASK-526).
 // Status set: 'active' | 'completed' — no auto-abandon on session_start.
+
+export type SessionToolsDeps = ProjectOperations &
+  SessionOperations &
+  TaskOperations &
+  SessionLifecycleOperations &
+  ProjectContextDeps
 
 const handoffInputSchema = {
   sessionId: z.string(),
@@ -27,7 +37,7 @@ function tryLifecycle<T>(fn: () => T): ReturnType<typeof textResponse> {
   }
 }
 
-export const register: Register = (server, svc) => {
+export const register = (server: McpServer, svc: SessionToolsDeps): void => {
   server.registerTool(
     'session_start',
     {
@@ -137,7 +147,7 @@ export const register: Register = (server, svc) => {
 }
 
 export function loadLastHandoff(
-  svc: SqliteTaskService,
+  svc: SessionOperations,
   projectId: string,
   workspaceId?: string
 ): { sessionId: string; endedAt: string | null; handoff: SessionHandoff } | null {
@@ -179,7 +189,7 @@ function buildSuggestion(
 }
 
 export function applyTaskUpdates(
-  svc: SqliteTaskService,
+  svc: TaskOperations,
   updates?: Array<{ id: string; status: TaskStatus }>
 ): Array<{ id: string; title: string; oldStatus: TaskStatus; newStatus: TaskStatus }> {
   if (!updates || updates.length === 0) return []

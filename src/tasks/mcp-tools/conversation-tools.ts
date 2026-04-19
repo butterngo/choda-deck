@@ -1,7 +1,12 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { textResponse, type Register } from './types'
+import { textResponse } from './types'
 import { now } from '../repositories/shared'
 import { LifecycleError } from '../lifecycle/errors'
+import type { ConversationOperations } from '../interfaces/conversation-repository.interface'
+import type { ConversationLifecycleOperations } from '../interfaces/conversation-lifecycle.interface'
+
+export type ConversationToolsDeps = ConversationOperations & ConversationLifecycleOperations
 
 const participantTypeSchema = z.enum(['human', 'agent', 'role'])
 const messageTypeSchema = z.enum([
@@ -52,7 +57,7 @@ function tryLifecycle<T>(fn: () => T): ReturnType<typeof textResponse> {
   }
 }
 
-export const register: Register = (server, svc) => {
+export const register = (server: McpServer, svc: ConversationToolsDeps): void => {
   server.registerTool(
     'conversation_open',
     {

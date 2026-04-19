@@ -1,7 +1,13 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { textResponse, type Register } from './types'
+import { textResponse } from './types'
+import type { TaskOperations } from '../interfaces/task-repository.interface'
+import type { TagOperations } from '../interfaces/tag-repository.interface'
+import type { InboxOperations } from '../interfaces/inbox-repository.interface'
 
-export const register: Register = (server, svc) => {
+export type SearchToolsDeps = TaskOperations & TagOperations & InboxOperations
+
+export const register = (server: McpServer, svc: SearchToolsDeps): void => {
   server.registerTool(
     'search',
     {

@@ -1,6 +1,5 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import type { SqliteTaskService } from '../sqlite-task-service'
 import type {
   Phase,
   Task,
@@ -9,6 +8,19 @@ import type {
   ContextSource,
   DerivedProgress
 } from '../task-types'
+import type { ProjectOperations } from '../interfaces/project-repository.interface'
+import type { ContextSourceOperations } from '../interfaces/context-source-repository.interface'
+import type { PhaseOperations } from '../interfaces/phase-repository.interface'
+import type { TaskOperations } from '../interfaces/task-repository.interface'
+import type { SessionOperations } from '../interfaces/session-repository.interface'
+import type { ConversationOperations } from '../interfaces/conversation-repository.interface'
+
+export type ProjectContextDeps = ProjectOperations &
+  ContextSourceOperations &
+  PhaseOperations &
+  TaskOperations &
+  SessionOperations &
+  ConversationOperations
 
 export type ProjectContextDepth = 'summary' | 'full'
 
@@ -35,7 +47,7 @@ export interface ProjectContextBundle {
 const SUMMARY_MAX_CHARS = 600
 
 export function buildProjectContext(
-  svc: SqliteTaskService,
+  svc: ProjectContextDeps,
   projectId: string,
   depth: ProjectContextDepth = 'full',
   contentRoot = process.env.CHODA_CONTENT_ROOT || ''
@@ -65,14 +77,14 @@ export function buildProjectContext(
 }
 
 function fetchProject(
-  svc: SqliteTaskService,
+  svc: ProjectContextDeps,
   projectId: string
 ): ProjectContextBundle['project'] | null {
   return svc.getProject(projectId)
 }
 
 function pickActivePhase(
-  svc: SqliteTaskService,
+  svc: ProjectContextDeps,
   projectId: string
 ): ProjectContextBundle['currentState']['activePhase'] {
   const phases = svc.findPhases(projectId)
@@ -85,7 +97,7 @@ function pickActivePhase(
 }
 
 function pickActiveTasks(
-  svc: SqliteTaskService,
+  svc: ProjectContextDeps,
   projectId: string
 ): Array<Pick<Task, 'id' | 'title' | 'status' | 'priority'>> {
   const inProgress = svc.findTasks({ projectId, status: 'IN-PROGRESS' })
@@ -96,7 +108,7 @@ function pickActiveTasks(
 }
 
 function pickLastSession(
-  svc: SqliteTaskService,
+  svc: ProjectContextDeps,
   projectId: string
 ): ProjectContextBundle['currentState']['lastSession'] {
   const completed = svc.findSessions(projectId, 'completed')
@@ -106,7 +118,7 @@ function pickLastSession(
 }
 
 function pickOpenConversations(
-  svc: SqliteTaskService,
+  svc: ProjectContextDeps,
   projectId: string
 ): ProjectContextBundle['currentState']['openConversations'] {
   const open = [

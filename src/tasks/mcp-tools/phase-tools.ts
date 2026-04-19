@@ -1,7 +1,11 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { textResponse, type Register } from './types'
+import { textResponse } from './types'
+import type { PhaseOperations } from '../interfaces/phase-repository.interface'
 
-export const register: Register = (server, svc) => {
+export type PhaseToolsDeps = PhaseOperations
+
+export const register = (server: McpServer, svc: PhaseToolsDeps): void => {
   server.registerTool(
     'phase_list',
     {

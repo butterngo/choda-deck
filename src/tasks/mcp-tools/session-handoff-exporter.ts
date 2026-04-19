@@ -1,10 +1,11 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import type { SqliteTaskService } from '../sqlite-task-service'
+import type { SessionOperations } from '../interfaces/session-repository.interface'
+import type { ProjectOperations } from '../interfaces/project-repository.interface'
 import type { Session, SessionHandoff } from '../task-types'
 
 export function exportHandoffMarkdown(
-  svc: SqliteTaskService,
+  svc: SessionOperations & ProjectOperations,
   sessionId: string,
   contentRoot = process.env.CHODA_CONTENT_ROOT || ''
 ): string | null {
