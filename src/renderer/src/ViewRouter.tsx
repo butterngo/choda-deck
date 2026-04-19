@@ -63,6 +63,7 @@ function ViewRouter({
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const terminalViewType: ViewType = {
   id: 'terminal',
   label: 'Terminal',

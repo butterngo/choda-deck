@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { mkdtempSync, writeFileSync, existsSync, readdirSync, utimesSync } from 'fs'
+import { mkdtempSync, writeFileSync, existsSync, readdirSync, utimesSync, mkdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
@@ -41,7 +41,7 @@ describe('backup-service', () => {
 
     it('filters non-matching filenames', () => {
       const dir = backupDir(userData)
-      require('fs').mkdirSync(dir, { recursive: true })
+      mkdirSync(dir, { recursive: true })
       touch(join(dir, 'choda-deck-2026-04-18.db'))
       touch(join(dir, 'not-a-backup.txt'))
       touch(join(dir, 'choda-deck-wrong.db'))
@@ -51,7 +51,7 @@ describe('backup-service', () => {
 
     it('sorts newest first by mtime', () => {
       const dir = backupDir(userData)
-      require('fs').mkdirSync(dir, { recursive: true })
+      mkdirSync(dir, { recursive: true })
       const old = join(dir, 'choda-deck-2026-04-10.db')
       const recent = join(dir, 'choda-deck-2026-04-18.db')
       touch(old)
@@ -71,14 +71,14 @@ describe('backup-service', () => {
 
     it('returns false when newest is fresh', () => {
       const dir = backupDir(userData)
-      require('fs').mkdirSync(dir, { recursive: true })
+      mkdirSync(dir, { recursive: true })
       touch(join(dir, 'choda-deck-2026-04-18.db'))
       expect(shouldRunDailyBackup(userData)).toBe(false)
     })
 
     it('returns true when newest is older than 24h', () => {
       const dir = backupDir(userData)
-      require('fs').mkdirSync(dir, { recursive: true })
+      mkdirSync(dir, { recursive: true })
       const path = join(dir, 'choda-deck-2026-04-17.db')
       touch(path)
       const pastMs = Date.now() / 1000 - 25 * 60 * 60
@@ -108,7 +108,7 @@ describe('backup-service', () => {
 
     it('prunes to 7 newest after backup', () => {
       const dir = backupDir(userData)
-      require('fs').mkdirSync(dir, { recursive: true })
+      mkdirSync(dir, { recursive: true })
       for (let i = 1; i <= 10; i++) {
         const name = `choda-deck-2026-04-${String(i).padStart(2, '0')}.db`
         touch(join(dir, name))
@@ -127,7 +127,7 @@ describe('backup-service', () => {
   describe('pruneOld', () => {
     it('keeps N newest by mtime', () => {
       const dir = backupDir(userData)
-      require('fs').mkdirSync(dir, { recursive: true })
+      mkdirSync(dir, { recursive: true })
       for (let i = 1; i <= 5; i++) {
         const name = `choda-deck-2026-04-${String(i).padStart(2, '0')}.db`
         touch(join(dir, name))

@@ -14,17 +14,11 @@ Electron desktop app (React 19 + xterm.js + better-sqlite3). Windows-first, Type
 
 ## Current Focus
 
-ADR-008 accepted. Building Milestone 1: Core Primitives (Conversation + Context + Session).
-
-Next task: TASK-501 — SQLite schema migration (sessions, context_sources, conversations tables)
+M1 (Core Primitives) shipped. Use `choda-tasks` MCP `project_context` / `roadmap` / `task_list` for live state — don't hardcode current task here.
 
 ## Context Sources
 
 - Vault context: read `vault/10-Projects/choda-deck/context.md`
-- Handoff: read `vault/10-Projects/choda-deck/handoff.md`
-- Roadmap: read `vault/10-Projects/choda-deck/roadmap.md`
-- Milestones: `vault/10-Projects/choda-deck/phases/milestone-{1,2,3}-*.md`
-- Tasks: `vault/10-Projects/choda-deck/tasks/` (TASK-501..507 = M1)
 - Architecture decisions: `vault/10-Projects/choda-deck/docs/decisions/` and `docs/decisions/`
 - In-repo architecture: `docs/architecture.md`
 
@@ -80,18 +74,16 @@ Use worktrees for parallel branches (hotfix + feature at once) instead of stash/
 
 ## MCP Tools Available
 
-`choda-tasks` server (8 tools): `task_context`, `task_list`, `task_create`, `task_update`, `phase_list`, `phase_create`, `roadmap`, `search`.
+`choda-tasks` server exposes domain tools across: project, workspace, task, phase, inbox, conversation, session, search, roadmap. Source of truth = `src/tasks/mcp-task-server.ts` + `src/tasks/mcp-tools/`. After source changes: `pnpm run build:mcp` + `/mcp reconnect`.
 
-M1 will add: `project_context`, `session_start`, `session_end`, conversation protocol tools, skill registry tools.
-
-Register in `.claude.json`:
+Register in `.claude.json` (production — uses bundled `dist/mcp-server.cjs`):
 
 ```json
 {
   "mcpServers": {
     "choda-tasks": {
-      "command": "npx",
-      "args": ["ts-node", "src/tasks/mcp-task-server.ts"],
+      "command": "node",
+      "args": ["dist/mcp-server.cjs"],
       "cwd": "C:\\dev\\choda-deck",
       "env": {
         "CHODA_DB_PATH": "./choda-deck.db",
@@ -101,5 +93,3 @@ Register in `.claude.json`:
   }
 }
 ```
-
-ADR-007 (Obsidian replacement) is **superseded** by ADR-008. Files-related tasks TASK-406..417 are archived.
