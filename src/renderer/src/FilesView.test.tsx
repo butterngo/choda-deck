@@ -115,7 +115,8 @@ describe('FilesView', () => {
       expect(screen.getByText('Context')).toBeDefined()
     })
 
-    // Select second file (click into the expanded 10-Projects dir)
+    // Expand 10-Projects dir, then select context.md
+    fireEvent.click(screen.getByText('10-Projects'))
     fireEvent.click(screen.getByText('context.md'))
 
     await waitFor(() => {
