@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import type React from 'react'
+import { useState } from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import FileTree from './FileTree'
@@ -30,9 +32,44 @@ const SAMPLE_TREE: FileNode[] = [
   { name: 'readme.txt', path: '/vault/readme.txt', type: 'file' }
 ]
 
+const TOP_LEVEL_EXPANDED = new Set(['/vault/10-Projects', '/vault/20-Areas'])
+
+interface HarnessProps {
+  nodes: FileNode[]
+  selectedPath?: string | null
+  initialExpanded?: Set<string>
+  onSelect?: (path: string) => void
+}
+
+function Harness({
+  nodes,
+  selectedPath = null,
+  initialExpanded = TOP_LEVEL_EXPANDED,
+  onSelect = (): void => {}
+}: HarnessProps): React.JSX.Element {
+  const [expanded, setExpanded] = useState<Set<string>>(initialExpanded)
+  const onToggle = (path: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
+  return (
+    <FileTree
+      nodes={nodes}
+      selectedPath={selectedPath}
+      expandedPaths={expanded}
+      onSelect={onSelect}
+      onToggle={onToggle}
+    />
+  )
+}
+
 describe('FileTree', () => {
   it('renders top-level nodes', () => {
-    render(<FileTree nodes={SAMPLE_TREE} selectedPath={null} onSelect={() => {}} />)
+    render(<Harness nodes={SAMPLE_TREE} />)
 
     expect(screen.getByText('10-Projects')).toBeDefined()
     expect(screen.getByText('20-Areas')).toBeDefined()
@@ -40,39 +77,35 @@ describe('FileTree', () => {
   })
 
   it('shows empty message when no nodes', () => {
-    render(<FileTree nodes={[]} selectedPath={null} onSelect={() => {}} />)
+    render(<Harness nodes={[]} />)
 
     expect(screen.getByText('No files found')).toBeDefined()
   })
 
   it('auto-expands top-level directories', () => {
-    render(<FileTree nodes={SAMPLE_TREE} selectedPath={null} onSelect={() => {}} />)
+    render(<Harness nodes={SAMPLE_TREE} />)
 
-    // depth=0 directories are auto-expanded, so children should be visible
     expect(screen.getByText('project-a.md')).toBeDefined()
     expect(screen.getByText('tasks')).toBeDefined()
   })
 
   it('does not auto-expand nested directories', () => {
-    render(<FileTree nodes={SAMPLE_TREE} selectedPath={null} onSelect={() => {}} />)
+    render(<Harness nodes={SAMPLE_TREE} />)
 
-    // "tasks" is depth=1, collapsed by default — TASK-001.md should not be visible
     expect(screen.queryByText('TASK-001.md')).toBeNull()
   })
 
   it('expands nested directory on click', () => {
-    render(<FileTree nodes={SAMPLE_TREE} selectedPath={null} onSelect={() => {}} />)
+    render(<Harness nodes={SAMPLE_TREE} />)
 
-    // Click "tasks" folder to expand
     fireEvent.click(screen.getByText('tasks'))
 
     expect(screen.getByText('TASK-001.md')).toBeDefined()
   })
 
   it('collapses directory on second click', () => {
-    render(<FileTree nodes={SAMPLE_TREE} selectedPath={null} onSelect={() => {}} />)
+    render(<Harness nodes={SAMPLE_TREE} />)
 
-    // Expand then collapse "tasks"
     fireEvent.click(screen.getByText('tasks'))
     expect(screen.getByText('TASK-001.md')).toBeDefined()
 
@@ -82,7 +115,7 @@ describe('FileTree', () => {
 
   it('calls onSelect when file is clicked', () => {
     const onSelect = vi.fn()
-    render(<FileTree nodes={SAMPLE_TREE} selectedPath={null} onSelect={onSelect} />)
+    render(<Harness nodes={SAMPLE_TREE} onSelect={onSelect} />)
 
     fireEvent.click(screen.getByText('project-a.md'))
 
@@ -91,7 +124,7 @@ describe('FileTree', () => {
 
   it('does not call onSelect when directory is clicked', () => {
     const onSelect = vi.fn()
-    render(<FileTree nodes={SAMPLE_TREE} selectedPath={null} onSelect={onSelect} />)
+    render(<Harness nodes={SAMPLE_TREE} onSelect={onSelect} />)
 
     fireEvent.click(screen.getByText('10-Projects'))
 
@@ -99,26 +132,14 @@ describe('FileTree', () => {
   })
 
   it('applies selected class to selected file', () => {
-    render(
-      <FileTree
-        nodes={SAMPLE_TREE}
-        selectedPath="/vault/10-Projects/project-a.md"
-        onSelect={() => {}}
-      />
-    )
+    render(<Harness nodes={SAMPLE_TREE} selectedPath="/vault/10-Projects/project-a.md" />)
 
     const btn = screen.getByText('project-a.md').closest('button')
     expect(btn?.className).toContain('deck-ftree-row--selected')
   })
 
   it('does not apply selected class to non-selected files', () => {
-    render(
-      <FileTree
-        nodes={SAMPLE_TREE}
-        selectedPath="/vault/10-Projects/project-a.md"
-        onSelect={() => {}}
-      />
-    )
+    render(<Harness nodes={SAMPLE_TREE} selectedPath="/vault/10-Projects/project-a.md" />)
 
     const btn = screen.getByText('readme.txt').closest('button')
     expect(btn?.className).not.toContain('deck-ftree-row--selected')
