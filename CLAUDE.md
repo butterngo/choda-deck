@@ -51,7 +51,7 @@ Use `choda-tasks` MCP tools (`task_context`, `task_list`) for task details.
 - TS style: single quotes, no semi, 100 cols, explicit return types on public functions (`.claude/rules/typescript.md`)
 - React 19 patterns (`.claude/rules/react.md`)
 - IPC channel naming + preload rules (`.claude/rules/electron-ipc.md`)
-- Always run `npm run lint` before suggesting done
+- Always run `pnpm run lint` before suggesting done
 - No auto-commits — commits only on explicit request
 - No dev server claims without proof — exercise UI in actual Electron window
 

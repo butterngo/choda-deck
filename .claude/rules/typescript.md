@@ -19,7 +19,7 @@ These rules reflect what the code **actually** does (prettier config + observed 
 - **Charset:** UTF-8
 - **Final newline:** required
 
-Run `npm run format` before committing if unsure. Do not fight prettier.
+Run `pnpm run format` before committing if unsure. Do not fight prettier.
 
 ## Imports
 
@@ -111,4 +111,4 @@ Exceptions (flag in code comment):
 
 ## Lint
 
-ESLint config is `@electron-toolkit/eslint-config-ts` + `eslint-config-prettier`. Run `npm run lint` before considering TypeScript work done.
+ESLint config is `@electron-toolkit/eslint-config-ts` + `eslint-config-prettier`. Run `pnpm run lint` before considering TypeScript work done.

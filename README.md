@@ -27,19 +27,19 @@ Choda Deck treats a **project** as the unit of navigation and the **interactive 
 ## Dev
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
-Requires Node 20+ and a working `claude` CLI on PATH (Windows: `claude.cmd` via npm global).
+Requires Node 20+, [pnpm](https://pnpm.io/installation) 10+, and a working `claude` CLI on PATH (Windows: `claude.cmd` via npm global).
 
 ## Building the Windows installer
 
 Windows is the only officially supported platform right now. Mac/Linux targets remain in `electron-builder.yml` but are untested — PRs welcome.
 
 ```bash
-npm install
-npm run build:win
+pnpm install
+pnpm run build:win
 ```
 
 Outputs land in `dist/`:
@@ -52,7 +52,7 @@ The installer is **unsigned** — Windows SmartScreen will show "Windows protect
 If you tweak `build/icon.svg`, regenerate the icon set:
 
 ```bash
-npm run icons
+pnpm run icons
 ```
 
 This rewrites `build/icon.png`, `build/icon.ico`, and `resources/icon.png` via `scripts/build-icons.mjs` (uses `sharp` + `png-to-ico`).
