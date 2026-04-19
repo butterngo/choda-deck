@@ -117,6 +117,39 @@ export const register = (server: McpServer, svc: SessionToolsDeps): void => {
   )
 
   server.registerTool(
+    'session_list',
+    {
+      description:
+        'List sessions for a project, sorted by startedAt DESC. Handoff excluded by default (set includeHandoff=true to include).',
+      inputSchema: {
+        projectId: z.string().describe('Project ID'),
+        status: z.enum(['active', 'completed']).optional(),
+        workspaceId: z.string().optional().describe('Filter by workspace ID'),
+        limit: z.number().int().positive().optional().describe('Max results (default 50)'),
+        includeHandoff: z.boolean().optional().describe('Include handoff JSON (default false)')
+      }
+    },
+    async ({ projectId, status, workspaceId, limit, includeHandoff }) => {
+      const all = svc.findSessions(projectId, status)
+      const filtered = workspaceId ? all.filter((s) => s.workspaceId === workspaceId) : all
+      const sliced = filtered.slice(0, limit ?? 50)
+      const out = sliced.map((s) => {
+        const base = {
+          id: s.id,
+          projectId: s.projectId,
+          workspaceId: s.workspaceId,
+          taskId: s.taskId,
+          startedAt: s.startedAt,
+          endedAt: s.endedAt,
+          status: s.status
+        }
+        return includeHandoff ? { ...base, handoff: s.handoff } : base
+      })
+      return textResponse({ total: out.length, sessions: out })
+    }
+  )
+
+  server.registerTool(
     'session_end',
     {
       description: 'End a work session. If session has a task, marks it DONE. Persists handoff.',
