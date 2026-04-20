@@ -6,6 +6,7 @@
  *      CHODA_CONTENT_ROOT (default: none — required for file reads)
  */
 
+import path from 'node:path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { SqliteTaskService } from './sqlite-task-service'
@@ -17,8 +18,10 @@ import * as conversationTools from './mcp-tools/conversation-tools'
 import * as projectTools from './mcp-tools/project-tools'
 import * as sessionTools from './mcp-tools/session-tools'
 import * as inboxTools from './mcp-tools/inbox-tools'
+import * as pipelineTools from './mcp-tools/pipeline-tools'
 
 const DB_PATH = process.env.CHODA_DB_PATH || './choda-deck.db'
+const ARTIFACTS_DATA_DIR = path.dirname(path.resolve(DB_PATH))
 
 async function main(): Promise<void> {
   const svc = new SqliteTaskService(DB_PATH)
@@ -36,6 +39,7 @@ async function main(): Promise<void> {
   projectTools.register(server, svc)
   sessionTools.register(server, svc)
   inboxTools.register(server, svc)
+  pipelineTools.register(server, svc, { artifactsConfig: { dataDir: ARTIFACTS_DATA_DIR } })
 
   const transport = new StdioServerTransport()
   await server.connect(transport)

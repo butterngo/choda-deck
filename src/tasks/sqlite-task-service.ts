@@ -88,6 +88,11 @@ import { ContextSourceRepository } from './repositories/context-source-repositor
 import { ConversationRepository } from './repositories/conversation-repository'
 import { InboxRepository } from './repositories/inbox-repository'
 import { CounterRepository } from './repositories/counter-repository'
+import { PipelineApprovalRepository } from './repositories/pipeline-approval-repository'
+import { HarnessRunner } from '../core/harness/harness-runner'
+import { shouldEnableEvaluator } from '../core/harness/evaluator-triggers'
+import { extractAcceptanceCriteria, type PlannerStageDeps } from '../core/harness/planner-stage'
+import type { ArtifactsConfig } from '../core/harness/artifacts'
 
 export class SqliteTaskService
   implements
@@ -117,6 +122,7 @@ export class SqliteTaskService
   private readonly inboxLifecycle: InboxLifecycleService
   private readonly conversationLifecycle: ConversationLifecycleService
   private readonly sessionLifecycle: SessionLifecycleService
+  private harness: HarnessRunner | null = null
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath)
@@ -453,5 +459,32 @@ export class SqliteTaskService
   }
   resumeSession(id: string): ResumeSessionResult {
     return this.sessionLifecycle.resumeSession(id)
+  }
+
+  // ── Harness (pipeline runner) ──────────────────────────────────────────────
+  getHarnessRunner(): HarnessRunner {
+    if (this.harness) return this.harness
+    const approvals = new PipelineApprovalRepository(this.db)
+    this.harness = new HarnessRunner({
+      sessions: this.sessions,
+      conversations: this.conversations,
+      tasks: this.tasks,
+      approvals,
+      evaluatorDecider: (taskId) => {
+        const t = this.tasks.get(taskId)
+        if (!t) return false
+        return shouldEnableEvaluator(t.title, extractAcceptanceCriteria(t.body))
+      }
+    })
+    return this.harness
+  }
+
+  getPlannerStageDeps(artifactsConfig: ArtifactsConfig): PlannerStageDeps {
+    return {
+      tasks: this.tasks,
+      projects: this.projects,
+      harness: this.getHarnessRunner(),
+      artifactsConfig
+    }
   }
 }
