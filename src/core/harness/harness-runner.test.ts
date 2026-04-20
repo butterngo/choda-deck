@@ -288,6 +288,29 @@ describe('rejectStage', () => {
   })
 })
 
+describe('failStage', () => {
+  it('flips running → rejected + bumps iteration + logs reject w/ feedback', () => {
+    const state = runner.startPipeline(createTask(), { evaluator: 'off' })
+
+    const after = runner.failStage(state.sessionId, '[planner timeout after 300000ms]')
+    expect(after.stageStatus).toBe('rejected')
+    expect(after.currentIteration).toBe(1)
+
+    const logged = approvals.findBySession(state.sessionId)
+    expect(logged).toHaveLength(1)
+    expect(logged[0].decision).toBe('reject')
+    expect(logged[0].feedback).toBe('[planner timeout after 300000ms]')
+  })
+
+  it('throws when status is not running', () => {
+    const state = runner.startPipeline(createTask(), { evaluator: 'off' })
+    runner.markStageReady(state.sessionId)
+    expect(() => runner.failStage(state.sessionId, 'x')).toThrowError(
+      InvalidPipelineTransitionError
+    )
+  })
+})
+
 describe('abort', () => {
   it('any non-terminal stage → aborted/null', () => {
     const state = runner.startPipeline(createTask(), { evaluator: 'off' })

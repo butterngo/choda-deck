@@ -154,6 +154,48 @@ export class HarnessRunner {
     return state
   }
 
+  reviseStage(sessionId: string): PipelineState {
+    const state = this.requireState(sessionId)
+    if (state.stageStatus !== 'rejected') {
+      throw new InvalidPipelineTransitionError(state.stage, state.stageStatus, 'reviseStage')
+    }
+    state.stageStatus = 'running'
+    this.persistStage(
+      sessionId,
+      state.stage,
+      'running',
+      state.needsEvaluator,
+      state.currentIteration
+    )
+    return state
+  }
+
+  failStage(sessionId: string, reason: string): PipelineState {
+    const state = this.requireState(sessionId)
+    if (state.stageStatus !== 'running') {
+      throw new InvalidPipelineTransitionError(state.stage, state.stageStatus, 'failStage')
+    }
+
+    this.deps.approvals.log({
+      sessionId,
+      stage: state.stage,
+      iteration: state.currentIteration,
+      decision: 'reject',
+      feedback: reason
+    })
+
+    state.stageStatus = 'rejected'
+    state.currentIteration += 1
+    this.persistStage(
+      sessionId,
+      state.stage,
+      'rejected',
+      state.needsEvaluator,
+      state.currentIteration
+    )
+    return state
+  }
+
   abort(sessionId: string): PipelineState {
     const state = this.requireState(sessionId)
     if (isTerminalStage(state.stage)) {

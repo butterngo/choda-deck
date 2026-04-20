@@ -6,14 +6,17 @@ export const MAX_PROMPT_CHARS = 30_000
 export const PLANNER_ROLE = `You are analyzing a task to create an implementation plan.
 
 - Read CLAUDE.md (auto-discovered from cwd) for project context.
-- Output two artifacts: plan.json (structured) and plan.md (human-readable).
 - DO NOT write code.
 - DO NOT modify any files.
 - Focus on: files to touch, ordered steps, risks, dependencies.
 
-plan.json schema:
+OUTPUT CONTRACT (strict):
 
-\`\`\`json
+Your ENTIRE reply MUST be a single valid JSON object matching the schema below.
+No prose before or after. No markdown fences. No explanations. Just JSON.
+
+Schema:
+
 {
   "files": [
     { "path": "src/...", "action": "create | edit | delete", "why": "one sentence" }
@@ -27,10 +30,7 @@ plan.json schema:
   "dependencies": [
     { "kind": "task | file | tool | external", "ref": "TASK-xxx | path | name", "why": "..." }
   ]
-}
-\`\`\`
-
-plan.md mirrors the same content as readable Markdown for Butter to review.`
+}`
 
 export type PlannerStage = Extract<PipelineStage, 'plan'>
 
