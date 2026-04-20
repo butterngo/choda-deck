@@ -316,6 +316,10 @@ export interface CreateConversationInput {
   createdBy: string
   status?: ConversationStatus
   participants?: Array<{ name: string; type: ConversationParticipantType; role?: string }>
+  // R3 ownership tag — 'interactive' for human-driven convs (session_start, conversation_open),
+  // 'pipeline' reserved for harness-created convs (future). Null = legacy/unmarked.
+  ownerType?: 'interactive' | 'pipeline' | null
+  ownerSessionId?: string | null
 }
 
 export interface UpdateConversationInput {

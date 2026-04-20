@@ -77,10 +77,18 @@ export class ConversationRepository {
     const id = input.id || generateId('CONV')
     this.db
       .prepare(
-        `INSERT INTO conversations (id, project_id, title, status, created_by)
-       VALUES (?, ?, ?, ?, ?)`
+        `INSERT INTO conversations (id, project_id, title, status, created_by, owner_type, owner_session_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(id, input.projectId, input.title, input.status || 'open', input.createdBy)
+      .run(
+        id,
+        input.projectId,
+        input.title,
+        input.status || 'open',
+        input.createdBy,
+        input.ownerType ?? null,
+        input.ownerSessionId ?? null
+      )
 
     if (input.participants) {
       for (const p of input.participants) {

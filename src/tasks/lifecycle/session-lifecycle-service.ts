@@ -14,7 +14,11 @@ import type {
   StartSessionResult
 } from '../interfaces/session-lifecycle.interface'
 import { now } from '../repositories/shared'
-import { SessionNotFoundError, SessionStatusError } from './errors'
+import {
+  PipelineActiveBlockingError,
+  SessionNotFoundError,
+  SessionStatusError
+} from './errors'
 
 const DEFAULT_PARTICIPANTS: StartSessionInput['participants'] = [
   { name: 'Butter', type: 'human' },
@@ -32,6 +36,8 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
 
   startSession(input: StartSessionInput): StartSessionResult {
     const tx = this.db.transaction((): StartSessionResult => {
+      this.assertNoActivePipeline(input.projectId)
+
       const existingActiveSessions = this.sessions.findByProject(input.projectId, 'active')
 
       const session = this.sessions.create({
@@ -52,13 +58,30 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
         title,
         createdBy,
         status: 'open',
-        participants
+        participants,
+        ownerType: 'interactive',
+        ownerSessionId: session.id
       })
       this.conversations.link(conv.id, 'session', session.id)
 
       return { session, conversationId: conv.id, contextSources, existingActiveSessions }
     })
     return tx()
+  }
+
+  private assertNoActivePipeline(projectId: string): void {
+    const pipelines = this.sessions
+      .findActivePipelines()
+      .filter((p) => p.projectId === projectId)
+    if (pipelines.length === 0) return
+    const p = pipelines[0]
+    throw new PipelineActiveBlockingError({
+      owner_type: 'pipeline',
+      owner_session_id: p.sessionId,
+      owner_task_id: p.taskId ?? null,
+      stage: p.stage as 'plan' | 'generate' | 'evaluate',
+      started_at: p.startedAt
+    })
   }
 
   endSession(id: string, input: EndSessionInput): EndSessionResult {

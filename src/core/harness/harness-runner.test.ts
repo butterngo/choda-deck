@@ -120,15 +120,14 @@ describe('R3 reverse direction guard', () => {
       status: 'active',
       startedAt: new Date().toISOString()
     })
-    const conv = conversations.create({
+    conversations.create({
       projectId: 'proj-h',
       title: 'Butter chat',
       createdBy: 'Butter',
-      status: 'open'
+      status: 'open',
+      ownerType: 'interactive',
+      ownerSessionId: session.id
     })
-    db.prepare(
-      "UPDATE conversations SET owner_type = 'interactive', owner_session_id = ? WHERE id = ?"
-    ).run(session.id, conv.id)
 
     try {
       runner.startPipeline(taskId, { evaluator: 'off' })
@@ -144,30 +143,58 @@ describe('R3 reverse direction guard', () => {
 
   it('ignores closed interactive conversations', () => {
     const taskId = createTask()
-    const conv = conversations.create({
+    conversations.create({
       projectId: 'proj-h',
       title: 'Old chat',
       createdBy: 'Butter',
-      status: 'open'
+      status: 'closed',
+      ownerType: 'interactive'
     })
-    db.prepare(
-      "UPDATE conversations SET owner_type = 'interactive', status = 'closed' WHERE id = ?"
-    ).run(conv.id)
 
     expect(() => runner.startPipeline(taskId, { evaluator: 'off' })).not.toThrow()
   })
 
   it('ignores pipeline-owned conversations (only interactive blocks)', () => {
     const taskId = createTask()
-    const conv = conversations.create({
+    conversations.create({
       projectId: 'proj-h',
       title: 'Pipeline chat',
       createdBy: 'Claude',
-      status: 'open'
+      status: 'open',
+      ownerType: 'pipeline'
     })
-    db.prepare("UPDATE conversations SET owner_type = 'pipeline' WHERE id = ?").run(conv.id)
 
     expect(() => runner.startPipeline(taskId, { evaluator: 'off' })).not.toThrow()
+  })
+
+  it('integration: real session_start → startPipeline throws (reproduces TASK-544 bug)', async () => {
+    const { SessionLifecycleService } = await import(
+      '../../tasks/lifecycle/session-lifecycle-service'
+    )
+    const { ContextSourceRepository } = await import(
+      '../../tasks/repositories/context-source-repository'
+    )
+    const contextSources = new ContextSourceRepository(db)
+    const sessionLifecycle = new SessionLifecycleService(
+      db,
+      sessions,
+      contextSources,
+      conversations,
+      tasks
+    )
+
+    const taskId = createTask()
+    const started = sessionLifecycle.startSession({ projectId: 'proj-h' })
+
+    try {
+      runner.startPipeline(taskId, { evaluator: 'off' })
+      expect.fail('should throw INTERACTIVE_CONV_BLOCKING')
+    } catch (e) {
+      expect(e).toBeInstanceOf(InteractiveConversationBlockingError)
+      const err = e as InteractiveConversationBlockingError
+      expect(err.payload.owner_type).toBe('interactive')
+      expect(err.payload.owner_session_id).toBe(started.session.id)
+    }
   })
 })
 
