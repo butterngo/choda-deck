@@ -73,7 +73,7 @@ function ApprovalActions({
       <button
         className="deck-approval-btn deck-approval-btn--abort"
         onClick={() => setShowAbort(true)}
-        disabled={busy}
+        disabled={approvalDisabled}
       >
         Abort
       </button>
@@ -82,7 +82,9 @@ function ApprovalActions({
         <div
           className="deck-modal-overlay"
           onClick={() => {
-            if (!busy) setShowReject(false)
+            if (busy) return
+            setShowReject(false)
+            setFeedback('')
           }}
         >
           <div className="deck-modal" onClick={(e) => e.stopPropagation()}>
@@ -101,7 +103,10 @@ function ApprovalActions({
             <div className="deck-modal-actions">
               <button
                 className="deck-approval-btn"
-                onClick={() => setShowReject(false)}
+                onClick={() => {
+                  setShowReject(false)
+                  setFeedback('')
+                }}
                 disabled={busy}
               >
                 Cancel

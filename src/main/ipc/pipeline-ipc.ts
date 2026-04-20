@@ -4,6 +4,10 @@ import { readPlanArtifact, type ArtifactsConfig } from '../../core/harness/artif
 import type { PlannerPlan } from '../../core/harness/plan-types'
 import type { PipelineState } from '../../core/harness/pipeline-state'
 
+// `plan.json` only exists once the planner produces it — if the renderer asks
+// for it earlier (stageStatus='running'), `readFileSync` throws ENOENT. We let
+// the renderer distinguish "pending" from "error" by inspecting stageStatus.
+
 export interface PipelineIpcDeps {
   taskService: SqliteTaskService
   artifactsConfig: ArtifactsConfig
@@ -18,7 +22,7 @@ export function registerPipelineIpc(deps: PipelineIpcDeps): void {
   )
 
   ipcMain.handle('pipeline:read-plan', (_event, sessionId: string): PlannerPlan =>
-    readPlanArtifact(artifactsConfig, sessionId) as PlannerPlan
+    readPlanArtifact(artifactsConfig, sessionId)
   )
 
   ipcMain.handle('pipeline:approve', (_event, sessionId: string): PipelineState =>

@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { PlannerPlan } from './plan-types'
 
 export interface ArtifactsConfig {
   dataDir: string
@@ -21,7 +22,9 @@ export function writePlanArtifact(
   return filePath
 }
 
-export function readPlanArtifact(cfg: ArtifactsConfig, sessionId: string): unknown {
+// All PlannerPlan fields are optional — a malformed JSON that parses to the wrong
+// shape still renders safely via the "—" fallbacks in PlanViewer.
+export function readPlanArtifact(cfg: ArtifactsConfig, sessionId: string): PlannerPlan {
   const filePath = join(getSessionArtifactsDir(cfg, sessionId), 'plan.json')
-  return JSON.parse(readFileSync(filePath, 'utf8'))
+  return JSON.parse(readFileSync(filePath, 'utf8')) as PlannerPlan
 }
