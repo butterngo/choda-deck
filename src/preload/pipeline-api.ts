@@ -9,6 +9,7 @@ export interface PipelineApi {
   reject: (sessionId: string, feedback: string) => Promise<PipelineState>
   abort: (sessionId: string) => Promise<PipelineState>
   onStageChange: (sessionId: string, callback: (state: PipelineState) => void) => () => void
+  onAnyStageChange: (callback: (state: PipelineState) => void) => () => void
 }
 
 export const pipelineApi: PipelineApi = {
@@ -19,6 +20,14 @@ export const pipelineApi: PipelineApi = {
   abort: (sessionId) => ipcRenderer.invoke('pipeline:abort', sessionId),
   onStageChange: (sessionId, callback) => {
     const channel = `pipeline:stage-change:${sessionId}`
+    const listener = (_event: IpcRendererEvent, state: PipelineState): void => callback(state)
+    ipcRenderer.on(channel, listener)
+    return () => {
+      ipcRenderer.removeListener(channel, listener)
+    }
+  },
+  onAnyStageChange: (callback) => {
+    const channel = 'pipeline:any-stage-change'
     const listener = (_event: IpcRendererEvent, state: PipelineState): void => callback(state)
     ipcRenderer.on(channel, listener)
     return () => {

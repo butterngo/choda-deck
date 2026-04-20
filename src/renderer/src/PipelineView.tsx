@@ -19,6 +19,18 @@ function statusLabel(status: PipelineStageStatus | null): string {
   return 'Idle'
 }
 
+// plan.json is written by the planner when its stage reaches 'ready'. Before
+// that, readPlan throws ENOENT — we must not treat that as an error.
+function planShouldExist(status: PipelineStageStatus | null): boolean {
+  return status === 'ready' || status === 'approved' || status === 'rejected'
+}
+
+function planPlaceholderMessage(status: PipelineStageStatus | null, loading: boolean): string {
+  if (loading) return 'Loading plan…'
+  if (status === 'running') return 'Planner is drafting the plan…'
+  return 'No plan produced yet.'
+}
+
 function PipelineView({ visible, sessionId }: PipelineViewProps): React.JSX.Element {
   const demo = !sessionId
   const [state, setState] = useState<PipelineState | null>(demo ? FIXTURE_PIPELINE_STATE : null)
@@ -35,15 +47,13 @@ function PipelineView({ visible, sessionId }: PipelineViewProps): React.JSX.Elem
 
     let disposed = false
     setError(null)
+    setPlan(null)
 
-    Promise.all([
-      window.api.pipeline.getState(sessionId),
-      window.api.pipeline.readPlan(sessionId).catch(() => null)
-    ])
-      .then(([nextState, nextPlan]) => {
+    window.api.pipeline
+      .getState(sessionId)
+      .then((nextState) => {
         if (disposed) return
         setState(nextState)
-        setPlan(nextPlan)
       })
       .catch((err: unknown) => {
         if (disposed) return
@@ -59,6 +69,30 @@ function PipelineView({ visible, sessionId }: PipelineViewProps): React.JSX.Elem
       unsubscribe()
     }
   }, [sessionId])
+
+  const stageStatus = state?.stageStatus ?? null
+  const shouldLoadPlan = !!sessionId && planShouldExist(stageStatus)
+
+  useEffect(() => {
+    if (!sessionId || !shouldLoadPlan) {
+      if (!sessionId) return // demo mode keeps fixture plan
+      setPlan(null)
+      return
+    }
+    let disposed = false
+    window.api.pipeline
+      .readPlan(sessionId)
+      .then((nextPlan) => {
+        if (!disposed) setPlan(nextPlan)
+      })
+      .catch((err: unknown) => {
+        if (disposed) return
+        setError(err instanceof Error ? err.message : String(err))
+      })
+    return () => {
+      disposed = true
+    }
+  }, [sessionId, shouldLoadPlan])
 
   async function handleApprove(): Promise<void> {
     if (!sessionId) return
@@ -100,7 +134,7 @@ function PipelineView({ visible, sessionId }: PipelineViewProps): React.JSX.Elem
     )
   }
 
-  if (!state || !plan) {
+  if (!state) {
     return (
       <div className={rootClass}>
         <div className="deck-pipeline-empty-state">Loading pipeline…</div>
@@ -132,7 +166,13 @@ function PipelineView({ visible, sessionId }: PipelineViewProps): React.JSX.Elem
           onAbort={handleAbort}
         />
       </header>
-      <PlanViewer plan={plan} state={state} />
+      {plan ? (
+        <PlanViewer plan={plan} state={state} />
+      ) : (
+        <div className="deck-pipeline-empty-state">
+          {planPlaceholderMessage(state.stageStatus, shouldLoadPlan)}
+        </div>
+      )}
     </div>
   )
 }

@@ -3,6 +3,10 @@ import type { ProjectConfig } from '../../preload/index'
 import ProjectForm from './ProjectForm'
 import SettingsModal from './SettingsModal'
 
+// Kept in sync with App.tsx PipelineSignal — inlined to avoid a type-only
+// circular import between App and Sidebar.
+type PipelineSignal = 'ready' | 'running' | 'rejected'
+
 const HELP_TEXT = `Keyboard Shortcuts
 ─────────────────
 Ctrl+1..9      Switch to workspace by number
@@ -30,13 +34,31 @@ interface SidebarProps {
   activeWorkspaceId: string
   onSelect: (projectId: string, workspaceId: string) => void
   onProjectsChanged: () => void
+  pipelineSignals: Record<string, PipelineSignal>
+}
+
+function PipelineBadge({ signal }: { signal: PipelineSignal }): React.JSX.Element {
+  const label =
+    signal === 'ready'
+      ? 'Plan ready for review'
+      : signal === 'running'
+        ? 'Pipeline running'
+        : 'Plan rejected — awaiting re-run'
+  return (
+    <span
+      className={`deck-sidebar-pipeline-badge deck-sidebar-pipeline-badge--${signal}`}
+      title={label}
+      aria-label={label}
+    />
+  )
 }
 
 function Sidebar({
   projects,
   activeWorkspaceId,
   onSelect,
-  onProjectsChanged
+  onProjectsChanged,
+  pipelineSignals
 }: SidebarProps): React.JSX.Element {
   const [showHelp, setShowHelp] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -163,6 +185,9 @@ function Sidebar({
               >
                 <span className="deck-sidebar-chevron">{isCollapsed ? '▶' : '▼'}</span>
                 <span className="deck-sidebar-project-name">{project.name}</span>
+                {pipelineSignals[project.id] && (
+                  <PipelineBadge signal={pipelineSignals[project.id]} />
+                )}
               </button>
               {!isCollapsed &&
                 project.workspaces.map((ws) => {
