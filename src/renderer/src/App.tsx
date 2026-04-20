@@ -8,6 +8,7 @@ import KanbanBoard from './KanbanBoard'
 import FilesView from './FilesView'
 import ActivityView from './ActivityView'
 import InboxView from './InboxView'
+import PipelineView from './PipelineView'
 import type { ProjectConfig, WorkspaceConfig } from '../../preload/index'
 import type { ViewType } from './ViewRouter'
 
@@ -77,6 +78,11 @@ function App(): React.JSX.Element {
         id: 'files',
         label: 'Wiki',
         render: (_project, _workspace, visible) => <FilesView visible={visible} />
+      },
+      {
+        id: 'pipeline',
+        label: 'Pipeline',
+        render: (_project, _workspace, visible) => <PipelineView visible={visible} />
       }
     ],
     [vaultRoot]
