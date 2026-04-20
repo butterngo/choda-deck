@@ -81,15 +81,17 @@ Register in `.claude.json` (production — uses bundled `dist/mcp-server.cjs`):
 ```json
 {
   "mcpServers": {
-    "choda-tasks": {
-      "command": "node",
-      "args": ["dist/mcp-server.cjs"],
+   "choda-tasks": {
+      "command": "C:\\dev\\choda-deck\\node_modules\\electron\\dist\\electron.exe",
+      "args": [
+        "C:\\dev\\choda-deck\\dist\\mcp-server.cjs"
+      ],
       "cwd": "C:\\dev\\choda-deck",
       "env": {
-        "CHODA_DB_PATH": "./choda-deck.db",
+        "ELECTRON_RUN_AS_NODE": "1",
+        "CHODA_DB_PATH": "C:\\dev\\choda-deck\\choda-deck.db",
         "CHODA_CONTENT_ROOT": "C:\\Users\\hngo1_mantu\\vault"
       }
-    }
   }
 }
 ```
