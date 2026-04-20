@@ -40,13 +40,35 @@ interface HarnessRunnerDeps {
   evaluatorDecider?: (taskId: string, mode: EvaluatorMode) => boolean
 }
 
+export type StageChangeListener = (state: PipelineState) => void
+
 export class HarnessRunner {
   private readonly sessionStates: Map<string, PipelineState> = new Map()
+  private readonly listeners: Set<StageChangeListener> = new Set()
   private readonly now: () => string
 
   constructor(private readonly deps: HarnessRunnerDeps) {
     this.now = deps.now ?? (() => new Date().toISOString())
     this.hydrateFromDb()
+  }
+
+  onStageChange(fn: StageChangeListener): () => void {
+    this.listeners.add(fn)
+    return () => {
+      this.listeners.delete(fn)
+    }
+  }
+
+  private emitStageChange(sessionId: string): void {
+    const state = this.sessionStates.get(sessionId)
+    if (!state) return
+    for (const fn of [...this.listeners]) {
+      try {
+        fn(state)
+      } catch (err) {
+        console.error('[HarnessRunner] stage-change listener threw:', err)
+      }
+    }
   }
 
   startPipeline(taskId: string, opts: StartPipelineOpts): PipelineState {
@@ -263,6 +285,7 @@ export class HarnessRunner {
       needsEvaluator,
       currentIteration
     })
+    this.emitStageChange(sessionId)
   }
 
   private hydrateFromDb(): void {
