@@ -195,6 +195,7 @@ function runLegacyMigrations(db: Database.Database): void {
     /* exists */
   }
 
+
   // Global counter table — replaces per-project counters.
   // IDs (TASK-NNN, INBOX-NNN) must be globally unique because PKs are single column.
   // Per-project resetting would collide across projects.
@@ -404,6 +405,7 @@ function createM1Tables(db: Database.Database): void {
     )
   `)
   // TASK-538 (ADR-014): per-stage human approval log for harness pipeline
+  // TASK-557: `diagnostics` carries a JSON-stringified StageDiagnostics on planner failures.
   db.exec(`
     CREATE TABLE IF NOT EXISTS pipeline_approvals (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -412,10 +414,17 @@ function createM1Tables(db: Database.Database): void {
       iteration INTEGER NOT NULL,
       decision TEXT NOT NULL,
       feedback TEXT,
+      diagnostics TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (session_id) REFERENCES sessions(id)
     )
   `)
+  // Upgrade path for pre-TASK-557 DBs where CREATE TABLE above was a no-op.
+  try {
+    db.exec('ALTER TABLE pipeline_approvals ADD COLUMN diagnostics TEXT')
+  } catch {
+    /* exists */
+  }
 }
 
 function createIndexes(db: Database.Database): void {

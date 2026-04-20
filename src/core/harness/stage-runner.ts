@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { buildCommandLine } from './spawn-utils'
 import { HarnessError } from './errors'
 
@@ -34,12 +35,55 @@ export interface StageRunResult {
   exitCode: number
 }
 
+// Everything the planner-stage catch handler needs to root-cause a failure
+// without rerunning the pipeline. Carried on every StageError so callers have
+// one canonical shape to persist (DB blob + JSON artifact).
+export interface StageDiagnostics {
+  exitCode: number
+  stdout: string
+  stderr: string
+  parsed: ClaudeResultJson | null // null when JSON.parse on stdout failed
+  cmd: string // reconstructed command line (executable + args, already quoted)
+  env: Record<string, string> // whitelisted env snapshot — see snapshotEnv
+  workspacePath: string
+  durationMs: number
+  timedOut: boolean
+}
+
+// Env keys that are safe to log. Anything outside this set is dropped entirely
+// so credentials / tokens never leak into DB blobs or failure artifacts.
+const ENV_WHITELIST: readonly string[] = [
+  'ELECTRON_RUN_AS_NODE',
+  'ELECTRON_NO_ATTACH_CONSOLE',
+  'CLAUDE_CLI_PATH',
+  'NODE_ENV',
+  'CHODA_DB_PATH',
+  'CHODA_CONTENT_ROOT'
+]
+const SECRET_PATTERN = /token|key|secret|password/i
+
+export function snapshotEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const key of ENV_WHITELIST) {
+    if (SECRET_PATTERN.test(key)) continue
+    const v = env[key]
+    if (typeof v === 'string') out[key] = v
+  }
+  if (typeof env.PATH === 'string') {
+    out.PATH_fingerprint_sha256_8 = createHash('sha256')
+      .update(env.PATH)
+      .digest('hex')
+      .slice(0, 8)
+  }
+  return out
+}
+
 const SIGKILL_GRACE_MS = 10_000
 
 export class StageTimeoutError extends HarnessError {
   constructor(
     public readonly timeoutMs: number,
-    public readonly stderr: string
+    public readonly diagnostics: StageDiagnostics
   ) {
     super('STAGE_TIMEOUT', `Stage timed out after ${timeoutMs}ms`)
     this.name = 'StageTimeoutError'
@@ -49,7 +93,8 @@ export class StageTimeoutError extends HarnessError {
 export class StageBudgetExceededError extends HarnessError {
   constructor(
     public readonly cap: number,
-    public readonly actual: number
+    public readonly actual: number,
+    public readonly diagnostics: StageDiagnostics
   ) {
     super('STAGE_BUDGET_EXCEEDED', `Budget $${actual} exceeded cap $${cap}`)
     this.name = 'StageBudgetExceededError'
@@ -59,16 +104,22 @@ export class StageBudgetExceededError extends HarnessError {
 export class StageNonZeroExitError extends HarnessError {
   constructor(
     public readonly exitCode: number,
-    public readonly stderr: string
+    public readonly diagnostics: StageDiagnostics
   ) {
-    super('STAGE_NON_ZERO_EXIT', `Claude exited with code ${exitCode}: ${stderr.slice(0, 300)}`)
+    super(
+      'STAGE_NON_ZERO_EXIT',
+      `Claude exited with code ${exitCode}: ${diagnostics.stderr.slice(0, 300)}`
+    )
     this.name = 'StageNonZeroExitError'
   }
 }
 
 export class StageInvalidOutputError extends HarnessError {
-  constructor(public readonly raw: string) {
-    super('STAGE_INVALID_OUTPUT', `Claude stdout was not valid JSON: ${raw.slice(0, 300)}`)
+  constructor(public readonly diagnostics: StageDiagnostics) {
+    super(
+      'STAGE_INVALID_OUTPUT',
+      `Claude stdout was not valid JSON: ${diagnostics.stdout.slice(0, 300)}`
+    )
     this.name = 'StageInvalidOutputError'
   }
 }
@@ -121,10 +172,12 @@ export async function runClaudeStage(opts: StageRunOptions): Promise<StageRunRes
   const spawnImpl = opts.spawnFn ?? spawn
   const args = buildClaudeArgs(opts)
   const isWin = process.platform === 'win32'
+  const cmdLine = buildCommandLine(claudeCmd, args)
+  const envSnapshot = snapshotEnv(process.env)
   const startedAt = Date.now()
 
   const child = isWin
-    ? spawnImpl(buildCommandLine(claudeCmd, args), {
+    ? spawnImpl(cmdLine, {
         cwd: opts.workspacePath,
         shell: true,
         stdio: ['pipe', 'pipe', 'pipe']
@@ -169,25 +222,37 @@ export async function runClaudeStage(opts: StageRunOptions): Promise<StageRunRes
 
   const durationMs = Date.now() - startedAt
 
-  if (timedOut) throw new StageTimeoutError(opts.timeoutMs, stderr)
+  const mkDiag = (parsed: ClaudeResultJson | null): StageDiagnostics => ({
+    exitCode,
+    stdout,
+    stderr,
+    parsed,
+    cmd: cmdLine,
+    env: envSnapshot,
+    workspacePath: opts.workspacePath,
+    durationMs,
+    timedOut
+  })
+
+  if (timedOut) throw new StageTimeoutError(opts.timeoutMs, mkDiag(null))
 
   let parsed: ClaudeResultJson
   try {
     parsed = JSON.parse(stdout) as ClaudeResultJson
   } catch {
-    throw new StageInvalidOutputError(stdout)
+    throw new StageInvalidOutputError(mkDiag(null))
   }
 
   const totalCostUsd = typeof parsed.total_cost_usd === 'number' ? parsed.total_cost_usd : 0
   if (totalCostUsd > opts.maxBudgetUsd * 2.5) {
-    throw new StageBudgetExceededError(opts.maxBudgetUsd, totalCostUsd)
+    throw new StageBudgetExceededError(opts.maxBudgetUsd, totalCostUsd, mkDiag(parsed))
   }
 
   if (exitCode !== 0 || parsed.is_error === true) {
     if (parsed.subtype === 'error_max_turns' || /budget/i.test(parsed.result ?? '')) {
-      throw new StageBudgetExceededError(opts.maxBudgetUsd, totalCostUsd)
+      throw new StageBudgetExceededError(opts.maxBudgetUsd, totalCostUsd, mkDiag(parsed))
     }
-    throw new StageNonZeroExitError(exitCode, stderr || (parsed.result ?? ''))
+    throw new StageNonZeroExitError(exitCode, mkDiag(parsed))
   }
 
   return {

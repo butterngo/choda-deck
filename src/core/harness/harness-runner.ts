@@ -28,6 +28,8 @@ interface ApprovalLogger {
     iteration: number
     decision: PipelineAction
     feedback?: string
+    // JSON-stringified StageDiagnostics — only set on planner-stage failures.
+    diagnostics?: string
   }): void
 }
 
@@ -192,7 +194,7 @@ export class HarnessRunner {
     return state
   }
 
-  failStage(sessionId: string, reason: string): PipelineState {
+  failStage(sessionId: string, reason: string, diagnostics?: string): PipelineState {
     const state = this.requireState(sessionId)
     if (state.stageStatus !== 'running') {
       throw new InvalidPipelineTransitionError(state.stage, state.stageStatus, 'failStage')
@@ -203,7 +205,8 @@ export class HarnessRunner {
       stage: state.stage,
       iteration: state.currentIteration,
       decision: 'reject',
-      feedback: reason
+      feedback: reason,
+      diagnostics
     })
 
     state.stageStatus = 'rejected'
