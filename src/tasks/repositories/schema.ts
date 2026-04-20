@@ -183,6 +183,18 @@ function runLegacyMigrations(db: Database.Database): void {
     /* exists */
   }
 
+  // TASK-550: session checkpoint (crash-recovery snapshot while session stays active)
+  try {
+    db.exec('ALTER TABLE sessions ADD COLUMN checkpoint TEXT')
+  } catch {
+    /* exists */
+  }
+  try {
+    db.exec('ALTER TABLE sessions ADD COLUMN checkpoint_at TEXT')
+  } catch {
+    /* exists */
+  }
+
   // Global counter table — replaces per-project counters.
   // IDs (TASK-NNN, INBOX-NNN) must be globally unique because PKs are single column.
   // Per-project resetting would collide across projects.
@@ -303,6 +315,8 @@ function createM1Tables(db: Database.Database): void {
       pipeline_stage_status TEXT,
       needs_evaluator INTEGER NOT NULL DEFAULT 0,
       current_iteration INTEGER NOT NULL DEFAULT 0,
+      checkpoint TEXT,
+      checkpoint_at TEXT,
       FOREIGN KEY (project_id) REFERENCES projects(id)
     )
   `)

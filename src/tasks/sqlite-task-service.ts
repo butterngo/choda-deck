@@ -25,7 +25,10 @@ import type {
   StartSessionInput,
   StartSessionResult,
   EndSessionInput,
-  EndSessionResult
+  EndSessionResult,
+  CheckpointSessionInput,
+  CheckpointSessionResult,
+  ResumeSessionResult
 } from './interfaces/session-lifecycle.interface'
 import { InboxLifecycleService } from './lifecycle/inbox-lifecycle-service'
 import { ConversationLifecycleService } from './lifecycle/conversation-lifecycle-service'
@@ -444,5 +447,11 @@ export class SqliteTaskService
   }
   endSession(id: string, input: EndSessionInput): EndSessionResult {
     return this.sessionLifecycle.endSession(id, input)
+  }
+  checkpointSession(id: string, input: CheckpointSessionInput): CheckpointSessionResult {
+    return this.sessionLifecycle.checkpointSession(id, input)
+  }
+  resumeSession(id: string): ResumeSessionResult {
+    return this.sessionLifecycle.resumeSession(id)
   }
 }

@@ -121,6 +121,116 @@ describe('endSession', () => {
   })
 })
 
+describe('startSession existingActiveSessions', () => {
+  it('returns empty array when no prior active sessions', () => {
+    const r = svc.startSession({ projectId: 'proj-s' })
+    expect(r.existingActiveSessions).toEqual([])
+  })
+
+  it('surfaces prior active sessions without blocking new session creation', () => {
+    const first = svc.startSession({ projectId: 'proj-s', workspaceId: 'ws-a' })
+    const second = svc.startSession({ projectId: 'proj-s', workspaceId: 'ws-b' })
+
+    expect(second.session.id).not.toBe(first.session.id)
+    expect(second.existingActiveSessions).toHaveLength(1)
+    expect(second.existingActiveSessions[0].id).toBe(first.session.id)
+  })
+
+  it('excludes completed sessions from existingActiveSessions', () => {
+    const first = svc.startSession({ projectId: 'proj-s' })
+    svc.endSession(first.session.id, { handoff: { resumePoint: 'r' } })
+
+    const second = svc.startSession({ projectId: 'proj-s' })
+    expect(second.existingActiveSessions).toEqual([])
+  })
+})
+
+describe('checkpointSession', () => {
+  it('happy path: sets checkpoint + checkpointAt, session stays active', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    const r = svc.checkpointSession(started.session.id, {
+      checkpoint: { resumePoint: 'mid-refactor', dirtyFiles: ['src/a.ts'] }
+    })
+
+    expect(r.session.status).toBe('active')
+    expect(r.session.checkpoint?.resumePoint).toBe('mid-refactor')
+    expect(r.session.checkpoint?.dirtyFiles).toEqual(['src/a.ts'])
+    expect(r.session.checkpointAt).not.toBeNull()
+  })
+
+  it('overwrite on second call, checkpointAt bumps', async () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    const r1 = svc.checkpointSession(started.session.id, {
+      checkpoint: { resumePoint: 'first', notes: 'n1' }
+    })
+    // tick so the timestamp second differs — SQLite datetime('now') has second granularity
+    await new Promise((resolve) => setTimeout(resolve, 1100))
+    const r2 = svc.checkpointSession(started.session.id, {
+      checkpoint: { resumePoint: 'second' }
+    })
+
+    expect(r2.session.checkpoint?.resumePoint).toBe('second')
+    expect(r2.session.checkpoint?.notes).toBeUndefined()
+    expect(r2.session.checkpointAt).not.toBe(r1.session.checkpointAt)
+  })
+
+  it('throws SessionNotFoundError on missing id', () => {
+    expect(() =>
+      svc.checkpointSession('SESSION-999', { checkpoint: { resumePoint: 'r' } })
+    ).toThrowError(SessionNotFoundError)
+  })
+
+  it('throws SessionStatusError on completed session', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    svc.endSession(started.session.id, { handoff: { resumePoint: 'r' } })
+    expect(() =>
+      svc.checkpointSession(started.session.id, { checkpoint: { resumePoint: 'r' } })
+    ).toThrowError(SessionStatusError)
+  })
+})
+
+describe('resumeSession', () => {
+  it('returns session + null checkpoint + linked conversations + context sources', () => {
+    svc.createContextSource({
+      projectId: 'proj-s',
+      sourceType: 'file',
+      sourcePath: 'docs/ctx.md',
+      label: 'Ctx',
+      category: 'what'
+    })
+    const started = svc.startSession({ projectId: 'proj-s' })
+
+    const r = svc.resumeSession(started.session.id)
+    expect(r.session.id).toBe(started.session.id)
+    expect(r.checkpoint).toBeNull()
+    expect(r.conversations.map((c) => c.id)).toEqual([started.conversationId])
+    expect(r.contextSources.map((c) => c.label)).toEqual(['Ctx'])
+  })
+
+  it('returns checkpoint when one exists', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    svc.checkpointSession(started.session.id, {
+      checkpoint: { resumePoint: 'pause', lastCommit: 'abc123' }
+    })
+
+    const r = svc.resumeSession(started.session.id)
+    expect(r.checkpoint?.resumePoint).toBe('pause')
+    expect(r.checkpoint?.lastCommit).toBe('abc123')
+  })
+
+  it('works on completed sessions (read-only replay)', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    svc.endSession(started.session.id, { handoff: { resumePoint: 'r' } })
+
+    const r = svc.resumeSession(started.session.id)
+    expect(r.session.status).toBe('completed')
+  })
+
+  it('throws SessionNotFoundError on missing id', () => {
+    expect(() => svc.resumeSession('SESSION-999')).toThrowError(SessionNotFoundError)
+  })
+})
+
 describe('transaction rollback (atomicity)', () => {
   it('rolls back session creation when auto-conv link fails mid-start', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
