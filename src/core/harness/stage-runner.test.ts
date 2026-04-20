@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import {
   runClaudeStage,
+  snapshotEnv,
   StageBudgetExceededError,
   StageInvalidOutputError,
   StageNonZeroExitError,
@@ -215,5 +216,100 @@ describe('runClaudeStage', () => {
     await expect(
       runClaudeStage(baseOpts({ spawnFn, timeoutMs: 50 }))
     ).rejects.toBeInstanceOf(StageTimeoutError)
+  })
+
+  it('StageNonZeroExitError carries full diagnostics including cmd and env', async () => {
+    const spawnFn = vi.fn(() =>
+      fakeChild({
+        stdout: JSON.stringify({ result: '', total_cost_usd: 0 }),
+        stderr: '',
+        exitCode: 1
+      })
+    ) as never
+
+    try {
+      await runClaudeStage(baseOpts({ spawnFn }))
+      throw new Error('expected rejection')
+    } catch (err) {
+      expect(err).toBeInstanceOf(StageNonZeroExitError)
+      const diag = (err as StageNonZeroExitError).diagnostics
+      expect(diag.exitCode).toBe(1)
+      expect(diag.stdout).toContain('total_cost_usd')
+      expect(diag.stderr).toBe('')
+      expect(diag.parsed).not.toBeNull()
+      expect(diag.cmd).toContain('claude')
+      expect(diag.cmd).toContain('--model')
+      expect(diag.workspacePath).toBe('/tmp/ws')
+      expect(diag.timedOut).toBe(false)
+      expect(typeof diag.durationMs).toBe('number')
+    }
+  })
+
+  it('StageInvalidOutputError carries diagnostics with parsed=null and raw stdout', async () => {
+    const spawnFn = vi.fn(() =>
+      fakeChild({ stdout: 'this is not json', exitCode: 0 })
+    ) as never
+
+    try {
+      await runClaudeStage(baseOpts({ spawnFn }))
+      throw new Error('expected rejection')
+    } catch (err) {
+      expect(err).toBeInstanceOf(StageInvalidOutputError)
+      const diag = (err as StageInvalidOutputError).diagnostics
+      expect(diag.parsed).toBeNull()
+      expect(diag.stdout).toBe('this is not json')
+    }
+  })
+})
+
+describe('snapshotEnv', () => {
+  it('includes whitelisted keys and drops everything else', () => {
+    const env = {
+      ELECTRON_RUN_AS_NODE: '1',
+      NODE_ENV: 'development',
+      UNRELATED_VAR: 'nope',
+      ANOTHER: 'nope'
+    }
+    const snap = snapshotEnv(env)
+    expect(snap.ELECTRON_RUN_AS_NODE).toBe('1')
+    expect(snap.NODE_ENV).toBe('development')
+    expect(snap.UNRELATED_VAR).toBeUndefined()
+    expect(snap.ANOTHER).toBeUndefined()
+  })
+
+  it('never logs secret-looking keys even if they were whitelisted', () => {
+    // Sanity: ANTHROPIC_API_KEY et al must never appear regardless of presence.
+    const env = {
+      ANTHROPIC_API_KEY: 'sk-should-never-leak',
+      GITHUB_TOKEN: 'ghp-xxx',
+      MY_SECRET: 'shh',
+      PASSWORD_FOO: 'nope'
+    }
+    const snap = snapshotEnv(env)
+    expect(snap.ANTHROPIC_API_KEY).toBeUndefined()
+    expect(snap.GITHUB_TOKEN).toBeUndefined()
+    expect(snap.MY_SECRET).toBeUndefined()
+    expect(snap.PASSWORD_FOO).toBeUndefined()
+    // No value in the snapshot should equal any of the raw secrets.
+    for (const v of Object.values(snap)) {
+      expect(v).not.toBe('sk-should-never-leak')
+      expect(v).not.toBe('ghp-xxx')
+      expect(v).not.toBe('shh')
+      expect(v).not.toBe('nope')
+    }
+  })
+
+  it('produces a stable short PATH fingerprint (sha256 truncated to 8)', () => {
+    const snap1 = snapshotEnv({ PATH: '/usr/bin:/usr/local/bin' })
+    const snap2 = snapshotEnv({ PATH: '/usr/bin:/usr/local/bin' })
+    const snap3 = snapshotEnv({ PATH: '/different/path' })
+    expect(snap1.PATH_fingerprint_sha256_8).toHaveLength(8)
+    expect(snap1.PATH_fingerprint_sha256_8).toBe(snap2.PATH_fingerprint_sha256_8)
+    expect(snap1.PATH_fingerprint_sha256_8).not.toBe(snap3.PATH_fingerprint_sha256_8)
+  })
+
+  it('omits PATH_fingerprint when PATH is absent', () => {
+    const snap = snapshotEnv({})
+    expect(snap.PATH_fingerprint_sha256_8).toBeUndefined()
   })
 })

@@ -9,9 +9,14 @@ import {
   StageInvalidOutputError,
   StageNonZeroExitError,
   StageTimeoutError,
+  type StageDiagnostics,
   type StageRunResult
 } from './stage-runner'
-import { writePlanArtifact, type ArtifactsConfig } from './artifacts'
+import {
+  writePlanArtifact,
+  writePlannerFailureArtifact,
+  type ArtifactsConfig
+} from './artifacts'
 import { HarnessError } from './errors'
 
 export const PLANNER_DEFAULTS = {
@@ -89,6 +94,19 @@ export class PlannerInvalidStageError extends HarnessError {
   }
 }
 
+// Distinct from StageInvalidOutputError: Claude's stdout was valid JSON, but
+// the inner `result` string wasn't parseable as a plan JSON. Separate error
+// lets the failure summary carry the raw result text for debugging.
+export class PlannerPlanParseError extends HarnessError {
+  constructor(public readonly rawResult: string) {
+    super(
+      'PLANNER_PLAN_PARSE',
+      `Planner result string was not valid JSON: ${rawResult.slice(0, 300)}`
+    )
+    this.name = 'PlannerPlanParseError'
+  }
+}
+
 function parsePlanFromClaudeResult(result: StageRunResult): unknown {
   const text = result.parsed.result ?? ''
   const trimmed = text.trim()
@@ -97,7 +115,7 @@ function parsePlanFromClaudeResult(result: StageRunResult): unknown {
   try {
     return JSON.parse(payload)
   } catch {
-    throw new StageInvalidOutputError(text)
+    throw new PlannerPlanParseError(text)
   }
 }
 
@@ -106,11 +124,31 @@ function summariseFailure(err: unknown): string {
   if (err instanceof StageBudgetExceededError)
     return `[planner budget exceeded: $${err.actual} > cap $${err.cap}]`
   if (err instanceof StageNonZeroExitError)
-    return `[planner non-zero exit ${err.exitCode}: ${err.stderr.slice(0, 200)}]`
+    return `[planner non-zero exit ${err.exitCode}: ${err.diagnostics.stderr.slice(0, 200)}]`
   if (err instanceof StageInvalidOutputError)
-    return `[planner output was not valid JSON: ${err.raw.slice(0, 200)}]`
+    return `[planner output was not valid JSON: ${err.diagnostics.stdout.slice(0, 200)}]`
+  if (err instanceof PlannerPlanParseError)
+    return `[planner result text was not valid plan JSON: ${err.rawResult.slice(0, 200)}]`
   if (err instanceof Error) return `[planner failed: ${err.message}]`
   return '[planner failed: unknown error]'
+}
+
+function extractDiagnostics(err: unknown): StageDiagnostics | null {
+  if (
+    err instanceof StageTimeoutError ||
+    err instanceof StageBudgetExceededError ||
+    err instanceof StageNonZeroExitError ||
+    err instanceof StageInvalidOutputError
+  ) {
+    return err.diagnostics
+  }
+  return null
+}
+
+function errorCodeOf(err: unknown): string {
+  if (err instanceof HarnessError) return err.code
+  if (err instanceof Error) return err.name
+  return 'UNKNOWN'
 }
 
 export async function runPlannerStage(
@@ -159,7 +197,28 @@ export async function runPlannerStage(
     }
   } catch (err) {
     const reason = summariseFailure(err)
-    deps.harness.failStage(sessionId, reason)
+    const diagnostics = extractDiagnostics(err)
+    if (diagnostics) {
+      try {
+        writePlannerFailureArtifact(deps.artifactsConfig, sessionId, {
+          errorCode: errorCodeOf(err),
+          errorMessage: err instanceof Error ? err.message : String(err),
+          sessionId,
+          stage: 'plan',
+          iteration: state.currentIteration,
+          createdAt: new Date().toISOString(),
+          diagnostics
+        })
+      } catch {
+        // Artifact write failures must not mask the original planner error;
+        // the DB row below still carries the diagnostics blob.
+      }
+    }
+    deps.harness.failStage(
+      sessionId,
+      reason,
+      diagnostics ? JSON.stringify(diagnostics) : undefined
+    )
     throw err
   }
 }

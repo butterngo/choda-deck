@@ -304,7 +304,17 @@ describe('runPlannerStage — failures', () => {
     const taskId = makeTask()
     const state = runner.startPipeline(taskId, { evaluator: 'off' })
     const runStage = vi.fn(async () => {
-      throw new StageNonZeroExitError(1, 'bang')
+      throw new StageNonZeroExitError(1, {
+        exitCode: 1,
+        stdout: '',
+        stderr: 'bang',
+        parsed: null,
+        cmd: 'claude --test',
+        env: {},
+        workspacePath: '/tmp',
+        durationMs: 5,
+        timedOut: false
+      })
     })
 
     await expect(
