@@ -1,5 +1,7 @@
 // Task management types — pure types, zero runtime dependencies
 
+import type { PipelineStage, PipelineStageStatus } from '../core/harness/pipeline-state'
+
 export type TaskStatus = 'TODO' | 'READY' | 'IN-PROGRESS' | 'DONE'
 export type TaskPriority = 'critical' | 'high' | 'medium' | 'low'
 export type PhaseStatus = 'open' | 'closed'
@@ -180,6 +182,10 @@ export interface Session {
   checkpoint: SessionCheckpoint | null
   checkpointAt: string | null
   createdAt: string
+  pipelineStage: PipelineStage | null
+  pipelineStageStatus: PipelineStageStatus | null
+  needsEvaluator: boolean
+  currentIteration: number
 }
 
 export interface CreateSessionInput {

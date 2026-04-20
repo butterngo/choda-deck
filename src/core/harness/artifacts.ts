@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 export interface ArtifactsConfig {
@@ -19,4 +19,9 @@ export function writePlanArtifact(
   const filePath = join(dir, 'plan.json')
   writeFileSync(filePath, JSON.stringify(planJson, null, 2), 'utf8')
   return filePath
+}
+
+export function readPlanArtifact(cfg: ArtifactsConfig, sessionId: string): unknown {
+  const filePath = join(getSessionArtifactsDir(cfg, sessionId), 'plan.json')
+  return JSON.parse(readFileSync(filePath, 'utf8'))
 }

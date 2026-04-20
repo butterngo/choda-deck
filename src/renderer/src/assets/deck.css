@@ -2413,3 +2413,7 @@ body,
 .deck-plan-card-title { font-size: 12px; color: #fdba74; font-weight: 600; }
 .deck-plan-card-body  { font-size: 12px; color: #d4d4d4; margin-top: 4px; line-height: 1.5; }
 
+.deck-pipeline-demo-banner { background: #2a1f14; border-bottom: 1px solid #7c2d12; color: #fdba74; font-size: 11px; padding: 6px 14px; }
+.deck-pipeline-empty-state { padding: 24px; color: #6b7280; font-size: 13px; text-align: center; }
+.deck-pipeline-error       { padding: 24px; color: #fca5a5; font-size: 13px; background: #2a1414; border: 1px solid #7f1d1d; border-radius: 4px; margin: 16px; }
+

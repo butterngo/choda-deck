@@ -7,6 +7,7 @@ import type {
   CreateSessionInput,
   UpdateSessionInput
 } from '../task-types'
+import type { PipelineStage, PipelineStageStatus } from '../../core/harness/pipeline-state'
 import { now, generateId, type Param } from './shared'
 
 function rowToSession(row: Record<string, unknown>): Session {
@@ -23,7 +24,11 @@ function rowToSession(row: Record<string, unknown>): Session {
       ? (JSON.parse(row.checkpoint as string) as SessionCheckpoint)
       : null,
     checkpointAt: (row.checkpoint_at as string) || null,
-    createdAt: row.created_at as string
+    createdAt: row.created_at as string,
+    pipelineStage: (row.pipeline_stage as PipelineStage) || null,
+    pipelineStageStatus: (row.pipeline_stage_status as PipelineStageStatus) || null,
+    needsEvaluator: (row.needs_evaluator as number) === 1,
+    currentIteration: (row.current_iteration as number) ?? 0
   }
 }
 
