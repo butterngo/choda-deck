@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
 import type {
   Session,
+  SessionCheckpoint,
   SessionHandoff,
   SessionStatus,
   CreateSessionInput,
@@ -18,6 +19,10 @@ function rowToSession(row: Record<string, unknown>): Session {
     endedAt: (row.ended_at as string) || null,
     status: row.status as SessionStatus,
     handoff: row.handoff_json ? (JSON.parse(row.handoff_json as string) as SessionHandoff) : null,
+    checkpoint: row.checkpoint
+      ? (JSON.parse(row.checkpoint as string) as SessionCheckpoint)
+      : null,
+    checkpointAt: (row.checkpoint_at as string) || null,
     createdAt: row.created_at as string
   }
 }
@@ -66,6 +71,14 @@ export class SessionRepository {
     if (input.handoff !== undefined) {
       sets.push('handoff_json = ?')
       params.push(input.handoff === null ? null : JSON.stringify(input.handoff))
+    }
+    if (input.checkpoint !== undefined) {
+      sets.push('checkpoint = ?')
+      params.push(input.checkpoint === null ? null : JSON.stringify(input.checkpoint))
+    }
+    if (input.checkpointAt !== undefined) {
+      sets.push('checkpoint_at = ?')
+      params.push(input.checkpointAt)
     }
 
     if (sets.length === 0) {

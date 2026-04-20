@@ -4,8 +4,11 @@ import type { ContextSourceRepository } from '../repositories/context-source-rep
 import type { ConversationRepository } from '../repositories/conversation-repository'
 import type { TaskRepository } from '../repositories/task-repository'
 import type {
+  CheckpointSessionInput,
+  CheckpointSessionResult,
   EndSessionInput,
   EndSessionResult,
+  ResumeSessionResult,
   SessionLifecycleOperations,
   StartSessionInput,
   StartSessionResult
@@ -29,6 +32,8 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
 
   startSession(input: StartSessionInput): StartSessionResult {
     const tx = this.db.transaction((): StartSessionResult => {
+      const existingActiveSessions = this.sessions.findByProject(input.projectId, 'active')
+
       const session = this.sessions.create({
         projectId: input.projectId,
         workspaceId: input.workspaceId,
@@ -51,7 +56,7 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
       })
       this.conversations.link(conv.id, 'session', session.id)
 
-      return { session, conversationId: conv.id, contextSources }
+      return { session, conversationId: conv.id, contextSources, existingActiveSessions }
     })
     return tx()
   }
@@ -97,5 +102,34 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
       return { session: updated, closedConversationIds, taskUpdated }
     })
     return tx()
+  }
+
+  checkpointSession(id: string, input: CheckpointSessionInput): CheckpointSessionResult {
+    const session = this.sessions.get(id)
+    if (!session) throw new SessionNotFoundError(id)
+    if (session.status !== 'active') {
+      throw new SessionStatusError(id, session.status, 'only active sessions can checkpoint')
+    }
+
+    const updated = this.sessions.update(id, {
+      checkpoint: input.checkpoint,
+      checkpointAt: now()
+    })
+    return { session: updated }
+  }
+
+  resumeSession(id: string): ResumeSessionResult {
+    const session = this.sessions.get(id)
+    if (!session) throw new SessionNotFoundError(id)
+
+    const conversations = this.conversations.findByLink('session', id)
+    const contextSources = this.contextSources.findByProject(session.projectId, true)
+
+    return {
+      session,
+      checkpoint: session.checkpoint,
+      conversations,
+      contextSources
+    }
   }
 }

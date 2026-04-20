@@ -160,6 +160,14 @@ export interface SessionHandoff {
   tasksUpdated?: string[]
 }
 
+export interface SessionCheckpoint {
+  resumePoint?: string
+  notes?: string
+  lastConversationId?: string
+  dirtyFiles?: string[]
+  lastCommit?: string
+}
+
 export interface Session {
   id: string
   projectId: string
@@ -169,6 +177,8 @@ export interface Session {
   endedAt: string | null
   status: SessionStatus
   handoff: SessionHandoff | null
+  checkpoint: SessionCheckpoint | null
+  checkpointAt: string | null
   createdAt: string
 }
 
@@ -187,6 +197,8 @@ export interface UpdateSessionInput {
   status?: SessionStatus
   taskId?: string | null
   handoff?: SessionHandoff | null
+  checkpoint?: SessionCheckpoint | null
+  checkpointAt?: string | null
 }
 
 // ── Context sources (L1 — Context Engine) ───────────────────────────────────

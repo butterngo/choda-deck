@@ -4,7 +4,7 @@ import { textResponse } from './types'
 import { buildProjectContext, type ProjectContextDeps } from './project-context-builder'
 import { loadSessionRules } from '../rules/session-rules-loader'
 import { LifecycleError } from '../lifecycle/errors'
-import type { SessionHandoff, Task, TaskStatus } from '../task-types'
+import type { Session, SessionCheckpoint, SessionHandoff, Task, TaskStatus } from '../task-types'
 import type { ProjectOperations } from '../interfaces/project-repository.interface'
 import type { SessionOperations } from '../interfaces/session-repository.interface'
 import type { TaskOperations } from '../interfaces/task-repository.interface'
@@ -53,10 +53,11 @@ export const register = (server: McpServer, svc: SessionToolsDeps): void => {
         const project = svc.getProject(projectId)
         if (!project) throw new Error(`Project ${projectId} not found`)
 
-        const { session, conversationId, contextSources } = svc.startSession({
-          projectId,
-          workspaceId
-        })
+        const { session, conversationId, contextSources, existingActiveSessions } =
+          svc.startSession({
+            projectId,
+            workspaceId
+          })
         const lastHandoff = loadLastHandoff(svc, projectId, workspaceId)
         const bundle = buildProjectContext(svc, projectId, 'summary')
         const rules = loadSessionRules()
@@ -68,6 +69,7 @@ export const register = (server: McpServer, svc: SessionToolsDeps): void => {
           contextSources,
           mode: 'planning',
           lastHandoff,
+          existingActiveSessions: summarizeActiveSessions(existingActiveSessions),
           projectSummary: buildProjectSummary(bundle),
           activeTasks: bundle?.currentState.activeTasks ?? [],
           openConversations: bundle?.currentState.openConversations ?? [],
@@ -150,6 +152,63 @@ export const register = (server: McpServer, svc: SessionToolsDeps): void => {
   )
 
   server.registerTool(
+    'session_checkpoint',
+    {
+      description:
+        'Snapshot current progress on an active session without ending it. Overwrite-in-place — each call replaces the previous checkpoint. Use when pausing work or before risky ops so a future session_resume can pick up state after crash/restart.',
+      inputSchema: {
+        sessionId: z.string(),
+        resumePoint: z.string().optional().describe('One-line pointer to where you stopped'),
+        notes: z.string().optional().describe('Free-form context — what matters for resume'),
+        lastConversationId: z.string().optional().describe('Most recent conversation touched'),
+        dirtyFiles: z
+          .array(z.string())
+          .optional()
+          .describe('Files edited but not yet committed'),
+        lastCommit: z.string().optional().describe('Last commit SHA written in this session')
+      }
+    },
+    async ({ sessionId, resumePoint, notes, lastConversationId, dirtyFiles, lastCommit }) =>
+      tryLifecycle(() => {
+        const checkpoint: SessionCheckpoint = {
+          resumePoint,
+          notes,
+          lastConversationId,
+          dirtyFiles,
+          lastCommit
+        }
+        const result = svc.checkpointSession(sessionId, { checkpoint })
+        return {
+          sessionId: result.session.id,
+          status: result.session.status,
+          checkpoint: result.session.checkpoint,
+          checkpointAt: result.session.checkpointAt
+        }
+      })
+  )
+
+  server.registerTool(
+    'session_resume',
+    {
+      description:
+        'Resume a previously-active session after crash or restart. Returns session row, last checkpoint (if any), linked conversations, and active context sources. Works on completed sessions too (read-only replay).',
+      inputSchema: {
+        sessionId: z.string()
+      }
+    },
+    async ({ sessionId }) =>
+      tryLifecycle(() => {
+        const result = svc.resumeSession(sessionId)
+        return {
+          session: result.session,
+          checkpoint: result.checkpoint,
+          conversations: result.conversations,
+          contextSources: result.contextSources
+        }
+      })
+  )
+
+  server.registerTool(
     'session_end',
     {
       description: 'End a work session. If session has a task, marks it DONE. Persists handoff.',
@@ -205,6 +264,30 @@ function buildProjectSummary(bundle: ReturnType<typeof buildProjectContext>): st
     pieces.push(bundle.architecture.split('\n').slice(0, 3).join(' ').slice(0, 200))
   }
   return pieces.length > 0 ? pieces.join(' — ') : null
+}
+
+function summarizeActiveSessions(
+  sessions: Session[]
+): Array<{
+  id: string
+  workspaceId: string | null
+  taskId: string | null
+  startedAt: string
+  hasCheckpoint: boolean
+  checkpointAt: string | null
+  hint: string
+}> {
+  return sessions.map((s) => ({
+    id: s.id,
+    workspaceId: s.workspaceId,
+    taskId: s.taskId,
+    startedAt: s.startedAt,
+    hasCheckpoint: s.checkpoint !== null,
+    checkpointAt: s.checkpointAt,
+    hint: s.checkpoint
+      ? 'Consider session_resume instead of starting new — this session has a checkpoint'
+      : 'Session still active — resume or intentional parallel session?'
+  }))
 }
 
 function buildSuggestion(
