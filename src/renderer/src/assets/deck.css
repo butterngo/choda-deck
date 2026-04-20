@@ -2355,6 +2355,12 @@ body,
 .deck-pipeline-status--idle     { background: #6b7280; }
 @keyframes deck-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 
+/* ── Sidebar pipeline badge ────────────────────────────────────────────────── */
+.deck-sidebar-pipeline-badge { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.deck-sidebar-pipeline-badge--ready    { background: #8b5cf6; animation: deck-pulse 1.6s ease-in-out infinite; }
+.deck-sidebar-pipeline-badge--running  { background: #3b82f6; }
+.deck-sidebar-pipeline-badge--rejected { background: #f59e0b; }
+
 /* ── ApprovalActions ───────────────────────────────────────────────────────── */
 .deck-approval-actions { display: flex; gap: 8px; }
 .deck-approval-btn { background: #2a2d2e; border: 1px solid #333; color: #d4d4d4; font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 3px; cursor: pointer; letter-spacing: 0.02em; }

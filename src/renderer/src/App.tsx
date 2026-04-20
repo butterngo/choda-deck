@@ -11,6 +11,11 @@ import InboxView from './InboxView'
 import PipelineView from './PipelineView'
 import type { ProjectConfig, WorkspaceConfig } from '../../preload/index'
 import type { ViewType } from './ViewRouter'
+import type { Session } from '../../tasks/task-types'
+import type {
+  PipelineStageStatus,
+  PipelineState
+} from '../../core/harness/pipeline-state'
 
 // Active selection: which workspace is selected + its parent project
 interface ActiveSelection {
@@ -18,10 +23,43 @@ interface ActiveSelection {
   workspaceId: string
 }
 
+// Sidebar badge signals — subset of PipelineStageStatus we surface.
+export type PipelineSignal = 'ready' | 'running' | 'rejected'
+
+// Sessions with these stageStatuses represent "work in flight" from the user's
+// perspective. 'approved' is transient between stages; 'running' of the next
+// stage will replace it almost immediately.
+const ACTIVE_STAGE_STATUSES: PipelineStageStatus[] = ['ready', 'running', 'rejected']
+
+function isActivePipelineSession(s: Session): boolean {
+  if (s.pipelineStage === null || s.pipelineStageStatus === null) return false
+  return ACTIVE_STAGE_STATUSES.includes(s.pipelineStageStatus)
+}
+
+// Ready > running > rejected; tie-break by most recently started.
+function pickBestPipelineSession(sessions: Session[]): Session | null {
+  const active = sessions.filter(isActivePipelineSession)
+  if (active.length === 0) return null
+  const rank: Record<PipelineStageStatus, number> = {
+    ready: 0,
+    running: 1,
+    rejected: 2,
+    approved: 3
+  }
+  return active.sort((a, b) => {
+    const ra = rank[a.pipelineStageStatus!] ?? 99
+    const rb = rank[b.pipelineStageStatus!] ?? 99
+    if (ra !== rb) return ra - rb
+    return b.startedAt.localeCompare(a.startedAt)
+  })[0]
+}
+
 function App(): React.JSX.Element {
   const [projects, setProjects] = useState<ProjectConfig[]>([])
   const [active, setActive] = useState<ActiveSelection | null>(null)
   const [vaultRoot, setVaultRoot] = useState<string>('')
+  const [pipelineSessions, setPipelineSessions] = useState<Record<string, Session>>({})
+
   // Load projects + vault contentRoot on mount
   useEffect(() => {
     let disposed = false
@@ -39,6 +77,36 @@ function App(): React.JSX.Element {
       disposed = true
     }
   }, [])
+
+  // Refresh the active-pipeline-session map for a single project. We refetch
+  // per-project (instead of a global refetch) to keep this cheap on broadcast.
+  async function refreshProjectPipeline(projectId: string): Promise<void> {
+    const sessions = (await window.api.session.list(projectId)) as Session[]
+    const best = pickBestPipelineSession(sessions)
+    setPipelineSessions((prev) => {
+      const next = { ...prev }
+      if (best) next[projectId] = best
+      else delete next[projectId]
+      return next
+    })
+  }
+
+  // Initial fetch + subscribe to any pipeline stage change (from any session).
+  useEffect(() => {
+    if (projects.length === 0) return
+    let disposed = false
+    for (const p of projects) {
+      if (disposed) break
+      refreshProjectPipeline(p.id)
+    }
+    const unsubscribe = window.api.pipeline.onAnyStageChange((state: PipelineState) => {
+      if (!disposed) refreshProjectPipeline(state.projectId)
+    })
+    return () => {
+      disposed = true
+      unsubscribe()
+    }
+  }, [projects])
 
   const viewTypes: ViewType[] = useMemo(
     () => [
@@ -82,11 +150,24 @@ function App(): React.JSX.Element {
       {
         id: 'pipeline',
         label: 'Pipeline',
-        render: (_project, _workspace, visible) => <PipelineView visible={visible} />
+        render: (project, _workspace, visible) => (
+          <PipelineView visible={visible} sessionId={pipelineSessions[project.id]?.id ?? null} />
+        )
       }
     ],
-    [vaultRoot]
+    [vaultRoot, pipelineSessions]
   )
+
+  const pipelineSignals = useMemo<Record<string, PipelineSignal>>(() => {
+    const out: Record<string, PipelineSignal> = {}
+    for (const [projectId, session] of Object.entries(pipelineSessions)) {
+      const status = session.pipelineStageStatus
+      if (status === 'ready' || status === 'running' || status === 'rejected') {
+        out[projectId] = status
+      }
+    }
+    return out
+  }, [pipelineSessions])
 
   // Flatten workspaces for keyboard shortcuts
   const allWorkspaces: Array<{ project: ProjectConfig; workspace: WorkspaceConfig }> = []
@@ -148,6 +229,7 @@ function App(): React.JSX.Element {
           onProjectsChanged={() => {
             window.api.project.list().then(setProjects)
           }}
+          pipelineSignals={pipelineSignals}
         />
         <main className="deck-main">
           <header className="deck-header">
@@ -158,15 +240,20 @@ function App(): React.JSX.Element {
                 : ''}
             </div>
           </header>
-          {allWorkspaces.map(({ project, workspace }) => (
-            <ViewRouter
-              key={workspace.id}
-              project={project}
-              workspace={workspace}
-              visible={workspace.id === active?.workspaceId}
-              viewTypes={viewTypes}
-            />
-          ))}
+          {allWorkspaces.map(({ project, workspace }) => {
+            const projectViewTypes = pipelineSessions[project.id]
+              ? viewTypes
+              : viewTypes.filter((vt) => vt.id !== 'pipeline')
+            return (
+              <ViewRouter
+                key={workspace.id}
+                project={project}
+                workspace={workspace}
+                visible={workspace.id === active?.workspaceId}
+                viewTypes={projectViewTypes}
+              />
+            )
+          })}
         </main>
       </div>
     </div>
