@@ -145,6 +145,24 @@ export class ConversationRepository {
     return rows.map(rowToConversation)
   }
 
+  findActiveByOwnerType(
+    projectId: string,
+    ownerType: 'pipeline' | 'interactive'
+  ): Array<{ conversationId: string; ownerSessionId: string | null; startedAt: string }> {
+    const rows = this.db
+      .prepare(
+        `SELECT id, owner_session_id, created_at FROM conversations
+         WHERE project_id = ? AND owner_type = ? AND status != 'closed'
+         ORDER BY created_at DESC`
+      )
+      .all(projectId, ownerType) as Array<Record<string, unknown>>
+    return rows.map((r) => ({
+      conversationId: r.id as string,
+      ownerSessionId: (r.owner_session_id as string) || null,
+      startedAt: r.created_at as string
+    }))
+  }
+
   delete(id: string): void {
     this.db.prepare('DELETE FROM conversation_actions WHERE conversation_id = ?').run(id)
     this.db.prepare('DELETE FROM conversation_links WHERE conversation_id = ?').run(id)

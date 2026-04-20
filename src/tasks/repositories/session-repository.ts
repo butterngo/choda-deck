@@ -128,4 +128,67 @@ export class SessionRepository {
   delete(id: string): void {
     this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
   }
+
+  updatePipelineStage(
+    sessionId: string,
+    input: {
+      stage: string
+      stageStatus: string | null
+      needsEvaluator: boolean
+      currentIteration: number
+    }
+  ): void {
+    this.db
+      .prepare(
+        `UPDATE sessions SET pipeline_stage = ?, pipeline_stage_status = ?,
+         needs_evaluator = ?, current_iteration = ? WHERE id = ?`
+      )
+      .run(
+        input.stage,
+        input.stageStatus,
+        input.needsEvaluator ? 1 : 0,
+        input.currentIteration,
+        sessionId
+      )
+  }
+
+  findActivePipelines(): Array<{
+    sessionId: string
+    projectId: string
+    taskId: string
+    stage: 'plan' | 'generate' | 'evaluate' | 'done' | 'aborted'
+    stageStatus: 'running' | 'ready' | 'approved' | 'rejected' | null
+    needsEvaluator: boolean
+    currentIteration: number
+    startedAt: string
+  }> {
+    const rows = this.db
+      .prepare(
+        `SELECT id, project_id, task_id, pipeline_stage, pipeline_stage_status,
+         needs_evaluator, current_iteration, started_at
+         FROM sessions
+         WHERE pipeline_stage IS NOT NULL
+           AND pipeline_stage NOT IN ('done', 'aborted')
+           AND status = 'active'`
+      )
+      .all() as Array<Record<string, unknown>>
+    return rows
+      .filter((r) => typeof r.task_id === 'string' && r.task_id)
+      .map((r) => ({
+        sessionId: r.id as string,
+        projectId: r.project_id as string,
+        taskId: r.task_id as string,
+        stage: r.pipeline_stage as 'plan' | 'generate' | 'evaluate' | 'done' | 'aborted',
+        stageStatus:
+          (r.pipeline_stage_status as
+            | 'running'
+            | 'ready'
+            | 'approved'
+            | 'rejected'
+            | null) ?? null,
+        needsEvaluator: (r.needs_evaluator as number) === 1,
+        currentIteration: (r.current_iteration as number) ?? 0,
+        startedAt: r.started_at as string
+      }))
+  }
 }
