@@ -100,6 +100,75 @@ describe('openConversation R3 ownership tag', () => {
   })
 })
 
+describe('openConversation session auto-link', () => {
+  function openConv(extra?: { sessionId?: string }): string {
+    return svc.openConversation({
+      projectId: 'proj-c',
+      title: 'T',
+      createdBy: 'Butter',
+      participants: [{ name: 'Butter', type: 'human' }],
+      initialMessage: { content: 'hi', type: 'question' },
+      ...extra
+    }).id
+  }
+
+  it('explicit sessionId: sets ownerSessionId + creates link row', () => {
+    const session = svc.startSession({ projectId: 'proj-c' })
+    const convId = openConv({ sessionId: session.session.id })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = (svc as any).db as import('better-sqlite3').Database
+    const row = db
+      .prepare('SELECT owner_session_id FROM conversations WHERE id = ?')
+      .get(convId) as { owner_session_id: string | null }
+    expect(row.owner_session_id).toBe(session.session.id)
+
+    const links = svc.findConversationsByLink('session', session.session.id)
+    expect(links.some((c) => c.id === convId)).toBe(true)
+  })
+
+  it('auto-detect: exactly 1 active session → auto-link', () => {
+    const session = svc.startSession({ projectId: 'proj-c' })
+    const convId = openConv()
+
+    const links = svc.findConversationsByLink('session', session.session.id)
+    // auto-conv from startSession + our new conv
+    expect(links.some((c) => c.id === convId)).toBe(true)
+  })
+
+  it('auto-detect: 0 active sessions → no link', () => {
+    const convId = openConv()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = (svc as any).db as import('better-sqlite3').Database
+    const row = db
+      .prepare('SELECT owner_session_id FROM conversations WHERE id = ?')
+      .get(convId) as { owner_session_id: string | null }
+    expect(row.owner_session_id).toBeNull()
+  })
+
+  it('auto-detect: N > 1 active sessions → no link', () => {
+    svc.startSession({ projectId: 'proj-c', workspaceId: 'ws-1' })
+    svc.startSession({ projectId: 'proj-c', workspaceId: 'ws-2' })
+    const convId = openConv()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = (svc as any).db as import('better-sqlite3').Database
+    const row = db
+      .prepare('SELECT owner_session_id FROM conversations WHERE id = ?')
+      .get(convId) as { owner_session_id: string | null }
+    expect(row.owner_session_id).toBeNull()
+  })
+
+  it('explicit sessionId cross-project → throws', () => {
+    svc.ensureProject('proj-other', 'Other', '/tmp/o')
+    const session = svc.startSession({ projectId: 'proj-other' })
+    expect(() => openConv({ sessionId: session.session.id })).toThrow(/belongs to project/)
+  })
+
+  it('explicit sessionId non-existent → throws', () => {
+    expect(() => openConv({ sessionId: 'SESSION-NOPE' })).toThrow(/not found/)
+  })
+})
+
 describe('decideConversation', () => {
   it('happy path: adds decision message + flips to decided', () => {
     const id = openFresh()

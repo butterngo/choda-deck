@@ -80,6 +80,10 @@ export const register = (server: McpServer, svc: ConversationToolsDeps): void =>
           .array(z.string())
           .optional()
           .describe('Task IDs this conversation relates to'),
+        sessionId: z
+          .string()
+          .optional()
+          .describe('Active session ID to link this conversation to. If omitted, auto-links when exactly one active session exists in the project.'),
         initialMessage: z
           .object({
             content: z.string(),

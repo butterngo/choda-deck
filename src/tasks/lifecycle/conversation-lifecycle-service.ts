@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
 import type { ConversationRepository } from '../repositories/conversation-repository'
 import type { TaskRepository } from '../repositories/task-repository'
+import type { SessionRepository } from '../repositories/session-repository'
 import type {
   ConversationLifecycleOperations,
   OpenConversationInput,
@@ -16,17 +17,21 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
   constructor(
     private readonly db: Database.Database,
     private readonly conversations: ConversationRepository,
-    private readonly tasks: TaskRepository
+    private readonly tasks: TaskRepository,
+    private readonly sessions: SessionRepository
   ) {}
 
   openConversation(input: OpenConversationInput): Conversation {
     const tx = this.db.transaction((): Conversation => {
+      const resolvedSessionId = this.resolveSessionId(input.projectId, input.sessionId)
+
       const conv = this.conversations.create({
         projectId: input.projectId,
         title: input.title,
         createdBy: input.createdBy,
         participants: input.participants,
-        ownerType: 'interactive'
+        ownerType: 'interactive',
+        ownerSessionId: resolvedSessionId ?? undefined
       })
 
       this.conversations.addMessage({
@@ -40,11 +45,34 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
         this.conversations.link(conv.id, 'task', taskId)
       }
 
+      if (resolvedSessionId) {
+        this.conversations.link(conv.id, 'session', resolvedSessionId)
+      }
+
       const final = this.conversations.get(conv.id)
       if (!final) throw new Error(`Conversation ${conv.id} disappeared mid-transaction`)
       return final
     })
     return tx()
+  }
+
+  private resolveSessionId(projectId: string, explicit?: string): string | null {
+    if (explicit !== undefined) {
+      const session = this.sessions.get(explicit)
+      if (!session) throw new Error(`Session ${explicit} not found`)
+      if (session.status !== 'active') throw new Error(`Session ${explicit} is not active`)
+      if (session.projectId !== projectId) {
+        throw new Error(`Session ${explicit} belongs to project ${session.projectId}, not ${projectId}`)
+      }
+      return explicit
+    }
+
+    const active = this.sessions.findByProject(projectId, 'active')
+    if (active.length === 1) return active[0].id
+    if (active.length > 1) {
+      console.warn(`[ConversationLifecycle] ${active.length} active sessions in project ${projectId} — skipping auto-link`)
+    }
+    return null
   }
 
   decideConversation(id: string, input: DecideConversationInput): DecideConversationResult {

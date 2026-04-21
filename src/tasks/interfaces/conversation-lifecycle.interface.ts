@@ -6,6 +6,7 @@ export interface OpenConversationInput {
   createdBy: string
   participants?: Array<{ name: string; type: ConversationParticipantType; role?: string }>
   linkedTasks?: string[]
+  sessionId?: string
   initialMessage: {
     content: string
     type: 'question' | 'proposal' | 'review'

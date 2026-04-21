@@ -144,7 +144,8 @@ export class SqliteTaskService
     this.conversationLifecycle = new ConversationLifecycleService(
       this.db,
       this.conversations,
-      this.tasks
+      this.tasks,
+      this.sessions
     )
     this.sessionLifecycle = new SessionLifecycleService(
       this.db,
