@@ -9,16 +9,20 @@ import {
 import type { PipelineState, EvaluatorMode } from '../../core/harness/pipeline-state'
 import type { PlannerStageDeps } from '../../core/harness/planner-stage'
 import { runPlannerStage } from '../../core/harness/planner-stage'
+import type { GeneratorStageDeps } from '../../core/harness/generator-stage'
+import { runGeneratorStage } from '../../core/harness/generator-stage'
 import type { ArtifactsConfig } from '../../core/harness/artifacts'
 
 export interface PipelineToolsDeps {
   getHarnessRunner(): HarnessRunner
   getPlannerStageDeps(cfg: ArtifactsConfig): PlannerStageDeps
+  getGeneratorStageDeps(cfg: ArtifactsConfig): GeneratorStageDeps
 }
 
 interface RegisterOptions {
   artifactsConfig: ArtifactsConfig
   runPlanner?: typeof runPlannerStage
+  runGenerator?: typeof runGeneratorStage
 }
 
 type ToolOutput = ReturnType<typeof textResponse>
@@ -54,18 +58,39 @@ function tryHarness(fn: () => unknown): ToolOutput {
   }
 }
 
-function firePlannerAsync(
+interface StageRunners {
+  planner: typeof runPlannerStage
+  generator: typeof runGeneratorStage
+}
+
+// Fire the runner matching `state.stage`. No-op for terminal or evaluator
+// stages (evaluator lands in Phase 3, terminal stages have no runner).
+function fireStageAsync(
   deps: PipelineToolsDeps,
   artifactsConfig: ArtifactsConfig,
-  sessionId: string,
-  runner: typeof runPlannerStage
+  state: PipelineState,
+  runners: StageRunners,
+  feedback?: string
 ): void {
-  const plannerDeps = deps.getPlannerStageDeps(artifactsConfig)
-  void runner(plannerDeps, sessionId).catch((err) => {
-    // runPlannerStage already calls harness.failStage() and records a reject
-    // approval row. Surface to stderr so operators see it in the MCP log.
-    console.error(`[pipeline] planner stage failed for ${sessionId}:`, err)
-  })
+  if (state.stage === 'plan') {
+    const plannerDeps = deps.getPlannerStageDeps(artifactsConfig)
+    void runners.planner(plannerDeps, state.sessionId).catch((err) => {
+      // runPlannerStage already calls harness.failStage() and records a reject
+      // approval row. Surface to stderr so operators see it in the MCP log.
+      console.error(`[pipeline] planner stage failed for ${state.sessionId}:`, err)
+    })
+    return
+  }
+  if (state.stage === 'generate') {
+    const generatorDeps = deps.getGeneratorStageDeps(artifactsConfig)
+    void runners
+      .generator(generatorDeps, state.sessionId, {
+        rejectionFeedback: feedback ?? null
+      })
+      .catch((err) => {
+        console.error(`[pipeline] generator stage failed for ${state.sessionId}:`, err)
+      })
+  }
 }
 
 export const register = (
@@ -73,7 +98,10 @@ export const register = (
   deps: PipelineToolsDeps,
   opts: RegisterOptions
 ): void => {
-  const runner = opts.runPlanner ?? runPlannerStage
+  const runners: StageRunners = {
+    planner: opts.runPlanner ?? runPlannerStage,
+    generator: opts.runGenerator ?? runGeneratorStage
+  }
 
   server.registerTool(
     'pipeline_start',
@@ -92,7 +120,7 @@ export const register = (
         const state = deps.getHarnessRunner().startPipeline(taskId, {
           evaluator: evaluator as EvaluatorMode
         })
-        firePlannerAsync(deps, opts.artifactsConfig, state.sessionId, runner)
+        fireStageAsync(deps, opts.artifactsConfig, state, runners)
         return stateToOutput(state)
       })
   )
@@ -101,7 +129,7 @@ export const register = (
     'pipeline_approve',
     {
       description:
-        'Approve the current "ready" stage of a pipeline. Advances to next stage (or marks pipeline done). Only valid when stage_status="ready". Returns the new pipeline state.',
+        'Approve the current "ready" stage of a pipeline. Advances to next stage (or marks pipeline done). Only valid when stage_status="ready". Returns the new pipeline state. When the new stage has a runner (plan, generate), it is fired asynchronously — the response already reflects stage_status="running" for that next stage.',
       inputSchema: {
         sessionId: z.string().describe('Pipeline session ID (from pipeline_start)')
       }
@@ -109,6 +137,7 @@ export const register = (
     async ({ sessionId }) =>
       tryHarness(() => {
         const state = deps.getHarnessRunner().approveStage(sessionId)
+        fireStageAsync(deps, opts.artifactsConfig, state, runners)
         return stateToOutput(state)
       })
   )
@@ -117,7 +146,7 @@ export const register = (
     'pipeline_reject',
     {
       description:
-        'Reject the current "ready" stage with feedback. Re-runs the same stage with the feedback appended to the prompt. Planner re-spawn happens asynchronously — returns immediately with stage_status="rejected" then flips to "running".',
+        'Reject the current "ready" stage with feedback. Re-runs the same stage with the feedback appended to the prompt. Stage re-spawn happens asynchronously — returns immediately with stage_status="rejected" then flips to "running".',
       inputSchema: {
         sessionId: z.string().describe('Pipeline session ID'),
         feedback: z.string().min(1).describe('Reason for rejection — fed into the next spawn')
@@ -126,7 +155,7 @@ export const register = (
     async ({ sessionId, feedback }) =>
       tryHarness(() => {
         const state = deps.getHarnessRunner().rejectStage(sessionId, feedback)
-        firePlannerAsync(deps, opts.artifactsConfig, sessionId, runner)
+        fireStageAsync(deps, opts.artifactsConfig, state, runners, feedback)
         return stateToOutput(state)
       })
   )

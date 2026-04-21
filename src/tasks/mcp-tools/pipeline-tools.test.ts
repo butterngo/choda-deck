@@ -9,6 +9,10 @@ import {
 import type { PipelineState } from '../../core/harness/pipeline-state'
 import type { HarnessRunner } from '../../core/harness/harness-runner'
 import type { PlannerStageDeps, runPlannerStage } from '../../core/harness/planner-stage'
+import type {
+  GeneratorStageDeps,
+  runGeneratorStage
+} from '../../core/harness/generator-stage'
 
 type ToolHandler = (args: Record<string, unknown>) => Promise<{
   content: Array<{ type: 'text'; text: string }>
@@ -59,20 +63,27 @@ function buildHarnessMock(): Harness {
 
 function buildDeps(harness: Harness): PipelineToolsDeps {
   const plannerDeps = {} as PlannerStageDeps
+  const generatorDeps = {} as GeneratorStageDeps
   return {
     getHarnessRunner: () => harness as unknown as HarnessRunner,
-    getPlannerStageDeps: () => plannerDeps
+    getPlannerStageDeps: () => plannerDeps,
+    getGeneratorStageDeps: () => generatorDeps
   }
 }
 
-function registerWithMock(harness: Harness, runPlanner: typeof runPlannerStage): FakeServer {
+function registerWithMock(
+  harness: Harness,
+  runPlanner: typeof runPlannerStage,
+  runGenerator?: typeof runGeneratorStage
+): FakeServer {
   const server = new FakeServer()
   register(
     server as unknown as Parameters<typeof register>[0],
     buildDeps(harness),
     {
       artifactsConfig: { dataDir: '/tmp/artifacts' },
-      runPlanner
+      runPlanner,
+      runGenerator: runGenerator ?? (vi.fn().mockResolvedValue({}) as unknown as typeof runGeneratorStage)
     }
   )
   return server
@@ -183,21 +194,45 @@ describe('pipeline-tools', () => {
   })
 
   describe('pipeline_approve', () => {
-    it('calls approveStage + returns state', async () => {
+    it('calls approveStage + fires generator when new stage is generate + returns state', async () => {
       harness.approveStage.mockReturnValue(
         sampleState({ stage: 'generate', stageStatus: 'running', currentIteration: 0 })
       )
-      const server = registerWithMock(harness, runPlanner as unknown as typeof runPlannerStage)
+      const runGenerator = vi.fn().mockResolvedValue({})
+      const server = registerWithMock(
+        harness,
+        runPlanner as unknown as typeof runPlannerStage,
+        runGenerator as unknown as typeof runGeneratorStage
+      )
 
       const res = await server.handlers.get('pipeline_approve')!({ sessionId: 'SESSION-1' })
 
       expect(harness.approveStage).toHaveBeenCalledWith('SESSION-1')
       expect(runPlanner).not.toHaveBeenCalled()
+      expect(runGenerator).toHaveBeenCalledTimes(1)
+      expect(runGenerator.mock.calls[0][1]).toBe('SESSION-1')
+      expect(runGenerator.mock.calls[0][2]).toEqual({ rejectionFeedback: null })
       expect(parseBody(res)).toMatchObject({
         sessionId: 'SESSION-1',
         stage: 'generate',
         stage_status: 'running'
       })
+    })
+
+    it('does not fire any runner when new stage is done', async () => {
+      harness.approveStage.mockReturnValue(
+        sampleState({ stage: 'done', stageStatus: null, currentIteration: 0 })
+      )
+      const runGenerator = vi.fn()
+      const server = registerWithMock(
+        harness,
+        runPlanner as unknown as typeof runPlannerStage,
+        runGenerator as unknown as typeof runGeneratorStage
+      )
+
+      await server.handlers.get('pipeline_approve')!({ sessionId: 'SESSION-1' })
+      expect(runPlanner).not.toHaveBeenCalled()
+      expect(runGenerator).not.toHaveBeenCalled()
     })
 
     it('maps PipelineSessionNotFoundError to error payload', async () => {
@@ -213,9 +248,9 @@ describe('pipeline-tools', () => {
   })
 
   describe('pipeline_reject', () => {
-    it('calls rejectStage with feedback + fires planner re-run', async () => {
+    it('calls rejectStage with feedback + fires planner re-run on plan stage', async () => {
       harness.rejectStage.mockReturnValue(
-        sampleState({ stageStatus: 'rejected', currentIteration: 1 })
+        sampleState({ stage: 'plan', stageStatus: 'rejected', currentIteration: 1 })
       )
       const server = registerWithMock(harness, runPlanner as unknown as typeof runPlannerStage)
 
@@ -232,6 +267,28 @@ describe('pipeline-tools', () => {
         stage_status: 'rejected',
         iteration: 1
       })
+    })
+
+    it('fires generator re-run with rejectionFeedback when rejecting on generate stage', async () => {
+      harness.rejectStage.mockReturnValue(
+        sampleState({ stage: 'generate', stageStatus: 'rejected', currentIteration: 1 })
+      )
+      const runGenerator = vi.fn().mockResolvedValue({})
+      const server = registerWithMock(
+        harness,
+        runPlanner as unknown as typeof runPlannerStage,
+        runGenerator as unknown as typeof runGeneratorStage
+      )
+
+      await server.handlers.get('pipeline_reject')!({
+        sessionId: 'SESSION-1',
+        feedback: 'plan step 2 wrong'
+      })
+
+      expect(runPlanner).not.toHaveBeenCalled()
+      expect(runGenerator).toHaveBeenCalledTimes(1)
+      expect(runGenerator.mock.calls[0][1]).toBe('SESSION-1')
+      expect(runGenerator.mock.calls[0][2]).toEqual({ rejectionFeedback: 'plan step 2 wrong' })
     })
   })
 
