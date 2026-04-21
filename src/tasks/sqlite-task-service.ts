@@ -92,6 +92,7 @@ import { PipelineApprovalRepository } from './repositories/pipeline-approval-rep
 import { HarnessRunner } from '../core/harness/harness-runner'
 import { shouldEnableEvaluator } from '../core/harness/evaluator-triggers'
 import { extractAcceptanceCriteria, type PlannerStageDeps } from '../core/harness/planner-stage'
+import type { GeneratorStageDeps } from '../core/harness/generator-stage'
 import type { ArtifactsConfig } from '../core/harness/artifacts'
 
 export class SqliteTaskService
@@ -481,6 +482,15 @@ export class SqliteTaskService
   }
 
   getPlannerStageDeps(artifactsConfig: ArtifactsConfig): PlannerStageDeps {
+    return {
+      tasks: this.tasks,
+      projects: this.projects,
+      harness: this.getHarnessRunner(),
+      artifactsConfig
+    }
+  }
+
+  getGeneratorStageDeps(artifactsConfig: ArtifactsConfig): GeneratorStageDeps {
     return {
       tasks: this.tasks,
       projects: this.projects,
