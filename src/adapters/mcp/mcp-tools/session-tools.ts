@@ -3,12 +3,12 @@ import { z } from 'zod'
 import { textResponse } from './types'
 import { buildProjectContext, type ProjectContextDeps } from './project-context-builder'
 import { loadSessionRules } from '../rules/session-rules-loader'
-import { LifecycleError } from '../../core/domain/lifecycle/errors'
-import type { Session, SessionCheckpoint, SessionHandoff, Task, TaskStatus } from '../../core/domain/task-types'
-import type { ProjectOperations } from '../../core/domain/interfaces/project-repository.interface'
-import type { SessionOperations } from '../../core/domain/interfaces/session-repository.interface'
-import type { TaskOperations } from '../../core/domain/interfaces/task-repository.interface'
-import type { SessionLifecycleOperations } from '../../core/domain/interfaces/session-lifecycle.interface'
+import { LifecycleError } from '../../../core/domain/lifecycle/errors'
+import type { Session, SessionCheckpoint, SessionHandoff, Task, TaskStatus } from '../../../core/domain/task-types'
+import type { ProjectOperations } from '../../../core/domain/interfaces/project-repository.interface'
+import type { SessionOperations } from '../../../core/domain/interfaces/session-repository.interface'
+import type { TaskOperations } from '../../../core/domain/interfaces/task-repository.interface'
+import type { SessionLifecycleOperations } from '../../../core/domain/interfaces/session-lifecycle.interface'
 
 // Workspaces support N parallel active sessions (TASK-526).
 // Status set: 'active' | 'completed' — no auto-abandon on session_start.

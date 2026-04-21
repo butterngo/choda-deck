@@ -8,7 +8,7 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { SqliteTaskService } from '../core/domain/sqlite-task-service'
+import { SqliteTaskService } from '../../core/domain/sqlite-task-service'
 import * as taskTools from './mcp-tools/task-tools'
 import * as phaseTools from './mcp-tools/phase-tools'
 import * as roadmapTool from './mcp-tools/roadmap-tool'

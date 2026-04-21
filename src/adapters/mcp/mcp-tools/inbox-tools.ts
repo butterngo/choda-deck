@@ -1,10 +1,10 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { textResponse } from './types'
-import { LifecycleError } from '../../core/domain/lifecycle/errors'
-import type { InboxOperations } from '../../core/domain/interfaces/inbox-repository.interface'
-import type { ConversationOperations } from '../../core/domain/interfaces/conversation-repository.interface'
-import type { InboxLifecycleOperations } from '../../core/domain/interfaces/inbox-lifecycle.interface'
+import { LifecycleError } from '../../../core/domain/lifecycle/errors'
+import type { InboxOperations } from '../../../core/domain/interfaces/inbox-repository.interface'
+import type { ConversationOperations } from '../../../core/domain/interfaces/conversation-repository.interface'
+import type { InboxLifecycleOperations } from '../../../core/domain/interfaces/inbox-lifecycle.interface'
 
 export type InboxToolsDeps = InboxOperations & ConversationOperations & InboxLifecycleOperations
 

@@ -18,7 +18,7 @@
     "dev": "node scripts/dev.mjs dev",
     "build": "pnpm run typecheck && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
-    "build:mcp": "esbuild src/tasks/mcp-task-server.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/mcp-server.cjs --external:better-sqlite3 --external:chokidar",
+    "build:mcp": "esbuild src/adapters/mcp/server.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/mcp-server.cjs --external:better-sqlite3 --external:chokidar",
     "icons": "node scripts/build-icons.mjs",
     "build:unpack": "pnpm run build && pnpm run build:mcp && electron-builder --dir",
     "build:win": "pnpm run build && pnpm run build:mcp && electron-builder --win",
