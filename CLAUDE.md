@@ -28,9 +28,12 @@ Use `choda-tasks` MCP tools (`task_context`, `task_list`) for task details.
 
 ## Key Files
 
-- `src/tasks/sqlite-task-service.ts` — SQLite schema + CRUD
-- `src/tasks/mcp-task-server.ts` — MCP server (10 tools)
-- `src/tasks/task-types.ts` — type definitions
+- `src/core/domain/sqlite-task-service.ts` — SQLite schema + CRUD
+- `src/adapters/mcp/server.ts` — MCP server entry point
+- `src/adapters/mcp/mcp-tools/` — individual MCP tool handlers
+- `src/core/domain/task-types.ts` — type definitions
+- `src/core/paths.ts` — `resolveDataPaths()` — single source for DB/artifacts/backups paths
+- `src/main/vault-importer.ts` — vault markdown → SQLite importer
 - `src/renderer/src/RoadmapView.tsx` — hierarchy UI
 
 ## Per-layer context
@@ -77,14 +80,14 @@ Use worktrees for parallel branches (hotfix + feature at once) instead of stash/
 
 ## MCP Tools Available
 
-`choda-tasks` server exposes domain tools across: project, workspace, task, phase, inbox, conversation, session, search, roadmap. Source of truth = `src/tasks/mcp-task-server.ts` + `src/tasks/mcp-tools/`. After source changes: `pnpm run build:mcp` + `/mcp reconnect`.
+`choda-tasks` server exposes domain tools across: project, workspace, task, phase, inbox, conversation, session, search, roadmap. Source of truth = `src/adapters/mcp/server.ts` + `src/adapters/mcp/mcp-tools/`. After source changes: `pnpm run build:mcp` + `/mcp reconnect`.
 
 Register in `.claude.json` (production — uses bundled `dist/mcp-server.cjs`):
 
 ```json
 {
   "mcpServers": {
-   "choda-tasks": {
+    "choda-tasks": {
       "command": "C:\\dev\\choda-deck\\node_modules\\electron\\dist\\electron.exe",
       "args": [
         "C:\\dev\\choda-deck\\dist\\mcp-server.cjs"
@@ -92,9 +95,20 @@ Register in `.claude.json` (production — uses bundled `dist/mcp-server.cjs`):
       "cwd": "C:\\dev\\choda-deck",
       "env": {
         "ELECTRON_RUN_AS_NODE": "1",
-        "CHODA_DB_PATH": "C:\\dev\\choda-deck\\choda-deck.db",
+        "CHODA_DATA_DIR": "C:\\dev\\choda-deck\\data",
         "CHODA_CONTENT_ROOT": "C:\\Users\\hngo1_mantu\\vault"
       }
+    }
   }
 }
 ```
+
+**Data layout** (`CHODA_DATA_DIR/`):
+```
+data/
+├── database/choda-deck.db
+├── artifacts/<sessionId>/
+└── backups/choda-deck-<date>.db
+```
+
+Legacy `CHODA_DB_PATH` still accepted as override (logs a warning). Migration: `node scripts/migrate-data-layout.mjs`.

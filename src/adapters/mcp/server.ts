@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 /**
  * MCP Task Server — exposes SQLite task management as MCP tools.
- * Run: npx ts-node src/tasks/mcp-task-server.ts
- * Env: CHODA_DB_PATH (default: ./choda-deck.db)
- *      CHODA_CONTENT_ROOT (default: none — required for file reads)
+ * Env: CHODA_DATA_DIR — data root (database/, artifacts/, backups/ derived)
+ *      CHODA_DB_PATH  — legacy override for DB path only
+ *      CHODA_CONTENT_ROOT — required for file reads
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { SqliteTaskService } from '../../core/domain/sqlite-task-service'
+import { resolveDataPaths } from '../../core/paths'
 import * as taskTools from './mcp-tools/task-tools'
 import * as phaseTools from './mcp-tools/phase-tools'
 import * as roadmapTool from './mcp-tools/roadmap-tool'
@@ -18,10 +19,10 @@ import * as projectTools from './mcp-tools/project-tools'
 import * as sessionTools from './mcp-tools/session-tools'
 import * as inboxTools from './mcp-tools/inbox-tools'
 
-const DB_PATH = process.env.CHODA_DB_PATH || './choda-deck.db'
+const { dbPath } = resolveDataPaths()
 
 async function main(): Promise<void> {
-  const svc = new SqliteTaskService(DB_PATH)
+  const svc = new SqliteTaskService(dbPath)
 
   const server = new McpServer(
     { name: 'choda-tasks', version: '0.2.0' },

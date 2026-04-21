@@ -11,8 +11,8 @@ export interface BackupInfo {
 const FILENAME_RE = /^choda-deck-\d{4}-\d{2}-\d{2}\.db$/
 const DAY_MS = 24 * 60 * 60 * 1000
 
-export function backupDir(userData: string): string {
-  return join(userData, 'backups')
+export function backupDir(dataRoot: string): string {
+  return join(dataRoot, 'backups')
 }
 
 function ensureDir(dir: string): void {
