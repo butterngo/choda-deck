@@ -5,7 +5,7 @@ import { buildProjectContext, type ProjectContextDeps } from './project-context-
 import type {
   ProjectOperations,
   WorkspaceOperations
-} from '../interfaces/project-repository.interface'
+} from '../../core/domain/interfaces/project-repository.interface'
 
 export type ProjectToolsDeps = ProjectOperations & WorkspaceOperations & ProjectContextDeps
 

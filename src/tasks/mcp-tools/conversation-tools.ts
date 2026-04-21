@@ -1,10 +1,10 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { textResponse } from './types'
-import { now } from '../repositories/shared'
-import { LifecycleError } from '../lifecycle/errors'
-import type { ConversationOperations } from '../interfaces/conversation-repository.interface'
-import type { ConversationLifecycleOperations } from '../interfaces/conversation-lifecycle.interface'
+import { now } from '../../core/domain/repositories/shared'
+import { LifecycleError } from '../../core/domain/lifecycle/errors'
+import type { ConversationOperations } from '../../core/domain/interfaces/conversation-repository.interface'
+import type { ConversationLifecycleOperations } from '../../core/domain/interfaces/conversation-lifecycle.interface'
 
 export type ConversationToolsDeps = ConversationOperations & ConversationLifecycleOperations
 

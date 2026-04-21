@@ -1,9 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { textResponse } from './types'
-import type { TaskOperations } from '../interfaces/task-repository.interface'
-import type { TagOperations } from '../interfaces/tag-repository.interface'
-import type { InboxOperations } from '../interfaces/inbox-repository.interface'
+import type { TaskOperations } from '../../core/domain/interfaces/task-repository.interface'
+import type { TagOperations } from '../../core/domain/interfaces/tag-repository.interface'
+import type { InboxOperations } from '../../core/domain/interfaces/inbox-repository.interface'
 
 export type SearchToolsDeps = TaskOperations & TagOperations & InboxOperations
 

@@ -4,7 +4,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from
 import { spawn as spawnProcess } from 'child_process'
 import * as pty from 'node-pty'
 import icon from '../../resources/icon.png?asset'
-import { SqliteTaskService } from '../tasks/sqlite-task-service'
+import { SqliteTaskService } from '../core/domain/sqlite-task-service'
 import { VaultImporter } from '../tasks/vault-importer'
 import { VaultService } from '../vault/vault-service'
 import {

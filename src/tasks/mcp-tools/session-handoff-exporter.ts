@@ -1,8 +1,8 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import type { SessionOperations } from '../interfaces/session-repository.interface'
-import type { ProjectOperations } from '../interfaces/project-repository.interface'
-import type { Session, SessionHandoff } from '../task-types'
+import type { SessionOperations } from '../../core/domain/interfaces/session-repository.interface'
+import type { ProjectOperations } from '../../core/domain/interfaces/project-repository.interface'
+import type { Session, SessionHandoff } from '../../core/domain/task-types'
 
 export function exportHandoffMarkdown(
   svc: SessionOperations & ProjectOperations,

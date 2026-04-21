@@ -1,12 +1,12 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import type { Phase } from '../task-types'
+import type { Phase } from '../../core/domain/task-types'
 import { textResponse } from './types'
-import type { TaskOperations } from '../interfaces/task-repository.interface'
-import type { PhaseOperations } from '../interfaces/phase-repository.interface'
-import type { ConversationOperations } from '../interfaces/conversation-repository.interface'
-import type { TagOperations } from '../interfaces/tag-repository.interface'
-import type { RelationshipOperations } from '../interfaces/relationship-repository.interface'
+import type { TaskOperations } from '../../core/domain/interfaces/task-repository.interface'
+import type { PhaseOperations } from '../../core/domain/interfaces/phase-repository.interface'
+import type { ConversationOperations } from '../../core/domain/interfaces/conversation-repository.interface'
+import type { TagOperations } from '../../core/domain/interfaces/tag-repository.interface'
+import type { RelationshipOperations } from '../../core/domain/interfaces/relationship-repository.interface'
 
 export type TaskToolsDeps = TaskOperations &
   PhaseOperations &

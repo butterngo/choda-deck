@@ -7,7 +7,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import matter from 'gray-matter'
 import * as chokidar from 'chokidar'
-import type { SqliteTaskService } from './sqlite-task-service'
+import type { SqliteTaskService } from '../core/domain/sqlite-task-service'
 import type {
   TaskStatus,
   TaskPriority,
@@ -15,7 +15,7 @@ import type {
   RelationType,
   ContextCategory,
   ConversationMessageType
-} from './task-types'
+} from '../core/domain/task-types'
 
 const DEFAULT_STATUS_MAP: Record<string, TaskStatus> = {
   todo: 'TODO',
