@@ -1,7 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import type { ConversationOperations } from '../../core/domain/interfaces/conversation-repository.interface'
-import type { Conversation, ConversationMessage, ConversationAction } from '../../core/domain/task-types'
+import type { ConversationOperations } from '../../../core/domain/interfaces/conversation-repository.interface'
+import type { Conversation, ConversationMessage, ConversationAction } from '../../../core/domain/task-types'
 
 export function exportConversationMarkdown(
   svc: ConversationOperations,

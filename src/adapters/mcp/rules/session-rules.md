@@ -9,6 +9,11 @@ Before any other action in this session:
 1. Echo the lastHandoff block to the user verbatim — resume point, loose ends, decisions, tasks updated. Do not summarize.
 2. List activeTasks grouped by priority (high → medium → low).
 3. Wait for user acknowledgement before calling session_pick or doing any work.
+4. After user picks a task, create a feature branch for it:
+   - Branch name: `feat/<task-id>-<short-slug>` (e.g. `feat/task-564-session-conv-ui`)
+   - Required: `git checkout -b feat/<task-id>-<short-slug>`
+   - Optional (if user wants parallel worktree): detect repo root via `git rev-parse --show-toplevel`, then `git worktree add <repo-root>.worktrees/<slug> -b feat/<task-id>-<short-slug>`
+   - Ask the user whether they want a worktree or just a branch before proceeding.
 
 ## On session_end
 

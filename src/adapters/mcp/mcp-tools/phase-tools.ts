@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { textResponse } from './types'
-import type { PhaseOperations } from '../../core/domain/interfaces/phase-repository.interface'
+import type { PhaseOperations } from '../../../core/domain/interfaces/phase-repository.interface'
 
 export type PhaseToolsDeps = PhaseOperations
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import Database from 'better-sqlite3'
 import { SqliteTaskService } from '../sqlite-task-service'
-import { loadLastHandoff } from '../../../tasks/mcp-tools/session-tools'
+import { loadLastHandoff } from '../../../adapters/mcp/mcp-tools/session-tools'
 import * as fs from 'fs'
 import * as path from 'path'
 
