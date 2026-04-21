@@ -17,8 +17,12 @@ backups/
 devchoda-deckchoda-deck.db
 .playwright-mcp/
 vault-graph.json
-graphify-out/
+graphify-out/*
+!graphify-out/cache/
 .graphify_python
 tsconfig.node.tsbuildinfo
 tsconfig.web.tsbuildinfo
 .claude.json
+
+# Runtime data (databases, artifacts, backups, graphify outputs)
+data/

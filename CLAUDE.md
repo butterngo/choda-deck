@@ -21,6 +21,8 @@ M1 (Core Primitives) shipped. Use `choda-tasks` MCP `project_context` / `roadmap
 - Vault context: read `vault/10-Projects/choda-deck/context.md`
 - Architecture decisions: `vault/10-Projects/choda-deck/docs/decisions/` and `docs/decisions/`
 - In-repo architecture: `docs/architecture.md`
+- **Visual/UX spec: `DESIGN.md`** (root) — dark-only editor-native theme, colors, typography, component styling, layout rules. Canonical for any renderer work.
+- **Code graph: `graphify-out/GRAPH_REPORT.md`** — navigable map of nodes, communities, god-nodes, surprising connections. Useful for onboarding / exploring a region of the codebase. May drift from `main` — regenerate with `/graphify update ./src` when stale.
 
 Use `choda-tasks` MCP tools (`task_context`, `task_list`) for task details.
 
@@ -48,6 +50,7 @@ Use `choda-tasks` MCP tools (`task_context`, `task_list`) for task details.
 - Always run `pnpm run lint` before suggesting done
 - No auto-commits — commits only on explicit request
 - No dev server claims without proof — exercise UI in actual Electron window
+- **UI/renderer work follows `DESIGN.md`** — dark-only `#1e1e1e`, `.deck-*` class prefix, plain CSS under `src/renderer/src/assets/deck.css` (no Tailwind / CSS-in-JS / component libs), status colors shared across tasks/sessions/conversations, no gradients, no hover-translate, modal-only shadows
 
 ## Git Worktree Workflow
 
