@@ -1,6 +1,5 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { pipelineApi } from './pipeline-api'
 
 export interface WorkspaceConfig {
   id: string
@@ -204,8 +203,7 @@ const api = {
         return () => ipcRenderer.removeListener('vault:daily:done', listener)
       }
     }
-  },
-  pipeline: pipelineApi
+  }
 }
 
 if (process.contextIsolated) {

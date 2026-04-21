@@ -1,5 +1,4 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { PipelineApi } from './pipeline-api'
 
 export interface WorkspaceConfig {
   id: string
@@ -144,7 +143,6 @@ export interface ChodaApi {
       onDone: (callback: (exitCode: number) => void) => () => void
     }
   }
-  pipeline: PipelineApi
 }
 
 declare global {

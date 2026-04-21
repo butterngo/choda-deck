@@ -1,6 +1,5 @@
 import type Database from 'better-sqlite3'
 import type { ConversationRepository } from '../repositories/conversation-repository'
-import type { SessionRepository } from '../repositories/session-repository'
 import type { TaskRepository } from '../repositories/task-repository'
 import type {
   ConversationLifecycleOperations,
@@ -11,24 +10,17 @@ import type {
 } from '../interfaces/conversation-lifecycle.interface'
 import type { Conversation } from '../task-types'
 import { now } from '../repositories/shared'
-import {
-  ConversationNotFoundError,
-  ConversationStatusError,
-  PipelineActiveBlockingError
-} from './errors'
+import { ConversationNotFoundError, ConversationStatusError } from './errors'
 
 export class ConversationLifecycleService implements ConversationLifecycleOperations {
   constructor(
     private readonly db: Database.Database,
     private readonly conversations: ConversationRepository,
-    private readonly tasks: TaskRepository,
-    private readonly sessions: SessionRepository
+    private readonly tasks: TaskRepository
   ) {}
 
   openConversation(input: OpenConversationInput): Conversation {
     const tx = this.db.transaction((): Conversation => {
-      this.assertNoActivePipeline(input.projectId)
-
       const conv = this.conversations.create({
         projectId: input.projectId,
         title: input.title,
@@ -135,20 +127,5 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
       description: created.description,
       linkedTaskId: created.linkedTaskId
     }
-  }
-
-  private assertNoActivePipeline(projectId: string): void {
-    const pipelines = this.sessions
-      .findActivePipelines()
-      .filter((p) => p.projectId === projectId)
-    if (pipelines.length === 0) return
-    const p = pipelines[0]
-    throw new PipelineActiveBlockingError({
-      owner_type: 'pipeline',
-      owner_session_id: p.sessionId,
-      owner_task_id: p.taskId ?? null,
-      stage: p.stage as 'plan' | 'generate' | 'evaluate',
-      started_at: p.startedAt
-    })
   }
 }

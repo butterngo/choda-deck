@@ -2,11 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import { SqliteTaskService } from '../sqlite-task-service'
-import {
-  ConversationNotFoundError,
-  ConversationStatusError,
-  PipelineActiveBlockingError
-} from './errors'
+import { ConversationNotFoundError, ConversationStatusError } from './errors'
 
 const TEST_DB = path.join(__dirname, '__test-conversation-lifecycle__.db')
 let svc: SqliteTaskService
@@ -101,63 +97,6 @@ describe('openConversation R3 ownership tag', () => {
       .prepare('SELECT owner_type FROM conversations WHERE id = ?')
       .get(conv.id) as { owner_type: string | null }
     expect(row.owner_type).toBe('interactive')
-  })
-})
-
-describe('openConversation R3 reverse guard (pipeline blocks interactive)', () => {
-  it('throws PipelineActiveBlockingError when active pipeline exists in same project', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = (svc as any).db as import('better-sqlite3').Database
-    const task = svc.createTask({ projectId: 'proj-c', title: 'Pipeline task' })
-    const pipelineSession = svc.createSession({
-      projectId: 'proj-c',
-      taskId: task.id,
-      status: 'active'
-    })
-    db.prepare(
-      `UPDATE sessions SET pipeline_stage = 'plan', pipeline_stage_status = 'running' WHERE id = ?`
-    ).run(pipelineSession.id)
-
-    try {
-      svc.openConversation({
-        projectId: 'proj-c',
-        title: 'Blocked',
-        createdBy: 'Butter',
-        participants: [{ name: 'Butter', type: 'human' }],
-        initialMessage: { content: 'hi', type: 'question' }
-      })
-      expect.fail('should throw')
-    } catch (e) {
-      expect(e).toBeInstanceOf(PipelineActiveBlockingError)
-      const err = e as PipelineActiveBlockingError
-      expect(err.payload.owner_session_id).toBe(pipelineSession.id)
-      expect(err.payload.owner_task_id).toBe(task.id)
-      expect(err.payload.stage).toBe('plan')
-    }
-  })
-
-  it('allows open when pipeline is aborted', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = (svc as any).db as import('better-sqlite3').Database
-    const task = svc.createTask({ projectId: 'proj-c', title: 't' })
-    const pipelineSession = svc.createSession({
-      projectId: 'proj-c',
-      taskId: task.id,
-      status: 'active'
-    })
-    db.prepare(
-      `UPDATE sessions SET pipeline_stage = 'aborted', pipeline_stage_status = NULL WHERE id = ?`
-    ).run(pipelineSession.id)
-
-    expect(() =>
-      svc.openConversation({
-        projectId: 'proj-c',
-        title: 'After abort',
-        createdBy: 'Butter',
-        participants: [{ name: 'Butter', type: 'human' }],
-        initialMessage: { content: 'hi', type: 'question' }
-      })
-    ).not.toThrow()
   })
 })
 

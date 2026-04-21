@@ -1,5 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
-import { dirname, join } from 'path'
+import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'fs'
 import { spawn as spawnProcess } from 'child_process'
 import * as pty from 'node-pty'
@@ -15,7 +15,6 @@ import {
   type BackupInfo
 } from './backup-service'
 import { ensureMcpRegistered, getMcpRegisterStatus, unregisterMcp } from './mcp-register'
-import { registerPipelineIpc } from './ipc/pipeline-ipc'
 
 const is = {
   get dev(): boolean {
@@ -683,12 +682,6 @@ app.whenReady().then(async () => {
   // MCP auto-register IPC
   ipcMain.handle('mcp:register-status', () => getMcpRegisterStatus())
   ipcMain.handle('mcp:unregister', () => unregisterMcp())
-
-  // Pipeline IPC — approval UI bridge (TASK-543)
-  registerPipelineIpc({
-    taskService,
-    artifactsConfig: { dataDir: dirname(dbPath) }
-  })
 
   createWindow()
 
