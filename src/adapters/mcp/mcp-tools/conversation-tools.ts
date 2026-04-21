@@ -2,7 +2,11 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { textResponse } from './types'
 import { now } from '../../../core/domain/repositories/shared'
-import { LifecycleError } from '../../../core/domain/lifecycle/errors'
+import {
+  ConversationNotFoundError,
+  ConversationStatusError,
+  LifecycleError
+} from '../../../core/domain/lifecycle/errors'
 import type { ConversationOperations } from '../../../core/domain/interfaces/conversation-repository.interface'
 import type { ConversationLifecycleOperations } from '../../../core/domain/interfaces/conversation-lifecycle.interface'
 
@@ -117,20 +121,28 @@ export const register = (server: McpServer, svc: ConversationToolsDeps): void =>
         metadata: metadataSchema
       }
     },
-    async ({ conversationId, author, content, type, metadata }) => {
-      const msg = svc.addConversationMessage({
-        conversationId,
-        authorName: author,
-        content,
-        messageType: type,
-        metadata
+    async ({ conversationId, author, content, type }) =>
+      tryLifecycle(() => {
+        const conv = svc.getConversation(conversationId)
+        if (!conv) throw new ConversationNotFoundError(conversationId)
+        if (conv.status === 'closed') {
+          throw new ConversationStatusError(
+            conversationId,
+            conv.status,
+            'cannot add message to a closed conversation. Reopen it first.'
+          )
+        }
+        const msg = svc.addConversationMessage({
+          conversationId,
+          authorName: author,
+          content,
+          messageType: type
+        })
+        if (conv.status === 'open' && type !== 'comment') {
+          svc.updateConversation(conversationId, { status: 'discussing' })
+        }
+        return msg
       })
-      const conv = svc.getConversation(conversationId)
-      if (conv && conv.status === 'open' && type !== 'comment') {
-        svc.updateConversation(conversationId, { status: 'discussing' })
-      }
-      return textResponse(msg)
-    }
   )
 
   server.registerTool(
