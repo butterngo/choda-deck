@@ -1,5 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
-import { dirname, join } from 'path'
+import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'fs'
 import { spawn as spawnProcess } from 'child_process'
 import * as pty from 'node-pty'

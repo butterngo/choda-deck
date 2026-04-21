@@ -63,21 +63,6 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
     return tx()
   }
 
-  private assertNoActivePipeline(projectId: string): void {
-    const pipelines = this.sessions
-      .findActivePipelines()
-      .filter((p) => p.projectId === projectId)
-    if (pipelines.length === 0) return
-    const p = pipelines[0]
-    throw new PipelineActiveBlockingError({
-      owner_type: 'pipeline',
-      owner_session_id: p.sessionId,
-      owner_task_id: p.taskId ?? null,
-      stage: p.stage as 'plan' | 'generate' | 'evaluate',
-      started_at: p.startedAt
-    })
-  }
-
   endSession(id: string, input: EndSessionInput): EndSessionResult {
     const tx = this.db.transaction((): EndSessionResult => {
       const session = this.sessions.get(id)

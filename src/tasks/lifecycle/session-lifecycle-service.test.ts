@@ -2,11 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import { SqliteTaskService } from '../sqlite-task-service'
-import {
-  PipelineActiveBlockingError,
-  SessionNotFoundError,
-  SessionStatusError
-} from './errors'
+import { SessionNotFoundError, SessionStatusError } from './errors'
 
 const TEST_DB = path.join(__dirname, '__test-session-lifecycle__.db')
 let svc: SqliteTaskService
@@ -135,68 +131,6 @@ describe('startSession R3 ownership tag', () => {
       .get(r.conversationId) as { owner_type: string | null; owner_session_id: string | null }
     expect(row.owner_type).toBe('interactive')
     expect(row.owner_session_id).toBe(r.session.id)
-  })
-})
-
-describe('startSession R3 reverse guard (pipeline blocks interactive)', () => {
-  it('throws PipelineActiveBlockingError when active pipeline exists in same project', () => {
-    // simulate an active pipeline session directly
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = (svc as any).db as import('better-sqlite3').Database
-    const task = svc.createTask({ projectId: 'proj-s', title: 'Pipeline task' })
-    const pipelineSession = svc.createSession({
-      projectId: 'proj-s',
-      taskId: task.id,
-      status: 'active'
-    })
-    db.prepare(
-      `UPDATE sessions SET pipeline_stage = 'plan', pipeline_stage_status = 'running' WHERE id = ?`
-    ).run(pipelineSession.id)
-
-    try {
-      svc.startSession({ projectId: 'proj-s' })
-      expect.fail('should throw')
-    } catch (e) {
-      expect(e).toBeInstanceOf(PipelineActiveBlockingError)
-      const err = e as PipelineActiveBlockingError
-      expect(err.payload.owner_type).toBe('pipeline')
-      expect(err.payload.owner_session_id).toBe(pipelineSession.id)
-      expect(err.payload.owner_task_id).toBe(task.id)
-      expect(err.payload.stage).toBe('plan')
-    }
-  })
-
-  it('allows start when pipeline is aborted', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = (svc as any).db as import('better-sqlite3').Database
-    const task = svc.createTask({ projectId: 'proj-s', title: 'Aborted task' })
-    const pipelineSession = svc.createSession({
-      projectId: 'proj-s',
-      taskId: task.id,
-      status: 'active'
-    })
-    db.prepare(
-      `UPDATE sessions SET pipeline_stage = 'aborted', pipeline_stage_status = NULL WHERE id = ?`
-    ).run(pipelineSession.id)
-
-    expect(() => svc.startSession({ projectId: 'proj-s' })).not.toThrow()
-  })
-
-  it('allows start when pipeline is in a different project', () => {
-    svc.ensureProject('proj-other', 'Other', '/tmp/o')
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = (svc as any).db as import('better-sqlite3').Database
-    const task = svc.createTask({ projectId: 'proj-other', title: 'Other task' })
-    const pipelineSession = svc.createSession({
-      projectId: 'proj-other',
-      taskId: task.id,
-      status: 'active'
-    })
-    db.prepare(
-      `UPDATE sessions SET pipeline_stage = 'plan', pipeline_stage_status = 'running' WHERE id = ?`
-    ).run(pipelineSession.id)
-
-    expect(() => svc.startSession({ projectId: 'proj-s' })).not.toThrow()
   })
 })
 

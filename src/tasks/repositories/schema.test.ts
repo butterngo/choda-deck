@@ -128,43 +128,16 @@ describe('cleanupPoisonedTaskIds', () => {
   })
 })
 
-describe('TASK-538 harness schema migration', () => {
+describe('M1 schema migrations', () => {
   function colNames(table: string): string[] {
     const rows = db.pragma(`table_info(${table})`) as Array<{ name: string }>
     return rows.map((r) => r.name)
   }
 
-  it('adds pipeline columns to sessions', () => {
-    const cols = colNames('sessions')
-    expect(cols).toContain('pipeline_stage')
-    expect(cols).toContain('pipeline_stage_status')
-    expect(cols).toContain('needs_evaluator')
-    expect(cols).toContain('current_iteration')
-  })
-
   it('adds owner attribution columns to conversations', () => {
     const cols = colNames('conversations')
     expect(cols).toContain('owner_session_id')
     expect(cols).toContain('owner_type')
-  })
-
-  it('creates pipeline_approvals table with index', () => {
-    const cols = colNames('pipeline_approvals')
-    expect(cols).toEqual(
-      expect.arrayContaining([
-        'id',
-        'session_id',
-        'stage',
-        'iteration',
-        'decision',
-        'feedback',
-        'created_at'
-      ])
-    )
-    const idx = db
-      .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_approvals_session'")
-      .get()
-    expect(idx).toBeDefined()
   })
 
   it('creates idx_conversations_owner_session index', () => {
@@ -176,64 +149,11 @@ describe('TASK-538 harness schema migration', () => {
     expect(idx).toBeDefined()
   })
 
-  it('existing rows get NULL/default for new columns when migration re-runs', () => {
-    db.prepare("INSERT INTO projects (id, name, cwd) VALUES ('p', 'p', 'p')").run()
-    db.prepare(
-      `INSERT INTO sessions (id, project_id, started_at, status, created_at)
-       VALUES ('s1', 'p', '2026-01-01', 'active', '2026-01-01')`
-    ).run()
-    db.prepare(
-      `INSERT INTO conversations (id, project_id, title, created_by, created_at)
-       VALUES ('c1', 'p', 't', 'Butter', '2026-01-01')`
-    ).run()
-    initSchema(db)
-    const session = db
-      .prepare(
-        'SELECT pipeline_stage, pipeline_stage_status, needs_evaluator, current_iteration FROM sessions WHERE id = ?'
-      )
-      .get('s1') as {
-      pipeline_stage: string | null
-      pipeline_stage_status: string | null
-      needs_evaluator: number
-      current_iteration: number
-    }
-    expect(session.pipeline_stage).toBeNull()
-    expect(session.pipeline_stage_status).toBeNull()
-    expect(session.needs_evaluator).toBe(0)
-    expect(session.current_iteration).toBe(0)
-    const conv = db
-      .prepare('SELECT owner_session_id, owner_type FROM conversations WHERE id = ?')
-      .get('c1') as { owner_session_id: string | null; owner_type: string | null }
-    expect(conv.owner_session_id).toBeNull()
-    expect(conv.owner_type).toBeNull()
-  })
-
-  it('pipeline_approvals enforces FK to sessions(id)', () => {
-    db.pragma('foreign_keys = ON')
-    db.prepare("INSERT INTO projects (id, name, cwd) VALUES ('p', 'p', 'p')").run()
-    db.prepare(
-      `INSERT INTO sessions (id, project_id, started_at, status, created_at)
-       VALUES ('s1', 'p', '2026-01-01', 'active', '2026-01-01')`
-    ).run()
-    db.prepare(
-      `INSERT INTO pipeline_approvals (session_id, stage, iteration, decision)
-       VALUES ('s1', 'plan', 0, 'approve')`
-    ).run()
-    expect(() =>
-      db
-        .prepare(
-          `INSERT INTO pipeline_approvals (session_id, stage, iteration, decision)
-           VALUES ('missing', 'plan', 0, 'approve')`
-        )
-        .run()
-    ).toThrow()
-  })
-
   it('migration is idempotent — initSchema can run multiple times', () => {
     initSchema(db)
     initSchema(db)
     initSchema(db)
     const cols = colNames('sessions')
-    expect(cols.filter((c) => c === 'pipeline_stage')).toHaveLength(1)
+    expect(cols.filter((c) => c === 'checkpoint')).toHaveLength(1)
   })
 })
