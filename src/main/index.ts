@@ -5,6 +5,7 @@ import { spawn as spawnProcess } from 'child_process'
 import * as pty from 'node-pty'
 import icon from '../../resources/icon.png?asset'
 import { SqliteTaskService } from '../core/domain/sqlite-task-service'
+import { resolveDataPaths } from '../core/paths'
 import { VaultImporter } from './vault-importer'
 import { VaultService } from '../vault/vault-service'
 import {
@@ -328,12 +329,8 @@ app.whenReady().then(async () => {
   })
 
   // ── Task management IPC ────────────────────────────────────────────────────
-  const dbPath = app.isPackaged
-    ? join(app.getPath('userData'), 'choda-deck.db')
-    : join(__dirname, '../../choda-deck.db')
-  const userDataPath = app.isPackaged
-    ? app.getPath('userData')
-    : join(__dirname, '../..')
+  const electronDataDir = app.isPackaged ? app.getPath('userData') : join(__dirname, '../../data')
+  const { dbPath, dataDir } = resolveDataPaths(electronDataDir)
   const taskService = new SqliteTaskService(dbPath)
 
   // Ensure projects exist in SQLite
@@ -343,19 +340,19 @@ app.whenReady().then(async () => {
 
   // Daily backup — 24h gate, failures log-only
   try {
-    if (shouldRunDailyBackup(userDataPath)) {
-      const info = runBackup(taskService, userDataPath)
+    if (shouldRunDailyBackup(dataDir)) {
+      const info = runBackup(taskService, dataDir)
       console.log(`[backup] created ${info.filename} (${info.size} bytes)`)
     }
   } catch (err) {
     console.error('[backup] daily backup failed:', err)
   }
 
-  ipcMain.handle('backups:list', (): BackupInfo[] => listBackups(userDataPath))
+  ipcMain.handle('backups:list', (): BackupInfo[] => listBackups(dataDir))
 
   ipcMain.handle('backups:create-now', (): { ok: boolean; backup?: BackupInfo; error?: string } => {
     try {
-      const info = runBackup(taskService, userDataPath)
+      const info = runBackup(taskService, dataDir)
       return { ok: true, backup: info }
     } catch (err) {
       return { ok: false, error: (err as Error).message }
@@ -363,7 +360,7 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle('backups:restore', (_event, filename: string): { ok: boolean; error?: string } => {
-    const source = join(backupDir(userDataPath), filename)
+    const source = join(backupDir(dataDir), filename)
     if (!existsSync(source)) return { ok: false, error: 'Backup file not found' }
     try {
       taskService.close()
