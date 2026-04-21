@@ -56,21 +56,3 @@ export class SessionStatusError extends LifecycleError {
     this.name = 'SessionStatusError'
   }
 }
-
-export interface PipelineActiveBlockingPayload {
-  owner_type: 'pipeline'
-  owner_session_id: string
-  owner_task_id: string | null
-  stage: 'plan' | 'generate' | 'evaluate'
-  started_at: string
-}
-
-export class PipelineActiveBlockingError extends LifecycleError {
-  constructor(public readonly payload: PipelineActiveBlockingPayload) {
-    super(
-      'PIPELINE_ACTIVE_BLOCKING',
-      `Active pipeline on session ${payload.owner_session_id} (stage=${payload.stage}) blocks interactive conversation`
-    )
-    this.name = 'PipelineActiveBlockingError'
-  }
-}

@@ -149,29 +149,7 @@ function runLegacyMigrations(db: Database.Database): void {
     /* exists */
   }
 
-  // TASK-538 (ADR-014): harness pipeline columns on sessions
-  try {
-    db.exec('ALTER TABLE sessions ADD COLUMN pipeline_stage TEXT')
-  } catch {
-    /* exists */
-  }
-  try {
-    db.exec('ALTER TABLE sessions ADD COLUMN pipeline_stage_status TEXT')
-  } catch {
-    /* exists */
-  }
-  try {
-    db.exec('ALTER TABLE sessions ADD COLUMN needs_evaluator INTEGER NOT NULL DEFAULT 0')
-  } catch {
-    /* exists */
-  }
-  try {
-    db.exec('ALTER TABLE sessions ADD COLUMN current_iteration INTEGER NOT NULL DEFAULT 0')
-  } catch {
-    /* exists */
-  }
-
-  // TASK-538 (ADR-014): conversation attribution for R3 reverse-direction guard
+  // Conversation attribution — ownerType marks human-driven interactive convs.
   try {
     db.exec('ALTER TABLE conversations ADD COLUMN owner_session_id TEXT')
   } catch {
@@ -312,10 +290,6 @@ function createM1Tables(db: Database.Database): void {
       status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed')),
       handoff_json TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      pipeline_stage TEXT,
-      pipeline_stage_status TEXT,
-      needs_evaluator INTEGER NOT NULL DEFAULT 0,
-      current_iteration INTEGER NOT NULL DEFAULT 0,
       checkpoint TEXT,
       checkpoint_at TEXT,
       FOREIGN KEY (project_id) REFERENCES projects(id)
@@ -404,27 +378,6 @@ function createM1Tables(db: Database.Database): void {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `)
-  // TASK-538 (ADR-014): per-stage human approval log for harness pipeline
-  // TASK-557: `diagnostics` carries a JSON-stringified StageDiagnostics on planner failures.
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS pipeline_approvals (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id TEXT NOT NULL,
-      stage TEXT NOT NULL,
-      iteration INTEGER NOT NULL,
-      decision TEXT NOT NULL,
-      feedback TEXT,
-      diagnostics TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (session_id) REFERENCES sessions(id)
-    )
-  `)
-  // Upgrade path for pre-TASK-557 DBs where CREATE TABLE above was a no-op.
-  try {
-    db.exec('ALTER TABLE pipeline_approvals ADD COLUMN diagnostics TEXT')
-  } catch {
-    /* exists */
-  }
 }
 
 function createIndexes(db: Database.Database): void {
@@ -453,7 +406,6 @@ function createIndexes(db: Database.Database): void {
   )
   db.exec('CREATE INDEX IF NOT EXISTS idx_inbox_project ON inbox_items(project_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_inbox_status ON inbox_items(project_id, status)')
-  db.exec('CREATE INDEX IF NOT EXISTS idx_approvals_session ON pipeline_approvals(session_id)')
   db.exec(
     'CREATE INDEX IF NOT EXISTS idx_conversations_owner_session ON conversations(owner_session_id)'
   )

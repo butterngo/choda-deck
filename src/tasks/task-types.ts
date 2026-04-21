@@ -1,7 +1,5 @@
 // Task management types — pure types, zero runtime dependencies
 
-import type { PipelineStage, PipelineStageStatus } from '../core/harness/pipeline-state'
-
 export type TaskStatus = 'TODO' | 'READY' | 'IN-PROGRESS' | 'DONE'
 export type TaskPriority = 'critical' | 'high' | 'medium' | 'low'
 export type PhaseStatus = 'open' | 'closed'
@@ -182,10 +180,6 @@ export interface Session {
   checkpoint: SessionCheckpoint | null
   checkpointAt: string | null
   createdAt: string
-  pipelineStage: PipelineStage | null
-  pipelineStageStatus: PipelineStageStatus | null
-  needsEvaluator: boolean
-  currentIteration: number
 }
 
 export interface CreateSessionInput {
@@ -316,9 +310,7 @@ export interface CreateConversationInput {
   createdBy: string
   status?: ConversationStatus
   participants?: Array<{ name: string; type: ConversationParticipantType; role?: string }>
-  // R3 ownership tag — 'interactive' for human-driven convs (session_start, conversation_open),
-  // 'pipeline' reserved for harness-created convs (future). Null = legacy/unmarked.
-  ownerType?: 'interactive' | 'pipeline' | null
+  ownerType?: 'interactive' | null
   ownerSessionId?: string | null
 }
 

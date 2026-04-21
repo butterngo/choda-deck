@@ -14,11 +14,7 @@ import type {
   StartSessionResult
 } from '../interfaces/session-lifecycle.interface'
 import { now } from '../repositories/shared'
-import {
-  PipelineActiveBlockingError,
-  SessionNotFoundError,
-  SessionStatusError
-} from './errors'
+import { SessionNotFoundError, SessionStatusError } from './errors'
 
 const DEFAULT_PARTICIPANTS: StartSessionInput['participants'] = [
   { name: 'Butter', type: 'human' },
@@ -36,8 +32,6 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
 
   startSession(input: StartSessionInput): StartSessionResult {
     const tx = this.db.transaction((): StartSessionResult => {
-      this.assertNoActivePipeline(input.projectId)
-
       const existingActiveSessions = this.sessions.findByProject(input.projectId, 'active')
 
       const session = this.sessions.create({
