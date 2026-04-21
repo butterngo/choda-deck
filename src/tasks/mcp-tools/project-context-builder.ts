@@ -7,13 +7,13 @@ import type {
   Conversation,
   ContextSource,
   DerivedProgress
-} from '../task-types'
-import type { ProjectOperations } from '../interfaces/project-repository.interface'
-import type { ContextSourceOperations } from '../interfaces/context-source-repository.interface'
-import type { PhaseOperations } from '../interfaces/phase-repository.interface'
-import type { TaskOperations } from '../interfaces/task-repository.interface'
-import type { SessionOperations } from '../interfaces/session-repository.interface'
-import type { ConversationOperations } from '../interfaces/conversation-repository.interface'
+} from '../../core/domain/task-types'
+import type { ProjectOperations } from '../../core/domain/interfaces/project-repository.interface'
+import type { ContextSourceOperations } from '../../core/domain/interfaces/context-source-repository.interface'
+import type { PhaseOperations } from '../../core/domain/interfaces/phase-repository.interface'
+import type { TaskOperations } from '../../core/domain/interfaces/task-repository.interface'
+import type { SessionOperations } from '../../core/domain/interfaces/session-repository.interface'
+import type { ConversationOperations } from '../../core/domain/interfaces/conversation-repository.interface'
 
 export type ProjectContextDeps = ProjectOperations &
   ContextSourceOperations &

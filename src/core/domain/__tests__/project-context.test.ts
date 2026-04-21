@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { SqliteTaskService } from '../sqlite-task-service'
-import { buildProjectContext } from '../mcp-tools/project-context-builder'
+import { buildProjectContext } from '../../../tasks/mcp-tools/project-context-builder'
 import * as fs from 'fs'
 import * as path from 'path'
 
