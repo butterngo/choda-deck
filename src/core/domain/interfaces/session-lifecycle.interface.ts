@@ -10,6 +10,7 @@ import type {
 export interface StartSessionInput {
   projectId: string
   workspaceId?: string
+  taskId?: string
   createdBy?: string
   participants?: Array<{ name: string; type: ConversationParticipantType; role?: string }>
 }

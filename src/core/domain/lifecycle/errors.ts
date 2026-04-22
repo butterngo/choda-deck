@@ -56,3 +56,27 @@ export class SessionStatusError extends LifecycleError {
     this.name = 'SessionStatusError'
   }
 }
+
+export class TaskNotFoundError extends LifecycleError {
+  constructor(id: string) {
+    super('TASK_NOT_FOUND', `Task ${id} not found`)
+    this.name = 'TaskNotFoundError'
+  }
+}
+
+export class TaskStatusError extends LifecycleError {
+  constructor(id: string, current: string, message: string) {
+    super('TASK_INVALID_STATUS', `Task ${id} is ${current} — ${message}`)
+    this.name = 'TaskStatusError'
+  }
+}
+
+export class TaskLockedBySessionError extends LifecycleError {
+  constructor(taskId: string, sessionId: string) {
+    super(
+      'TASK_LOCKED_BY_SESSION',
+      `Task ${taskId} is already linked to active session ${sessionId} — end that session first`
+    )
+    this.name = 'TaskLockedBySessionError'
+  }
+}
