@@ -14,7 +14,13 @@ import type {
   StartSessionResult
 } from '../interfaces/session-lifecycle.interface'
 import { now } from '../repositories/shared'
-import { SessionNotFoundError, SessionStatusError } from './errors'
+import {
+  SessionNotFoundError,
+  SessionStatusError,
+  TaskLockedBySessionError,
+  TaskNotFoundError,
+  TaskStatusError
+} from './errors'
 
 const DEFAULT_PARTICIPANTS: StartSessionInput['participants'] = [
   { name: 'Butter', type: 'human' },
@@ -34,12 +40,31 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
     const tx = this.db.transaction((): StartSessionResult => {
       const existingActiveSessions = this.sessions.findByProject(input.projectId, 'active')
 
+      if (input.taskId) {
+        const task = this.tasks.get(input.taskId)
+        if (!task) throw new TaskNotFoundError(input.taskId)
+        if (task.status === 'DONE') {
+          throw new TaskStatusError(
+            input.taskId,
+            task.status,
+            'cannot start a session on a DONE task — reopen it first'
+          )
+        }
+        const lockingSession = existingActiveSessions.find((s) => s.taskId === input.taskId)
+        if (lockingSession) throw new TaskLockedBySessionError(input.taskId, lockingSession.id)
+      }
+
       const session = this.sessions.create({
         projectId: input.projectId,
         workspaceId: input.workspaceId,
+        taskId: input.taskId,
         startedAt: now(),
         status: 'active'
       })
+
+      if (input.taskId) {
+        this.tasks.update(input.taskId, { status: 'IN-PROGRESS' })
+      }
 
       const contextSources = this.contextSources.findByProject(input.projectId, true)
 

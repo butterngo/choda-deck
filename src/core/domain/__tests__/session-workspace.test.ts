@@ -109,7 +109,7 @@ describe('session per workspace', () => {
   })
 })
 
-describe('session_pick (task binding)', () => {
+describe('task binding (repository-level)', () => {
   it('binds task to session via updateSession', () => {
     const task = svc.createTask({ projectId: 'ar', title: 'TASK-105 test' })
     const s = svc.createSession({ projectId: 'ar', workspaceId: 'workflow-engine' })

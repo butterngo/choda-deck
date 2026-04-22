@@ -2,7 +2,13 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import { SqliteTaskService } from '../sqlite-task-service'
-import { SessionNotFoundError, SessionStatusError } from './errors'
+import {
+  SessionNotFoundError,
+  SessionStatusError,
+  TaskLockedBySessionError,
+  TaskNotFoundError,
+  TaskStatusError
+} from './errors'
 
 const TEST_DB = path.join(__dirname, '__test-session-lifecycle__.db')
 let svc: SqliteTaskService
@@ -118,6 +124,70 @@ describe('endSession', () => {
     expect(() =>
       svc.endSession(started.session.id, { handoff: { resumePoint: 'again' } })
     ).toThrowError(SessionStatusError)
+  })
+})
+
+describe('startSession taskId binding', () => {
+  it('links task to session and sets it to IN-PROGRESS', () => {
+    const task = svc.createTask({ projectId: 'proj-s', title: 'Bound task' })
+    const r = svc.startSession({ projectId: 'proj-s', taskId: task.id })
+
+    expect(r.session.taskId).toBe(task.id)
+    expect(svc.getTask(task.id)?.status).toBe('IN-PROGRESS')
+  })
+
+  it('throws TaskNotFoundError when taskId does not exist', () => {
+    expect(() =>
+      svc.startSession({ projectId: 'proj-s', taskId: 'TASK-NOPE' })
+    ).toThrowError(TaskNotFoundError)
+  })
+
+  it('throws TaskStatusError when task is already DONE', () => {
+    const task = svc.createTask({ projectId: 'proj-s', title: 'Finished' })
+    svc.updateTask(task.id, { status: 'DONE' })
+
+    expect(() => svc.startSession({ projectId: 'proj-s', taskId: task.id })).toThrowError(
+      TaskStatusError
+    )
+  })
+
+  it('throws TaskLockedBySessionError when task is bound to another active session', () => {
+    const task = svc.createTask({ projectId: 'proj-s', title: 'Shared' })
+    svc.startSession({ projectId: 'proj-s', taskId: task.id })
+
+    expect(() => svc.startSession({ projectId: 'proj-s', taskId: task.id })).toThrowError(
+      TaskLockedBySessionError
+    )
+  })
+
+  it('allows re-binding after the prior session ends', () => {
+    const task = svc.createTask({ projectId: 'proj-s', title: 'Handoff' })
+    const first = svc.startSession({ projectId: 'proj-s', taskId: task.id })
+    svc.endSession(first.session.id, { handoff: { resumePoint: 'paused' } })
+    // endSession marked it DONE — reopen before re-binding
+    svc.updateTask(task.id, { status: 'READY' })
+
+    const second = svc.startSession({ projectId: 'proj-s', taskId: task.id })
+    expect(second.session.taskId).toBe(task.id)
+  })
+
+  it('rolls back task status on transaction failure', () => {
+    const task = svc.createTask({ projectId: 'proj-s', title: 'Rollback' })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lifecycle = (svc as any).sessionLifecycle
+    const orig = lifecycle.conversations.link.bind(lifecycle.conversations)
+    lifecycle.conversations.link = () => {
+      throw new Error('simulated link failure')
+    }
+
+    expect(() => svc.startSession({ projectId: 'proj-s', taskId: task.id })).toThrow(
+      'simulated link failure'
+    )
+
+    lifecycle.conversations.link = orig
+
+    expect(svc.getTask(task.id)?.status).not.toBe('IN-PROGRESS')
+    expect(svc.findSessions('proj-s')).toHaveLength(0)
   })
 })
 

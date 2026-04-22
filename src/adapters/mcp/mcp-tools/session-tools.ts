@@ -42,13 +42,16 @@ export const register = (server: McpServer, svc: SessionToolsDeps): void => {
     'session_start',
     {
       description:
-        'Start a new work session for a project workspace. Returns last handoff + active context. Multiple active sessions per workspace are allowed.',
+        'Start a new work session bound to a specific task. Sets the task to IN-PROGRESS and returns last handoff + active context. Call task_list or roadmap first to pick a taskId. Multiple active sessions per workspace are allowed, but a task can only be linked to one active session at a time.',
       inputSchema: {
         projectId: z.string().describe('Project ID'),
+        taskId: z
+          .string()
+          .describe('Task ID to work on — set to IN-PROGRESS when the session starts'),
         workspaceId: z.string().optional().describe('Workspace ID (e.g. workflow-engine)')
       }
     },
-    async ({ projectId, workspaceId }) =>
+    async ({ projectId, taskId, workspaceId }) =>
       tryLifecycle(() => {
         const project = svc.getProject(projectId)
         if (!project) throw new Error(`Project ${projectId} not found`)
@@ -56,6 +59,7 @@ export const register = (server: McpServer, svc: SessionToolsDeps): void => {
         const { session, conversationId, contextSources, existingActiveSessions } =
           svc.startSession({
             projectId,
+            taskId,
             workspaceId
           })
         const lastHandoff = loadLastHandoff(svc, projectId, workspaceId)
@@ -80,42 +84,6 @@ export const register = (server: McpServer, svc: SessionToolsDeps): void => {
           }
         }
       })
-  )
-
-  server.registerTool(
-    'session_pick',
-    {
-      description:
-        'Pick a task for the current session. Sets task to IN-PROGRESS. Only 1 task per session (WIP=1).',
-      inputSchema: {
-        sessionId: z.string(),
-        taskId: z.string().describe('Task ID to work on')
-      }
-    },
-    async ({ sessionId, taskId }) => {
-      const session = svc.getSession(sessionId)
-      if (!session) return textResponse(`Session ${sessionId} not found`)
-      if (session.status !== 'active') {
-        return textResponse(`Session ${sessionId} is ${session.status}, not active`)
-      }
-      if (session.taskId) {
-        return textResponse(`Session already has task ${session.taskId}. Finish it first.`)
-      }
-
-      const task = svc.getTask(taskId)
-      if (!task) return textResponse(`Task ${taskId} not found`)
-
-      svc.updateSession(sessionId, { taskId })
-      svc.updateTask(taskId, { status: 'IN-PROGRESS' })
-
-      return textResponse({
-        sessionId,
-        taskId,
-        taskTitle: task.title,
-        mode: 'focused',
-        status: 'IN-PROGRESS'
-      })
-    }
   )
 
   server.registerTool(
