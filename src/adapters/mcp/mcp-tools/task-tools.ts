@@ -87,22 +87,39 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
   server.registerTool(
     'task_list',
     {
-      description: 'List tasks with optional filters',
+      description:
+        'List tasks filtered by status (required). Returns compact shape by default (id, projectId, title, status, priority, labels); pass verbose=true for full task including body. For cross-status search use the search tool.',
       inputSchema: {
         projectId: z.string().optional().describe('Filter by project ID'),
         status: z
           .enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE'])
-          .optional()
-          .describe('Filter by status'),
+          .describe('Required — filter by status to avoid dumping the full project list'),
         priority: z
           .enum(['critical', 'high', 'medium', 'low'])
           .optional()
           .describe('Filter by priority'),
         query: z.string().optional().describe('Search title'),
-        limit: z.number().optional().describe('Max results')
+        limit: z.number().optional().describe('Max results'),
+        verbose: z
+          .boolean()
+          .optional()
+          .describe('Return full task objects including body (default: false = compact)')
       }
     },
-    async (filter) => textResponse(svc.findTasks(filter))
+    async ({ verbose, ...filter }) => {
+      const results = svc.findTasks(filter)
+      if (verbose) return textResponse(results)
+      return textResponse(
+        results.map((t) => ({
+          id: t.id,
+          projectId: t.projectId,
+          title: t.title,
+          status: t.status,
+          priority: t.priority,
+          labels: t.labels
+        }))
+      )
+    }
   )
 
   server.registerTool(
