@@ -56,12 +56,11 @@ export const register = (server: McpServer, svc: SessionToolsDeps): void => {
         const project = svc.getProject(projectId)
         if (!project) throw new Error(`Project ${projectId} not found`)
 
-        const { session, conversationId, contextSources, existingActiveSessions } =
-          svc.startSession({
-            projectId,
-            taskId,
-            workspaceId
-          })
+        const { session, contextSources, existingActiveSessions } = svc.startSession({
+          projectId,
+          taskId,
+          workspaceId
+        })
         const lastHandoff = loadLastHandoff(svc, projectId, workspaceId)
         const bundle = buildProjectContext(svc, projectId, 'summary')
         const rules = loadSessionRules()
@@ -69,7 +68,6 @@ export const register = (server: McpServer, svc: SessionToolsDeps): void => {
         return {
           sessionId: session.id,
           workspaceId: session.workspaceId,
-          conversationId,
           contextSources,
           mode: 'planning',
           lastHandoff,
