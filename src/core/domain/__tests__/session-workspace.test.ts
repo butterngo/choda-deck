@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import Database from 'better-sqlite3'
 import { SqliteTaskService } from '../sqlite-task-service'
-import { loadLastHandoff } from '../../../adapters/mcp/mcp-tools/session-tools'
+import { loadLastSession } from '../../../adapters/mcp/mcp-tools/session-tools'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -53,7 +53,7 @@ describe('session per workspace', () => {
     if (fe) svc.updateSession(fe.id, { status: 'completed', endedAt: '2026-04-19' })
   })
 
-  it('loadLastHandoff scoped to workspace', () => {
+  it('loadLastSession scoped to workspace', () => {
     const be = svc.createSession({ projectId: 'ar', workspaceId: 'workflow-engine' })
     svc.updateSession(be.id, {
       status: 'completed',
@@ -68,10 +68,10 @@ describe('session per workspace', () => {
       handoff: { resumePoint: 'FE resume' }
     })
 
-    const beHandoff = loadLastHandoff(svc, 'ar', 'workflow-engine')
-    const feHandoff = loadLastHandoff(svc, 'ar', 'remote-workflow')
-    expect(beHandoff!.handoff.resumePoint).toBe('BE resume')
-    expect(feHandoff!.handoff.resumePoint).toBe('FE resume')
+    const beLast = loadLastSession(svc, 'ar', 'workflow-engine')
+    const feLast = loadLastSession(svc, 'ar', 'remote-workflow')
+    expect(beLast!.resumePoint).toBe('BE resume')
+    expect(feLast!.resumePoint).toBe('FE resume')
   })
 
   it('migration: legacy abandoned rows collapse to completed', () => {

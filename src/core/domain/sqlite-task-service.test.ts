@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { SqliteTaskService } from './sqlite-task-service'
 import { exportConversationMarkdown } from '../../adapters/mcp/mcp-tools/conversation-exporter'
 import { buildProjectContext } from '../../adapters/mcp/mcp-tools/project-context-builder'
-import { applyTaskUpdates, loadLastHandoff } from '../../adapters/mcp/mcp-tools/session-tools'
+import { applyTaskUpdates, loadLastSession } from '../../adapters/mcp/mcp-tools/session-tools'
 import { exportHandoffMarkdown } from '../../adapters/mcp/mcp-tools/session-handoff-exporter'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -762,7 +762,7 @@ describe('SqliteTaskService', () => {
 
     // session_start
     const first = svc.createSession({ projectId, status: 'active' })
-    expect(loadLastHandoff(svc, projectId)).toBeNull() // no prior completed
+    expect(loadLastSession(svc, projectId)).toBeNull() // no prior completed
 
     // session_end: tasks updated + handoff
     const updates = applyTaskUpdates(svc, [{ id: task.id, status: 'DONE' }])
@@ -786,9 +786,9 @@ describe('SqliteTaskService', () => {
     expect(svc.getTask(task.id)?.status).toBe('DONE')
 
     // next session_start sees previous handoff
-    const last = loadLastHandoff(svc, projectId)
-    expect(last?.sessionId).toBe(first.id)
-    expect(last?.handoff.resumePoint).toBe('Write more tests')
+    const last = loadLastSession(svc, projectId)
+    expect(last?.id).toBe(first.id)
+    expect(last?.resumePoint).toBe('Write more tests')
   })
 
   it('N parallel active sessions per workspace (TASK-526)', () => {
