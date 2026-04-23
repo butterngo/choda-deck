@@ -150,3 +150,4 @@ describe('task binding (repository-level)', () => {
     // Guard is in MCP tool layer, not repository — verify taskId is set
   })
 })
+

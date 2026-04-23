@@ -48,7 +48,20 @@ function renderHandoff(session: Session, projectName: string): string {
   lines.push(section('Resume point', h.resumePoint ? h.resumePoint : '_none_'))
   lines.push(section('Loose ends', bulletList(h.looseEnds)))
   lines.push(section('Tasks updated', renderTaskList(h.tasksUpdated)))
+  lines.push(section('Test results', renderTestResults(h.testResults)))
   return lines.join('\n')
+}
+
+function renderTestResults(results?: { passed: string[]; skipped: string[] }): string {
+  if (!results || (results.passed.length === 0 && results.skipped.length === 0)) return '_none_'
+  const parts: string[] = []
+  if (results.passed.length > 0) {
+    parts.push('### Passed\n\n' + results.passed.map((i) => `- ${i}`).join('\n'))
+  }
+  if (results.skipped.length > 0) {
+    parts.push('### Skipped\n\n' + results.skipped.map((i) => `- ${i}`).join('\n'))
+  }
+  return parts.join('\n\n')
 }
 
 function section(title: string, body: string): string {
