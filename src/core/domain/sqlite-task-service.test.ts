@@ -81,6 +81,52 @@ describe('SqliteTaskService', () => {
     expect(limited.length).toBe(2)
   })
 
+  it('findTasks filters by labels (OR semantics)', () => {
+    svc.createTask({
+      id: 'TASK-LBL-A',
+      projectId: 'test-proj',
+      title: 'Labeled A',
+      labels: ['mcp', 'dx']
+    })
+    svc.createTask({
+      id: 'TASK-LBL-B',
+      projectId: 'test-proj',
+      title: 'Labeled B',
+      labels: ['ui']
+    })
+    svc.createTask({
+      id: 'TASK-LBL-C',
+      projectId: 'test-proj',
+      title: 'Labeled C',
+      labels: ['mcp']
+    })
+
+    const mcp = svc.findTasks({ projectId: 'test-proj', labels: ['mcp'] })
+    expect(mcp.map((t) => t.id).sort()).toEqual(['TASK-LBL-A', 'TASK-LBL-C'])
+
+    const mcpOrUi = svc.findTasks({ projectId: 'test-proj', labels: ['mcp', 'ui'] })
+    expect(mcpOrUi.map((t) => t.id).sort()).toEqual(['TASK-LBL-A', 'TASK-LBL-B', 'TASK-LBL-C'])
+
+    const none = svc.findTasks({ projectId: 'test-proj', labels: ['no-such-label'] })
+    expect(none.length).toBe(0)
+
+    const empty = svc.findTasks({ projectId: 'test-proj', labels: [] })
+    expect(empty.length).toBeGreaterThanOrEqual(3)
+
+    const mcpDone = svc.findTasks({ projectId: 'test-proj', labels: ['mcp'], status: 'DONE' })
+    expect(mcpDone.length).toBe(0)
+
+    // substring boundary: "mcp" label should not match "mcp-extra"
+    svc.createTask({
+      id: 'TASK-LBL-D',
+      projectId: 'test-proj',
+      title: 'Labeled D',
+      labels: ['mcp-extra']
+    })
+    const exact = svc.findTasks({ projectId: 'test-proj', labels: ['mcp'] })
+    expect(exact.map((t) => t.id).sort()).toEqual(['TASK-LBL-A', 'TASK-LBL-C'])
+  })
+
   it('deleteTask removes task + cascades deps', () => {
     svc.createTask({ id: 'TASK-DEL', projectId: 'test-proj', title: 'To delete' })
     svc.addDependency('TASK-001', 'TASK-DEL')

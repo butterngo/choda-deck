@@ -98,6 +98,10 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
           .optional()
           .describe('Filter by priority'),
         query: z.string().optional().describe('Search title'),
+        labels: z
+          .array(z.string())
+          .optional()
+          .describe('Filter by labels — OR semantics (match any). Empty/omitted = no label filter'),
         limit: z.number().optional().describe('Max results'),
         verbose: z
           .boolean()
