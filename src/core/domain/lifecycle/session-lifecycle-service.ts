@@ -21,6 +21,7 @@ import {
   TaskNotFoundError,
   TaskStatusError
 } from './errors'
+import { stripToolCallLeak } from './sanitize'
 
 export class SessionLifecycleService implements SessionLifecycleOperations {
   constructor(
@@ -77,7 +78,8 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
       }
 
       const endedAt = now()
-      const decisionSummary = input.decisionSummary ?? input.handoff.resumePoint ?? 'Session ended'
+      const rawSummary = input.decisionSummary ?? input.handoff.resumePoint ?? 'Session ended'
+      const decisionSummary = stripToolCallLeak(rawSummary) || 'Session ended'
 
       const closedConversationIds: string[] = []
       const linkedConvs = this.conversations.findByLink('session', id)

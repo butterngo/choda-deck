@@ -12,6 +12,7 @@ import type {
 import type { Conversation } from '../task-types'
 import { now } from '../repositories/shared'
 import { ConversationNotFoundError, ConversationStatusError } from './errors'
+import { stripToolCallLeak } from './sanitize'
 
 export class ConversationLifecycleService implements ConversationLifecycleOperations {
   constructor(
@@ -62,7 +63,9 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
       if (!session) throw new Error(`Session ${explicit} not found`)
       if (session.status !== 'active') throw new Error(`Session ${explicit} is not active`)
       if (session.projectId !== projectId) {
-        throw new Error(`Session ${explicit} belongs to project ${session.projectId}, not ${projectId}`)
+        throw new Error(
+          `Session ${explicit} belongs to project ${session.projectId}, not ${projectId}`
+        )
       }
       return explicit
     }
@@ -70,7 +73,9 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
     const active = this.sessions.findByProject(projectId, 'active')
     if (active.length === 1) return active[0].id
     if (active.length > 1) {
-      console.warn(`[ConversationLifecycle] ${active.length} active sessions in project ${projectId} — skipping auto-link`)
+      console.warn(
+        `[ConversationLifecycle] ${active.length} active sessions in project ${projectId} — skipping auto-link`
+      )
     }
     return null
   }
@@ -80,17 +85,19 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
       const conv = this.conversations.get(id)
       if (!conv) throw new ConversationNotFoundError(id)
 
+      const cleanDecision = stripToolCallLeak(input.decision)
+
       this.conversations.addMessage({
         conversationId: id,
         authorName: input.author,
-        content: input.decision,
+        content: cleanDecision,
         messageType: 'decision'
       })
 
       const decidedAt = now()
       const updated = this.conversations.update(id, {
         status: 'decided',
-        decisionSummary: input.decision,
+        decisionSummary: cleanDecision,
         decidedAt
       })
 
@@ -130,7 +137,11 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
   private createActionAndMaybeSpawnTask(
     projectId: string,
     conversationId: string,
-    action: { assignee: string; description: string; spawnTask?: { title: string; priority?: 'critical' | 'high' | 'medium' | 'low' } }
+    action: {
+      assignee: string
+      description: string
+      spawnTask?: { title: string; priority?: 'critical' | 'high' | 'medium' | 'low' }
+    }
   ): DecideConversationResultAction {
     let linkedTaskId: string | undefined
     if (action.spawnTask) {
