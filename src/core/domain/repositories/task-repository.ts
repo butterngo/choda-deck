@@ -218,6 +218,13 @@ function buildTaskQuery(filter: TaskFilter): { sql: string; params: Param[] } {
     wheres.push('title LIKE ?')
     params.push(`%${filter.query}%`)
   }
+  if (filter.labels && filter.labels.length > 0) {
+    const ors = filter.labels.map(() => 'labels LIKE ?').join(' OR ')
+    wheres.push(`(${ors})`)
+    for (const label of filter.labels) {
+      params.push(`%${JSON.stringify(label)}%`)
+    }
+  }
 
   const where = wheres.length > 0 ? `WHERE ${wheres.join(' AND ')}` : ''
   const limit = filter.limit ? `LIMIT ${filter.limit}` : ''

@@ -106,6 +106,7 @@ export interface TaskFilter {
   pinned?: boolean
   dueBefore?: string
   query?: string
+  labels?: string[]
   limit?: number
 }
 
