@@ -853,6 +853,56 @@ describe('SqliteTaskService', () => {
     expect(exportHandoffMarkdown(svc, 'nonexistent', '/tmp')).toBeNull()
   })
 
+  it('exportHandoffMarkdown renders Test results section with passed + skipped', () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'choda-handoff-tr-'))
+    try {
+      const projectId = 'tr-proj'
+      svc.ensureProject(projectId, projectId, '/tmp/tr')
+      const session = svc.createSession({
+        projectId,
+        status: 'completed',
+        handoff: {
+          resumePoint: 'verify',
+          testResults: {
+            passed: ['unit: task_create default body', 'manual: session_end persists testResults'],
+            skipped: ['IE11 check — no VM']
+          }
+        }
+      })
+      svc.updateSession(session.id, { endedAt: new Date().toISOString() })
+
+      const filePath = exportHandoffMarkdown(svc, session.id, tmpRoot)
+      const body = fs.readFileSync(filePath!, 'utf-8')
+      expect(body).toContain('## Test results')
+      expect(body).toContain('### Passed')
+      expect(body).toContain('- unit: task_create default body')
+      expect(body).toContain('### Skipped')
+      expect(body).toContain('- IE11 check — no VM')
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('exportHandoffMarkdown shows _none_ when no testResults', () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'choda-handoff-tr-none-'))
+    try {
+      const projectId = 'tr-none-proj'
+      svc.ensureProject(projectId, projectId, '/tmp/tr-none')
+      const session = svc.createSession({
+        projectId,
+        status: 'completed',
+        handoff: { resumePoint: 'no test meta' }
+      })
+      svc.updateSession(session.id, { endedAt: new Date().toISOString() })
+
+      const filePath = exportHandoffMarkdown(svc, session.id, tmpRoot)
+      const body = fs.readFileSync(filePath!, 'utf-8')
+      expect(body).toContain('## Test results\n\n_none_')
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
   it('deleteConversation cascades all related rows', () => {
     svc.createConversation({
       id: 'CONV-002',

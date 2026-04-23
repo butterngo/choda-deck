@@ -158,6 +158,10 @@ export interface SessionHandoff {
   resumePoint?: string
   looseEnds?: string[]
   tasksUpdated?: string[]
+  testResults?: {
+    passed: string[]
+    skipped: string[]
+  }
 }
 
 export interface SessionCheckpoint {

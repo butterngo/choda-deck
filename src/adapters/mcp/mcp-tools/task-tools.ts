@@ -14,26 +14,24 @@ export type TaskToolsDeps = TaskOperations &
   TagOperations &
   RelationshipOperations
 
-function defaultBody(id: string, title: string): string {
+export function defaultBody(id: string, title: string): string {
   return `# ${id}: ${title}
 
-## Why
+## Context
 
-<!-- What friction, constraint, or motivation drives this task? -->
+<!-- WHY: friction, constraint, background -->
 
-## Acceptance criteria
+## Acceptance
 
 - [ ]
 
-## Scope
+## Test Plan
+
+<!-- HOW verify: tool, scenario, edge case -->
+
+## Related
 
 -
-
-## Out of scope
-
--
-
-## Notes
 `
 }
 
@@ -41,7 +39,8 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
   server.registerTool(
     'task_context',
     {
-      description: 'Get full context for a task: task details + phase + dependencies + body',
+      description:
+        'Get full context for a task: task details + phase + dependencies + body. Body follows template with ## Context / ## Acceptance / ## Test Plan / ## Related sections — read ## Acceptance for done criteria (tick each item before marking DONE); if empty, ask user to define before starting work.',
       inputSchema: { id: z.string().describe('Task ID (e.g. TASK-401)') }
     },
     async ({ id }) => {

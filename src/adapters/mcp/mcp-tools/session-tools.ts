@@ -25,7 +25,16 @@ const handoffInputSchema = {
   decisions: z.array(z.string()).optional(),
   resumePoint: z.string(),
   looseEnds: z.array(z.string()).optional(),
-  notes: z.string().optional()
+  notes: z.string().optional(),
+  testResults: z
+    .object({
+      passed: z.array(z.string()),
+      skipped: z.array(z.string())
+    })
+    .optional()
+    .describe(
+      'Evidence matching task ## Test Plan — passed[] for verified items, skipped[] for deferred items with reason'
+    )
 }
 
 function tryLifecycle<T>(fn: () => T): ReturnType<typeof textResponse> {
@@ -177,7 +186,8 @@ export const register = (server: McpServer, svc: SessionToolsDeps): void => {
   server.registerTool(
     'session_end',
     {
-      description: 'End a work session. If session has a task, marks it DONE. Persists handoff.',
+      description:
+        'End a work session. If session has a task, marks it DONE. Persists handoff. Include testResults matching the task ## Test Plan — passed[] for verified items, skipped[] for deferred items with reason. Audit trail for quality review.',
       inputSchema: handoffInputSchema
     },
     async (input) =>
@@ -187,7 +197,8 @@ export const register = (server: McpServer, svc: SessionToolsDeps): void => {
           decisions: input.decisions,
           resumePoint: input.resumePoint,
           looseEnds: input.looseEnds,
-          tasksUpdated: []
+          tasksUpdated: [],
+          testResults: input.testResults
         }
         const result = svc.endSession(input.sessionId, { handoff })
         if (result.taskUpdated) handoff.tasksUpdated = [result.taskUpdated.id]
@@ -212,6 +223,7 @@ export interface LastSessionSummary {
   commits: string[]
   looseEnds: string[]
   tasksUpdated: string[]
+  testResults: { passed: string[]; skipped: string[] } | null
 }
 
 export function loadLastSession(
@@ -230,7 +242,8 @@ export function loadLastSession(
     decisions: h.decisions ?? [],
     commits: h.commits ?? [],
     looseEnds: h.looseEnds ?? [],
-    tasksUpdated: h.tasksUpdated ?? []
+    tasksUpdated: h.tasksUpdated ?? [],
+    testResults: h.testResults ?? null
   }
 }
 
