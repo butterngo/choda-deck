@@ -61,7 +61,7 @@ export const register = (server: McpServer, svc: SessionToolsDeps): void => {
           taskId,
           workspaceId
         })
-        const lastHandoff = loadLastHandoff(svc, projectId, workspaceId)
+        const lastSession = loadLastSession(svc, projectId, workspaceId)
         const bundle = buildProjectContext(svc, projectId, 'summary')
         const rules = loadSessionRules()
 
@@ -70,12 +70,12 @@ export const register = (server: McpServer, svc: SessionToolsDeps): void => {
           workspaceId: session.workspaceId,
           contextSources,
           mode: 'planning',
-          lastHandoff,
+          lastSession,
           existingActiveSessions: summarizeActiveSessions(existingActiveSessions),
           projectSummary: buildProjectSummary(bundle),
           activeTasks: bundle?.currentState.activeTasks ?? [],
           openConversations: bundle?.currentState.openConversations ?? [],
-          suggestion: buildSuggestion(lastHandoff, bundle?.currentState.activeTasks ?? []),
+          suggestion: buildSuggestion(lastSession, bundle?.currentState.activeTasks ?? []),
           rules: {
             onSessionStart: rules.sessionStart,
             onSessionEnd: rules.sessionEnd
@@ -204,18 +204,33 @@ export const register = (server: McpServer, svc: SessionToolsDeps): void => {
   )
 }
 
-export function loadLastHandoff(
+export interface LastSessionSummary {
+  id: string
+  endedAt: string | null
+  resumePoint: string | null
+  decisions: string[]
+  commits: string[]
+  looseEnds: string[]
+  tasksUpdated: string[]
+}
+
+export function loadLastSession(
   svc: SessionOperations,
   projectId: string,
   workspaceId?: string
-): { sessionId: string; endedAt: string | null; handoff: SessionHandoff } | null {
+): LastSessionSummary | null {
   const completed = svc.findSessions(projectId, 'completed')
   const match = workspaceId ? completed.find((s) => s.workspaceId === workspaceId) : completed[0]
   if (!match) return null
+  const h: SessionHandoff = match.handoff ?? {}
   return {
-    sessionId: match.id,
+    id: match.id,
     endedAt: match.endedAt,
-    handoff: match.handoff ?? {}
+    resumePoint: h.resumePoint ?? null,
+    decisions: h.decisions ?? [],
+    commits: h.commits ?? [],
+    looseEnds: h.looseEnds ?? [],
+    tasksUpdated: h.tasksUpdated ?? []
   }
 }
 
@@ -257,11 +272,11 @@ function summarizeActiveSessions(
 }
 
 function buildSuggestion(
-  lastHandoff: ReturnType<typeof loadLastHandoff>,
+  lastSession: LastSessionSummary | null,
   activeTasks: Array<Pick<Task, 'id' | 'title' | 'status' | 'priority'>>
 ): string {
-  if (lastHandoff?.handoff.resumePoint) {
-    return `Resume: ${lastHandoff.handoff.resumePoint}`
+  if (lastSession?.resumePoint) {
+    return `Resume: ${lastSession.resumePoint}`
   }
   const firstActive = activeTasks[0]
   if (firstActive) {

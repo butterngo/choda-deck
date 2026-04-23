@@ -11,7 +11,7 @@ Before calling `session_start`:
 1. Call `task_list` (or `roadmap`) to show the user available tasks, grouped by priority (high → medium → low).
 2. Wait for the user to pick a task. Do not guess.
 3. Call `session_start({ projectId, taskId, workspaceId? })`.
-4. Echo the lastHandoff block to the user verbatim — resume point, loose ends, decisions, tasks updated. Do not summarize.
+4. Echo the `lastSession` block to the user verbatim — resume point, decisions, loose ends, tasks updated, commits. Do not summarize.
 5. Create a feature branch for the task:
    - Branch name: `feat/<task-id>-<short-slug>` (e.g. `feat/task-564-session-conv-ui`)
    - Required: `git checkout -b feat/<task-id>-<short-slug>`
