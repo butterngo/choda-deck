@@ -22,11 +22,6 @@ import {
   TaskStatusError
 } from './errors'
 
-const DEFAULT_PARTICIPANTS: StartSessionInput['participants'] = [
-  { name: 'Butter', type: 'human' },
-  { name: 'Claude', type: 'agent' }
-]
-
 export class SessionLifecycleService implements SessionLifecycleOperations {
   constructor(
     private readonly db: Database.Database,
@@ -68,22 +63,7 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
 
       const contextSources = this.contextSources.findByProject(input.projectId, true)
 
-      const createdBy = input.createdBy ?? 'Claude'
-      const participants = input.participants ?? DEFAULT_PARTICIPANTS
-      const title = `Session ${session.id}${input.workspaceId ? ` — ${input.workspaceId}` : ''}`
-
-      const conv = this.conversations.create({
-        projectId: input.projectId,
-        title,
-        createdBy,
-        status: 'open',
-        participants,
-        ownerType: 'interactive',
-        ownerSessionId: session.id
-      })
-      this.conversations.link(conv.id, 'session', session.id)
-
-      return { session, conversationId: conv.id, contextSources, existingActiveSessions }
+      return { session, contextSources, existingActiveSessions }
     })
     return tx()
   }

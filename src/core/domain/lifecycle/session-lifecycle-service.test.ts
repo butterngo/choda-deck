@@ -25,7 +25,7 @@ afterEach(() => {
 })
 
 describe('startSession', () => {
-  it('happy path: creates session + auto-conv + returns active context sources', () => {
+  it('happy path: creates session + returns active context sources', () => {
     svc.createContextSource({
       projectId: 'proj-s',
       sourceType: 'file',
@@ -46,35 +46,25 @@ describe('startSession', () => {
 
     expect(r.session.status).toBe('active')
     expect(r.session.workspaceId).toBe('ws-a')
-    expect(r.conversationId).toMatch(/^CONV-/)
     expect(r.contextSources).toHaveLength(1)
     expect(r.contextSources[0].label).toBe('Context')
   })
 
-  it('links auto-conv to session via "session" link type', () => {
+  it('does not create any conversation on start', () => {
     const r = svc.startSession({ projectId: 'proj-s' })
-    const linked = svc.findConversationsByLink('session', r.session.id)
-    expect(linked).toHaveLength(1)
-    expect(linked[0].id).toBe(r.conversationId)
-    expect(linked[0].status).toBe('open')
-  })
-
-  it('default participants include Butter + Claude', () => {
-    const r = svc.startSession({ projectId: 'proj-s' })
-    const participants = svc.getConversationParticipants(r.conversationId)
-    const names = participants.map((p) => p.name).sort()
-    expect(names).toEqual(['Butter', 'Claude'])
+    expect(svc.findConversations('proj-s')).toHaveLength(0)
+    expect(svc.findConversationsByLink('session', r.session.id)).toHaveLength(0)
   })
 
   it('works without workspaceId', () => {
     const r = svc.startSession({ projectId: 'proj-s' })
     expect(r.session.workspaceId).toBeNull()
-    expect(r.conversationId).toBeTruthy()
+    expect(r.session.status).toBe('active')
   })
 })
 
 describe('endSession', () => {
-  it('happy path: active → completed, handoff persisted, linked conv closed', () => {
+  it('happy path: active → completed + handoff persisted, no convs by default', () => {
     const started = svc.startSession({ projectId: 'proj-s' })
     const r = svc.endSession(started.session.id, {
       handoff: { resumePoint: 'done for the day', decisions: ['chose option A'] }
@@ -83,11 +73,26 @@ describe('endSession', () => {
     expect(r.session.status).toBe('completed')
     expect(r.session.endedAt).not.toBeNull()
     expect(r.session.handoff?.resumePoint).toBe('done for the day')
-    expect(r.closedConversationIds).toEqual([started.conversationId])
+    expect(r.closedConversationIds).toEqual([])
+  })
 
-    const conv = svc.getConversation(started.conversationId)
-    expect(conv?.status).toBe('closed')
-    expect(conv?.decisionSummary).toBe('done for the day')
+  it('closes session-linked conversations opened mid-session', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    const conv = svc.openConversation({
+      projectId: 'proj-s',
+      title: 'Mid-session discussion',
+      createdBy: 'Butter',
+      initialMessage: { content: 'thoughts?', type: 'question' }
+    })
+
+    const r = svc.endSession(started.session.id, {
+      handoff: { resumePoint: 'done for the day' }
+    })
+
+    expect(r.closedConversationIds).toEqual([conv.id])
+    const after = svc.getConversation(conv.id)
+    expect(after?.status).toBe('closed')
+    expect(after?.decisionSummary).toBe('done for the day')
   })
 
   it('marks linked task DONE when session had a taskId', () => {
@@ -105,11 +110,17 @@ describe('endSession', () => {
 
   it('uses custom decisionSummary when provided', () => {
     const started = svc.startSession({ projectId: 'proj-s' })
+    const conv = svc.openConversation({
+      projectId: 'proj-s',
+      title: 'Mid-session discussion',
+      createdBy: 'Butter',
+      initialMessage: { content: 'thoughts?', type: 'question' }
+    })
     svc.endSession(started.session.id, {
       handoff: { resumePoint: 'r' },
       decisionSummary: 'custom summary'
     })
-    expect(svc.getConversation(started.conversationId)?.decisionSummary).toBe('custom summary')
+    expect(svc.getConversation(conv.id)?.decisionSummary).toBe('custom summary')
   })
 
   it('throws SessionNotFoundError on missing id', () => {
@@ -175,32 +186,19 @@ describe('startSession taskId binding', () => {
     const task = svc.createTask({ projectId: 'proj-s', title: 'Rollback' })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const lifecycle = (svc as any).sessionLifecycle
-    const orig = lifecycle.conversations.link.bind(lifecycle.conversations)
-    lifecycle.conversations.link = () => {
-      throw new Error('simulated link failure')
+    const orig = lifecycle.contextSources.findByProject.bind(lifecycle.contextSources)
+    lifecycle.contextSources.findByProject = () => {
+      throw new Error('simulated context lookup failure')
     }
 
     expect(() => svc.startSession({ projectId: 'proj-s', taskId: task.id })).toThrow(
-      'simulated link failure'
+      'simulated context lookup failure'
     )
 
-    lifecycle.conversations.link = orig
+    lifecycle.contextSources.findByProject = orig
 
     expect(svc.getTask(task.id)?.status).not.toBe('IN-PROGRESS')
     expect(svc.findSessions('proj-s')).toHaveLength(0)
-  })
-})
-
-describe('startSession R3 ownership tag', () => {
-  it('auto-conv is tagged owner_type=interactive + owner_session_id=session.id', () => {
-    const r = svc.startSession({ projectId: 'proj-s' })
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = (svc as any).db as import('better-sqlite3').Database
-    const row = db
-      .prepare('SELECT owner_type, owner_session_id FROM conversations WHERE id = ?')
-      .get(r.conversationId) as { owner_type: string | null; owner_session_id: string | null }
-    expect(row.owner_type).toBe('interactive')
-    expect(row.owner_session_id).toBe(r.session.id)
   })
 })
 
@@ -282,11 +280,17 @@ describe('resumeSession', () => {
       category: 'what'
     })
     const started = svc.startSession({ projectId: 'proj-s' })
+    const conv = svc.openConversation({
+      projectId: 'proj-s',
+      title: 'Mid-session discussion',
+      createdBy: 'Butter',
+      initialMessage: { content: 'thoughts?', type: 'question' }
+    })
 
     const r = svc.resumeSession(started.session.id)
     expect(r.session.id).toBe(started.session.id)
     expect(r.checkpoint).toBeNull()
-    expect(r.conversations.map((c) => c.id)).toEqual([started.conversationId])
+    expect(r.conversations.map((c) => c.id)).toEqual([conv.id])
     expect(r.contextSources.map((c) => c.label)).toEqual(['Ctx'])
   })
 
@@ -315,24 +319,31 @@ describe('resumeSession', () => {
 })
 
 describe('transaction rollback (atomicity)', () => {
-  it('rolls back session creation when auto-conv link fails mid-start', () => {
+  it('rolls back session creation when context-source lookup fails mid-start', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const lifecycle = (svc as any).sessionLifecycle
-    const orig = lifecycle.conversations.link.bind(lifecycle.conversations)
-    lifecycle.conversations.link = () => {
-      throw new Error('simulated link failure')
+    const orig = lifecycle.contextSources.findByProject.bind(lifecycle.contextSources)
+    lifecycle.contextSources.findByProject = () => {
+      throw new Error('simulated context lookup failure')
     }
 
-    expect(() => svc.startSession({ projectId: 'proj-s' })).toThrow('simulated link failure')
+    expect(() => svc.startSession({ projectId: 'proj-s' })).toThrow(
+      'simulated context lookup failure'
+    )
 
-    lifecycle.conversations.link = orig
+    lifecycle.contextSources.findByProject = orig
 
     expect(svc.findSessions('proj-s')).toHaveLength(0)
-    expect(svc.findConversations('proj-s')).toHaveLength(0)
   })
 
   it('rolls back session status + conv close when task update fails mid-end', () => {
     const started = svc.startSession({ projectId: 'proj-s' })
+    const conv = svc.openConversation({
+      projectId: 'proj-s',
+      title: 'Mid-session discussion',
+      createdBy: 'Butter',
+      initialMessage: { content: 'thoughts?', type: 'question' }
+    })
     const task = svc.createTask({ projectId: 'proj-s', title: 'Y' })
     svc.updateSession(started.session.id, { taskId: task.id })
 
@@ -350,7 +361,7 @@ describe('transaction rollback (atomicity)', () => {
     lifecycle.tasks.update = orig
 
     expect(svc.getSession(started.session.id)?.status).toBe('active')
-    expect(svc.getConversation(started.conversationId)?.status).toBe('open')
+    expect(svc.getConversation(conv.id)?.status).toBe('open')
     expect(svc.getTask(task.id)?.status).not.toBe('DONE')
   })
 })

@@ -1,7 +1,6 @@
 import type {
   ContextSource,
   Conversation,
-  ConversationParticipantType,
   Session,
   SessionCheckpoint,
   SessionHandoff
@@ -11,13 +10,10 @@ export interface StartSessionInput {
   projectId: string
   workspaceId?: string
   taskId?: string
-  createdBy?: string
-  participants?: Array<{ name: string; type: ConversationParticipantType; role?: string }>
 }
 
 export interface StartSessionResult {
   session: Session
-  conversationId: string
   contextSources: ContextSource[]
   existingActiveSessions: Session[]
 }
