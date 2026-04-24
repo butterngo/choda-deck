@@ -142,12 +142,53 @@ export function buildGraphifyContext(
   const affected_communities = identifyAffectedCommunities(subgraph, nodeIndex)
   const staleness = computeStaleness(graphPath)
 
+  appendUsageLog(graphPath, {
+    taskId: task.id,
+    keywordsCount: keywords.length,
+    subgraphSize: subgraph.size,
+    affectedFilesCount: affected_files.length,
+    godNodesCount: god_nodes.length,
+    communitiesCount: affected_communities.length,
+    graphAgeDays: staleness.graph_age_days
+  })
+
   return {
     affected_files,
     god_nodes,
     affected_communities,
     keywords_used: keywords,
     ...staleness
+  }
+}
+
+interface UsageLogEntry {
+  taskId: string
+  keywordsCount: number
+  subgraphSize: number
+  affectedFilesCount: number
+  godNodesCount: number
+  communitiesCount: number
+  graphAgeDays: number
+}
+
+function appendUsageLog(graphPath: string, entry: UsageLogEntry): void {
+  // Best-effort telemetry — never fail task_context if the log write fails.
+  try {
+    const logPath = path.join(path.dirname(graphPath), 'usage.log')
+    const line =
+      [
+        new Date().toISOString(),
+        entry.taskId,
+        entry.keywordsCount,
+        entry.subgraphSize,
+        entry.affectedFilesCount,
+        entry.godNodesCount,
+        entry.communitiesCount,
+        entry.graphAgeDays
+      ].join('\t') + '\n'
+    fs.appendFileSync(logPath, line, { encoding: 'utf8' })
+  } catch {
+    // swallow
   }
 }
 

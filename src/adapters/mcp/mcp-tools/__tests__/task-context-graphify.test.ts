@@ -28,8 +28,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 function makeDeps(workspaceCwds: string[] = [], projectCwd: string | null = null): GraphifyDeps {
   return {
     ensureProject: () => {},
-    getProject: () =>
-      projectCwd ? { id: 'proj-test', name: 'test', cwd: projectCwd } : null,
+    getProject: () => (projectCwd ? { id: 'proj-test', name: 'test', cwd: projectCwd } : null),
     listProjects: () => [],
     addWorkspace: () => ({ id: '', projectId: '', label: '', cwd: '' }),
     getWorkspace: () => null,
@@ -81,17 +80,37 @@ describe('buildGraphifyContext', () => {
       [
         { id: 'auth_service', label: 'AuthService', source_file: 'src/auth.ts', community: 0 },
         { id: 'auth_login', label: 'AuthService.login', source_file: 'src/auth.ts', community: 0 },
-        { id: 'auth_logout', label: 'AuthService.logout', source_file: 'src/auth.ts', community: 0 },
+        {
+          id: 'auth_logout',
+          label: 'AuthService.logout',
+          source_file: 'src/auth.ts',
+          community: 0
+        },
         { id: 'db_conn', label: 'DbConnection', source_file: 'src/db.ts', community: 1 },
         { id: 'unrelated', label: 'Unrelated', source_file: 'src/other.ts', community: 2 }
       ],
       [
         { source: 'auth_service', target: 'auth_login', relation: 'method', confidence_score: 1.0 },
-        { source: 'auth_service', target: 'auth_logout', relation: 'method', confidence_score: 1.0 },
+        {
+          source: 'auth_service',
+          target: 'auth_logout',
+          relation: 'method',
+          confidence_score: 1.0
+        },
         { source: 'auth_service', target: 'db_conn', relation: 'calls', confidence_score: 0.9 },
-        { source: 'auth_service', target: 'db_conn', relation: 'imports_from', confidence_score: 1.0 },
+        {
+          source: 'auth_service',
+          target: 'db_conn',
+          relation: 'imports_from',
+          confidence_score: 1.0
+        },
         { source: 'auth_service', target: 'db_conn', relation: 'contains', confidence_score: 1.0 },
-        { source: 'auth_service', target: 'db_conn', relation: 'references', confidence_score: 1.0 },
+        {
+          source: 'auth_service',
+          target: 'db_conn',
+          relation: 'references',
+          confidence_score: 1.0
+        },
         { source: 'auth_service', target: 'db_conn', relation: 'implements', confidence_score: 1.0 }
       ]
     )
@@ -149,11 +168,7 @@ describe('buildGraphifyContext', () => {
   })
 
   it('boosts keywords from labels', () => {
-    writeFixtureGraph(
-      tmp,
-      [{ id: 'foo', label: 'RendererStuff', source_file: 'x.ts' }],
-      []
-    )
+    writeFixtureGraph(tmp, [{ id: 'foo', label: 'RendererStuff', source_file: 'x.ts' }], [])
     const task = makeTask({ title: 'abc', labels: ['rendererstuff'] })
     const result = buildGraphifyContext(task, makeDeps([tmp]))
     if ('affected_files' in result) {
@@ -166,6 +181,26 @@ describe('buildGraphifyContext', () => {
     const task = makeTask({ title: 'taskalpha matter' })
     const result = buildGraphifyContext(task, makeDeps([], tmp))
     expect(result).not.toHaveProperty('status')
+  })
+
+  it('writes a usage.log entry on successful query', () => {
+    writeFixtureGraph(tmp, [{ id: 'taskalpha', label: 'TaskAlpha', source_file: 'a.ts' }], [])
+    const task = makeTask({ title: 'work on taskalpha feature' })
+    buildGraphifyContext(task, makeDeps([tmp]))
+    const logPath = path.join(tmp, 'graphify-out', 'usage.log')
+    expect(fs.existsSync(logPath)).toBe(true)
+    const content = fs.readFileSync(logPath, 'utf8')
+    const parts = content.trim().split('\t')
+    expect(parts[1]).toBe('TASK-999')
+    expect(Number(parts[2])).toBeGreaterThan(0) // keywordsCount
+    expect(Number(parts[3])).toBeGreaterThan(0) // subgraphSize
+  })
+
+  it('does not write usage.log on no-graph or no-matches', () => {
+    const task = makeTask({ title: 'anything here' })
+    buildGraphifyContext(task, makeDeps([tmp])) // no-graph
+    const logPath = path.join(tmp, 'graphify-out', 'usage.log')
+    expect(fs.existsSync(logPath)).toBe(false)
   })
 
   it('marks stale when file is older than 7 days', () => {
