@@ -17,6 +17,7 @@ import type {
   CreateConversationActionInput,
   UpdateConversationActionInput
 } from '../task-types'
+import { emitConversationEvent } from '../services/event-emitter'
 import { generateId, type Param } from './shared'
 
 function rowToConversation(row: Record<string, unknown>): Conversation {
@@ -222,7 +223,26 @@ export class ConversationRepository {
     const row = this.db
       .prepare('SELECT * FROM conversation_messages WHERE id = ?')
       .get(id) as Record<string, unknown>
-    return rowToMessage(row)
+    const message = rowToMessage(row)
+    this.emitQuestionEventIfRoleRouted(message)
+    return message
+  }
+
+  private emitQuestionEventIfRoleRouted(message: ConversationMessage): void {
+    if (message.messageType !== 'question') return
+    const conv = this.get(message.conversationId)
+    if (!conv) return
+    const roles = this.getParticipants(message.conversationId)
+      .map((p) => p.role)
+      .filter((r): r is string => !!r)
+    if (roles.length === 0) return
+    emitConversationEvent(conv.projectId, {
+      conversationId: message.conversationId,
+      roles,
+      messageType: message.messageType,
+      author: message.authorName,
+      timestamp: message.createdAt
+    })
   }
 
   getMessages(conversationId: string): ConversationMessage[] {

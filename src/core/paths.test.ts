@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import * as os from 'os'
 import * as path from 'path'
-import { resolveDataPaths } from './paths'
+import { resolveDataPaths, resolveEventDir } from './paths'
 
 function withEnv(vars: Record<string, string | undefined>, fn: () => void): void {
   const saved: Record<string, string | undefined> = {}
@@ -67,6 +68,27 @@ describe('resolveDataPaths', () => {
     withEnv({ CHODA_DB_PATH: legacyDb, CHODA_DATA_DIR: dataDir }, () => {
       const p = resolveDataPaths()
       expect(p.dbPath).toBe(legacyDb)
+    })
+  })
+})
+
+describe('resolveEventDir', () => {
+  it('defaults to <os.tmpdir()>/choda-events when CHODA_EVENT_DIR unset', () => {
+    withEnv({ CHODA_EVENT_DIR: undefined }, () => {
+      expect(resolveEventDir()).toBe(path.join(os.tmpdir(), 'choda-events'))
+    })
+  })
+
+  it('uses CHODA_EVENT_DIR env when set (absolute)', () => {
+    const abs = path.join(TMP, 'events')
+    withEnv({ CHODA_EVENT_DIR: abs }, () => {
+      expect(resolveEventDir()).toBe(abs)
+    })
+  })
+
+  it('resolves relative CHODA_EVENT_DIR to absolute', () => {
+    withEnv({ CHODA_EVENT_DIR: 'rel-events' }, () => {
+      expect(resolveEventDir()).toBe(path.resolve('rel-events'))
     })
   })
 })
