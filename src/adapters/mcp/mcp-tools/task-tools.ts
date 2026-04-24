@@ -7,12 +7,19 @@ import type { PhaseOperations } from '../../../core/domain/interfaces/phase-repo
 import type { ConversationOperations } from '../../../core/domain/interfaces/conversation-repository.interface'
 import type { TagOperations } from '../../../core/domain/interfaces/tag-repository.interface'
 import type { RelationshipOperations } from '../../../core/domain/interfaces/relationship-repository.interface'
+import type {
+  ProjectOperations,
+  WorkspaceOperations
+} from '../../../core/domain/interfaces/project-repository.interface'
+import { buildGraphifyContext } from './task-context-graphify'
 
 export type TaskToolsDeps = TaskOperations &
   PhaseOperations &
   ConversationOperations &
   TagOperations &
-  RelationshipOperations
+  RelationshipOperations &
+  ProjectOperations &
+  WorkspaceOperations
 
 export function defaultBody(id: string, title: string): string {
   return `# ${id}: ${title}
@@ -70,6 +77,8 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
         }))
       }))
 
+      const graphify_context = buildGraphifyContext(task, svc)
+
       return textResponse({
         task,
         phase,
@@ -78,7 +87,8 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
         tags,
         relationships: rels,
         conversations,
-        body: task.body
+        body: task.body,
+        graphify_context
       })
     }
   )
