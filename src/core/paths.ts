@@ -1,3 +1,4 @@
+import * as os from 'os'
 import * as path from 'path'
 
 export interface DataPaths {
@@ -50,4 +51,19 @@ export function resolveDataPaths(electronDataDir?: string): DataPaths {
     artifactsDir: path.join(dataDir, 'artifacts'),
     backupsDir: path.join(dataDir, 'backups')
   }
+}
+
+/**
+ * Resolve the directory where conversation event JSONL files are written.
+ *
+ * Priority:
+ * 1. CHODA_EVENT_DIR env var (absolute or relative, resolved to absolute)
+ * 2. fallback — <os.tmpdir()>/choda-events
+ *
+ * Each project gets one file: <eventDir>/<projectId>.jsonl
+ */
+export function resolveEventDir(): string {
+  const envDir = process.env.CHODA_EVENT_DIR
+  if (envDir) return path.resolve(envDir)
+  return path.join(os.tmpdir(), 'choda-events')
 }
