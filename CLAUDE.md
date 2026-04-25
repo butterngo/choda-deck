@@ -33,7 +33,6 @@ Use `choda-tasks` MCP tools (`task_context`, `task_list`) for task details.
 - `src/adapters/mcp/mcp-tools/` — individual MCP tool handlers
 - `src/core/domain/task-types.ts` — type definitions
 - `src/core/paths.ts` — `resolveDataPaths()` — single source for DB/artifacts/backups paths
-- `src/main/vault-importer.ts` — vault markdown → SQLite importer
 - `src/renderer/src/RoadmapView.tsx` — hierarchy UI
 
 ## Per-layer context

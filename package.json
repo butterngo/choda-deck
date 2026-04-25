@@ -18,12 +18,11 @@
     "dev": "node scripts/dev.mjs dev",
     "build": "pnpm run typecheck && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
-    "build:mcp": "esbuild src/adapters/mcp/server.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/mcp-server.cjs --external:better-sqlite3 --external:chokidar",
+    "build:mcp": "esbuild src/adapters/mcp/server.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/mcp-server.cjs --external:better-sqlite3",
     "icons": "node scripts/build-icons.mjs",
     "build:unpack": "pnpm run build && pnpm run build:mcp && electron-builder --dir",
     "build:win": "pnpm run build && pnpm run build:mcp && electron-builder --win",
-    "mcp:tasks": "node scripts/mcp-start.mjs",
-    "import-once": "node scripts/import-once.mjs"
+    "mcp:tasks": "node scripts/mcp-start.mjs"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
@@ -32,8 +31,6 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "better-sqlite3": "^12.9.0",
-    "chokidar": "^5.0.0",
-    "gray-matter": "^4.0.3",
     "mermaid": "^11.14.0",
     "node-pty": "^1.1.0",
     "react-markdown": "^10.1.0",

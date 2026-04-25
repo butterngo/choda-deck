@@ -6,7 +6,6 @@ import * as pty from 'node-pty'
 import icon from '../../resources/icon.png?asset'
 import { SqliteTaskService } from '../core/domain/sqlite-task-service'
 import { resolveDataPaths } from '../core/paths'
-import { VaultImporter } from './vault-importer'
 import { VaultService } from '../vault/vault-service'
 import {
   backupDir,
@@ -371,47 +370,6 @@ app.whenReady().then(async () => {
     } catch (err) {
       return { ok: false, error: (err as Error).message }
     }
-  })
-
-  // Vault import — manual trigger, not auto on boot
-  let importer: VaultImporter | null = null
-
-  ipcMain.handle('vault:import', async (_event, statusMap?: Record<string, string>) => {
-    if (!config.contentRoot)
-      return {
-        tasks: 0,
-        phases: 0,
-        documents: 0,
-        tags: 0,
-        relationships: 0,
-        skipped: 0,
-        errors: ['No contentRoot configured']
-      }
-    importer = new VaultImporter(taskService, config.contentRoot, statusMap)
-    const result = importer.importAll(projects.map((p) => p.id))
-    return result
-  })
-
-  ipcMain.handle('vault:stop-watch', () => {
-    if (importer) {
-      importer.stopWatching()
-      importer = null
-    }
-    return { ok: true }
-  })
-
-  ipcMain.handle('task:refresh', () => {
-    if (!importer)
-      return {
-        tasks: 0,
-        phases: 0,
-        documents: 0,
-        tags: 0,
-        relationships: 0,
-        skipped: 0,
-        errors: ['No import active']
-      }
-    return importer.importAll(projects.map((p) => p.id))
   })
 
   ipcMain.handle('task:list', (_event, filter) => taskService.findTasks(filter))
