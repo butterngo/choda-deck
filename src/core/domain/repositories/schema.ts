@@ -26,18 +26,6 @@ function createCoreTables(db: Database.Database): void {
     )
   `)
   db.exec(`
-    CREATE TABLE IF NOT EXISTS phases (
-      id TEXT PRIMARY KEY,
-      project_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'open',
-      position INTEGER DEFAULT 0,
-      target_date TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `)
-  db.exec(`
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
@@ -82,16 +70,6 @@ function createCoreTables(db: Database.Database): void {
 }
 
 function runLegacyMigrations(db: Database.Database): void {
-  try {
-    db.exec('ALTER TABLE phases ADD COLUMN start_date TEXT')
-  } catch {
-    /* exists */
-  }
-  try {
-    db.exec('ALTER TABLE phases ADD COLUMN completed_date TEXT')
-  } catch {
-    /* exists */
-  }
   db.exec('DROP TABLE IF EXISTS epics')
   db.exec('DROP TABLE IF EXISTS task_dependencies')
   try {
@@ -135,12 +113,15 @@ function runLegacyMigrations(db: Database.Database): void {
     /* exists */
   }
 
-  // tasks: direct phase link (Phase → Task hierarchy)
+  // TASK-626: phase concept dropped — remove phase_id column + phases table
+  db.exec('DROP INDEX IF EXISTS idx_tasks_phase')
+  db.exec('DROP INDEX IF EXISTS idx_phases_project')
   try {
-    db.exec('ALTER TABLE tasks ADD COLUMN phase_id TEXT')
+    db.exec('ALTER TABLE tasks DROP COLUMN phase_id')
   } catch {
-    /* exists */
+    /* already dropped */
   }
+  db.exec('DROP TABLE IF EXISTS phases')
 
   // tasks: body content (SQLite becomes source of truth for content)
   try {
@@ -381,10 +362,8 @@ function createM1Tables(db: Database.Database): void {
 }
 
 function createIndexes(db: Database.Database): void {
-  db.exec('CREATE INDEX IF NOT EXISTS idx_phases_project ON phases(project_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(project_id, status)')
-  db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_phase ON tasks(phase_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_tags_item ON tags(item_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_relationships_from ON relationships(from_id)')

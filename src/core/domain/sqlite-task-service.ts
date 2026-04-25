@@ -39,16 +39,12 @@ import type {
   UpdateTaskInput,
   TaskFilter,
   TaskDependency,
-  Phase,
-  CreatePhaseInput,
-  UpdatePhaseInput,
   Document,
   DocumentType,
   CreateDocumentInput,
   UpdateDocumentInput,
   Relationship,
   RelationType,
-  DerivedProgress,
   Session,
   SessionStatus,
   CreateSessionInput,
@@ -79,7 +75,6 @@ import { initSchema } from './repositories/schema'
 import { ProjectRepository } from './repositories/project-repository'
 import type { ProjectRow, WorkspaceRow } from './repositories/project-repository'
 import { TaskRepository } from './repositories/task-repository'
-import { PhaseRepository } from './repositories/phase-repository'
 import { DocumentRepository } from './repositories/document-repository'
 import { TagRepository } from './repositories/tag-repository'
 import { RelationshipRepository } from './repositories/relationship-repository'
@@ -105,7 +100,6 @@ export class SqliteTaskService
   private readonly db: Database.Database
   private readonly projects: ProjectRepository
   private readonly tasks: TaskRepository
-  private readonly phases: PhaseRepository
   private readonly documents: DocumentRepository
   private readonly tagsRepo: TagRepository
   private readonly relationships: RelationshipRepository
@@ -128,7 +122,6 @@ export class SqliteTaskService
     this.relationships = new RelationshipRepository(this.db)
     this.counters = new CounterRepository(this.db)
     this.tasks = new TaskRepository(this.db, this.relationships, this.counters)
-    this.phases = new PhaseRepository(this.db)
     this.documents = new DocumentRepository(this.db)
     this.tagsRepo = new TagRepository(this.db)
     this.sessions = new SessionRepository(this.db)
@@ -226,26 +219,6 @@ export class SqliteTaskService
   }
   getDependencies(taskId: string): TaskDependency[] {
     return this.tasks.getDependencies(taskId)
-  }
-
-  // ── Phase operations ───────────────────────────────────────────────────────
-  createPhase(input: CreatePhaseInput): Phase {
-    return this.phases.create(input)
-  }
-  updatePhase(id: string, input: UpdatePhaseInput): Phase {
-    return this.phases.update(id, input)
-  }
-  deletePhase(id: string): void {
-    this.phases.delete(id)
-  }
-  getPhase(id: string): Phase | null {
-    return this.phases.get(id)
-  }
-  findPhases(projectId: string): Phase[] {
-    return this.phases.findByProject(projectId)
-  }
-  getPhaseProgress(phaseId: string): DerivedProgress {
-    return this.phases.getProgress(phaseId)
   }
 
   // ── Document operations ────────────────────────────────────────────────────

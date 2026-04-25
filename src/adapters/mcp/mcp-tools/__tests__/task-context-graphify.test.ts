@@ -9,7 +9,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   return {
     id: 'TASK-999',
     projectId: 'proj-test',
-    phaseId: null,
     parentTaskId: null,
     title: 'test task',
     status: 'TODO',

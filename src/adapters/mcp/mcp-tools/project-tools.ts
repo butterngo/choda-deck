@@ -66,7 +66,7 @@ export const register = (server: McpServer, svc: ProjectToolsDeps): void => {
     'project_context',
     {
       description:
-        'Compile full project context: identity, current state (active phase + tasks + last session + open conversations), architecture, conventions, recent decisions, and the list of context sources used',
+        'Compile full project context: identity, current state (active tasks + last session + open conversations), architecture, conventions, recent decisions, and the list of context sources used',
       inputSchema: {
         projectId: z.string().describe('Project ID'),
         depth: z

@@ -1,23 +1,19 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import type {
-  Phase,
   Task,
   Session,
   Conversation,
-  ContextSource,
-  DerivedProgress
+  ContextSource
 } from '../../../core/domain/task-types'
 import type { ProjectOperations } from '../../../core/domain/interfaces/project-repository.interface'
 import type { ContextSourceOperations } from '../../../core/domain/interfaces/context-source-repository.interface'
-import type { PhaseOperations } from '../../../core/domain/interfaces/phase-repository.interface'
 import type { TaskOperations } from '../../../core/domain/interfaces/task-repository.interface'
 import type { SessionOperations } from '../../../core/domain/interfaces/session-repository.interface'
 import type { ConversationOperations } from '../../../core/domain/interfaces/conversation-repository.interface'
 
 export type ProjectContextDeps = ProjectOperations &
   ContextSourceOperations &
-  PhaseOperations &
   TaskOperations &
   SessionOperations &
   ConversationOperations
@@ -27,7 +23,6 @@ export type ProjectContextDepth = 'summary' | 'full'
 export interface ProjectContextBundle {
   project: { id: string; name: string; cwd: string }
   currentState: {
-    activePhase: { id: string; title: string; progress: DerivedProgress } | null
     activeTasks: Array<Pick<Task, 'id' | 'title' | 'status' | 'priority'>>
     lastSession: { id: string; endedAt: string | null; handoff: Session['handoff'] } | null
     openConversations: Array<{
@@ -60,7 +55,6 @@ export function buildProjectContext(
   return {
     project,
     currentState: {
-      activePhase: pickActivePhase(svc, projectId),
       activeTasks: pickActiveTasks(svc, projectId),
       lastSession: pickLastSession(svc, projectId),
       openConversations: pickOpenConversations(svc, projectId)
@@ -81,19 +75,6 @@ function fetchProject(
   projectId: string
 ): ProjectContextBundle['project'] | null {
   return svc.getProject(projectId)
-}
-
-function pickActivePhase(
-  svc: ProjectContextDeps,
-  projectId: string
-): ProjectContextBundle['currentState']['activePhase'] {
-  const phases = svc.findPhases(projectId)
-  const active =
-    phases.find((p: Phase) => p.startDate && !p.completedDate) ??
-    phases.find((p: Phase) => p.status === 'open') ??
-    null
-  if (!active) return null
-  return { id: active.id, title: active.title, progress: svc.getPhaseProgress(active.id) }
 }
 
 function pickActiveTasks(

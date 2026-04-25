@@ -15,7 +15,6 @@ function rowToTask(row: Record<string, unknown>): Task {
   return {
     id: row.id as string,
     projectId: row.project_id as string,
-    phaseId: (row.phase_id as string) || null,
     parentTaskId: (row.parent_task_id as string) || null,
     title: row.title as string,
     status: row.status as TaskStatus,
@@ -46,13 +45,12 @@ export class TaskRepository {
     const id = input.id || this.nextTaskId()
     this.db
       .prepare(
-        `INSERT INTO tasks (id, project_id, phase_id, parent_task_id, title, status, priority, labels, due_date, file_path, body, pinned, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+        `INSERT INTO tasks (id, project_id, parent_task_id, title, status, priority, labels, due_date, file_path, body, pinned, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
       )
       .run(
         id,
         input.projectId,
-        input.phaseId || null,
         input.parentTaskId || null,
         input.title,
         input.status || 'TODO',
@@ -82,10 +80,6 @@ export class TaskRepository {
     if (input.priority !== undefined) {
       sets.push('priority = ?')
       params.push(input.priority)
-    }
-    if (input.phaseId !== undefined) {
-      sets.push('phase_id = ?')
-      params.push(input.phaseId)
     }
     if (input.parentTaskId !== undefined) {
       sets.push('parent_task_id = ?')
@@ -200,10 +194,6 @@ function buildTaskQuery(filter: TaskFilter): { sql: string; params: Param[] } {
   if (filter.priority) {
     wheres.push('priority = ?')
     params.push(filter.priority)
-  }
-  if (filter.phaseId) {
-    wheres.push('phase_id = ?')
-    params.push(filter.phaseId)
   }
   if (filter.parentTaskId) {
     wheres.push('parent_task_id = ?')
