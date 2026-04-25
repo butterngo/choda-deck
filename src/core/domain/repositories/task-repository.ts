@@ -3,15 +3,17 @@ import type {
   Task,
   TaskStatus,
   TaskDependency,
+  TaskBlocker,
   CreateTaskInput,
   UpdateTaskInput,
   TaskFilter
 } from '../task-types'
+import { TaskBlockedError } from '../task-types'
 import { now, type Param } from './shared'
 import type { RelationshipRepository } from './relationship-repository'
 import type { CounterRepository } from './counter-repository'
 
-function rowToTask(row: Record<string, unknown>): Task {
+function rowToTask(row: Record<string, unknown>, blockedBy: string[] = []): Task {
   return {
     id: row.id as string,
     projectId: row.project_id as string,
@@ -24,6 +26,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     pinned: row.pinned === 1,
     filePath: (row.file_path as string) || null,
     body: (row.body as string) || null,
+    blockedBy,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string
   }
@@ -43,6 +46,17 @@ export class TaskRepository {
   create(input: CreateTaskInput): Task {
     const ts = now()
     const id = input.id || this.nextTaskId()
+    const status = input.status || 'TODO'
+
+    if (input.blockedBy && input.blockedBy.length > 0) {
+      this.validateBlockedBy(id, input.blockedBy)
+    }
+
+    if (status === 'DONE') {
+      const blockers = this.findBlockers(id, input.parentTaskId || null, input.blockedBy || [])
+      if (blockers.length > 0) throw new TaskBlockedError(id, blockers)
+    }
+
     this.db
       .prepare(
         `INSERT INTO tasks (id, project_id, parent_task_id, title, status, priority, labels, due_date, file_path, body, pinned, created_at, updated_at)
@@ -53,7 +67,7 @@ export class TaskRepository {
         input.projectId,
         input.parentTaskId || null,
         input.title,
-        input.status || 'TODO',
+        status,
         input.priority || null,
         input.labels ? JSON.stringify(input.labels) : null,
         input.dueDate || null,
@@ -62,10 +76,30 @@ export class TaskRepository {
         ts,
         ts
       )
+
+    if (input.blockedBy && input.blockedBy.length > 0) {
+      this.replaceBlockedBy(id, input.blockedBy)
+    }
+
     return this.get(id)!
   }
 
   update(id: string, input: UpdateTaskInput): Task {
+    const existing = this.get(id)
+    if (!existing) throw new Error(`Task not found: ${id}`)
+
+    if (input.blockedBy !== undefined) {
+      this.validateBlockedBy(id, input.blockedBy)
+    }
+
+    if (input.status === 'DONE' && existing.status !== 'DONE') {
+      const parentTaskId =
+        input.parentTaskId !== undefined ? input.parentTaskId : existing.parentTaskId
+      const blockedBy = input.blockedBy !== undefined ? input.blockedBy : existing.blockedBy
+      const blockers = this.findBlockers(id, parentTaskId, blockedBy)
+      if (blockers.length > 0) throw new TaskBlockedError(id, blockers)
+    }
+
     const sets: string[] = ['updated_at = ?']
     const params: Param[] = [now()]
 
@@ -110,6 +144,11 @@ export class TaskRepository {
     this.db
       .prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`)
       .run(...(params as (string | number | null)[]))
+
+    if (input.blockedBy !== undefined) {
+      this.replaceBlockedBy(id, input.blockedBy)
+    }
+
     const task = this.get(id)
     if (!task) throw new Error(`Task not found: ${id}`)
     return task
@@ -126,7 +165,7 @@ export class TaskRepository {
     const row = this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as
       | Record<string, unknown>
       | undefined
-    return row ? rowToTask(row) : null
+    return row ? rowToTask(row, this.getBlockedBy(id)) : null
   }
 
   find(filter: TaskFilter): Task[] {
@@ -134,21 +173,25 @@ export class TaskRepository {
     const rows = this.db.prepare(sql).all(...(params as (string | number | null)[])) as Array<
       Record<string, unknown>
     >
-    return rows.map(rowToTask)
+    let tasks = rows.map((r) => rowToTask(r, this.getBlockedBy(r.id as string)))
+    if (filter.status === 'READY') {
+      tasks = tasks.filter((t) => this.findBlockers(t.id, t.parentTaskId, t.blockedBy).length === 0)
+    }
+    return tasks
   }
 
   getSubtasks(parentId: string): Task[] {
     const rows = this.db
       .prepare('SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at')
       .all(parentId) as Array<Record<string, unknown>>
-    return rows.map(rowToTask)
+    return rows.map((r) => rowToTask(r, this.getBlockedBy(r.id as string)))
   }
 
   getPinned(): Task[] {
     const rows = this.db
       .prepare('SELECT * FROM tasks WHERE pinned = 1 ORDER BY project_id, created_at')
       .all() as Array<Record<string, unknown>>
-    return rows.map(rowToTask)
+    return rows.map((r) => rowToTask(r, this.getBlockedBy(r.id as string)))
   }
 
   getDue(date: string): Task[] {
@@ -157,7 +200,80 @@ export class TaskRepository {
         "SELECT * FROM tasks WHERE due_date <= ? AND status NOT IN ('DONE', 'CANCELLED') ORDER BY due_date"
       )
       .all(date) as Array<Record<string, unknown>>
-    return rows.map(rowToTask)
+    return rows.map((r) => rowToTask(r, this.getBlockedBy(r.id as string)))
+  }
+
+  // ── blockedBy helpers ────────────────────────────────────────────────────
+  private getBlockedBy(taskId: string): string[] {
+    const rows = this.db
+      .prepare("SELECT to_id FROM relationships WHERE from_id = ? AND type = 'DEPENDS_ON'")
+      .all(taskId) as Array<{ to_id: string }>
+    return rows.map((r) => r.to_id)
+  }
+
+  private replaceBlockedBy(taskId: string, blockerIds: string[]): void {
+    this.db
+      .prepare("DELETE FROM relationships WHERE from_id = ? AND type = 'DEPENDS_ON'")
+      .run(taskId)
+    const insert = this.db.prepare(
+      "INSERT OR IGNORE INTO relationships (from_id, to_id, type) VALUES (?, ?, 'DEPENDS_ON')"
+    )
+    for (const blockerId of blockerIds) insert.run(taskId, blockerId)
+  }
+
+  private validateBlockedBy(taskId: string, blockerIds: string[]): void {
+    for (const blockerId of blockerIds) {
+      if (blockerId === taskId) {
+        throw new Error(`Task ${taskId} cannot be blocked by itself`)
+      }
+      const blocker = this.db.prepare('SELECT id FROM tasks WHERE id = ?').get(blockerId) as
+        | { id: string }
+        | undefined
+      if (!blocker) throw new Error(`blockedBy references unknown task: ${blockerId}`)
+
+      // Direct cycle: blocker already depends on this task
+      const cycle = this.db
+        .prepare(
+          "SELECT 1 FROM relationships WHERE from_id = ? AND to_id = ? AND type = 'DEPENDS_ON'"
+        )
+        .get(blockerId, taskId)
+      if (cycle) {
+        throw new Error(
+          `Cycle detected: ${blockerId} already depends on ${taskId} — cannot add reverse dependency`
+        )
+      }
+    }
+  }
+
+  private findBlockers(
+    taskId: string,
+    _parentTaskId: string | null,
+    blockedBy: string[]
+  ): TaskBlocker[] {
+    const blockers: TaskBlocker[] = []
+
+    const subtaskRows = this.db
+      .prepare(
+        `SELECT id, status, title FROM tasks WHERE parent_task_id = ? AND status NOT IN ('DONE', 'CANCELLED')`
+      )
+      .all(taskId) as Array<{ id: string; status: TaskStatus; title: string }>
+    for (const row of subtaskRows) {
+      blockers.push({ id: row.id, type: 'subtask', status: row.status, title: row.title })
+    }
+
+    if (blockedBy.length > 0) {
+      const placeholders = blockedBy.map(() => '?').join(',')
+      const depRows = this.db
+        .prepare(
+          `SELECT id, status, title FROM tasks WHERE id IN (${placeholders}) AND status NOT IN ('DONE', 'CANCELLED')`
+        )
+        .all(...blockedBy) as Array<{ id: string; status: TaskStatus; title: string }>
+      for (const row of depRows) {
+        blockers.push({ id: row.id, type: 'dependency', status: row.status, title: row.title })
+      }
+    }
+
+    return blockers
   }
 
   // Dependencies backed by the relationships table

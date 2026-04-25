@@ -139,7 +139,13 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
         parentTaskId: z.string().optional().describe('Parent task for subtasks'),
         labels: z.array(z.string()).optional(),
         dueDate: z.string().optional(),
-        body: z.string().optional().describe('Markdown body content (default template if omitted)')
+        body: z.string().optional().describe('Markdown body content (default template if omitted)'),
+        blockedBy: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Task IDs blocking this task — must all be DONE/CANCELLED before this can be DONE; also excluded from READY list'
+          )
       }
     },
     async (input) => {
@@ -153,7 +159,8 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
   server.registerTool(
     'task_update',
     {
-      description: 'Update a task',
+      description:
+        'Update a task. Status=DONE is hard-blocked if any subtask or blockedBy task is not DONE/CANCELLED — error lists blockers.',
       inputSchema: {
         id: z.string().describe('Task ID'),
         title: z.string().optional(),
@@ -163,7 +170,11 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
         labels: z.array(z.string()).optional(),
         dueDate: z.string().nullable().optional(),
         pinned: z.boolean().optional(),
-        body: z.string().nullable().optional()
+        body: z.string().nullable().optional(),
+        blockedBy: z
+          .array(z.string())
+          .optional()
+          .describe('Replace blockedBy list (pass empty array to clear)')
       }
     },
     async ({ id, ...input }) => textResponse(svc.updateTask(id, input))

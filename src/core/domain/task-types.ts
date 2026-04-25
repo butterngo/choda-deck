@@ -46,6 +46,7 @@ export interface Task {
   pinned: boolean
   filePath: string | null
   body: string | null
+  blockedBy: string[]
   createdAt: string
   updatedAt: string
 }
@@ -66,6 +67,7 @@ export interface CreateTaskInput {
   dueDate?: string
   filePath?: string
   body?: string
+  blockedBy?: string[]
 }
 
 export interface UpdateTaskInput {
@@ -78,6 +80,26 @@ export interface UpdateTaskInput {
   pinned?: boolean
   filePath?: string | null
   body?: string | null
+  blockedBy?: string[]
+}
+
+export interface TaskBlocker {
+  id: string
+  type: 'subtask' | 'dependency'
+  status: TaskStatus
+  title: string
+}
+
+export class TaskBlockedError extends Error {
+  readonly blockers: TaskBlocker[]
+  readonly taskId: string
+  constructor(taskId: string, blockers: TaskBlocker[]) {
+    const lines = blockers.map((b) => `  - ${b.id} [${b.type}, ${b.status}] ${b.title}`)
+    super(`Task ${taskId} cannot be marked DONE — ${blockers.length} blocker(s) not done:\n${lines.join('\n')}`)
+    this.name = 'TaskBlockedError'
+    this.taskId = taskId
+    this.blockers = blockers
+  }
 }
 
 export interface TaskFilter {
