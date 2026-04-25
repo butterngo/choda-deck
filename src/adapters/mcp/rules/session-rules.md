@@ -34,3 +34,5 @@ When preparing the session_end payload, always include:
 - **commits** — commit SHAs + short message if commits were made.
 
 Never end a session with only resumePoint. If the session was trivial (read-only), explicitly note "no changes" in looseEnds.
+
+`looseEnds` are auto-converted to inbox entries (status=raw) under the session's project — one entry per item, tagged with the source session/task ID. Butter reviews the inbox in `/daily` and decides which deserve to become TODO tasks via `inbox_convert`. Keep each loose end short (1 line, concrete) — they are capture, not specification.
