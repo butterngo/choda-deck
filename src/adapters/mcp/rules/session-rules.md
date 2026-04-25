@@ -10,7 +10,7 @@ Before calling `session_start`:
 
 1. Call `task_list` (or `roadmap`) to show the user available tasks, grouped by priority (high → medium → low).
 2. Wait for the user to pick a task. Do not guess.
-3. Call `session_start({ projectId, taskId, workspaceId? })`.
+3. Call `session_start({ projectId, taskId, workspaceId?, cwd? })`. Always pass `cwd` (current shell directory) so the MCP can auto-detect `workspaceId` for projects with registered workspaces — the MCP server's own cwd is fixed and cannot be inferred.
 4. Echo the `lastSession` block to the user verbatim — resume point, decisions, loose ends, tasks updated, commits. Do not summarize.
 5. Create a feature branch for the task:
    - Branch name: `feat/<task-id>-<short-slug>` (e.g. `feat/task-564-session-conv-ui`)
@@ -18,10 +18,18 @@ Before calling `session_start`:
    - Optional (if user wants parallel worktree): detect repo root via `git rev-parse --show-toplevel`, then `git worktree add <repo-root>.worktrees/<slug> -b feat/<task-id>-<short-slug>`
    - Ask the user whether they want a worktree or just a branch before proceeding.
 
+Workspace resolution order (when project has ≥1 workspace registered):
+- explicit `workspaceId` wins
+- else `cwd` is matched against registered workspace cwds (longest prefix wins for nested repos)
+- else MCP throws — pick a workspace explicitly or call `workspace_add`
+
+If the project has no workspaces registered, `workspaceId` may be `null` (backward-compatible).
+
 Blocking conditions (MCP returns an error):
 - Task not found
 - Task already `DONE` — reopen it with `task_update` first
 - Task already bound to another active session — end that session first
+- Project has workspaces but neither `workspaceId` nor a matching `cwd` was provided
 
 ## On session_end
 

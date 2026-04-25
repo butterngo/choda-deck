@@ -80,3 +80,10 @@ export class TaskLockedBySessionError extends LifecycleError {
     this.name = 'TaskLockedBySessionError'
   }
 }
+
+export class WorkspaceResolutionError extends LifecycleError {
+  constructor(message: string) {
+    super('WORKSPACE_RESOLUTION_FAILED', message)
+    this.name = 'WorkspaceResolutionError'
+  }
+}

@@ -5,16 +5,21 @@ import { buildProjectContext, type ProjectContextDeps } from './project-context-
 import { loadSessionRules } from '../rules/session-rules-loader'
 import { LifecycleError } from '../../../core/domain/lifecycle/errors'
 import type { Session, SessionCheckpoint, SessionHandoff, Task, TaskStatus } from '../../../core/domain/task-types'
-import type { ProjectOperations } from '../../../core/domain/interfaces/project-repository.interface'
+import type {
+  ProjectOperations,
+  WorkspaceOperations
+} from '../../../core/domain/interfaces/project-repository.interface'
 import type { SessionOperations } from '../../../core/domain/interfaces/session-repository.interface'
 import type { TaskOperations } from '../../../core/domain/interfaces/task-repository.interface'
 import type { InboxOperations } from '../../../core/domain/interfaces/inbox-repository.interface'
 import type { SessionLifecycleOperations } from '../../../core/domain/interfaces/session-lifecycle.interface'
+import { resolveWorkspaceId } from './workspace-resolver'
 
 // Workspaces support N parallel active sessions (TASK-526).
 // Status set: 'active' | 'completed' — no auto-abandon on session_start.
 
 export type SessionToolsDeps = ProjectOperations &
+  WorkspaceOperations &
   SessionOperations &
   TaskOperations &
   InboxOperations &
@@ -53,26 +58,39 @@ export const register = (server: McpServer, svc: SessionToolsDeps): void => {
     'session_start',
     {
       description:
-        'Start a new work session bound to a specific task. Sets the task to IN-PROGRESS and returns last handoff + active context. Call task_list or roadmap first to pick a taskId. Multiple active sessions per workspace are allowed, but a task can only be linked to one active session at a time.',
+        'Start a new work session bound to a specific task. Sets the task to IN-PROGRESS and returns last handoff + active context. Call task_list or roadmap first to pick a taskId. Pass cwd to auto-detect workspaceId from registered workspaces. Multiple active sessions per workspace are allowed, but a task can only be linked to one active session at a time.',
       inputSchema: {
         projectId: z.string().describe('Project ID'),
         taskId: z
           .string()
           .describe('Task ID to work on — set to IN-PROGRESS when the session starts'),
-        workspaceId: z.string().optional().describe('Workspace ID (e.g. workflow-engine)')
+        workspaceId: z.string().optional().describe('Workspace ID (e.g. workflow-engine)'),
+        cwd: z
+          .string()
+          .optional()
+          .describe(
+            'Current working directory — used to auto-detect workspaceId when not passed explicitly'
+          )
       }
     },
-    async ({ projectId, taskId, workspaceId }) =>
+    async ({ projectId, taskId, workspaceId, cwd }) =>
       tryLifecycle(() => {
         const project = svc.getProject(projectId)
         if (!project) throw new Error(`Project ${projectId} not found`)
 
+        const resolvedWorkspaceId =
+          resolveWorkspaceId({
+            explicitWorkspaceId: workspaceId,
+            cwd,
+            workspaces: svc.findWorkspaces(projectId)
+          }) ?? undefined
+
         const { session, contextSources, existingActiveSessions } = svc.startSession({
           projectId,
           taskId,
-          workspaceId
+          workspaceId: resolvedWorkspaceId
         })
-        const lastSession = loadLastSession(svc, projectId, workspaceId)
+        const lastSession = loadLastSession(svc, projectId, resolvedWorkspaceId)
         const bundle = buildProjectContext(svc, projectId, 'summary')
         const rules = loadSessionRules()
 
