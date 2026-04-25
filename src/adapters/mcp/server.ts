@@ -38,7 +38,7 @@ async function main(): Promise<void> {
   projectTools.register(server, svc)
   sessionTools.register(server, svc)
   inboxTools.register(server, svc)
-  backupTools.register(server, svc, dataDir)
+  backupTools.register(server, svc, dataDir, dbPath)
 
   const transport = new StdioServerTransport()
   await server.connect(transport)
