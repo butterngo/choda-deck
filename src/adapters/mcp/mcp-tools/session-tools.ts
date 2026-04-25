@@ -8,6 +8,7 @@ import type { Session, SessionCheckpoint, SessionHandoff, Task, TaskStatus } fro
 import type { ProjectOperations } from '../../../core/domain/interfaces/project-repository.interface'
 import type { SessionOperations } from '../../../core/domain/interfaces/session-repository.interface'
 import type { TaskOperations } from '../../../core/domain/interfaces/task-repository.interface'
+import type { InboxOperations } from '../../../core/domain/interfaces/inbox-repository.interface'
 import type { SessionLifecycleOperations } from '../../../core/domain/interfaces/session-lifecycle.interface'
 
 // Workspaces support N parallel active sessions (TASK-526).
@@ -16,6 +17,7 @@ import type { SessionLifecycleOperations } from '../../../core/domain/interfaces
 export type SessionToolsDeps = ProjectOperations &
   SessionOperations &
   TaskOperations &
+  InboxOperations &
   SessionLifecycleOperations &
   ProjectContextDeps
 
@@ -203,12 +205,15 @@ export const register = (server: McpServer, svc: SessionToolsDeps): void => {
         const result = svc.endSession(input.sessionId, { handoff })
         if (result.taskUpdated) handoff.tasksUpdated = [result.taskUpdated.id]
 
+        const looseEndInboxIds = createLooseEndInboxes(svc, input.looseEnds, result.session)
+
         return {
           sessionId: result.session.id,
           status: result.session.status,
           endedAt: result.session.endedAt,
           taskUpdated: result.taskUpdated,
           closedConversationIds: result.closedConversationIds,
+          looseEndInboxIds,
           notes: input.notes
         }
       })
@@ -292,6 +297,22 @@ function buildSuggestion(
     return `Pick up ${firstActive.id} — ${firstActive.title}`
   }
   return 'No obvious resume point — review roadmap or pick a TODO'
+}
+
+export function createLooseEndInboxes(
+  svc: InboxOperations,
+  looseEnds: string[] | undefined,
+  session: Session
+): string[] {
+  if (!looseEnds || looseEnds.length === 0) return []
+  const tag = session.taskId ? `${session.id} (${session.taskId})` : session.id
+  return looseEnds.map((content) => {
+    const item = svc.createInbox({
+      projectId: session.projectId,
+      content: `${content}\n\n— from session ${tag}`
+    })
+    return item.id
+  })
 }
 
 export function applyTaskUpdates(
