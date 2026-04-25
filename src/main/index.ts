@@ -14,7 +14,7 @@ import {
   runBackup,
   shouldRunDailyBackup,
   type BackupInfo
-} from './backup-service'
+} from '../core/backup-service'
 import { ensureMcpRegistered, getMcpRegisterStatus, unregisterMcp } from './mcp-register'
 
 const is = {

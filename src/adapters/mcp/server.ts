@@ -18,8 +18,9 @@ import * as conversationTools from './mcp-tools/conversation-tools'
 import * as projectTools from './mcp-tools/project-tools'
 import * as sessionTools from './mcp-tools/session-tools'
 import * as inboxTools from './mcp-tools/inbox-tools'
+import * as backupTools from './mcp-tools/backup-tools'
 
-const { dbPath } = resolveDataPaths()
+const { dbPath, dataDir } = resolveDataPaths()
 
 async function main(): Promise<void> {
   const svc = new SqliteTaskService(dbPath)
@@ -37,6 +38,7 @@ async function main(): Promise<void> {
   projectTools.register(server, svc)
   sessionTools.register(server, svc)
   inboxTools.register(server, svc)
+  backupTools.register(server, svc, dataDir)
 
   const transport = new StdioServerTransport()
   await server.connect(transport)
