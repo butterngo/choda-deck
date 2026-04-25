@@ -11,7 +11,6 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { SqliteTaskService } from '../../core/domain/sqlite-task-service'
 import { resolveDataPaths } from '../../core/paths'
 import * as taskTools from './mcp-tools/task-tools'
-import * as searchTool from './mcp-tools/search-tool'
 import * as conversationTools from './mcp-tools/conversation-tools'
 import * as projectTools from './mcp-tools/project-tools'
 import * as sessionTools from './mcp-tools/session-tools'
@@ -29,7 +28,6 @@ async function main(): Promise<void> {
   )
 
   taskTools.register(server, svc)
-  searchTool.register(server, svc)
   conversationTools.register(server, svc)
   projectTools.register(server, svc)
   sessionTools.register(server, svc)
