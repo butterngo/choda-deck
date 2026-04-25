@@ -88,7 +88,7 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
     'task_list',
     {
       description:
-        'List tasks filtered by status (required). Returns compact shape by default (id, projectId, title, status, priority, labels); pass verbose=true for full task including body. For cross-status search use the search tool.',
+        'List tasks filtered by status (required). Returns compact shape by default (id, projectId, title, status, priority, labels); pass verbose=true for full task including body.',
       inputSchema: {
         projectId: z.string().optional().describe('Filter by project ID'),
         status: z
