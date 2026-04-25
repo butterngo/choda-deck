@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import TaskDetailPanel from './TaskDetailPanel'
 import PriorityPicker, { type Priority } from './components/PriorityPicker'
 
-const STATUSES = ['TODO', 'READY', 'IN-PROGRESS', 'DONE'] as const
+const STATUSES = ['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED'] as const
 const PRIORITIES = ['critical', 'high', 'medium', 'low'] as const
 
 interface TaskItem {
@@ -26,6 +26,7 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
   const [filterPriority, setFilterPriority] = useState<string>('')
   const [filterLabel, setFilterLabel] = useState<string>('')
   const [showDone, setShowDone] = useState(false)
+  const [showCancelled, setShowCancelled] = useState(false)
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
   const [subtasks, setSubtasks] = useState<Record<string, TaskItem[]>>({})
   const [showImport, setShowImport] = useState(false)
@@ -73,7 +74,8 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
     TODO: 'todo',
     READY: 'ready',
     'IN-PROGRESS': 'in-progress',
-    DONE: 'done'
+    DONE: 'done',
+    CANCELLED: 'cancelled'
   }
 
   async function handleDrop(newStatus: string): Promise<void> {
@@ -126,11 +128,16 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
   }
 
   // Apply filters
-  const visibleStatuses = showDone ? STATUSES : STATUSES.filter((s) => s !== 'DONE')
+  const visibleStatuses = STATUSES.filter((s) => {
+    if (s === 'DONE' && !showDone) return false
+    if (s === 'CANCELLED' && !showCancelled) return false
+    return true
+  })
 
   const rootTasks = tasks.filter((t) => !t.parentTaskId)
   const filtered = rootTasks.filter((t) => {
     if (!showDone && t.status === 'DONE') return false
+    if (!showCancelled && t.status === 'CANCELLED') return false
     if (filterPriority && t.priority !== filterPriority) return false
     if (filterLabel && !t.labels.includes(filterLabel)) return false
     if (
@@ -207,6 +214,15 @@ function KanbanBoard({ projectId, visible }: KanbanBoardProps): React.JSX.Elemen
           title={showDone ? 'Hide done' : 'Show done'}
         >
           {showDone ? 'Hide Done' : 'Done'}
+        </button>
+
+        {/* Show Cancelled toggle */}
+        <button
+          className={`deck-sidebar-btn${showCancelled ? ' deck-sidebar-btn--active' : ''}`}
+          onClick={() => setShowCancelled((v) => !v)}
+          title={showCancelled ? 'Hide cancelled' : 'Show cancelled'}
+        >
+          {showCancelled ? 'Hide Cancelled' : 'Cancelled'}
         </button>
 
         <button

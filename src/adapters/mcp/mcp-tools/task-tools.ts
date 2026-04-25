@@ -101,7 +101,7 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
       inputSchema: {
         projectId: z.string().optional().describe('Filter by project ID'),
         status: z
-          .enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE'])
+          .enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED'])
           .describe('Required — filter by status to avoid dumping the full project list'),
         priority: z
           .enum(['critical', 'high', 'medium', 'low'])
@@ -143,7 +143,7 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
         id: z.string().optional().describe('Task ID (auto-generated if omitted)'),
         projectId: z.string().describe('Project ID'),
         title: z.string().describe('Task title'),
-        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE']).optional(),
+        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED']).optional(),
         priority: z.enum(['critical', 'high', 'medium', 'low']).optional(),
         phaseId: z.string().optional().describe('Phase to assign to'),
         parentTaskId: z.string().optional().describe('Parent task for subtasks'),
@@ -167,7 +167,7 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
       inputSchema: {
         id: z.string().describe('Task ID'),
         title: z.string().optional(),
-        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE']).optional(),
+        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED']).optional(),
         priority: z.enum(['critical', 'high', 'medium', 'low']).nullable().optional(),
         phaseId: z.string().nullable().optional(),
         parentTaskId: z.string().nullable().optional(),
@@ -186,7 +186,7 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
       description: 'Update multiple tasks with the same patch (e.g. bulk mark DONE)',
       inputSchema: {
         ids: z.array(z.string()).describe('List of task IDs to update'),
-        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE']).optional(),
+        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED']).optional(),
         priority: z.enum(['critical', 'high', 'medium', 'low']).nullable().optional(),
         labels: z.array(z.string()).optional(),
         pinned: z.boolean().optional()

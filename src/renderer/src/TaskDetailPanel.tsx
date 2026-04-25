@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import MarkdownViewer from './MarkdownViewer'
 
-const STATUSES = ['TODO', 'READY', 'IN-PROGRESS', 'DONE'] as const
+const STATUSES = ['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED'] as const
 
 interface TaskDetail {
   task: {

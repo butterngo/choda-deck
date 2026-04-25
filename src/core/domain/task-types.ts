@@ -1,13 +1,13 @@
 // Task management types — pure types, zero runtime dependencies
 
-export type TaskStatus = 'TODO' | 'READY' | 'IN-PROGRESS' | 'DONE'
+export type TaskStatus = 'TODO' | 'READY' | 'IN-PROGRESS' | 'DONE' | 'CANCELLED'
 export type TaskPriority = 'critical' | 'high' | 'medium' | 'low'
 export type PhaseStatus = 'open' | 'closed'
 export type DerivedStatus = 'planned' | 'active' | 'completed'
 export type RelationType = 'DEPENDS_ON' | 'IMPLEMENTS' | 'USES_TECH' | 'DECIDED_BY'
 export type DocumentType = 'adr' | 'guide' | 'spec' | 'note' | 'research'
 
-export const TASK_STATUSES: TaskStatus[] = ['TODO', 'READY', 'IN-PROGRESS', 'DONE']
+export const TASK_STATUSES: TaskStatus[] = ['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED']
 
 export interface Project {
   id: string

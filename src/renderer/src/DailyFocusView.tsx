@@ -28,8 +28,8 @@ function DailyFocusView({ workspaceId, visible }: DailyFocusViewProps): React.JS
       window.api.task.due(today),
       window.api.task.list({ status: 'IN-PROGRESS' })
     ])
-    setPinnedTasks(pinned as TaskItem[])
-    setDueTasks((due as TaskItem[]).filter((t) => !t.pinned))
+    setPinnedTasks((pinned as TaskItem[]).filter((t) => t.status !== 'CANCELLED'))
+    setDueTasks((due as TaskItem[]).filter((t) => !t.pinned && t.status !== 'CANCELLED'))
     setInProgressTasks(wip as TaskItem[])
   }, [today])
 

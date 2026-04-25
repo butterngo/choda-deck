@@ -159,7 +159,9 @@ export class TaskRepository {
 
   getDue(date: string): Task[] {
     const rows = this.db
-      .prepare("SELECT * FROM tasks WHERE due_date <= ? AND status != 'DONE' ORDER BY due_date")
+      .prepare(
+        "SELECT * FROM tasks WHERE due_date <= ? AND status NOT IN ('DONE', 'CANCELLED') ORDER BY due_date"
+      )
       .all(date) as Array<Record<string, unknown>>
     return rows.map(rowToTask)
   }

@@ -81,6 +81,37 @@ describe('SqliteTaskService', () => {
     expect(limited.length).toBe(2)
   })
 
+  it('CANCELLED status round-trips through SQLite', () => {
+    const created = svc.createTask({
+      id: 'TASK-CANCELLED-1',
+      projectId: 'test-proj',
+      title: 'Cancelled task',
+      status: 'CANCELLED'
+    })
+    expect(created.status).toBe('CANCELLED')
+
+    const fetched = svc.getTask('TASK-CANCELLED-1')
+    expect(fetched!.status).toBe('CANCELLED')
+
+    const filtered = svc.findTasks({ projectId: 'test-proj', status: 'CANCELLED' })
+    expect(filtered.map((t) => t.id)).toContain('TASK-CANCELLED-1')
+
+    const updated = svc.updateTask('TASK-CANCELLED-1', { status: 'TODO' })
+    expect(updated.status).toBe('TODO')
+  })
+
+  it('getDueTasks excludes CANCELLED tasks', () => {
+    svc.createTask({
+      id: 'TASK-DUE-CANCELLED',
+      projectId: 'test-proj',
+      title: 'Overdue but cancelled',
+      status: 'CANCELLED',
+      dueDate: '2020-01-01'
+    })
+    const due = svc.getDueTasks('2030-01-01')
+    expect(due.find((t) => t.id === 'TASK-DUE-CANCELLED')).toBeUndefined()
+  })
+
   it('findTasks filters by labels (OR semantics)', () => {
     svc.createTask({
       id: 'TASK-LBL-A',

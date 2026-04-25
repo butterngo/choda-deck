@@ -25,7 +25,9 @@ const DEFAULT_STATUS_MAP: Record<string, TaskStatus> = {
   'in progress': 'IN-PROGRESS',
   doing: 'IN-PROGRESS',
   done: 'DONE',
-  closed: 'DONE'
+  closed: 'DONE',
+  cancelled: 'CANCELLED',
+  canceled: 'CANCELLED'
 }
 
 function normalizeStatus(
