@@ -1,9 +1,16 @@
 {
-  "extends": "@electron-toolkit/tsconfig/tsconfig.node.json",
-  "include": ["electron.vite.config.*", "src/main/**/*", "src/preload/**/*", "src/graph/**/*", "src/tasks/**/*"],
-  "exclude": ["**/*.test.ts", "**/*.test.tsx"],
+  "include": ["src/**/*"],
+  "exclude": ["**/*.test.ts"],
   "compilerOptions": {
     "composite": true,
-    "types": ["electron-vite/node"]
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "types": ["node"],
+    "outDir": "out/node"
   }
 }

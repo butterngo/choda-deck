@@ -1,7 +1,6 @@
 ---
 paths:
   - '**/*.ts'
-  - '**/*.tsx'
 ---
 
 # TypeScript conventions — Choda Deck

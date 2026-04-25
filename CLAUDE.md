@@ -1,46 +1,39 @@
 @CLAUDE.local.md
 
-# Choda Deck — AI Development Workflow Engine
+# Choda Deck — MCP Memory + Orchestration Layer for Claude Code
 
 ## Identity
 
-Electron desktop app (React 19 + xterm.js + better-sqlite3). Windows-first, TypeScript, MIT OSS.
+Pure Node MCP server — SQLite-backed task / session / conversation / inbox orchestration exposed via stdio to Claude Code. No UI, no Electron. Windows-first, TypeScript, MIT OSS.
 
 ## Architecture
 
-- SQLite (better-sqlite3) = source of truth for structure
-- .md files = content store
+- SQLite (better-sqlite3) = single source of truth
 - MCP stdio = AI interaction layer
+- Pure Node runtime (no Electron, no PTY, no renderer)
 
 ## Current Focus
 
-M1 (Core Primitives) shipped. Use `choda-tasks` MCP `project_context` / `roadmap` / `task_list` for live state — don't hardcode current task here.
+Use `choda-tasks` MCP `project_context` / `roadmap` / `task_list` for live state — don't hardcode current task here.
 
 ## Context Sources
 
 - Vault context: read `vault/10-Projects/choda-deck/context.md`
 - Architecture decisions: `vault/10-Projects/choda-deck/docs/decisions/` and `docs/decisions/`
 - In-repo architecture: `docs/architecture.md`
-- **Visual/UX spec: `DESIGN.md`** (root) — dark-only editor-native theme, colors, typography, component styling, layout rules. Canonical for any renderer work.
-- **Code graph: `graphify-out/GRAPH_REPORT.md`** — navigable map of nodes, communities, god-nodes, surprising connections. Useful for onboarding / exploring a region of the codebase. May drift from `main` — regenerate with `/graphify update ./src` when stale.
+- **Code graph: `graphify-out/GRAPH_REPORT.md`** — navigable map of nodes, communities, god-nodes, surprising connections. May drift from `main` — regenerate with `/graphify update ./src` when stale.
 
 Use `choda-tasks` MCP tools (`task_context`, `task_list`) for task details.
 
 ## Key Files
 
-- `src/core/domain/sqlite-task-service.ts` — SQLite schema + CRUD
 - `src/adapters/mcp/server.ts` — MCP server entry point
 - `src/adapters/mcp/mcp-tools/` — individual MCP tool handlers
+- `src/core/domain/sqlite-task-service.ts` — SQLite schema + CRUD facade
 - `src/core/domain/task-types.ts` — type definitions
+- `src/core/domain/lifecycle/` — transactional lifecycle services (ADR-015)
 - `src/core/paths.ts` — `resolveDataPaths()` — single source for DB/artifacts/backups paths
-- `src/main/vault-importer.ts` — vault markdown → SQLite importer
-- `src/renderer/src/RoadmapView.tsx` — hierarchy UI
-
-## Per-layer context
-
-- `src/main/CLAUDE.md` — Electron main process, PTY lifecycle, session map
-- `src/preload/CLAUDE.md` — contextBridge API surface
-- `src/renderer/CLAUDE.md` — React renderer, xterm mount, `window.api`-only rule
+- `src/core/backup-service.ts` — daily backup + restore (ADR-012)
 
 ## Conventions
 
@@ -48,12 +41,8 @@ Use `choda-tasks` MCP tools (`task_context`, `task_list`) for task details.
 - Test with vitest
 - File naming: kebab-case
 - TS style: single quotes, no semi, 100 cols, explicit return types on public functions (`.claude/rules/typescript.md`)
-- React 19 patterns (`.claude/rules/react.md`)
-- IPC channel naming + preload rules (`.claude/rules/electron-ipc.md`)
 - Always run `pnpm run lint` before suggesting done
 - No auto-commits — commits only on explicit request
-- No dev server claims without proof — exercise UI in actual Electron window
-- **UI/renderer work follows `DESIGN.md`** — dark-only `#1e1e1e`, `.deck-*` class prefix, plain CSS under `src/renderer/src/assets/deck.css` (no Tailwind / CSS-in-JS / component libs), status colors shared across tasks/sessions/conversations, no gradients, no hover-translate, modal-only shadows
 
 ## Git Worktree Workflow
 
@@ -76,11 +65,9 @@ git worktree list                                          # inspect
 git worktree remove ../choda-deck.worktrees/hotfix         # cleanup
 ```
 
-Use worktrees for parallel branches (hotfix + feature at once) instead of stash/switch churn.
-
 ## MCP Tools Available
 
-`choda-tasks` server exposes domain tools across: project, workspace, task, phase, inbox, conversation, session, search, roadmap. Source of truth = `src/adapters/mcp/server.ts` + `src/adapters/mcp/mcp-tools/`. After source changes: `pnpm run build:mcp` + `/mcp reconnect`.
+`choda-tasks` server exposes domain tools across: project, workspace, task, phase, inbox, conversation, session, search, roadmap, backup. Source of truth = `src/adapters/mcp/server.ts` + `src/adapters/mcp/mcp-tools/`. After source changes: `pnpm run build:mcp` + `/mcp reconnect`.
 
 Register in `.claude.json` (production — uses bundled `dist/mcp-server.cjs`):
 
@@ -88,13 +75,10 @@ Register in `.claude.json` (production — uses bundled `dist/mcp-server.cjs`):
 {
   "mcpServers": {
     "choda-tasks": {
-      "command": "C:\\dev\\choda-deck\\node_modules\\electron\\dist\\electron.exe",
-      "args": [
-        "C:\\dev\\choda-deck\\dist\\mcp-server.cjs"
-      ],
+      "command": "node",
+      "args": ["C:\\dev\\choda-deck\\dist\\mcp-server.cjs"],
       "cwd": "C:\\dev\\choda-deck",
       "env": {
-        "ELECTRON_RUN_AS_NODE": "1",
         "CHODA_DATA_DIR": "C:\\dev\\choda-deck\\data",
         "CHODA_CONTENT_ROOT": "C:\\Users\\hngo1_mantu\\vault"
       }
