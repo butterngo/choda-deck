@@ -154,7 +154,7 @@ Design: files = content store, Neo4j = relationship store. GraphService interfac
 
 UID scheme: `{type}:{project}/{id}` (e.g. `task:task-management/TASK-130`)
 
-Node types: Task, Phase, Decision, Project.
+Node types: Task, Decision, Project.
 Relation types: DependsOn, Blocks, PartOf, RelatesTo, Implements, DecidedBy.
 
 ### Known limitations (Phase 1)

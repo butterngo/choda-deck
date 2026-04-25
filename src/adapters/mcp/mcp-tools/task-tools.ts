@@ -1,9 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import type { Phase } from '../../../core/domain/task-types'
 import { textResponse } from './types'
 import type { TaskOperations } from '../../../core/domain/interfaces/task-repository.interface'
-import type { PhaseOperations } from '../../../core/domain/interfaces/phase-repository.interface'
 import type { ConversationOperations } from '../../../core/domain/interfaces/conversation-repository.interface'
 import type { TagOperations } from '../../../core/domain/interfaces/tag-repository.interface'
 import type { RelationshipOperations } from '../../../core/domain/interfaces/relationship-repository.interface'
@@ -14,7 +12,6 @@ import type {
 import { buildGraphifyContext } from './task-context-graphify'
 
 export type TaskToolsDeps = TaskOperations &
-  PhaseOperations &
   ConversationOperations &
   TagOperations &
   RelationshipOperations &
@@ -47,7 +44,7 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
     'task_context',
     {
       description:
-        'Get full context for a task: task details + phase + dependencies + body. Body follows template with ## Context / ## Acceptance / ## Test Plan / ## Related sections — read ## Acceptance for done criteria (tick each item before marking DONE); if empty, ask user to define before starting work.',
+        'Get full context for a task: task details + dependencies + body. Body follows template with ## Context / ## Acceptance / ## Test Plan / ## Related sections — read ## Acceptance for done criteria (tick each item before marking DONE); if empty, ask user to define before starting work.',
       inputSchema: { id: z.string().describe('Task ID (e.g. TASK-401)') }
     },
     async ({ id }) => {
@@ -58,11 +55,6 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
       const subtasks = svc.getSubtasks(id)
       const tags = svc.getTags(id)
       const rels = svc.getRelationships(id)
-
-      let phase: Phase | null = null
-      if (task.phaseId) {
-        phase = svc.getPhase(task.phaseId)
-      }
 
       const conversations = svc.findConversationsByLink('task', id).map((c) => ({
         id: c.id,
@@ -81,7 +73,6 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
 
       return textResponse({
         task,
-        phase,
         dependencies: deps,
         subtasks,
         tags,
@@ -145,7 +136,6 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
         title: z.string().describe('Task title'),
         status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED']).optional(),
         priority: z.enum(['critical', 'high', 'medium', 'low']).optional(),
-        phaseId: z.string().optional().describe('Phase to assign to'),
         parentTaskId: z.string().optional().describe('Parent task for subtasks'),
         labels: z.array(z.string()).optional(),
         dueDate: z.string().optional(),
@@ -169,7 +159,6 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
         title: z.string().optional(),
         status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED']).optional(),
         priority: z.enum(['critical', 'high', 'medium', 'low']).nullable().optional(),
-        phaseId: z.string().nullable().optional(),
         parentTaskId: z.string().nullable().optional(),
         labels: z.array(z.string()).optional(),
         dueDate: z.string().nullable().optional(),

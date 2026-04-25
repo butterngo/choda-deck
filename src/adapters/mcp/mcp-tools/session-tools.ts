@@ -250,10 +250,6 @@ export function loadLastSession(
 function buildProjectSummary(bundle: ReturnType<typeof buildProjectContext>): string | null {
   if (!bundle) return null
   const pieces: string[] = []
-  if (bundle.currentState.activePhase) {
-    const p = bundle.currentState.activePhase
-    pieces.push(`Phase: ${p.title} (${p.progress.percent}% done)`)
-  }
   if (bundle.architecture) {
     pieces.push(bundle.architecture.split('\n').slice(0, 3).join(' ').slice(0, 200))
   }

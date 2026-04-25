@@ -226,40 +226,6 @@ describe('SqliteTaskService', () => {
     expect(due[0].id).toBe('TASK-002')
   })
 
-  // ── Phases ─────────────────────────────────────────────────────────────
-
-  it('createPhase + getPhase', () => {
-    const phase = svc.createPhase({
-      id: 'PH-A',
-      projectId: 'test-proj',
-      title: 'Phase A',
-      position: 1
-    })
-    expect(phase.id).toBe('PH-A')
-    expect(phase.status).toBe('open')
-    expect(phase.position).toBe(1)
-  })
-
-  it('updatePhase', () => {
-    const updated = svc.updatePhase('PH-A', { status: 'closed', startDate: '2026-04-01' })
-    expect(updated.status).toBe('closed')
-    expect(updated.startDate).toBe('2026-04-01')
-  })
-
-  it('findPhases ordered by position', () => {
-    svc.createPhase({ id: 'PH-B', projectId: 'test-proj', title: 'Phase B', position: 2 })
-    svc.updatePhase('PH-A', { status: 'open' })
-    const phases = svc.findPhases('test-proj')
-    expect(phases.length).toBe(2)
-    expect(phases[0].id).toBe('PH-A')
-    expect(phases[1].id).toBe('PH-B')
-  })
-
-  it('deletePhase removes the phase', () => {
-    svc.deletePhase('PH-B')
-    expect(svc.getPhase('PH-B')).toBeNull()
-  })
-
   // ── Documents ──────────────────────────────────────────────────────────
 
   it('createDocument + getDocument', () => {
@@ -784,12 +750,6 @@ describe('SqliteTaskService', () => {
         priority: 30
       })
 
-      const ph = svc.createPhase({
-        id: 'PH-CTX',
-        projectId,
-        title: 'Phase X',
-        startDate: '2026-04-01'
-      })
       svc.createTask({ id: 'TASK-CTX-1', projectId, title: 'in flight', status: 'IN-PROGRESS' })
       svc.createSession({
         id: 'SESSION-CTX',
@@ -808,7 +768,6 @@ describe('SqliteTaskService', () => {
       const bundle = buildProjectContext(svc, projectId, 'full', tmpRoot)
       expect(bundle).not.toBeNull()
       expect(bundle!.project.id).toBe(projectId)
-      expect(bundle!.currentState.activePhase?.id).toBe(ph.id)
       expect(bundle!.currentState.activeTasks.map((t) => t.id)).toContain('TASK-CTX-1')
       expect(bundle!.currentState.lastSession?.id).toBe('SESSION-CTX')
       expect(bundle!.currentState.openConversations.map((c) => c.id)).toContain('CONV-CTX-OPEN')
