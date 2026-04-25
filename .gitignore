@@ -23,6 +23,7 @@ graphify-out/*
 tsconfig.node.tsbuildinfo
 tsconfig.web.tsbuildinfo
 .claude.json
+.mcp.json
 
 # Runtime data (databases, artifacts, backups, graphify outputs)
 data/

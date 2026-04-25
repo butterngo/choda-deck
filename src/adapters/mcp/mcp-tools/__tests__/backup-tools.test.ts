@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { mkdtempSync, writeFileSync, existsSync, mkdirSync, utimesSync } from 'fs'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { mkdtempSync, writeFileSync, existsSync, readFileSync, mkdirSync, utimesSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { register, type BackupToolsDeps } from '../backup-tools'
@@ -7,7 +7,9 @@ import { backupDir } from '../../../../core/backup-service'
 
 interface RegisteredTool {
   name: string
-  handler: () => Promise<{ content: Array<{ type: 'text'; text: string }> }>
+  handler: (args?: Record<string, unknown>) => Promise<{
+    content: Array<{ type: 'text'; text: string }>
+  }>
 }
 
 function makeServerStub(): {
@@ -24,10 +26,14 @@ function makeServerStub(): {
 }
 
 class FakeDb implements BackupToolsDeps {
-  calls: string[] = []
+  backupCalls: string[] = []
+  closeCalls = 0
   backup(absolutePath: string): void {
-    this.calls.push(absolutePath)
+    this.backupCalls.push(absolutePath)
     writeFileSync(absolutePath, 'fake-db')
+  }
+  close(): void {
+    this.closeCalls += 1
   }
 }
 
@@ -37,24 +43,26 @@ function makeDataDir(): string {
 
 describe('backup-tools register', () => {
   let dataDir: string
+  let dbPath: string
   let svc: FakeDb
   let server: ReturnType<typeof makeServerStub>
 
   beforeEach(() => {
     dataDir = makeDataDir()
+    dbPath = join(dataDir, 'database', 'choda-deck.db')
+    mkdirSync(join(dataDir, 'database'), { recursive: true })
+    writeFileSync(dbPath, 'live-db-content')
     svc = new FakeDb()
     server = makeServerStub()
-    // The McpServer signature is wider than our stub — the cast keeps the
-    // test focused on the two methods register() actually calls.
-    register(server as unknown as Parameters<typeof register>[0], svc, dataDir)
+    register(server as unknown as Parameters<typeof register>[0], svc, dataDir, dbPath)
   })
 
-  it('registers backup_list and backup_create', () => {
-    expect(server.tools.map((t) => t.name).sort()).toEqual(['backup_create', 'backup_list'])
-  })
-
-  it('does NOT register backup_restore (intentionally deferred)', () => {
-    expect(server.tools.find((t) => t.name === 'backup_restore')).toBeUndefined()
+  it('registers backup_list, backup_create, and backup_restore', () => {
+    expect(server.tools.map((t) => t.name).sort()).toEqual([
+      'backup_create',
+      'backup_list',
+      'backup_restore'
+    ])
   })
 
   it('backup_list handler returns empty list when no backups exist', async () => {
@@ -86,8 +94,53 @@ describe('backup-tools register', () => {
     const result = await tool.handler()
     const info = JSON.parse(result.content[0].text) as { filename: string; size: number }
     expect(info.filename).toMatch(/^choda-deck-\d{4}-\d{2}-\d{2}\.db$/)
-    expect(svc.calls).toHaveLength(1)
-    expect(svc.calls[0]).toContain(info.filename)
-    expect(existsSync(svc.calls[0])).toBe(true)
+    expect(svc.backupCalls).toHaveLength(1)
+    expect(svc.backupCalls[0]).toContain(info.filename)
+    expect(existsSync(svc.backupCalls[0])).toBe(true)
+  })
+
+  describe('backup_restore', () => {
+    let exitSpy: ReturnType<typeof vi.spyOn>
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+      exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+      exitSpy.mockRestore()
+    })
+
+    it('returns error when filename does not exist', async () => {
+      const tool = server.tools.find((t) => t.name === 'backup_restore')!
+      const result = await tool.handler({ filename: 'choda-deck-9999-99-99.db' })
+      const parsed = JSON.parse(result.content[0].text) as { ok: boolean; error: string }
+      expect(parsed.ok).toBe(false)
+      expect(parsed.error).toContain('not found')
+      expect(svc.closeCalls).toBe(0)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('closes svc, copies backup over dbPath, schedules exit, returns success', async () => {
+      const dir = backupDir(dataDir)
+      mkdirSync(dir, { recursive: true })
+      const backupFile = join(dir, 'choda-deck-2026-04-20.db')
+      writeFileSync(backupFile, 'backup-content')
+
+      const tool = server.tools.find((t) => t.name === 'backup_restore')!
+      const result = await tool.handler({ filename: 'choda-deck-2026-04-20.db' })
+
+      const parsed = JSON.parse(result.content[0].text) as { ok: boolean; restored: string }
+      expect(parsed.ok).toBe(true)
+      expect(parsed.restored).toBe('choda-deck-2026-04-20.db')
+      expect(svc.closeCalls).toBe(1)
+      expect(readFileSync(dbPath, 'utf8')).toBe('backup-content')
+
+      // process.exit scheduled via setTimeout — advance timers to verify
+      expect(exitSpy).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(100)
+      expect(exitSpy).toHaveBeenCalledWith(0)
+    })
   })
 })
