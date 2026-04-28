@@ -126,8 +126,12 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
     const tx = this.db.transaction((): Conversation => {
       const conv = this.conversations.get(id)
       if (!conv) throw new ConversationNotFoundError(id)
-      if (conv.status !== 'decided') {
-        throw new ConversationStatusError(id, conv.status, 'only decided conversations can reopen')
+      if (conv.status !== 'decided' && conv.status !== 'closed') {
+        throw new ConversationStatusError(
+          id,
+          conv.status,
+          'only decided or closed conversations can reopen'
+        )
       }
       return this.conversations.update(id, { status: 'discussing' })
     })
