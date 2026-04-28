@@ -257,6 +257,28 @@ describe('reopenConversation', () => {
     const id = openFresh()
     expect(() => svc.reopenConversation(id)).toThrowError(ConversationStatusError)
   })
+
+  it('closed → discussing (closed implies decided was set)', () => {
+    const id = openFresh()
+    svc.decideConversation(id, { author: 'Butter', decision: 'go' })
+    svc.closeConversation(id)
+    expect(svc.getConversation(id)?.status).toBe('closed')
+
+    const conv = svc.reopenConversation(id)
+    expect(conv.status).toBe('discussing')
+    expect(conv.decidedAt).not.toBeNull()
+  })
+
+  it('preserves message history through close → reopen cycle', () => {
+    const id = openFresh()
+    svc.decideConversation(id, { author: 'Butter', decision: 'go' })
+    svc.closeConversation(id)
+    const before = svc.getConversationMessages(id).length
+
+    svc.reopenConversation(id)
+    const after = svc.getConversationMessages(id)
+    expect(after).toHaveLength(before)
+  })
 })
 
 describe('transaction rollback (atomicity)', () => {
