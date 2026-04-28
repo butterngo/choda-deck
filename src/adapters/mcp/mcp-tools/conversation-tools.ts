@@ -22,6 +22,11 @@ const messageTypeSchema = z.enum([
   'action',
   'comment'
 ])
+
+export const conversationAddMessageTypeSchema = messageTypeSchema.refine(
+  (t) => t !== 'decision',
+  { message: "use conversation_decide for decision messages — conversation_add doesn't accept type='decision'" }
+)
 const conversationStatusSchema = z.enum(['open', 'discussing', 'decided', 'closed', 'stale'])
 const priorityEnum = z.enum(['critical', 'high', 'medium', 'low'])
 
@@ -117,7 +122,7 @@ export const register = (server: McpServer, svc: ConversationToolsDeps): void =>
         conversationId: z.string(),
         author: z.string().describe('Participant name'),
         content: z.string(),
-        type: messageTypeSchema,
+        type: conversationAddMessageTypeSchema,
         metadata: metadataSchema
       }
     },
