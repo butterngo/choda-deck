@@ -30,15 +30,20 @@ function makeDeps(workspaceCwds: string[] = [], projectCwd: string | null = null
     getProject: () =>
       projectCwd ? { id: 'proj-test', name: 'test', cwd: projectCwd } : null,
     listProjects: () => [],
-    addWorkspace: () => ({ id: '', projectId: '', label: '', cwd: '' }),
+    addWorkspace: () => ({ id: '', projectId: '', label: '', cwd: '', archivedAt: null }),
     getWorkspace: () => null,
     findWorkspaces: () =>
       workspaceCwds.map((cwd, i) => ({
         id: `ws-${i}`,
         projectId: 'proj-test',
         label: `ws${i}`,
-        cwd
-      }))
+        cwd,
+        archivedAt: null
+      })),
+    archiveWorkspace: () => null,
+    unarchiveWorkspace: () => null,
+    deleteWorkspace: () => {},
+    countWorkspaceReferences: () => ({ sessions: 0 })
   }
 }
 

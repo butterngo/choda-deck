@@ -42,25 +42,6 @@ export const register = (server: McpServer, svc: ProjectToolsDeps): void => {
   )
 
   server.registerTool(
-    'workspace_add',
-    {
-      description: 'Add a workspace to a project. A workspace = a terminal/cwd (e.g. BE, FE).',
-      inputSchema: {
-        projectId: z.string().describe('Parent project ID'),
-        id: z.string().describe('Workspace ID (e.g. workflow-engine)'),
-        label: z.string().describe('Short label (e.g. BE, FE, Main)'),
-        cwd: z.string().describe('Working directory path')
-      }
-    },
-    async ({ projectId, id, label, cwd }) => {
-      const project = svc.getProject(projectId)
-      if (!project) return textResponse(`Project ${projectId} not found`)
-      const ws = svc.addWorkspace(projectId, id, label, cwd)
-      return textResponse(ws)
-    }
-  )
-
-  server.registerTool(
     'project_context',
     {
       description:

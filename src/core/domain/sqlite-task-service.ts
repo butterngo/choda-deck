@@ -83,7 +83,7 @@ import { initSchema } from './repositories/schema'
 import { ProjectRepository } from './repositories/project-repository'
 import type { ProjectRow } from './repositories/project-repository'
 import { WorkspaceRepository } from './repositories/workspace-repository'
-import type { WorkspaceRow } from './repositories/workspace-repository'
+import type { WorkspaceRow, WorkspaceReferenceCounts } from './repositories/workspace-repository'
 import { TaskRepository } from './repositories/task-repository'
 import { DocumentRepository } from './repositories/document-repository'
 import { TagRepository } from './repositories/tag-repository'
@@ -203,8 +203,20 @@ export class SqliteTaskService
   getWorkspace(id: string): WorkspaceRow | null {
     return this.workspaces.get(id)
   }
-  findWorkspaces(projectId: string): WorkspaceRow[] {
-    return this.workspaces.findByProject(projectId)
+  findWorkspaces(projectId: string, includeArchived = false): WorkspaceRow[] {
+    return this.workspaces.findByProject(projectId, includeArchived)
+  }
+  archiveWorkspace(id: string): WorkspaceRow | null {
+    return this.workspaces.archive(id)
+  }
+  unarchiveWorkspace(id: string): WorkspaceRow | null {
+    return this.workspaces.unarchive(id)
+  }
+  deleteWorkspace(id: string): void {
+    this.workspaces.delete(id)
+  }
+  countWorkspaceReferences(id: string): WorkspaceReferenceCounts {
+    return this.workspaces.countReferences(id)
   }
 
   // ── Task operations ────────────────────────────────────────────────────────

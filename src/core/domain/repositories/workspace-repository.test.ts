@@ -32,7 +32,8 @@ describe('WorkspaceRepository', () => {
       id: 'be',
       projectId: 'p1',
       label: 'BE',
-      cwd: 'C:\\dev\\p1\\backend'
+      cwd: 'C:\\dev\\p1\\backend',
+      archivedAt: null
     })
   })
 
@@ -55,7 +56,8 @@ describe('WorkspaceRepository', () => {
       id: 'fe',
       projectId: 'p1',
       label: 'FE',
-      cwd: 'C:\\dev\\p1\\frontend'
+      cwd: 'C:\\dev\\p1\\frontend',
+      archivedAt: null
     })
   })
 
@@ -77,5 +79,55 @@ describe('WorkspaceRepository', () => {
     workspaces.add('p2', 'b', 'B', 'C:\\b')
     expect(workspaces.findByProject('p1').map((r) => r.id)).toEqual(['a'])
     expect(workspaces.findByProject('p2').map((r) => r.id)).toEqual(['b'])
+  })
+
+  it('archive sets archived_at and hides from default findByProject', () => {
+    workspaces.add('p1', 'a', 'A', 'C:\\a')
+    workspaces.add('p1', 'b', 'B', 'C:\\b')
+    const archived = workspaces.archive('a')
+    expect(archived?.archivedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+    expect(workspaces.findByProject('p1').map((r) => r.id)).toEqual(['b'])
+    expect(workspaces.findByProject('p1', true).map((r) => r.id).sort()).toEqual(['a', 'b'])
+  })
+
+  it('archive is idempotent — re-archiving preserves original archivedAt', () => {
+    workspaces.add('p1', 'a', 'A', 'C:\\a')
+    const first = workspaces.archive('a')
+    const firstAt = first?.archivedAt
+    const second = workspaces.archive('a')
+    expect(second?.archivedAt).toBe(firstAt)
+  })
+
+  it('archive returns null for missing workspace', () => {
+    expect(workspaces.archive('missing')).toBeNull()
+  })
+
+  it('unarchive clears archived_at', () => {
+    workspaces.add('p1', 'a', 'A', 'C:\\a')
+    workspaces.archive('a')
+    const restored = workspaces.unarchive('a')
+    expect(restored?.archivedAt).toBeNull()
+    expect(workspaces.findByProject('p1').map((r) => r.id)).toEqual(['a'])
+  })
+
+  it('delete removes the row', () => {
+    workspaces.add('p1', 'a', 'A', 'C:\\a')
+    workspaces.delete('a')
+    expect(workspaces.get('a')).toBeNull()
+  })
+
+  it('countReferences counts sessions referencing the workspace', () => {
+    workspaces.add('p1', 'a', 'A', 'C:\\a')
+    workspaces.add('p1', 'b', 'B', 'C:\\b')
+    db.prepare(
+      `INSERT INTO sessions (id, project_id, workspace_id, started_at, status, created_at)
+       VALUES (?, 'p1', ?, '2026-04-29', 'completed', '2026-04-29')`
+    ).run('S1', 'a')
+    db.prepare(
+      `INSERT INTO sessions (id, project_id, workspace_id, started_at, status, created_at)
+       VALUES (?, 'p1', ?, '2026-04-29', 'active', '2026-04-29')`
+    ).run('S2', 'a')
+    expect(workspaces.countReferences('a')).toEqual({ sessions: 2 })
+    expect(workspaces.countReferences('b')).toEqual({ sessions: 0 })
   })
 })
