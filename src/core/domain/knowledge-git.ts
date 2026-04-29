@@ -11,6 +11,7 @@ export interface GitOps {
   getHeadSha(cwd: string): string
   countCommitsSince(cwd: string, sinceSha: string, filePath: string): number
   isAncestor(cwd: string, sha: string): boolean
+  filesInCommit(cwd: string, sha: string): string[]
 }
 
 export class GitOpsImpl implements GitOps {
@@ -34,6 +35,15 @@ export class GitOpsImpl implements GitOps {
     } catch {
       return false
     }
+  }
+
+  filesInCommit(cwd: string, sha: string): string[] {
+    const out = runGit(cwd, ['show', '--name-only', '--format=', sha]).trim()
+    if (out === '') return []
+    return out
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
   }
 }
 

@@ -12,6 +12,13 @@ import type { TaskOperations } from '../../../core/domain/interfaces/task-reposi
 import type { InboxOperations } from '../../../core/domain/interfaces/inbox-repository.interface'
 import type { SessionLifecycleOperations } from '../../../core/domain/interfaces/session-lifecycle.interface'
 import { resolveWorkspaceId } from './workspace-resolver'
+import type { GitOps } from '../../../core/domain/knowledge-git'
+import { GitOpsImpl } from '../../../core/domain/knowledge-git'
+import {
+  collectFilesByCommit,
+  suggestKnowledge,
+  type SuggestedKnowledge
+} from '../../../core/domain/knowledge-suggestions'
 
 // Workspaces support N parallel active sessions (TASK-526).
 // Status set: 'active' | 'completed' — no auto-abandon on session_start.
@@ -51,7 +58,7 @@ function tryLifecycle<T>(fn: () => T): ReturnType<typeof textResponse> {
   }
 }
 
-export const register = (server: McpServer, svc: SessionToolsDeps): void => {
+export const register = (server: McpServer, svc: SessionToolsDeps, git: GitOps = new GitOpsImpl()): void => {
   server.registerTool(
     'session_start',
     {
@@ -222,6 +229,7 @@ export const register = (server: McpServer, svc: SessionToolsDeps): void => {
         if (result.taskUpdated) handoff.tasksUpdated = [result.taskUpdated.id]
 
         const looseEndInboxIds = createLooseEndInboxes(svc, input.looseEnds, result.session)
+        const suggestedKnowledge = buildSuggestedKnowledge(svc, git, result.session.projectId, handoff)
 
         return {
           sessionId: result.session.id,
@@ -230,10 +238,23 @@ export const register = (server: McpServer, svc: SessionToolsDeps): void => {
           taskUpdated: result.taskUpdated,
           closedConversationIds: result.closedConversationIds,
           looseEndInboxIds,
+          suggestedKnowledge,
           notes: input.notes
         }
       })
   )
+}
+
+export function buildSuggestedKnowledge(
+  svc: ProjectOperations,
+  git: GitOps,
+  projectId: string,
+  handoff: SessionHandoff
+): SuggestedKnowledge[] {
+  const project = svc.getProject(projectId)
+  const cwd = project?.cwd ?? ''
+  const filesByCommit = collectFilesByCommit(cwd, handoff.commits ?? [], git)
+  return suggestKnowledge(handoff, { filesByCommit })
 }
 
 export interface LastSessionSummary {

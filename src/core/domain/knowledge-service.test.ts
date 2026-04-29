@@ -31,6 +31,10 @@ class FakeGitOps implements GitOps {
   isAncestor(): boolean {
     return true
   }
+
+  filesInCommit(): string[] {
+    return []
+  }
 }
 
 let tmpDir: string
