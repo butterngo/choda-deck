@@ -33,6 +33,16 @@ import type {
 import { InboxLifecycleService } from './lifecycle/inbox-lifecycle-service'
 import { ConversationLifecycleService } from './lifecycle/conversation-lifecycle-service'
 import { SessionLifecycleService } from './lifecycle/session-lifecycle-service'
+import { KnowledgeService } from './knowledge-service'
+import { KnowledgeRepository } from './repositories/knowledge-repository'
+import type { KnowledgeOperations } from './interfaces/knowledge-operations.interface'
+import type {
+  CreateKnowledgeInput,
+  KnowledgeEntry,
+  KnowledgeListFilter,
+  KnowledgeListItem,
+  KnowledgeVerifyResult
+} from './knowledge-types'
 import type {
   Task,
   CreateTaskInput,
@@ -95,7 +105,8 @@ export class SqliteTaskService
     InboxOperations,
     InboxLifecycleOperations,
     ConversationLifecycleOperations,
-    SessionLifecycleOperations
+    SessionLifecycleOperations,
+    KnowledgeOperations
 {
   private readonly db: Database.Database
   private readonly projects: ProjectRepository
@@ -111,6 +122,8 @@ export class SqliteTaskService
   private readonly inboxLifecycle: InboxLifecycleService
   private readonly conversationLifecycle: ConversationLifecycleService
   private readonly sessionLifecycle: SessionLifecycleService
+  private readonly knowledgeRepo: KnowledgeRepository
+  private readonly knowledgeService: KnowledgeService
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath)
@@ -147,6 +160,12 @@ export class SqliteTaskService
       this.conversations,
       this.tasks
     )
+    this.knowledgeRepo = new KnowledgeRepository(this.db)
+    this.knowledgeService = new KnowledgeService({
+      db: this.db,
+      knowledge: this.knowledgeRepo,
+      projects: this.projects
+    })
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -427,5 +446,22 @@ export class SqliteTaskService
   }
   resumeSession(id: string): ResumeSessionResult {
     return this.sessionLifecycle.resumeSession(id)
+  }
+
+  // ── Knowledge ─────────────────────────────────────────────────────────────
+  createKnowledge(input: CreateKnowledgeInput): KnowledgeEntry {
+    return this.knowledgeService.createKnowledge(input)
+  }
+  getKnowledge(slug: string): KnowledgeEntry | null {
+    return this.knowledgeService.getKnowledge(slug)
+  }
+  listKnowledge(filter?: KnowledgeListFilter): KnowledgeListItem[] {
+    return this.knowledgeService.listKnowledge(filter)
+  }
+  verifyKnowledge(slug: string): KnowledgeVerifyResult {
+    return this.knowledgeService.verifyKnowledge(slug)
+  }
+  deleteKnowledge(slug: string): { slug: string; deletedFile: boolean } {
+    return this.knowledgeService.deleteKnowledge(slug)
   }
 }

@@ -16,6 +16,7 @@ import * as projectTools from './mcp-tools/project-tools'
 import * as sessionTools from './mcp-tools/session-tools'
 import * as inboxTools from './mcp-tools/inbox-tools'
 import * as backupTools from './mcp-tools/backup-tools'
+import * as knowledgeTools from './mcp-tools/knowledge-tools'
 
 const { dbPath, dataDir } = resolveDataPaths()
 
@@ -33,6 +34,7 @@ async function main(): Promise<void> {
   sessionTools.register(server, svc)
   inboxTools.register(server, svc)
   backupTools.register(server, svc, dataDir, dbPath)
+  knowledgeTools.register(server, svc)
 
   const transport = new StdioServerTransport()
   await server.connect(transport)

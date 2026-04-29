@@ -359,6 +359,19 @@ function createM1Tables(db: Database.Database): void {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS knowledge_index (
+      slug TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      scope TEXT NOT NULL CHECK (scope IN ('project','cross')),
+      type TEXT NOT NULL CHECK (type IN ('spike','decision','postmortem','learning','evaluation')),
+      title TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      last_verified_at TEXT NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id)
+    )
+  `)
 }
 
 function createIndexes(db: Database.Database): void {
@@ -388,6 +401,9 @@ function createIndexes(db: Database.Database): void {
   db.exec(
     'CREATE INDEX IF NOT EXISTS idx_conversations_owner_session ON conversations(owner_session_id)'
   )
+  db.exec('CREATE INDEX IF NOT EXISTS idx_knowledge_project ON knowledge_index(project_id)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_knowledge_type ON knowledge_index(project_id, type)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_knowledge_scope ON knowledge_index(project_id, scope)')
 }
 
 // Rename any existing task rows whose ID exceeds COUNTER_SANE_MAX (legacy
