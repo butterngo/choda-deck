@@ -3,7 +3,21 @@ type: decision
 title: Knowledge Layer Foundation — code-coupled MD with frontmatter and staleness tracking
 projectId: choda-deck
 scope: project
-refs: []
+refs:
+  - path: src/adapters/mcp/mcp-tools/knowledge-tools.ts
+    commitSha: 2123dab54bb2651712c1067ccbbef08b03111963
+  - path: src/core/domain/interfaces/knowledge-operations.interface.ts
+    commitSha: 2123dab54bb2651712c1067ccbbef08b03111963
+  - path: src/core/domain/knowledge-frontmatter.ts
+    commitSha: 2123dab54bb2651712c1067ccbbef08b03111963
+  - path: src/core/domain/knowledge-git.ts
+    commitSha: 2123dab54bb2651712c1067ccbbef08b03111963
+  - path: src/core/domain/knowledge-service.ts
+    commitSha: 2123dab54bb2651712c1067ccbbef08b03111963
+  - path: src/core/domain/knowledge-types.ts
+    commitSha: 2123dab54bb2651712c1067ccbbef08b03111963
+  - path: src/core/domain/repositories/knowledge-repository.ts
+    commitSha: 2123dab54bb2651712c1067ccbbef08b03111963
 createdAt: 2026-04-29
 lastVerifiedAt: 2026-04-29
 ---
