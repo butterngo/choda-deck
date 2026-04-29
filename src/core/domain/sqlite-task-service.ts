@@ -461,4 +461,7 @@ export class SqliteTaskService
   verifyKnowledge(slug: string): KnowledgeVerifyResult {
     return this.knowledgeService.verifyKnowledge(slug)
   }
+  deleteKnowledge(slug: string): { slug: string; deletedFile: boolean } {
+    return this.knowledgeService.deleteKnowledge(slug)
+  }
 }

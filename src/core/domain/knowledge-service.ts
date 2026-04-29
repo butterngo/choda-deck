@@ -161,6 +161,25 @@ export class KnowledgeService implements KnowledgeOperations {
     }))
   }
 
+  deleteKnowledge(slug: string): { slug: string; deletedFile: boolean } {
+    const row = this.knowledge.get(slug)
+    if (!row) throw new KnowledgeNotFoundError(slug)
+
+    let deletedFile = false
+    if (fs.existsSync(row.filePath)) {
+      fs.unlinkSync(row.filePath)
+      deletedFile = true
+    }
+    this.knowledge.delete(slug)
+
+    if (row.scope === 'project') {
+      const project = this.projects.get(row.projectId)
+      if (project) this.regenerateIndexMd(row.projectId, project.cwd)
+    }
+
+    return { slug, deletedFile }
+  }
+
   verifyKnowledge(slug: string): KnowledgeVerifyResult {
     const entry = this.getKnowledge(slug)
     if (!entry) throw new KnowledgeNotFoundError(slug)

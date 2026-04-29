@@ -11,4 +11,5 @@ export interface KnowledgeOperations {
   getKnowledge(slug: string): KnowledgeEntry | null
   listKnowledge(filter?: KnowledgeListFilter): KnowledgeListItem[]
   verifyKnowledge(slug: string): KnowledgeVerifyResult
+  deleteKnowledge(slug: string): { slug: string; deletedFile: boolean }
 }

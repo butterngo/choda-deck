@@ -6,7 +6,12 @@ import Database from 'better-sqlite3'
 import { initSchema } from './repositories/schema'
 import { ProjectRepository } from './repositories/project-repository'
 import { KnowledgeRepository } from './repositories/knowledge-repository'
-import { KnowledgeService, KnowledgeConflictError, KnowledgeValidationError } from './knowledge-service'
+import {
+  KnowledgeService,
+  KnowledgeConflictError,
+  KnowledgeNotFoundError,
+  KnowledgeValidationError
+} from './knowledge-service'
 import type { GitOps } from './knowledge-git'
 import { parseFrontmatter } from './knowledge-frontmatter'
 
@@ -182,6 +187,35 @@ describe('listKnowledge', () => {
 
     const all = svc.listKnowledge()
     expect(all).toHaveLength(2)
+  })
+})
+
+describe('deleteKnowledge', () => {
+  it('removes file + DB row + regenerates INDEX.md', () => {
+    svc.createKnowledge({
+      projectId: 'proj-k',
+      type: 'spike',
+      scope: 'project',
+      title: 'Disposable',
+      body: 'b',
+      refs: []
+    })
+    const filePath = path.join(projectCwd, 'docs', 'knowledge', 'disposable.md')
+    const indexMdPath = path.join(projectCwd, 'docs', 'knowledge', 'INDEX.md')
+    expect(fs.existsSync(filePath)).toBe(true)
+
+    const result = svc.deleteKnowledge('disposable')
+    expect(result.slug).toBe('disposable')
+    expect(result.deletedFile).toBe(true)
+    expect(fs.existsSync(filePath)).toBe(false)
+    expect(repo.get('disposable')).toBeNull()
+
+    const indexMd = fs.readFileSync(indexMdPath, 'utf8')
+    expect(indexMd).toContain('No entries yet')
+  })
+
+  it('throws KnowledgeNotFoundError on missing slug', () => {
+    expect(() => svc.deleteKnowledge('nope')).toThrow(KnowledgeNotFoundError)
   })
 })
 

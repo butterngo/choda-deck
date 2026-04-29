@@ -95,4 +95,16 @@ export const register = (server: McpServer, svc: KnowledgeOperations): void => {
     },
     async ({ slug }) => textResponse(svc.verifyKnowledge(slug))
   )
+
+  server.registerTool(
+    'knowledge_delete',
+    {
+      description:
+        'Delete a knowledge entry — removes the MD file, the index row, and regenerates INDEX.md. Throws if slug not found.',
+      inputSchema: {
+        slug: z.string().describe('Slug of the entry to delete')
+      }
+    },
+    async ({ slug }) => textResponse(svc.deleteKnowledge(slug))
+  )
 }
