@@ -2,13 +2,11 @@
 
 ## Step-by-step flow
 
-1. **Read template** — load `30-Knowledge/adr-standard.md` to get current ADR format
-2. **Scan existing ADRs** — glob `docs/decisions/ADR-*.md`, extract highest ID number
-3. **Determine next ID** — increment by 1, zero-pad to 4 digits (e.g., `ADR-0005`)
-4. **Generate slug** — from topic argument or inferred topic, kebab-case, 2-4 words
-5. **Extract decision from conversation** — see `conversation-extraction.md`
-6. **Fill template sections** — all sections from adr-standard are required:
-   - Frontmatter: id, status (`proposed`), date (today), deciders
+1. **Read template** — load `30-Knowledge/adr-standard.md` for the canonical ADR format
+2. **Determine next ADR number** — call `mcp__choda-tasks__knowledge_list({ projectId, type: 'decision' })`, parse highest `N` from entry **slugs** (regex `/^ADR-(\d+)/`), increment by 1, zero-pad to 3 digits (e.g., `ADR-019`). Slugs are canonical — titles may or may not include the `ADR-NNN:` prefix.
+3. **Generate slug** — from topic argument or inferred topic, kebab-case, 2-4 words. Slug auto-derives from title if omitted.
+4. **Extract decision from conversation** — see `conversation-extraction.md`
+5. **Fill template body** — all sections from adr-standard required (no frontmatter — `knowledge_create` adds it):
    - AI-Context: one-line summary
    - Context: problem statement from discussion
    - Options considered: table from discussion
@@ -18,14 +16,20 @@
    - Impact: files/modules affected
    - Revisit when: conditions to re-evaluate
    - Related: link to prior ADRs if applicable
-7. **Write ADR file** — to `docs/decisions/ADR-XXXX-<slug>.md`
-8. **Update index** — see `index-management.md`
-9. **Present to user** — show file path + summary, ask if anything needs correction
+6. **Extract refs** — collect repo-relative file paths from Impact section (backtick-wrapped paths like `src/foo.ts`); pass as `refs: [{ path }, ...]`. SHA auto-pinned to HEAD by the service.
+7. **Persist via MCP**:
+   ```
+   mcp__choda-tasks__knowledge_create({
+     projectId: <current>,
+     type: 'decision',
+     scope: 'project',
+     title: 'ADR-019: <description>',
+     body: <markdown body without frontmatter>,
+     refs: [{ path: 'src/...' }, ...]
+   })
+   ```
+8. **Present to user** — show returned slug + file path + summary, ask if anything needs correction
 
-## Bootstrap (first-time setup)
+## Bootstrap
 
-If `docs/decisions/` does not exist:
-
-1. Create `docs/decisions/`
-2. Create `docs/decisions/index.md` using index template from adr-standard
-3. Set first ADR ID to `ADR-0001`
+No manual bootstrap needed — `knowledge_create` auto-creates `docs/knowledge/` and regenerates `INDEX.md`.
