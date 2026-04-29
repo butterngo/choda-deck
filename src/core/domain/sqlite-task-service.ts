@@ -4,10 +4,8 @@ import type { SessionOperations } from './interfaces/session-repository.interfac
 import type { ContextSourceOperations } from './interfaces/context-source-repository.interface'
 import type { ConversationOperations } from './interfaces/conversation-repository.interface'
 import type { InboxOperations } from './interfaces/inbox-repository.interface'
-import type {
-  ProjectOperations,
-  WorkspaceOperations
-} from './interfaces/project-repository.interface'
+import type { ProjectOperations } from './interfaces/project-repository.interface'
+import type { WorkspaceOperations } from './interfaces/workspace-repository.interface'
 import type {
   InboxLifecycleOperations,
   InboxConvertInput,
@@ -83,7 +81,9 @@ import type {
 
 import { initSchema } from './repositories/schema'
 import { ProjectRepository } from './repositories/project-repository'
-import type { ProjectRow, WorkspaceRow } from './repositories/project-repository'
+import type { ProjectRow } from './repositories/project-repository'
+import { WorkspaceRepository } from './repositories/workspace-repository'
+import type { WorkspaceRow } from './repositories/workspace-repository'
 import { TaskRepository } from './repositories/task-repository'
 import { DocumentRepository } from './repositories/document-repository'
 import { TagRepository } from './repositories/tag-repository'
@@ -110,6 +110,7 @@ export class SqliteTaskService
 {
   private readonly db: Database.Database
   private readonly projects: ProjectRepository
+  private readonly workspaces: WorkspaceRepository
   private readonly tasks: TaskRepository
   private readonly documents: DocumentRepository
   private readonly tagsRepo: TagRepository
@@ -132,6 +133,7 @@ export class SqliteTaskService
     initSchema(this.db)
 
     this.projects = new ProjectRepository(this.db)
+    this.workspaces = new WorkspaceRepository(this.db)
     this.relationships = new RelationshipRepository(this.db)
     this.counters = new CounterRepository(this.db)
     this.tasks = new TaskRepository(this.db, this.relationships, this.counters)
@@ -196,13 +198,13 @@ export class SqliteTaskService
     return this.projects.list()
   }
   addWorkspace(projectId: string, id: string, label: string, cwd: string): WorkspaceRow {
-    return this.projects.addWorkspace(projectId, id, label, cwd)
+    return this.workspaces.add(projectId, id, label, cwd)
   }
   getWorkspace(id: string): WorkspaceRow | null {
-    return this.projects.getWorkspace(id)
+    return this.workspaces.get(id)
   }
   findWorkspaces(projectId: string): WorkspaceRow[] {
-    return this.projects.findWorkspaces(projectId)
+    return this.workspaces.findByProject(projectId)
   }
 
   // ── Task operations ────────────────────────────────────────────────────────

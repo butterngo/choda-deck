@@ -5,10 +5,8 @@ import type { TaskOperations } from '../../../core/domain/interfaces/task-reposi
 import type { ConversationOperations } from '../../../core/domain/interfaces/conversation-repository.interface'
 import type { TagOperations } from '../../../core/domain/interfaces/tag-repository.interface'
 import type { RelationshipOperations } from '../../../core/domain/interfaces/relationship-repository.interface'
-import type {
-  ProjectOperations,
-  WorkspaceOperations
-} from '../../../core/domain/interfaces/project-repository.interface'
+import type { ProjectOperations } from '../../../core/domain/interfaces/project-repository.interface'
+import type { WorkspaceOperations } from '../../../core/domain/interfaces/workspace-repository.interface'
 import { buildGraphifyContext } from './task-context-graphify'
 
 export type TaskToolsDeps = TaskOperations &

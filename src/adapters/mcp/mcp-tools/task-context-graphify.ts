@@ -1,10 +1,8 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import type { Task } from '../../../core/domain/task-types'
-import type {
-  ProjectOperations,
-  WorkspaceOperations
-} from '../../../core/domain/interfaces/project-repository.interface'
+import type { ProjectOperations } from '../../../core/domain/interfaces/project-repository.interface'
+import type { WorkspaceOperations } from '../../../core/domain/interfaces/workspace-repository.interface'
 
 interface GraphNode {
   id: string

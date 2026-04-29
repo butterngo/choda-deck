@@ -2,10 +2,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { textResponse } from './types'
 import { buildProjectContext, type ProjectContextDeps } from './project-context-builder'
-import type {
-  ProjectOperations,
-  WorkspaceOperations
-} from '../../../core/domain/interfaces/project-repository.interface'
+import type { ProjectOperations } from '../../../core/domain/interfaces/project-repository.interface'
+import type { WorkspaceOperations } from '../../../core/domain/interfaces/workspace-repository.interface'
 
 export type ProjectToolsDeps = ProjectOperations & WorkspaceOperations & ProjectContextDeps
 

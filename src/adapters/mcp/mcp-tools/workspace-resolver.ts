@@ -1,6 +1,6 @@
 import * as path from 'path'
 import { WorkspaceResolutionError } from '../../../core/domain/lifecycle/errors'
-import type { WorkspaceRow } from '../../../core/domain/repositories/project-repository'
+import type { WorkspaceRow } from '../../../core/domain/repositories/workspace-repository'
 
 const isWindows = process.platform === 'win32'
 
