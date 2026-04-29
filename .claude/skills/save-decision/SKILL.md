@@ -18,7 +18,8 @@ After a `/discussion` session or any conversation where architectural decisions 
 | Template source      | `30-Knowledge/adr-standard.md` — always read before generating                      |
 | Persistence          | Call `mcp__choda-tasks__knowledge_create` with `type=decision, scope=project`       |
 | ADR numbering        | Scan via `knowledge_list type=decision` → highest `ADR-N` → +1, zero-pad to 3 digits |
-| Title format         | `ADR-NNN: <description>` (slug auto-derives to `adr-nnn-<description>`)             |
+| Title format         | `ADR-NNN: <description>`                                                            |
+| Slug                 | **Always pass explicit slug** `ADR-NNN-<short-topic>` (2-4 word kebab) — never let it auto-derive (would lowercase + run too long) |
 | Status default       | `proposed` — user promotes to `accepted` after review                               |
 | AI-Context required  | One-line summary, mandatory per adr-standard                                        |
 | One decision per ADR | If conversation had multiple decisions, generate multiple ADRs                      |
