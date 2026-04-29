@@ -13,6 +13,7 @@ import { resolveDataPaths } from '../../core/paths'
 import * as taskTools from './mcp-tools/task-tools'
 import * as conversationTools from './mcp-tools/conversation-tools'
 import * as projectTools from './mcp-tools/project-tools'
+import * as workspaceTools from './mcp-tools/workspace-tools'
 import * as sessionTools from './mcp-tools/session-tools'
 import * as inboxTools from './mcp-tools/inbox-tools'
 import * as backupTools from './mcp-tools/backup-tools'
@@ -31,6 +32,7 @@ async function main(): Promise<void> {
   taskTools.register(server, svc)
   conversationTools.register(server, svc)
   projectTools.register(server, svc)
+  workspaceTools.register(server, svc)
   sessionTools.register(server, svc)
   inboxTools.register(server, svc)
   backupTools.register(server, svc, dataDir, dbPath)

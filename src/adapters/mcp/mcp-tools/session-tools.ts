@@ -5,10 +5,8 @@ import { buildProjectContext, type ProjectContextDeps } from './project-context-
 import { loadSessionRules } from '../rules/session-rules-loader'
 import { LifecycleError } from '../../../core/domain/lifecycle/errors'
 import type { Session, SessionCheckpoint, SessionHandoff, Task, TaskStatus } from '../../../core/domain/task-types'
-import type {
-  ProjectOperations,
-  WorkspaceOperations
-} from '../../../core/domain/interfaces/project-repository.interface'
+import type { ProjectOperations } from '../../../core/domain/interfaces/project-repository.interface'
+import type { WorkspaceOperations } from '../../../core/domain/interfaces/workspace-repository.interface'
 import type { SessionOperations } from '../../../core/domain/interfaces/session-repository.interface'
 import type { TaskOperations } from '../../../core/domain/interfaces/task-repository.interface'
 import type { InboxOperations } from '../../../core/domain/interfaces/inbox-repository.interface'

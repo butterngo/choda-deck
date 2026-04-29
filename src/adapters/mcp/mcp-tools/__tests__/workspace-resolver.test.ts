@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import * as path from 'path'
 import { resolveWorkspaceId } from '../workspace-resolver'
 import { WorkspaceResolutionError } from '../../../../core/domain/lifecycle/errors'
-import type { WorkspaceRow } from '../../../../core/domain/repositories/project-repository'
+import type { WorkspaceRow } from '../../../../core/domain/repositories/workspace-repository'
 
 const ws = (id: string, cwd: string): WorkspaceRow => ({
   id,

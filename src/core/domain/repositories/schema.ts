@@ -154,6 +154,16 @@ function runLegacyMigrations(db: Database.Database): void {
     /* exists */
   }
 
+  // TASK-552: soft-delete for workspaces
+  try {
+    db.exec('ALTER TABLE workspaces ADD COLUMN archived_at TEXT')
+  } catch {
+    /* exists */
+  }
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_workspaces_active ON workspaces(project_id, archived_at)'
+  )
+
 
   // Global counter table — replaces per-project counters.
   // IDs (TASK-NNN, INBOX-NNN) must be globally unique because PKs are single column.
