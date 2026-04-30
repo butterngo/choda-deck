@@ -85,6 +85,32 @@ export const register = (server: McpServer, svc: KnowledgeOperations): void => {
   )
 
   server.registerTool(
+    'knowledge_update',
+    {
+      description:
+        'Edit a knowledge entry — replace body and/or refs. Auto-bumps lastVerifiedAt to today and re-pins refs to current HEAD (no separate knowledge_verify call needed). At least one of body/refs must be provided. Frontmatter fields (title, type, scope) are immutable — delete + re-create to change them.',
+      inputSchema: {
+        slug: z.string().describe('Slug of the entry to update'),
+        body: z.string().optional().describe('New markdown body (no frontmatter). Omit to keep existing.'),
+        refs: z
+          .array(
+            z.object({
+              path: z.string().describe('Repo-relative file path'),
+              commitSha: z
+                .string()
+                .optional()
+                .describe('Pin SHA. Omit to auto-capture current HEAD.')
+            })
+          )
+          .optional()
+          .describe('Replace refs[]. Omit to re-pin existing refs to HEAD.')
+      }
+    },
+    async ({ slug, body, refs }) =>
+      textResponse(svc.updateKnowledge({ slug, body, refs }))
+  )
+
+  server.registerTool(
     'knowledge_verify',
     {
       description:

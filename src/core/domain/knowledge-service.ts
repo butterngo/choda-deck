@@ -16,7 +16,8 @@ import type {
   KnowledgeListItem,
   KnowledgeRef,
   KnowledgeRefStaleness,
-  KnowledgeVerifyResult
+  KnowledgeVerifyResult,
+  UpdateKnowledgeInput
 } from './knowledge-types'
 import type { KnowledgeOperations } from './interfaces/knowledge-operations.interface'
 
@@ -178,6 +179,52 @@ export class KnowledgeService implements KnowledgeOperations {
     }
 
     return { slug, deletedFile }
+  }
+
+  updateKnowledge(input: UpdateKnowledgeInput): KnowledgeEntry {
+    if (input.body === undefined && input.refs === undefined) {
+      throw new KnowledgeValidationError('updateKnowledge requires body or refs')
+    }
+
+    const existing = this.getKnowledge(input.slug)
+    if (!existing) throw new KnowledgeNotFoundError(input.slug)
+
+    const project = this.projects.get(existing.frontmatter.projectId)
+    const projectCwd = project?.cwd ?? ''
+    const scope = existing.frontmatter.scope
+
+    const newBody = input.body ?? existing.body
+    const newRefs: KnowledgeRef[] =
+      input.refs !== undefined
+        ? this.materializeRefs(input.refs, projectCwd, scope)
+        : existing.frontmatter.refs.map((r) => ({
+            path: r.path,
+            commitSha: project ? safeHeadSha(this.git, projectCwd) : r.commitSha
+          }))
+
+    const isoDate = toIsoDate(this.now())
+    const updatedFm: KnowledgeFrontmatter = {
+      ...existing.frontmatter,
+      refs: newRefs,
+      lastVerifiedAt: isoDate
+    }
+
+    fs.writeFileSync(existing.filePath, serializeFrontmatter(updatedFm, newBody), 'utf8')
+    this.knowledge.updateLastVerified(input.slug, isoDate)
+
+    if (scope === 'project' && project) {
+      this.regenerateIndexMd(existing.frontmatter.projectId, projectCwd)
+    }
+
+    const staleness = this.computeStaleness(newRefs, projectCwd, scope)
+    return {
+      slug: input.slug,
+      frontmatter: updatedFm,
+      body: newBody,
+      filePath: existing.filePath,
+      staleness,
+      isStale: staleness.some((s) => s.commitsSince > 0)
+    }
   }
 
   verifyKnowledge(slug: string): KnowledgeVerifyResult {
