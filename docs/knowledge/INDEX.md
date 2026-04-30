@@ -2,8 +2,9 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
-| [ADR-018-knowledge-layer](./ADR-018-knowledge-layer.md) | decision | Knowledge Layer Foundation — code-coupled MD with frontmatter and staleness tracking | 2026-04-29 |  |
-| [ADR-019-adr-numbering-convention](./ADR-019-adr-numbering-convention.md) | decision | ADR-019: ADR Numbering Convention — keep ADR-NNN prefix in slug | 2026-04-29 |  |
+| [pure-heuristic-core-thin-git-wrapper-for-stubbability](./pure-heuristic-core-thin-git-wrapper-for-stubbability.md) | decision | Pure heuristic core, thin git wrapper for stubbability | 2026-04-30 |  |
+| [ADR-018-knowledge-layer](./ADR-018-knowledge-layer.md) | decision | Knowledge Layer Foundation — code-coupled MD with frontmatter and staleness tracking | 2026-04-29 | ✱ |
+| [ADR-019-adr-numbering-convention](./ADR-019-adr-numbering-convention.md) | decision | ADR-019: ADR Numbering Convention — keep ADR-NNN prefix in slug | 2026-04-29 | ✱ |
 | [ADR-017-headless-spawn-strategy](./ADR-017-headless-spawn-strategy.md) | decision | ADR-017: Headless Spawn Strategy — `claude -p` (default config) over Anthropic SDK Direct | 2026-04-29 |  |
 | [ADR-016-graphify-integration](./ADR-016-graphify-integration.md) | decision | ADR-016: Graphify Integration — Query-Only Phase 1, Manual Refresh | 2026-04-29 |  |
 | [ADR-014-harness-engine-architecture](./ADR-014-harness-engine-architecture.md) | decision | ADR-014: Staged Pipeline Harness — Planner → Generator → Evaluator with Approval Gates | 2026-04-29 |  |
