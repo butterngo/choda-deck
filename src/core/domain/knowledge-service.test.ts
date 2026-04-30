@@ -223,6 +223,96 @@ describe('deleteKnowledge', () => {
   })
 })
 
+describe('updateKnowledge', () => {
+  it('updates body, re-pins refs to HEAD, bumps lastVerifiedAt', () => {
+    git.headSha = 'sha-old'
+    svc.createKnowledge({
+      projectId: 'proj-k',
+      type: 'decision',
+      scope: 'project',
+      title: 'Edit Me',
+      body: 'old body\n',
+      refs: [{ path: 'src/y.ts' }]
+    })
+    git.commitsSinceMap.set('sha-old::src/y.ts', 4)
+    expect(svc.getKnowledge('edit-me')?.isStale).toBe(true)
+
+    git.headSha = 'sha-new'
+    git.commitsSinceMap.set('sha-new::src/y.ts', 0)
+    const result = svc.updateKnowledge({ slug: 'edit-me', body: 'new body\n' })
+
+    expect(result.body).toBe('new body\n')
+    expect(result.frontmatter.refs[0].commitSha).toBe('sha-new')
+    expect(result.frontmatter.lastVerifiedAt).toBe('2026-04-29')
+    expect(result.isStale).toBe(false)
+
+    const after = svc.getKnowledge('edit-me')
+    expect(after?.body).toContain('new body')
+    expect(after?.body).not.toContain('old body')
+    expect(after?.frontmatter.refs[0].commitSha).toBe('sha-new')
+    expect(after?.isStale).toBe(false)
+  })
+
+  it('replaces refs when provided, body unchanged', () => {
+    git.headSha = 'sha-aaa'
+    svc.createKnowledge({
+      projectId: 'proj-k',
+      type: 'spike',
+      scope: 'project',
+      title: 'Refs Only',
+      body: 'keep me\n',
+      refs: [{ path: 'src/old.ts' }]
+    })
+
+    git.headSha = 'sha-bbb'
+    const result = svc.updateKnowledge({
+      slug: 'refs-only',
+      refs: [{ path: 'src/new1.ts' }, { path: 'src/new2.ts' }]
+    })
+
+    expect(result.body).toContain('keep me')
+    expect(result.frontmatter.refs).toEqual([
+      { path: 'src/new1.ts', commitSha: 'sha-bbb' },
+      { path: 'src/new2.ts', commitSha: 'sha-bbb' }
+    ])
+  })
+
+  it('throws KnowledgeNotFoundError on missing slug', () => {
+    expect(() => svc.updateKnowledge({ slug: 'nope', body: 'x' })).toThrow(KnowledgeNotFoundError)
+  })
+
+  it('throws KnowledgeValidationError when neither body nor refs provided', () => {
+    svc.createKnowledge({
+      projectId: 'proj-k',
+      type: 'spike',
+      scope: 'project',
+      title: 'No Op',
+      body: 'b',
+      refs: []
+    })
+    expect(() => svc.updateKnowledge({ slug: 'no-op' })).toThrow(KnowledgeValidationError)
+  })
+
+  it('regenerates INDEX.md after update', () => {
+    svc.createKnowledge({
+      projectId: 'proj-k',
+      type: 'decision',
+      scope: 'project',
+      title: 'Reindex',
+      body: 'old',
+      refs: []
+    })
+    const indexMdPath = path.join(projectCwd, 'docs', 'knowledge', 'INDEX.md')
+    fs.unlinkSync(indexMdPath)
+    expect(fs.existsSync(indexMdPath)).toBe(false)
+
+    svc.updateKnowledge({ slug: 'reindex', body: 'new body\n' })
+
+    const after = fs.readFileSync(indexMdPath, 'utf8')
+    expect(after).toContain('reindex')
+  })
+})
+
 describe('verifyKnowledge', () => {
   it('re-pins refs to new HEAD and resets staleness', () => {
     git.headSha = 'sha-old'

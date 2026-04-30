@@ -39,7 +39,8 @@ import type {
   KnowledgeEntry,
   KnowledgeListFilter,
   KnowledgeListItem,
-  KnowledgeVerifyResult
+  KnowledgeVerifyResult,
+  UpdateKnowledgeInput
 } from './knowledge-types'
 import type {
   Task,
@@ -471,6 +472,9 @@ export class SqliteTaskService
   }
   listKnowledge(filter?: KnowledgeListFilter): KnowledgeListItem[] {
     return this.knowledgeService.listKnowledge(filter)
+  }
+  updateKnowledge(input: UpdateKnowledgeInput): KnowledgeEntry {
+    return this.knowledgeService.updateKnowledge(input)
   }
   verifyKnowledge(slug: string): KnowledgeVerifyResult {
     return this.knowledgeService.verifyKnowledge(slug)

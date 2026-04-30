@@ -78,6 +78,12 @@ export interface CreateKnowledgeInput {
   slug?: string
 }
 
+export interface UpdateKnowledgeInput {
+  slug: string
+  body?: string
+  refs?: CreateKnowledgeRefInput[]
+}
+
 export interface KnowledgeListFilter {
   projectId?: string
   scope?: KnowledgeScope
