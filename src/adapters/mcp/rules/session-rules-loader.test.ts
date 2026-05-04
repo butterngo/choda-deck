@@ -18,13 +18,21 @@ describe('loadSessionRules', () => {
     path = ''
   })
 
-  it('parses both sections in order', () => {
+  it('parses all 4 sections in order', () => {
     path = makeTmpFile(`# Session Rules
 
 ## On session_start
 
 Step 1
 Step 2
+
+## On session_checkpoint
+
+Checkpoint A
+
+## On session_resume
+
+Resume A
 
 ## On session_end
 
@@ -33,6 +41,8 @@ Bullet B
 `)
     const rules = loadSessionRules(path)
     expect(rules.sessionStart).toBe('Step 1\nStep 2')
+    expect(rules.sessionCheckpoint).toBe('Checkpoint A')
+    expect(rules.sessionResume).toBe('Resume A')
     expect(rules.sessionEnd).toBe('Bullet A\nBullet B')
   })
 
@@ -41,28 +51,46 @@ Bullet B
 
 End first
 
+## On session_resume
+
+Resume second
+
+## On session_checkpoint
+
+Checkpoint third
+
 ## On session_start
 
-Start second
+Start fourth
 `)
     const rules = loadSessionRules(path)
-    expect(rules.sessionStart).toBe('Start second')
+    expect(rules.sessionStart).toBe('Start fourth')
+    expect(rules.sessionCheckpoint).toBe('Checkpoint third')
+    expect(rules.sessionResume).toBe('Resume second')
     expect(rules.sessionEnd).toBe('End first')
   })
 
   it('returns empty strings when file missing', () => {
     const rules = loadSessionRules('/nonexistent/path/rules.md')
     expect(rules.sessionStart).toBe('')
+    expect(rules.sessionCheckpoint).toBe('')
+    expect(rules.sessionResume).toBe('')
     expect(rules.sessionEnd).toBe('')
   })
 
-  it('returns empty for missing section but keeps present one', () => {
+  it('returns empty for missing section but keeps present ones', () => {
     path = makeTmpFile(`## On session_start
 
 Only start exists
+
+## On session_resume
+
+Resume exists too
 `)
     const rules = loadSessionRules(path)
     expect(rules.sessionStart).toBe('Only start exists')
+    expect(rules.sessionCheckpoint).toBe('')
+    expect(rules.sessionResume).toBe('Resume exists too')
     expect(rules.sessionEnd).toBe('')
   })
 

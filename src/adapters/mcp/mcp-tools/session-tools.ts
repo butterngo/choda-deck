@@ -112,6 +112,8 @@ export const register = (server: McpServer, svc: SessionToolsDeps, git: GitOps =
           suggestion: buildSuggestion(lastSession, bundle?.currentState.activeTasks ?? []),
           rules: {
             onSessionStart: rules.sessionStart,
+            onCheckpoint: rules.sessionCheckpoint,
+            onResume: rules.sessionResume,
             onSessionEnd: rules.sessionEnd
           }
         }
@@ -199,11 +201,13 @@ export const register = (server: McpServer, svc: SessionToolsDeps, git: GitOps =
     async ({ sessionId }) =>
       tryLifecycle(() => {
         const result = svc.resumeSession(sessionId)
+        const rules = loadSessionRules()
         return {
           session: result.session,
           checkpoint: result.checkpoint,
           conversations: result.conversations,
-          contextSources: result.contextSources
+          contextSources: result.contextSources,
+          rules: { onResume: rules.sessionResume }
         }
       })
   )

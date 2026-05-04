@@ -31,6 +31,43 @@ Blocking conditions (MCP returns an error):
 - Task already bound to another active session — end that session first
 - Project has workspaces but neither `workspaceId` nor a matching `cwd` was provided
 
+## On session_checkpoint
+
+`session_checkpoint` snapshots progress on an active session **without ending it**. Overwrite-in-place — each call replaces the previous checkpoint.
+
+When to checkpoint:
+
+- Before risky operations (rebase, force-push, schema migration, large refactor)
+- Before context window compaction (when conversation grows long)
+- Every ~30 minutes of active work, or after a meaningful sub-step
+- When pausing work mid-task (lunch, meeting) — so a future `session_resume` recovers state cleanly
+
+Required field:
+
+- **resumePoint** — one sentence describing exactly where you stopped and what to pick up next
+
+Recommended fields (include whichever apply):
+
+- **lastConversationId** — most recent conversation touched (resume context)
+- **dirtyFiles** — files edited but not yet committed (so resume knows what's in flight)
+- **lastCommit** — last commit SHA written this session (resume git position)
+- **notes** — free-form context that matters for resume (decisions made, dead ends ruled out)
+
+Do not call `session_checkpoint` as a substitute for `session_end`. Checkpoint = pause; end = finalize + handoff.
+
+## On session_resume
+
+`session_resume` returns the session row, last checkpoint, linked conversations, and active context sources. Use after crash, restart, or context compaction — not as a way to spawn a new session for the same task.
+
+After calling `session_resume`:
+
+1. **Echo the checkpoint summary verbatim** — `resumePoint`, `notes`, `dirtyFiles`, `lastCommit`, `lastConversationId`. Do not summarize. Butter needs the same view the prior session had.
+2. **Confirm task binding** — name the `taskId` and current status. If the task is no longer IN-PROGRESS, surface the discrepancy before proceeding.
+3. **Resume from `resumePoint`** — pick up the exact next step. Do not re-plan from scratch.
+4. **Do not call `session_start`** — resume reactivates the existing session; starting a new one orphans the checkpoint and creates duplicate state.
+
+If no checkpoint exists (resumed session was never checkpointed), say so explicitly and ask Butter where to pick up before continuing.
+
 ## On session_end
 
 When preparing the session_end payload, always include:
