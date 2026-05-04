@@ -267,6 +267,13 @@ function migrateConversationMessages(db: Database.Database): void {
       /* exists */
     }
   }
+  if (!colNames.includes('target_role')) {
+    try {
+      db.exec('ALTER TABLE conversation_messages ADD COLUMN target_role TEXT')
+    } catch {
+      /* exists */
+    }
+  }
 }
 
 function createM1Tables(db: Database.Database): void {
@@ -333,6 +340,7 @@ function createM1Tables(db: Database.Database): void {
       content TEXT NOT NULL,
       message_type TEXT NOT NULL DEFAULT 'comment',
       metadata_json TEXT,
+      target_role TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (conversation_id) REFERENCES conversations(id)
     )

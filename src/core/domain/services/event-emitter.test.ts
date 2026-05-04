@@ -31,6 +31,7 @@ describe('emitConversationEvent', () => {
     const dir = path.join(TMP_ROOT, 'run1')
     withEventDir(dir, () => {
       emitConversationEvent('proj-1', {
+        type: 'message.question',
         conversationId: 'CONV-1',
         roles: ['BE'],
         messageType: 'question',
@@ -44,6 +45,7 @@ describe('emitConversationEvent', () => {
     expect(contents.endsWith('\n')).toBe(true)
     const parsed = JSON.parse(contents.trim())
     expect(parsed).toEqual({
+      type: 'message.question',
       conversationId: 'CONV-1',
       roles: ['BE'],
       messageType: 'question',
@@ -56,6 +58,7 @@ describe('emitConversationEvent', () => {
     const dir = path.join(TMP_ROOT, 'run2')
     withEventDir(dir, () => {
       emitConversationEvent('proj-2', {
+        type: 'message.question',
         conversationId: 'CONV-A',
         roles: ['BE'],
         messageType: 'question',
@@ -63,6 +66,7 @@ describe('emitConversationEvent', () => {
         timestamp: '2026-04-24 10:00:00'
       })
       emitConversationEvent('proj-2', {
+        type: 'message.question',
         conversationId: 'CONV-B',
         roles: ['QA'],
         messageType: 'question',
@@ -88,6 +92,7 @@ describe('emitConversationEvent', () => {
     withEventDir(poisonedDir, () => {
       expect(() =>
         emitConversationEvent('proj-3', {
+          type: 'message.question',
           conversationId: 'CONV-X',
           roles: ['BE'],
           messageType: 'question',

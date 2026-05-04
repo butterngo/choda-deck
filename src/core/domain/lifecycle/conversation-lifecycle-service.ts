@@ -35,6 +35,13 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
         ownerSessionId: resolvedSessionId ?? undefined
       })
 
+      this.conversations.emitLifecycleEvent(
+        conv.id,
+        'conversation.open',
+        input.createdBy,
+        conv.createdAt
+      )
+
       this.conversations.addMessage({
         conversationId: conv.id,
         authorName: input.createdBy,
@@ -105,6 +112,7 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
         this.createActionAndMaybeSpawnTask(conv.projectId, id, action)
       )
 
+      this.conversations.emitLifecycleEvent(id, 'conversation.decide', input.author, decidedAt)
       return { conversation: updated, actions }
     })
     return tx()
@@ -117,7 +125,10 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
       if (conv.status !== 'decided') {
         throw new ConversationStatusError(id, conv.status, 'must be decided before closing')
       }
-      return this.conversations.update(id, { status: 'closed', closedAt: now() })
+      const closedAt = now()
+      const updated = this.conversations.update(id, { status: 'closed', closedAt })
+      this.conversations.emitLifecycleEvent(id, 'conversation.close', 'system', closedAt)
+      return updated
     })
     return tx()
   }
@@ -133,7 +144,9 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
           'only decided or closed conversations can reopen'
         )
       }
-      return this.conversations.update(id, { status: 'discussing' })
+      const updated = this.conversations.update(id, { status: 'discussing' })
+      this.conversations.emitLifecycleEvent(id, 'conversation.reopen', 'system', now())
+      return updated
     })
     return tx()
   }
