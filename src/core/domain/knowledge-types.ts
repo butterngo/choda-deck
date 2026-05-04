@@ -96,3 +96,14 @@ export interface KnowledgeVerifyResult {
   isStale: boolean
   lastVerifiedAt: string
 }
+
+export interface KnowledgeSearchHit extends KnowledgeListItem {
+  distance: number
+}
+
+export interface KnowledgeSearchResult {
+  enabled: boolean
+  reason?: string
+  providerId?: string
+  results: KnowledgeSearchHit[]
+}

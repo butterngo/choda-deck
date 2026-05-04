@@ -133,4 +133,23 @@ export const register = (server: McpServer, svc: KnowledgeOperations): void => {
     },
     async ({ slug }) => textResponse(svc.deleteKnowledge(slug))
   )
+
+  server.registerTool(
+    'knowledge_search',
+    {
+      description:
+        'Semantic search over knowledge entries. Embeds the query with the active provider and ranks rows by vector distance. Returns enabled=false (with reason) when sqlite-vec or embedding deps are not installed; entries created since the last embed pass may be missing from results.',
+      inputSchema: {
+        query: z.string().describe('Natural-language query'),
+        topK: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .optional()
+          .describe('Max results (default 5, max 50)')
+      }
+    },
+    async ({ query, topK }) => textResponse(await svc.searchKnowledge(query, topK ?? 5))
+  )
 }
