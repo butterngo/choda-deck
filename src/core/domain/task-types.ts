@@ -268,6 +268,7 @@ export interface ConversationMessage {
   content: string
   messageType: ConversationMessageType
   metadata: ConversationMessageMetadata | null
+  targetRole: string | null
   createdAt: string
 }
 
@@ -313,6 +314,7 @@ export interface CreateConversationMessageInput {
   content: string
   messageType?: ConversationMessageType
   metadata?: ConversationMessageMetadata
+  targetRole?: string | null
 }
 
 export interface CreateConversationActionInput {

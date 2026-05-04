@@ -17,7 +17,7 @@ import type {
   CreateConversationActionInput,
   UpdateConversationActionInput
 } from '../task-types'
-import { emitConversationEvent } from '../services/event-emitter'
+import { emitConversationEvent, type ConversationEventType } from '../services/event-emitter'
 import { generateId, type Param } from './shared'
 
 function rowToConversation(row: Record<string, unknown>): Conversation {
@@ -53,6 +53,7 @@ function rowToMessage(row: Record<string, unknown>): ConversationMessage {
     metadata: row.metadata_json
       ? (JSON.parse(row.metadata_json as string) as ConversationMessageMetadata)
       : null,
+    targetRole: (row.target_role as string) || null,
     createdAt: row.created_at as string
   }
 }
@@ -209,8 +210,8 @@ export class ConversationRepository {
     this.db
       .prepare(
         `INSERT INTO conversation_messages
-       (id, conversation_id, author_name, content, message_type, metadata_json)
-       VALUES (?, ?, ?, ?, ?, ?)`
+       (id, conversation_id, author_name, content, message_type, metadata_json, target_role)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -218,30 +219,72 @@ export class ConversationRepository {
         input.authorName,
         input.content,
         input.messageType || 'comment',
-        input.metadata ? JSON.stringify(input.metadata) : null
+        input.metadata ? JSON.stringify(input.metadata) : null,
+        input.targetRole ?? null
       )
     const row = this.db
       .prepare('SELECT * FROM conversation_messages WHERE id = ?')
       .get(id) as Record<string, unknown>
     const message = rowToMessage(row)
-    this.emitQuestionEventIfRoleRouted(message)
+    this.emitMessageEventIfRoleRouted(message)
     return message
   }
 
-  private emitQuestionEventIfRoleRouted(message: ConversationMessage): void {
-    if (message.messageType !== 'question') return
-    const conv = this.get(message.conversationId)
+  private emitMessageEventIfRoleRouted(message: ConversationMessage): void {
+    const eventType: ConversationEventType | null =
+      message.messageType === 'question'
+        ? 'message.question'
+        : message.messageType === 'answer'
+          ? 'message.answer'
+          : null
+    if (!eventType) return
+    this.emitWithRoleFilter(
+      message.conversationId,
+      eventType,
+      message.messageType,
+      message.authorName,
+      message.createdAt,
+      message.targetRole
+    )
+  }
+
+  emitLifecycleEvent(
+    conversationId: string,
+    type: ConversationEventType,
+    author: string,
+    timestamp: string
+  ): void {
+    this.emitWithRoleFilter(conversationId, type, type, author, timestamp, null)
+  }
+
+  private emitWithRoleFilter(
+    conversationId: string,
+    type: ConversationEventType,
+    messageType: string,
+    author: string,
+    timestamp: string,
+    targetRole: string | null
+  ): void {
+    const conv = this.get(conversationId)
     if (!conv) return
-    const roles = this.getParticipants(message.conversationId)
+    const allRoles = this.getParticipants(conversationId)
       .map((p) => p.role)
       .filter((r): r is string => !!r)
-    if (roles.length === 0) return
+    let roles: string[]
+    if (targetRole !== null) {
+      if (!allRoles.includes(targetRole)) return
+      roles = [targetRole]
+    } else {
+      if (allRoles.length === 0) return
+      roles = allRoles
+    }
     emitConversationEvent(conv.projectId, {
-      conversationId: message.conversationId,
+      type,
+      conversationId,
       roles,
-      messageType: message.messageType,
-      author: message.authorName,
-      timestamp: message.createdAt
+      messageType,
+      author,
+      timestamp
     })
   }
 

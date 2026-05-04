@@ -2,7 +2,16 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { resolveEventDir } from '../../paths'
 
+export type ConversationEventType =
+  | 'message.question'
+  | 'message.answer'
+  | 'conversation.open'
+  | 'conversation.close'
+  | 'conversation.reopen'
+  | 'conversation.decide'
+
 export interface ConversationEvent {
+  type: ConversationEventType
   conversationId: string
   roles: string[]
   messageType: string
