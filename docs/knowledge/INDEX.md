@@ -3,6 +3,7 @@
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
 | [ADR-020-embedding-architecture](./ADR-020-embedding-architecture.md) | decision | ADR-020: Embedding Architecture — local default with provider abstraction for semantic search | 2026-05-04 |  |
+| [ADR-021-cross-project-event-routing](./ADR-021-cross-project-event-routing.md) | decision | ADR-021: Cross-Project Event Routing — Phase 3 | 2026-05-04 |  |
 | [pure-heuristic-core-thin-git-wrapper-for-stubbability](./pure-heuristic-core-thin-git-wrapper-for-stubbability.md) | decision | Pure heuristic core, thin git wrapper for stubbability | 2026-04-30 |  |
 | [ADR-018-knowledge-layer](./ADR-018-knowledge-layer.md) | decision | Knowledge Layer Foundation — code-coupled MD with frontmatter and staleness tracking | 2026-04-29 | ✱ |
 | [ADR-019-adr-numbering-convention](./ADR-019-adr-numbering-convention.md) | decision | ADR-019: ADR Numbering Convention — keep ADR-NNN prefix in slug | 2026-04-29 | ✱ |
