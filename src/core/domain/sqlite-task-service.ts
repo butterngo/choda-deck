@@ -1,5 +1,9 @@
 import Database from 'better-sqlite3'
+import * as sqliteVec from 'sqlite-vec'
 import type { TaskService } from './task-service.interface'
+import { EmbeddingStore } from './embedding/embedding-store'
+import { loadEmbeddingProvider } from './embedding/embedding-provider-factory'
+import type { EmbeddingProvider } from './embedding/embedding-provider.interface'
 import type { SessionOperations } from './interfaces/session-repository.interface'
 import type { ContextSourceOperations } from './interfaces/context-source-repository.interface'
 import type { ConversationOperations } from './interfaces/conversation-repository.interface'
@@ -39,6 +43,7 @@ import type {
   KnowledgeEntry,
   KnowledgeListFilter,
   KnowledgeListItem,
+  KnowledgeSearchResult,
   KnowledgeVerifyResult,
   UpdateKnowledgeInput
 } from './knowledge-types'
@@ -126,12 +131,21 @@ export class SqliteTaskService
   private readonly sessionLifecycle: SessionLifecycleService
   private readonly knowledgeRepo: KnowledgeRepository
   private readonly knowledgeService: KnowledgeService
+  private readonly embeddingStore: EmbeddingStore
+  private readonly embeddingProviderPromise: Promise<EmbeddingProvider>
+  private embeddingReadyPromise: Promise<void> | null = null
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath)
     this.db.pragma('journal_mode = WAL')
     this.db.pragma('foreign_keys = ON')
+    const vecLoaded = loadVecExtension(this.db)
     initSchema(this.db)
+    this.embeddingStore = new EmbeddingStore(this.db, vecLoaded)
+    this.embeddingProviderPromise = loadEmbeddingProvider().catch((err) => {
+      console.warn('[choda-deck] embedding provider load failed:', (err as Error).message)
+      throw err
+    })
 
     this.projects = new ProjectRepository(this.db)
     this.workspaces = new WorkspaceRepository(this.db)
@@ -167,7 +181,9 @@ export class SqliteTaskService
     this.knowledgeService = new KnowledgeService({
       db: this.db,
       knowledge: this.knowledgeRepo,
-      projects: this.projects
+      projects: this.projects,
+      embeddingStore: this.embeddingStore,
+      embeddingProvider: () => this.embeddingProviderPromise
     })
   }
 
@@ -176,7 +192,22 @@ export class SqliteTaskService
     /* schema bootstrapped in constructor */
   }
   async initializeAsync(): Promise<void> {
-    /* no-op */
+    if (this.embeddingReadyPromise) return this.embeddingReadyPromise
+    this.embeddingReadyPromise = (async (): Promise<void> => {
+      let provider: EmbeddingProvider
+      try {
+        provider = await this.embeddingProviderPromise
+      } catch {
+        return
+      }
+      const report = this.embeddingStore.ensureSchema(provider)
+      if (report.reembeddedAll) {
+        console.warn(
+          `[choda-deck] embedding provider switched ${report.previousProviderId} → ${report.activeProviderId}; cleared per-row embeddings, run backfill to repopulate`
+        )
+      }
+    })()
+    return this.embeddingReadyPromise
   }
   close(): void {
     this.db.close()
@@ -481,5 +512,24 @@ export class SqliteTaskService
   }
   deleteKnowledge(slug: string): { slug: string; deletedFile: boolean } {
     return this.knowledgeService.deleteKnowledge(slug)
+  }
+  searchKnowledge(query: string, k?: number): Promise<KnowledgeSearchResult> {
+    return this.knowledgeService.searchKnowledge(query, k)
+  }
+}
+
+// Loads the sqlite-vec native extension on the given connection. Returns false
+// if the platform binary is missing (e.g. user did not install optional native
+// pkg) — embedding features then degrade gracefully.
+function loadVecExtension(db: Database.Database): boolean {
+  try {
+    sqliteVec.load(db)
+    return true
+  } catch (err) {
+    console.warn(
+      '[choda-deck] sqlite-vec extension not loaded — semantic search disabled:',
+      (err as Error).message
+    )
+    return false
   }
 }

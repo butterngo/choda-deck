@@ -16,10 +16,13 @@ import type {
   KnowledgeListItem,
   KnowledgeRef,
   KnowledgeRefStaleness,
+  KnowledgeSearchResult,
   KnowledgeVerifyResult,
   UpdateKnowledgeInput
 } from './knowledge-types'
 import type { KnowledgeOperations } from './interfaces/knowledge-operations.interface'
+import type { EmbeddingProvider } from './embedding/embedding-provider.interface'
+import type { EmbeddingStore } from './embedding/embedding-store'
 
 export class KnowledgeNotFoundError extends Error {
   constructor(slug: string) {
@@ -49,6 +52,8 @@ export interface KnowledgeServiceDeps {
   git?: GitOps
   contentRoot?: string
   now?: () => Date
+  embeddingStore?: EmbeddingStore
+  embeddingProvider?: () => Promise<EmbeddingProvider>
 }
 
 export class KnowledgeService implements KnowledgeOperations {
@@ -58,6 +63,8 @@ export class KnowledgeService implements KnowledgeOperations {
   private readonly git: GitOps
   private readonly contentRoot: string
   private readonly now: () => Date
+  private readonly embeddingStore: EmbeddingStore | null
+  private readonly embeddingProvider: (() => Promise<EmbeddingProvider>) | null
 
   constructor(deps: KnowledgeServiceDeps) {
     this.db = deps.db
@@ -66,6 +73,8 @@ export class KnowledgeService implements KnowledgeOperations {
     this.git = deps.git ?? new GitOpsImpl()
     this.contentRoot = deps.contentRoot ?? process.env.CHODA_CONTENT_ROOT ?? ''
     this.now = deps.now ?? ((): Date => new Date())
+    this.embeddingStore = deps.embeddingStore ?? null
+    this.embeddingProvider = deps.embeddingProvider ?? null
   }
 
   createKnowledge(input: CreateKnowledgeInput): KnowledgeEntry {
@@ -115,6 +124,8 @@ export class KnowledgeService implements KnowledgeOperations {
     if (input.scope === 'project') {
       this.regenerateIndexMd(input.projectId, project.cwd)
     }
+
+    this.scheduleEmbed(slug, input.body)
 
     const staleness = this.computeStaleness(refs, project.cwd, input.scope)
     return {
@@ -166,12 +177,16 @@ export class KnowledgeService implements KnowledgeOperations {
     const row = this.knowledge.get(slug)
     if (!row) throw new KnowledgeNotFoundError(slug)
 
+    const rowid = this.embeddingStore?.rowidForSlug(slug) ?? null
+
     let deletedFile = false
     if (fs.existsSync(row.filePath)) {
       fs.unlinkSync(row.filePath)
       deletedFile = true
     }
     this.knowledge.delete(slug)
+
+    if (rowid !== null) this.embeddingStore?.delete(rowid)
 
     if (row.scope === 'project') {
       const project = this.projects.get(row.projectId)
@@ -214,6 +229,10 @@ export class KnowledgeService implements KnowledgeOperations {
 
     if (scope === 'project' && project) {
       this.regenerateIndexMd(existing.frontmatter.projectId, projectCwd)
+    }
+
+    if (input.body !== undefined && input.body !== existing.body) {
+      this.scheduleEmbed(input.slug, newBody)
     }
 
     const staleness = this.computeStaleness(newRefs, projectCwd, scope)
@@ -347,6 +366,78 @@ export class KnowledgeService implements KnowledgeOperations {
     } catch {
       return false
     }
+  }
+
+  async searchKnowledge(query: string, k = 5): Promise<KnowledgeSearchResult> {
+    if (!this.embeddingStore || !this.embeddingProvider) {
+      return { enabled: false, reason: 'embedding store not configured', results: [] }
+    }
+    let provider: EmbeddingProvider
+    try {
+      provider = await this.embeddingProvider()
+    } catch (err) {
+      return { enabled: false, reason: (err as Error).message, results: [] }
+    }
+    if (!this.embeddingStore.isEnabled() || provider.id === 'noop') {
+      return {
+        enabled: false,
+        reason: 'sqlite-vec extension or embedding deps unavailable',
+        providerId: provider.id,
+        results: []
+      }
+    }
+    let vec: Float32Array
+    try {
+      vec = await provider.embed(query)
+    } catch (err) {
+      return {
+        enabled: false,
+        reason: `embed failed: ${(err as Error).message}`,
+        providerId: provider.id,
+        results: []
+      }
+    }
+    const hits = this.embeddingStore.search(vec, Math.max(1, k))
+    const results = hits
+      .map((h) => {
+        const row = this.knowledge.get(h.slug)
+        if (!row) return null
+        return {
+          slug: row.slug,
+          projectId: row.projectId,
+          scope: row.scope,
+          type: row.type,
+          title: row.title,
+          filePath: row.filePath,
+          createdAt: row.createdAt,
+          lastVerifiedAt: row.lastVerifiedAt,
+          distance: h.distance
+        }
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null)
+    return { enabled: true, providerId: provider.id, results }
+  }
+
+  // Fire-and-forget embed. Failures log a warning but never reject — the row
+  // stays in knowledge_index without a vector and is filtered out of search
+  // until a backfill pass picks it up.
+  private scheduleEmbed(slug: string, body: string): void {
+    if (!this.embeddingStore || !this.embeddingProvider) return
+    void (async (): Promise<void> => {
+      try {
+        const provider = await this.embeddingProvider!()
+        if (!this.embeddingStore!.isEnabled() || provider.id === 'noop') return
+        const rowid = this.embeddingStore!.rowidForSlug(slug)
+        if (rowid === null) return
+        const vec = await provider.embed(body)
+        this.embeddingStore!.upsert(rowid, provider.id, provider.dims, vec)
+      } catch (err) {
+        console.warn(
+          `[choda-deck] embed failed for knowledge ${slug}:`,
+          (err as Error).message
+        )
+      }
+    })()
   }
 }
 

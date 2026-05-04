@@ -379,9 +379,25 @@ function createM1Tables(db: Database.Database): void {
       file_path TEXT NOT NULL,
       created_at TEXT NOT NULL,
       last_verified_at TEXT NOT NULL,
+      embedding_provider_id TEXT,
+      embedding_dims INTEGER,
       FOREIGN KEY (project_id) REFERENCES projects(id)
     )
   `)
+
+  // TASK-643: backfill embedding metadata columns for DBs created before they
+  // were part of the schema. New columns; vector itself lives in knowledge_vec
+  // (sqlite-vec virtual table created by EmbeddingStore at runtime).
+  try {
+    db.exec('ALTER TABLE knowledge_index ADD COLUMN embedding_provider_id TEXT')
+  } catch {
+    /* exists */
+  }
+  try {
+    db.exec('ALTER TABLE knowledge_index ADD COLUMN embedding_dims INTEGER')
+  } catch {
+    /* exists */
+  }
 }
 
 function createIndexes(db: Database.Database): void {

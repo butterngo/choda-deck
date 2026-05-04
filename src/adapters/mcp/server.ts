@@ -23,6 +23,7 @@ const { dbPath, dataDir } = resolveDataPaths()
 
 async function main(): Promise<void> {
   const svc = new SqliteTaskService(dbPath)
+  await svc.initializeAsync()
 
   const server = new McpServer(
     { name: 'choda-tasks', version: '0.2.0' },
