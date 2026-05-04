@@ -5,11 +5,13 @@ import type {
   KnowledgeListItem,
   KnowledgeSearchResult,
   KnowledgeVerifyResult,
+  RegisterExistingKnowledgeInput,
   UpdateKnowledgeInput
 } from '../knowledge-types'
 
 export interface KnowledgeOperations {
   createKnowledge(input: CreateKnowledgeInput): KnowledgeEntry
+  registerExistingKnowledge(input: RegisterExistingKnowledgeInput): KnowledgeEntry
   getKnowledge(slug: string): KnowledgeEntry | null
   listKnowledge(filter?: KnowledgeListFilter): KnowledgeListItem[]
   updateKnowledge(input: UpdateKnowledgeInput): KnowledgeEntry

@@ -3,6 +3,7 @@ import * as path from 'path'
 import type Database from 'better-sqlite3'
 import type { KnowledgeRepository } from './repositories/knowledge-repository'
 import type { ProjectRepository } from './repositories/project-repository'
+import type { WorkspaceRepository } from './repositories/workspace-repository'
 import type { GitOps } from './knowledge-git'
 import { GitOpsImpl } from './knowledge-git'
 import { parseFrontmatter, serializeFrontmatter } from './knowledge-frontmatter'
@@ -18,6 +19,7 @@ import type {
   KnowledgeRefStaleness,
   KnowledgeSearchResult,
   KnowledgeVerifyResult,
+  RegisterExistingKnowledgeInput,
   UpdateKnowledgeInput
 } from './knowledge-types'
 import type { KnowledgeOperations } from './interfaces/knowledge-operations.interface'
@@ -49,6 +51,7 @@ export interface KnowledgeServiceDeps {
   db: Database.Database
   knowledge: KnowledgeRepository
   projects: ProjectRepository
+  workspaces?: WorkspaceRepository
   git?: GitOps
   contentRoot?: string
   now?: () => Date
@@ -60,6 +63,7 @@ export class KnowledgeService implements KnowledgeOperations {
   private readonly db: Database.Database
   private readonly knowledge: KnowledgeRepository
   private readonly projects: ProjectRepository
+  private readonly workspaces: WorkspaceRepository | null
   private readonly git: GitOps
   private readonly contentRoot: string
   private readonly now: () => Date
@@ -70,6 +74,7 @@ export class KnowledgeService implements KnowledgeOperations {
     this.db = deps.db
     this.knowledge = deps.knowledge
     this.projects = deps.projects
+    this.workspaces = deps.workspaces ?? null
     this.git = deps.git ?? new GitOpsImpl()
     this.contentRoot = deps.contentRoot ?? process.env.CHODA_CONTENT_ROOT ?? ''
     this.now = deps.now ?? ((): Date => new Date())
@@ -82,23 +87,27 @@ export class KnowledgeService implements KnowledgeOperations {
     const project = this.projects.get(input.projectId)
     if (!project) throw new KnowledgeValidationError(`unknown projectId: ${input.projectId}`)
 
+    const workspaceCwd = this.resolveWorkspaceCwd(input.projectId, input.workspaceId)
+
     const slug = input.slug ?? slugify(input.title)
     if (!slug) throw new KnowledgeValidationError('cannot derive slug from title')
     if (this.knowledge.get(slug)) {
       throw new KnowledgeConflictError(slug, 'slug already exists; pass an explicit slug to disambiguate')
     }
 
-    const filePath = this.resolveFilePath(input.scope, project.cwd, slug)
+    const stalenessCwd = workspaceCwd ?? project.cwd
+    const filePath = this.resolveFilePath(input.scope, project.cwd, slug, workspaceCwd)
     if (fs.existsSync(filePath)) {
       throw new KnowledgeConflictError(slug, `file already exists at ${filePath}`)
     }
 
     const isoDate = toIsoDate(this.now())
-    const refs = this.materializeRefs(input.refs, project.cwd, input.scope)
+    const refs = this.materializeRefs(input.refs, stalenessCwd, input.scope)
     const frontmatter: KnowledgeFrontmatter = {
       type: input.type,
       title: input.title,
       projectId: input.projectId,
+      workspaceId: input.workspaceId,
       scope: input.scope,
       refs,
       createdAt: isoDate,
@@ -112,6 +121,7 @@ export class KnowledgeService implements KnowledgeOperations {
     const indexRow: KnowledgeIndexRow = {
       slug,
       projectId: input.projectId,
+      workspaceId: input.workspaceId ?? null,
       scope: input.scope,
       type: input.type,
       title: input.title,
@@ -122,12 +132,16 @@ export class KnowledgeService implements KnowledgeOperations {
     this.knowledge.upsert(indexRow)
 
     if (input.scope === 'project') {
-      this.regenerateIndexMd(input.projectId, project.cwd)
+      if (input.workspaceId && workspaceCwd) {
+        this.regenerateWorkspaceIndexMd(input.projectId, input.workspaceId, workspaceCwd)
+      } else {
+        this.regenerateIndexMd(input.projectId, project.cwd)
+      }
     }
 
     this.scheduleEmbed(slug, input.body)
 
-    const staleness = this.computeStaleness(refs, project.cwd, input.scope)
+    const staleness = this.computeStaleness(refs, stalenessCwd, input.scope)
     return {
       slug,
       frontmatter,
@@ -138,6 +152,83 @@ export class KnowledgeService implements KnowledgeOperations {
     }
   }
 
+  registerExistingKnowledge(input: RegisterExistingKnowledgeInput): KnowledgeEntry {
+    if (!fs.existsSync(input.filePath)) {
+      throw new KnowledgeValidationError(`file not found: ${input.filePath}`)
+    }
+    const project = this.projects.get(input.projectId)
+    if (!project) throw new KnowledgeValidationError(`unknown projectId: ${input.projectId}`)
+    const workspaceCwd = this.resolveWorkspaceCwd(input.projectId, input.workspaceId)
+
+    const raw = fs.readFileSync(input.filePath, 'utf8')
+    const { frontmatter, body } = parseFrontmatter(raw)
+    if (frontmatter.projectId !== input.projectId) {
+      throw new KnowledgeValidationError(
+        `frontmatter projectId (${frontmatter.projectId}) does not match input (${input.projectId})`
+      )
+    }
+    if ((frontmatter.workspaceId ?? null) !== (input.workspaceId ?? null)) {
+      throw new KnowledgeValidationError(
+        `frontmatter workspaceId (${frontmatter.workspaceId ?? 'null'}) does not match input (${input.workspaceId ?? 'null'})`
+      )
+    }
+
+    const slug = path.basename(input.filePath, '.md')
+    if (!slug) throw new KnowledgeValidationError(`cannot derive slug from path: ${input.filePath}`)
+
+    const indexRow: KnowledgeIndexRow = {
+      slug,
+      projectId: input.projectId,
+      workspaceId: input.workspaceId ?? null,
+      scope: frontmatter.scope,
+      type: frontmatter.type,
+      title: frontmatter.title,
+      filePath: input.filePath,
+      createdAt: frontmatter.createdAt,
+      lastVerifiedAt: frontmatter.lastVerifiedAt
+    }
+    this.knowledge.upsert(indexRow)
+
+    if (frontmatter.scope === 'project') {
+      if (input.workspaceId && workspaceCwd) {
+        this.regenerateWorkspaceIndexMd(input.projectId, input.workspaceId, workspaceCwd)
+      } else {
+        this.regenerateIndexMd(input.projectId, project.cwd)
+      }
+    }
+
+    this.scheduleEmbed(slug, body)
+
+    const stalenessCwd = workspaceCwd ?? project.cwd
+    const staleness = this.computeStaleness(frontmatter.refs, stalenessCwd, frontmatter.scope)
+    return {
+      slug,
+      frontmatter,
+      body,
+      filePath: input.filePath,
+      staleness,
+      isStale: staleness.some((s) => s.commitsSince > 0)
+    }
+  }
+
+  private resolveWorkspaceCwd(projectId: string, workspaceId?: string): string | null {
+    if (!workspaceId) return null
+    if (!this.workspaces) {
+      throw new KnowledgeValidationError(
+        'workspace repository not configured — cannot resolve workspaceId'
+      )
+    }
+    const ws = this.workspaces.get(workspaceId)
+    if (!ws) throw new KnowledgeValidationError(`unknown workspaceId: ${workspaceId}`)
+    if (ws.projectId !== projectId) {
+      throw new KnowledgeValidationError(
+        `workspace ${workspaceId} belongs to project ${ws.projectId}, not ${projectId}`
+      )
+    }
+    if (!ws.cwd) throw new KnowledgeValidationError(`workspace ${workspaceId} has no cwd`)
+    return ws.cwd
+  }
+
   getKnowledge(slug: string): KnowledgeEntry | null {
     const row = this.knowledge.get(slug)
     if (!row) return null
@@ -146,8 +237,7 @@ export class KnowledgeService implements KnowledgeOperations {
     const raw = fs.readFileSync(row.filePath, 'utf8')
     const { frontmatter, body } = parseFrontmatter(raw)
 
-    const project = this.projects.get(row.projectId)
-    const cwd = project?.cwd ?? ''
+    const cwd = this.resolveStalenessCwd(row.projectId, row.workspaceId)
     const staleness = this.computeStaleness(frontmatter.refs, cwd, row.scope)
 
     return {
@@ -164,6 +254,7 @@ export class KnowledgeService implements KnowledgeOperations {
     return this.knowledge.list(filter).map((r) => ({
       slug: r.slug,
       projectId: r.projectId,
+      workspaceId: r.workspaceId,
       scope: r.scope,
       type: r.type,
       title: r.title,
@@ -171,6 +262,14 @@ export class KnowledgeService implements KnowledgeOperations {
       createdAt: r.createdAt,
       lastVerifiedAt: r.lastVerifiedAt
     }))
+  }
+
+  private resolveStalenessCwd(projectId: string, workspaceId: string | null): string {
+    if (workspaceId && this.workspaces) {
+      const ws = this.workspaces.get(workspaceId)
+      if (ws?.cwd) return ws.cwd
+    }
+    return this.projects.get(projectId)?.cwd ?? ''
   }
 
   deleteKnowledge(slug: string): { slug: string; deletedFile: boolean } {
@@ -189,11 +288,22 @@ export class KnowledgeService implements KnowledgeOperations {
     if (rowid !== null) this.embeddingStore?.delete(rowid)
 
     if (row.scope === 'project') {
-      const project = this.projects.get(row.projectId)
-      if (project) this.regenerateIndexMd(row.projectId, project.cwd)
+      this.regenerateIndexForRow(row)
     }
 
     return { slug, deletedFile }
+  }
+
+  private regenerateIndexForRow(row: KnowledgeIndexRow): void {
+    if (row.workspaceId && this.workspaces) {
+      const ws = this.workspaces.get(row.workspaceId)
+      if (ws?.cwd) {
+        this.regenerateWorkspaceIndexMd(row.projectId, row.workspaceId, ws.cwd)
+        return
+      }
+    }
+    const project = this.projects.get(row.projectId)
+    if (project) this.regenerateIndexMd(row.projectId, project.cwd)
   }
 
   updateKnowledge(input: UpdateKnowledgeInput): KnowledgeEntry {
@@ -204,17 +314,19 @@ export class KnowledgeService implements KnowledgeOperations {
     const existing = this.getKnowledge(input.slug)
     if (!existing) throw new KnowledgeNotFoundError(input.slug)
 
-    const project = this.projects.get(existing.frontmatter.projectId)
-    const projectCwd = project?.cwd ?? ''
+    const row = this.knowledge.get(input.slug)
+    if (!row) throw new KnowledgeNotFoundError(input.slug)
+
+    const stalenessCwd = this.resolveStalenessCwd(row.projectId, row.workspaceId)
     const scope = existing.frontmatter.scope
 
     const newBody = input.body ?? existing.body
     const newRefs: KnowledgeRef[] =
       input.refs !== undefined
-        ? this.materializeRefs(input.refs, projectCwd, scope)
+        ? this.materializeRefs(input.refs, stalenessCwd, scope)
         : existing.frontmatter.refs.map((r) => ({
             path: r.path,
-            commitSha: project ? safeHeadSha(this.git, projectCwd) : r.commitSha
+            commitSha: stalenessCwd ? safeHeadSha(this.git, stalenessCwd) : r.commitSha
           }))
 
     const isoDate = toIsoDate(this.now())
@@ -227,15 +339,15 @@ export class KnowledgeService implements KnowledgeOperations {
     fs.writeFileSync(existing.filePath, serializeFrontmatter(updatedFm, newBody), 'utf8')
     this.knowledge.updateLastVerified(input.slug, isoDate)
 
-    if (scope === 'project' && project) {
-      this.regenerateIndexMd(existing.frontmatter.projectId, projectCwd)
+    if (scope === 'project') {
+      this.regenerateIndexForRow(row)
     }
 
     if (input.body !== undefined && input.body !== existing.body) {
       this.scheduleEmbed(input.slug, newBody)
     }
 
-    const staleness = this.computeStaleness(newRefs, projectCwd, scope)
+    const staleness = this.computeStaleness(newRefs, stalenessCwd, scope)
     return {
       slug: input.slug,
       frontmatter: updatedFm,
@@ -249,13 +361,15 @@ export class KnowledgeService implements KnowledgeOperations {
   verifyKnowledge(slug: string): KnowledgeVerifyResult {
     const entry = this.getKnowledge(slug)
     if (!entry) throw new KnowledgeNotFoundError(slug)
+    const row = this.knowledge.get(slug)
+    if (!row) throw new KnowledgeNotFoundError(slug)
 
     const isoDate = toIsoDate(this.now())
     this.knowledge.updateLastVerified(slug, isoDate)
 
-    const project = this.projects.get(entry.frontmatter.projectId)
+    const stalenessCwd = this.resolveStalenessCwd(row.projectId, row.workspaceId)
     const refreshedRefs: KnowledgeRef[] = entry.frontmatter.refs.map((r) => {
-      const sha = project ? safeHeadSha(this.git, project.cwd) : r.commitSha
+      const sha = stalenessCwd ? safeHeadSha(this.git, stalenessCwd) : r.commitSha
       return { path: r.path, commitSha: sha }
     })
     const updatedFm: KnowledgeFrontmatter = {
@@ -265,8 +379,8 @@ export class KnowledgeService implements KnowledgeOperations {
     }
     fs.writeFileSync(entry.filePath, serializeFrontmatter(updatedFm, entry.body), 'utf8')
 
-    if (entry.frontmatter.scope === 'project' && project) {
-      this.regenerateIndexMd(entry.frontmatter.projectId, project.cwd)
+    if (entry.frontmatter.scope === 'project') {
+      this.regenerateIndexForRow(row)
     }
 
     const staleness = refreshedRefs.map((r) => ({
@@ -292,9 +406,15 @@ export class KnowledgeService implements KnowledgeOperations {
     }
   }
 
-  private resolveFilePath(scope: 'project' | 'cross', projectCwd: string, slug: string): string {
+  private resolveFilePath(
+    scope: 'project' | 'cross',
+    projectCwd: string,
+    slug: string,
+    workspaceCwd: string | null
+  ): string {
     if (scope === 'project') {
-      return path.join(projectCwd, 'docs', 'knowledge', `${slug}.md`)
+      const cwd = workspaceCwd ?? projectCwd
+      return path.join(cwd, 'docs', 'knowledge', `${slug}.md`)
     }
     return path.join(this.contentRoot, '30-Knowledge', `${slug}.md`)
   }
@@ -337,16 +457,29 @@ export class KnowledgeService implements KnowledgeOperations {
   }
 
   private regenerateIndexMd(projectId: string, projectCwd: string): void {
-    const rows = this.knowledge.list({ projectId, scope: 'project' })
-    const indexPath = path.join(projectCwd, 'docs', 'knowledge', 'INDEX.md')
-    const lines: string[] = ['# Knowledge — ' + projectId, '']
+    const rows = this.knowledge.list({ projectId, workspaceId: null, scope: 'project' })
+    this.writeIndexMd(projectCwd, `Knowledge — ${projectId}`, rows)
+  }
+
+  private regenerateWorkspaceIndexMd(
+    projectId: string,
+    workspaceId: string,
+    workspaceCwd: string
+  ): void {
+    const rows = this.knowledge.list({ projectId, workspaceId, scope: 'project' })
+    this.writeIndexMd(workspaceCwd, `Knowledge — ${projectId}/${workspaceId}`, rows)
+  }
+
+  private writeIndexMd(cwd: string, heading: string, rows: KnowledgeIndexRow[]): void {
+    const indexPath = path.join(cwd, 'docs', 'knowledge', 'INDEX.md')
+    const lines: string[] = ['# ' + heading, '']
     if (rows.length === 0) {
       lines.push('_No entries yet._')
     } else {
       lines.push('| Slug | Type | Title | Last verified | Stale |')
       lines.push('|------|------|-------|---------------|-------|')
       for (const r of rows) {
-        const flag = this.isEntryStale(r, projectCwd) ? '✱' : ''
+        const flag = this.isEntryStale(r, cwd) ? '✱' : ''
         lines.push(
           `| [${r.slug}](./${r.slug}.md) | ${r.type} | ${escapeMd(r.title)} | ${r.lastVerifiedAt.slice(0, 10)} | ${flag} |`
         )
@@ -405,6 +538,7 @@ export class KnowledgeService implements KnowledgeOperations {
         return {
           slug: row.slug,
           projectId: row.projectId,
+          workspaceId: row.workspaceId,
           scope: row.scope,
           type: row.type,
           title: row.title,

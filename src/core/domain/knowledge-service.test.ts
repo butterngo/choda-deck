@@ -5,6 +5,7 @@ import * as os from 'os'
 import Database from 'better-sqlite3'
 import { initSchema } from './repositories/schema'
 import { ProjectRepository } from './repositories/project-repository'
+import { WorkspaceRepository } from './repositories/workspace-repository'
 import { KnowledgeRepository } from './repositories/knowledge-repository'
 import {
   KnowledgeService,
@@ -13,7 +14,7 @@ import {
   KnowledgeValidationError
 } from './knowledge-service'
 import type { GitOps } from './knowledge-git'
-import { parseFrontmatter } from './knowledge-frontmatter'
+import { parseFrontmatter, serializeFrontmatter } from './knowledge-frontmatter'
 
 class FakeGitOps implements GitOps {
   headSha = 'head1'
@@ -339,5 +340,229 @@ describe('verifyKnowledge', () => {
     const after = svc.getKnowledge('learn-one')
     expect(after?.frontmatter.refs[0].commitSha).toBe('sha-new')
     expect(after?.isStale).toBe(false)
+  })
+})
+
+// ── ADR-022 (TASK-651) — workspace-scoped knowledge ──────────────────────────
+describe('workspace-scoped knowledge', () => {
+  let workspaces: WorkspaceRepository
+  let workspaceCwd: string
+  let wsSvc: KnowledgeService
+
+  beforeEach(() => {
+    workspaces = new WorkspaceRepository(db)
+    workspaceCwd = path.join(tmpDir, 'ws-repo')
+    fs.mkdirSync(workspaceCwd, { recursive: true })
+    workspaces.add('proj-k', 'ws-1', 'Workspace 1', workspaceCwd)
+    // sibling project + workspace to test cross-project guard
+    projects.ensure('proj-other', 'Other', path.join(tmpDir, 'other'))
+    workspaces.add('proj-other', 'ws-other', 'Other WS', path.join(tmpDir, 'other-ws'))
+    wsSvc = new KnowledgeService({
+      db,
+      knowledge: repo,
+      projects,
+      workspaces,
+      git,
+      contentRoot: path.join(tmpDir, 'vault'),
+      now: () => new Date('2026-04-29T00:00:00Z')
+    })
+  })
+
+  it('createKnowledge with workspaceId writes file under workspaceCwd', () => {
+    const entry = wsSvc.createKnowledge({
+      projectId: 'proj-k',
+      workspaceId: 'ws-1',
+      type: 'decision',
+      scope: 'project',
+      title: 'WS Decision',
+      body: 'body\n',
+      refs: []
+    })
+
+    expect(entry.filePath).toBe(path.join(workspaceCwd, 'docs', 'knowledge', 'ws-decision.md'))
+    expect(fs.existsSync(entry.filePath)).toBe(true)
+    expect(entry.frontmatter.workspaceId).toBe('ws-1')
+
+    const indexRow = repo.get('ws-decision')
+    expect(indexRow?.workspaceId).toBe('ws-1')
+
+    const wsIndex = fs.readFileSync(path.join(workspaceCwd, 'docs', 'knowledge', 'INDEX.md'), 'utf8')
+    expect(wsIndex).toContain('ws-decision')
+    expect(wsIndex).toContain('proj-k/ws-1')
+
+    // Project INDEX.md should not list it
+    const projIndexPath = path.join(projectCwd, 'docs', 'knowledge', 'INDEX.md')
+    if (fs.existsSync(projIndexPath)) {
+      const projIndex = fs.readFileSync(projIndexPath, 'utf8')
+      expect(projIndex).not.toContain('ws-decision')
+    }
+  })
+
+  it('createKnowledge rejects workspaceId from a different project', () => {
+    expect(() =>
+      wsSvc.createKnowledge({
+        projectId: 'proj-k',
+        workspaceId: 'ws-other',
+        type: 'decision',
+        scope: 'project',
+        title: 'Cross Project',
+        body: 'b',
+        refs: []
+      })
+    ).toThrow(KnowledgeValidationError)
+  })
+
+  it('createKnowledge rejects unknown workspaceId', () => {
+    expect(() =>
+      wsSvc.createKnowledge({
+        projectId: 'proj-k',
+        workspaceId: 'no-such-ws',
+        type: 'decision',
+        scope: 'project',
+        title: 'Bad',
+        body: 'b',
+        refs: []
+      })
+    ).toThrow(KnowledgeValidationError)
+  })
+
+  it('listKnowledge filters by workspaceId', () => {
+    wsSvc.createKnowledge({
+      projectId: 'proj-k',
+      workspaceId: 'ws-1',
+      type: 'decision',
+      scope: 'project',
+      title: 'WS Entry',
+      body: 'b',
+      refs: []
+    })
+    wsSvc.createKnowledge({
+      projectId: 'proj-k',
+      type: 'decision',
+      scope: 'project',
+      title: 'Project Entry',
+      body: 'b',
+      refs: []
+    })
+
+    expect(wsSvc.listKnowledge({ workspaceId: 'ws-1' })).toHaveLength(1)
+    expect(wsSvc.listKnowledge({ workspaceId: 'ws-1' })[0].slug).toBe('ws-entry')
+    expect(wsSvc.listKnowledge({ workspaceId: null })).toHaveLength(1)
+    expect(wsSvc.listKnowledge({ workspaceId: null })[0].slug).toBe('project-entry')
+    expect(wsSvc.listKnowledge({ projectId: 'proj-k' })).toHaveLength(2)
+  })
+
+  it('frontmatter round-trip preserves workspaceId', () => {
+    wsSvc.createKnowledge({
+      projectId: 'proj-k',
+      workspaceId: 'ws-1',
+      type: 'decision',
+      scope: 'project',
+      title: 'Round Trip',
+      body: 'b',
+      refs: []
+    })
+    const filePath = path.join(workspaceCwd, 'docs', 'knowledge', 'round-trip.md')
+    const raw = fs.readFileSync(filePath, 'utf8')
+    expect(raw).toContain('workspaceId: ws-1')
+    const { frontmatter } = parseFrontmatter(raw)
+    expect(frontmatter.workspaceId).toBe('ws-1')
+  })
+
+  describe('registerExistingKnowledge', () => {
+    function writePreExisting(targetCwd: string, slug: string, workspaceId?: string): string {
+      const fp = path.join(targetCwd, 'docs', 'knowledge', `${slug}.md`)
+      fs.mkdirSync(path.dirname(fp), { recursive: true })
+      const content = serializeFrontmatter(
+        {
+          type: 'decision',
+          title: `Title ${slug}`,
+          projectId: 'proj-k',
+          workspaceId,
+          scope: 'project',
+          refs: [],
+          createdAt: '2026-01-15',
+          lastVerifiedAt: '2026-01-15'
+        },
+        '# body\n'
+      )
+      fs.writeFileSync(fp, content, 'utf8')
+      return fp
+    }
+
+    it('indexes an existing workspace-scoped file without rewriting it', () => {
+      const fp = writePreExisting(workspaceCwd, 'pre-existing', 'ws-1')
+      const before = fs.readFileSync(fp, 'utf8')
+
+      const entry = wsSvc.registerExistingKnowledge({
+        filePath: fp,
+        projectId: 'proj-k',
+        workspaceId: 'ws-1'
+      })
+
+      expect(entry.slug).toBe('pre-existing')
+      expect(entry.frontmatter.createdAt).toBe('2026-01-15')
+
+      const after = fs.readFileSync(fp, 'utf8')
+      expect(after).toBe(before) // not modified
+
+      const row = repo.get('pre-existing')
+      expect(row?.workspaceId).toBe('ws-1')
+      expect(row?.title).toBe('Title pre-existing')
+    })
+
+    it('is idempotent on re-run', () => {
+      const fp = writePreExisting(workspaceCwd, 'idem', 'ws-1')
+      wsSvc.registerExistingKnowledge({
+        filePath: fp,
+        projectId: 'proj-k',
+        workspaceId: 'ws-1'
+      })
+      wsSvc.registerExistingKnowledge({
+        filePath: fp,
+        projectId: 'proj-k',
+        workspaceId: 'ws-1'
+      })
+      expect(repo.list({ projectId: 'proj-k', workspaceId: 'ws-1' })).toHaveLength(1)
+    })
+
+    it('rejects projectId mismatch with frontmatter', () => {
+      const fp = writePreExisting(workspaceCwd, 'mismatch', 'ws-1')
+      expect(() =>
+        wsSvc.registerExistingKnowledge({
+          filePath: fp,
+          projectId: 'proj-other',
+          workspaceId: 'ws-1'
+        })
+      ).toThrow(KnowledgeValidationError)
+    })
+
+    it('rejects workspaceId mismatch with frontmatter', () => {
+      const fp = writePreExisting(workspaceCwd, 'wsmismatch', 'ws-1')
+      expect(() =>
+        wsSvc.registerExistingKnowledge({
+          filePath: fp,
+          projectId: 'proj-k',
+          workspaceId: undefined
+        })
+      ).toThrow(KnowledgeValidationError)
+    })
+
+    it('rejects file that does not exist', () => {
+      expect(() =>
+        wsSvc.registerExistingKnowledge({
+          filePath: path.join(tmpDir, 'nope.md'),
+          projectId: 'proj-k'
+        })
+      ).toThrow(KnowledgeValidationError)
+    })
+  })
+
+  it('schema migration is idempotent (re-run initSchema is safe)', () => {
+    expect(() => initSchema(db)).not.toThrow()
+    expect(() => initSchema(db)).not.toThrow()
+    // workspace_id column still queryable
+    const cols = db.pragma('table_info(knowledge_index)') as Array<{ name: string }>
+    expect(cols.some((c) => c.name === 'workspace_id')).toBe(true)
   })
 })

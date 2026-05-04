@@ -20,6 +20,7 @@ export interface KnowledgeFrontmatter {
   type: KnowledgeType
   title: string
   projectId: string
+  workspaceId?: string
   scope: KnowledgeScope
   refs: KnowledgeRef[]
   createdAt: string
@@ -29,6 +30,7 @@ export interface KnowledgeFrontmatter {
 export interface KnowledgeIndexRow {
   slug: string
   projectId: string
+  workspaceId: string | null
   scope: KnowledgeScope
   type: KnowledgeType
   title: string
@@ -55,6 +57,7 @@ export interface KnowledgeEntry {
 export interface KnowledgeListItem {
   slug: string
   projectId: string
+  workspaceId: string | null
   scope: KnowledgeScope
   type: KnowledgeType
   title: string
@@ -70,12 +73,19 @@ export interface CreateKnowledgeRefInput {
 
 export interface CreateKnowledgeInput {
   projectId: string
+  workspaceId?: string
   type: KnowledgeType
   scope: KnowledgeScope
   title: string
   body: string
   refs: CreateKnowledgeRefInput[]
   slug?: string
+}
+
+export interface RegisterExistingKnowledgeInput {
+  filePath: string
+  projectId: string
+  workspaceId?: string
 }
 
 export interface UpdateKnowledgeInput {
@@ -86,6 +96,7 @@ export interface UpdateKnowledgeInput {
 
 export interface KnowledgeListFilter {
   projectId?: string
+  workspaceId?: string | null
   scope?: KnowledgeScope
   type?: KnowledgeType
 }

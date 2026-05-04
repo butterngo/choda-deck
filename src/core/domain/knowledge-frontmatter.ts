@@ -100,6 +100,9 @@ function assignScalar(fm: Partial<KnowledgeFrontmatter>, key: string, value: str
     case 'projectId':
       fm.projectId = value
       break
+    case 'workspaceId':
+      fm.workspaceId = value
+      break
     case 'scope':
       fm.scope = value as KnowledgeScope
       break
@@ -129,6 +132,7 @@ function validate(fm: Partial<KnowledgeFrontmatter>): KnowledgeFrontmatter {
     type: fm.type,
     title: fm.title,
     projectId: fm.projectId,
+    workspaceId: fm.workspaceId,
     scope: fm.scope,
     refs: fm.refs ?? [],
     createdAt: fm.createdAt,
@@ -141,6 +145,7 @@ export function serializeFrontmatter(fm: KnowledgeFrontmatter, body: string): st
   lines.push(`type: ${fm.type}`)
   lines.push(`title: ${quoteIfNeeded(fm.title)}`)
   lines.push(`projectId: ${fm.projectId}`)
+  if (fm.workspaceId) lines.push(`workspaceId: ${fm.workspaceId}`)
   lines.push(`scope: ${fm.scope}`)
   if (fm.refs.length === 0) {
     lines.push('refs: []')
