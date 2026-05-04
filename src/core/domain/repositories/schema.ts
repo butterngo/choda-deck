@@ -406,6 +406,13 @@ function createM1Tables(db: Database.Database): void {
   } catch {
     /* exists */
   }
+
+  // ADR-022 (TASK-651): workspace-scoped knowledge.
+  try {
+    db.exec('ALTER TABLE knowledge_index ADD COLUMN workspace_id TEXT REFERENCES workspaces(id)')
+  } catch {
+    /* exists */
+  }
 }
 
 function createIndexes(db: Database.Database): void {
@@ -438,6 +445,7 @@ function createIndexes(db: Database.Database): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_knowledge_project ON knowledge_index(project_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_knowledge_type ON knowledge_index(project_id, type)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_knowledge_scope ON knowledge_index(project_id, scope)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_knowledge_workspace ON knowledge_index(workspace_id)')
 }
 
 // Rename any existing task rows whose ID exceeds COUNTER_SANE_MAX (legacy

@@ -45,6 +45,7 @@ import type {
   KnowledgeListItem,
   KnowledgeSearchResult,
   KnowledgeVerifyResult,
+  RegisterExistingKnowledgeInput,
   UpdateKnowledgeInput
 } from './knowledge-types'
 import type {
@@ -182,6 +183,7 @@ export class SqliteTaskService
       db: this.db,
       knowledge: this.knowledgeRepo,
       projects: this.projects,
+      workspaces: this.workspaces,
       embeddingStore: this.embeddingStore,
       embeddingProvider: () => this.embeddingProviderPromise
     })
@@ -497,6 +499,9 @@ export class SqliteTaskService
   // ── Knowledge ─────────────────────────────────────────────────────────────
   createKnowledge(input: CreateKnowledgeInput): KnowledgeEntry {
     return this.knowledgeService.createKnowledge(input)
+  }
+  registerExistingKnowledge(input: RegisterExistingKnowledgeInput): KnowledgeEntry {
+    return this.knowledgeService.registerExistingKnowledge(input)
   }
   getKnowledge(slug: string): KnowledgeEntry | null {
     return this.knowledgeService.getKnowledge(slug)

@@ -10,6 +10,7 @@ function rowToIndex(row: Record<string, unknown>): KnowledgeIndexRow {
   return {
     slug: row.slug as string,
     projectId: row.project_id as string,
+    workspaceId: (row.workspace_id as string | null) ?? null,
     scope: row.scope as KnowledgeScope,
     type: row.type as KnowledgeType,
     title: row.title as string,
@@ -25,10 +26,11 @@ export class KnowledgeRepository {
   upsert(row: KnowledgeIndexRow): void {
     this.db
       .prepare(
-        `INSERT INTO knowledge_index (slug, project_id, scope, type, title, file_path, created_at, last_verified_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO knowledge_index (slug, project_id, workspace_id, scope, type, title, file_path, created_at, last_verified_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(slug) DO UPDATE SET
            project_id = excluded.project_id,
+           workspace_id = excluded.workspace_id,
            scope = excluded.scope,
            type = excluded.type,
            title = excluded.title,
@@ -38,6 +40,7 @@ export class KnowledgeRepository {
       .run(
         row.slug,
         row.projectId,
+        row.workspaceId,
         row.scope,
         row.type,
         row.title,
@@ -60,6 +63,12 @@ export class KnowledgeRepository {
     if (filter.projectId) {
       where.push('project_id = ?')
       params.push(filter.projectId)
+    }
+    if (filter.workspaceId === null) {
+      where.push('workspace_id IS NULL')
+    } else if (filter.workspaceId !== undefined) {
+      where.push('workspace_id = ?')
+      params.push(filter.workspaceId)
     }
     if (filter.scope) {
       where.push('scope = ?')
