@@ -3,7 +3,19 @@ type: decision
 title: "ADR-020: Embedding Architecture — local default with provider abstraction for semantic search"
 projectId: choda-deck
 scope: project
-refs: []
+refs:
+  - path: src/core/domain/embedding/embedding-store.ts
+    commitSha: 47e20ee8c6fbc44a043cfcb2f6ebf786b17a462f
+  - path: src/core/domain/embedding/local-embedding-provider.ts
+    commitSha: 47e20ee8c6fbc44a043cfcb2f6ebf786b17a462f
+  - path: src/core/domain/embedding/embedding-provider-factory.ts
+    commitSha: 47e20ee8c6fbc44a043cfcb2f6ebf786b17a462f
+  - path: src/core/domain/sqlite-task-service.ts
+    commitSha: 47e20ee8c6fbc44a043cfcb2f6ebf786b17a462f
+  - path: src/core/domain/knowledge-service.ts
+    commitSha: 47e20ee8c6fbc44a043cfcb2f6ebf786b17a462f
+  - path: src/adapters/mcp/mcp-tools/knowledge-tools.ts
+    commitSha: 47e20ee8c6fbc44a043cfcb2f6ebf786b17a462f
 createdAt: 2026-05-04
 lastVerifiedAt: 2026-05-04
 ---
