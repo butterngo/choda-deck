@@ -19,6 +19,13 @@ export interface ConversationEvent {
   timestamp: string
 }
 
+// SQLite `datetime('now')` returns UTC in `YYYY-MM-DD HH:MM:SS` form (no T, no Z).
+// Coerce to ISO so the JSONL contract is uniform across message + lifecycle paths.
+export function normalizeEventTimestamp(timestamp: string): string {
+  if (timestamp.includes('T')) return timestamp
+  return new Date(timestamp.replace(' ', 'T') + 'Z').toISOString()
+}
+
 /**
  * Append a conversation event as one JSONL line to <eventDir>/<projectId>.jsonl.
  *
@@ -31,7 +38,11 @@ export function emitConversationEvent(projectId: string, event: ConversationEven
     const dir = resolveEventDir()
     fs.mkdirSync(dir, { recursive: true })
     const file = path.join(dir, `${projectId}.jsonl`)
-    fs.appendFileSync(file, JSON.stringify(event) + '\n')
+    const normalized: ConversationEvent = {
+      ...event,
+      timestamp: normalizeEventTimestamp(event.timestamp)
+    }
+    fs.appendFileSync(file, JSON.stringify(normalized) + '\n')
   } catch (err) {
     console.warn('[conversation-event-emitter] emit failed:', err)
   }

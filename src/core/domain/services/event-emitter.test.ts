@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { emitConversationEvent } from './event-emitter'
+import { emitConversationEvent, normalizeEventTimestamp } from './event-emitter'
 
 const TMP_ROOT = path.join(os.tmpdir(), 'choda-test-event-emitter')
 
@@ -36,7 +36,7 @@ describe('emitConversationEvent', () => {
         roles: ['BE'],
         messageType: 'question',
         author: 'FE',
-        timestamp: '2026-04-24 10:00:00'
+        timestamp: '2026-04-24T10:00:00.000Z'
       })
     })
     const file = path.join(dir, 'proj-1.jsonl')
@@ -50,7 +50,7 @@ describe('emitConversationEvent', () => {
       roles: ['BE'],
       messageType: 'question',
       author: 'FE',
-      timestamp: '2026-04-24 10:00:00'
+      timestamp: '2026-04-24T10:00:00.000Z'
     })
   })
 
@@ -63,7 +63,7 @@ describe('emitConversationEvent', () => {
         roles: ['BE'],
         messageType: 'question',
         author: 'FE',
-        timestamp: '2026-04-24 10:00:00'
+        timestamp: '2026-04-24T10:00:00.000Z'
       })
       emitConversationEvent('proj-2', {
         type: 'message.question',
@@ -71,7 +71,7 @@ describe('emitConversationEvent', () => {
         roles: ['QA'],
         messageType: 'question',
         author: 'PM',
-        timestamp: '2026-04-24 10:01:00'
+        timestamp: '2026-04-24T10:01:00.000Z'
       })
     })
     const file = path.join(dir, 'proj-2.jsonl')
@@ -97,12 +97,39 @@ describe('emitConversationEvent', () => {
           roles: ['BE'],
           messageType: 'question',
           author: 'FE',
-          timestamp: '2026-04-24 10:00:00'
+          timestamp: '2026-04-24T10:00:00.000Z'
         })
       ).not.toThrow()
     })
 
     expect(warn).toHaveBeenCalledTimes(1)
     expect(warn.mock.calls[0][0]).toContain('[conversation-event-emitter]')
+  })
+
+  it('normalizes SQLite datetime format to ISO before writing', () => {
+    const dir = path.join(TMP_ROOT, 'run-iso')
+    withEventDir(dir, () => {
+      emitConversationEvent('proj-iso', {
+        type: 'message.question',
+        conversationId: 'CONV-ISO',
+        roles: ['BE'],
+        messageType: 'question',
+        author: 'FE',
+        timestamp: '2026-05-04 13:07:08'
+      })
+    })
+    const file = path.join(dir, 'proj-iso.jsonl')
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8').trim())
+    expect(parsed.timestamp).toBe('2026-05-04T13:07:08.000Z')
+  })
+})
+
+describe('normalizeEventTimestamp', () => {
+  it('passes ISO timestamps through unchanged', () => {
+    expect(normalizeEventTimestamp('2026-05-04T13:07:33.192Z')).toBe('2026-05-04T13:07:33.192Z')
+  })
+
+  it('coerces SQLite datetime() format (UTC, space-separated) to ISO', () => {
+    expect(normalizeEventTimestamp('2026-05-04 13:07:08')).toBe('2026-05-04T13:07:08.000Z')
   })
 })
