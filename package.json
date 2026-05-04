@@ -11,7 +11,7 @@
     "test": "node scripts/test.mjs run",
     "test:watch": "node scripts/test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false",
-    "build:mcp": "esbuild src/adapters/mcp/server.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/mcp-server.cjs --external:better-sqlite3 --external:sqlite-vec --external:@huggingface/transformers --external:onnxruntime-node --external:onnxruntime-web --external:sharp"
+    "build:mcp": "esbuild src/adapters/mcp/server.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/mcp-server.cjs --external:better-sqlite3 --external:sqlite-vec --external:@huggingface/transformers --external:onnxruntime-node --external:onnxruntime-web --external:sharp && node -e \"require('fs').copyFileSync('src/adapters/mcp/rules/session-rules.md','dist/session-rules.md')\""
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
