@@ -8,6 +8,11 @@ import type { RelationshipOperations } from '../../../core/domain/interfaces/rel
 import type { ProjectOperations } from '../../../core/domain/interfaces/project-repository.interface'
 import type { WorkspaceOperations } from '../../../core/domain/interfaces/workspace-repository.interface'
 import { buildGraphifyContext } from './task-context-graphify'
+import {
+  AUTO_SAFE_LABEL,
+  validateAutoSafeTask
+} from '../../../core/domain/auto-safe-validator'
+import type { Task, UpdateTaskInput } from '../../../core/domain/task-types'
 
 export type TaskToolsDeps = TaskOperations &
   ConversationOperations &
@@ -175,7 +180,10 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
           .describe('Replace blockedBy list (pass empty array to clear)')
       }
     },
-    async ({ id, ...input }) => textResponse(svc.updateTask(id, input))
+    async ({ id, ...input }) => {
+      enforceAutoSafe(svc, id, input)
+      return textResponse(svc.updateTask(id, input))
+    }
   )
 
   server.registerTool(
@@ -191,8 +199,27 @@ export const register = (server: McpServer, svc: TaskToolsDeps): void => {
       }
     },
     async ({ ids, ...patch }) => {
+      for (const id of ids) enforceAutoSafe(svc, id, patch)
       const results = ids.map((id) => svc.updateTask(id, patch))
       return textResponse(results)
     }
   )
+}
+
+function enforceAutoSafe(svc: TaskToolsDeps, id: string, input: UpdateTaskInput): void {
+  if (!input.labels?.includes(AUTO_SAFE_LABEL)) return
+  const current = svc.getTask(id)
+  if (!current) return
+  if (current.labels.includes(AUTO_SAFE_LABEL)) return
+  const probe: Task = {
+    ...current,
+    body: input.body !== undefined ? input.body : current.body
+  }
+  const result = validateAutoSafeTask(probe)
+  if (!result.valid) {
+    throw new Error(
+      `Cannot add 'auto-safe' label to ${id} — task body fails contract:\n` +
+        result.errors.map((e) => `  - ${e}`).join('\n')
+    )
+  }
 }
