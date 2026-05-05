@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
@@ -8,14 +8,19 @@ const TMP_ROOT = path.join(os.tmpdir(), 'choda-test-event-emit')
 const TEST_DB = path.join(TMP_ROOT, 'event-emit.db')
 const EVENT_DIR = path.join(TMP_ROOT, 'events')
 const PROJECT_ID = 'proj-evt'
+const TARGET_PROJECT_ID = 'proj-tgt'
 
 let svc: SqliteTaskService
 let savedEventDir: string | undefined
 
-function eventLines(): string[] {
-  const file = path.join(EVENT_DIR, `${PROJECT_ID}.jsonl`)
+function eventLinesFor(projectId: string): string[] {
+  const file = path.join(EVENT_DIR, `${projectId}.jsonl`)
   if (!fs.existsSync(file)) return []
   return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean)
+}
+
+function eventLines(): string[] {
+  return eventLinesFor(PROJECT_ID)
 }
 
 beforeEach(() => {
@@ -343,5 +348,122 @@ describe('conversation event emit — Phase 2: lifecycle events', () => {
     svc.decideConversation(conv.id, { author: 'Butter', decision: 'done' })
     svc.closeConversation(conv.id)
     expect(eventLines()).toEqual([])
+  })
+})
+
+describe('conversation event emit — Phase 3: cross-project fan-out (ADR-021)', () => {
+  beforeEach(() => {
+    svc.ensureProject(TARGET_PROJECT_ID, 'Target project', '/tmp/tgt')
+  })
+
+  it('writes the same JSONL line to owner and target when role is "<targetProjectId>/<workspace>"', () => {
+    svc.createConversation({
+      id: 'CONV-FAN-CROSS',
+      projectId: PROJECT_ID,
+      title: 'cross-project',
+      createdBy: 'owner-side',
+      participants: [
+        { name: 'owner-side', type: 'role' as const, role: `${PROJECT_ID}/main` },
+        { name: 'target-side', type: 'role' as const, role: `${TARGET_PROJECT_ID}/main` }
+      ]
+    })
+    svc.addConversationMessage({
+      conversationId: 'CONV-FAN-CROSS',
+      authorName: 'owner-side',
+      content: 'cross q',
+      messageType: 'question'
+    })
+    const ownerLines = eventLinesFor(PROJECT_ID)
+    const targetLines = eventLinesFor(TARGET_PROJECT_ID)
+    expect(ownerLines.length).toBe(1)
+    expect(targetLines.length).toBe(1)
+    expect(JSON.parse(ownerLines[0])).toEqual(JSON.parse(targetLines[0]))
+  })
+
+  it('writes only to owner when all roles are legacy free-form (no slash)', () => {
+    svc.createConversation({
+      id: 'CONV-FAN-LEGACY',
+      projectId: PROJECT_ID,
+      title: 'legacy roles',
+      createdBy: 'FE',
+      participants: [
+        { name: 'FE', type: 'role' as const, role: 'FE' },
+        { name: 'BE', type: 'role' as const, role: 'BE' }
+      ]
+    })
+    svc.addConversationMessage({
+      conversationId: 'CONV-FAN-LEGACY',
+      authorName: 'FE',
+      content: 'legacy q',
+      messageType: 'question'
+    })
+    expect(eventLinesFor(PROJECT_ID).length).toBe(1)
+    expect(fs.existsSync(path.join(EVENT_DIR, `${TARGET_PROJECT_ID}.jsonl`))).toBe(false)
+  })
+
+  it('mixed roles (legacy + addressed) write to owner + target only', () => {
+    svc.createConversation({
+      id: 'CONV-FAN-MIX',
+      projectId: PROJECT_ID,
+      title: 'mixed',
+      createdBy: 'FE',
+      participants: [
+        { name: 'FE', type: 'role' as const, role: 'BE' },
+        { name: 'cross', type: 'role' as const, role: `${TARGET_PROJECT_ID}/main` }
+      ]
+    })
+    svc.addConversationMessage({
+      conversationId: 'CONV-FAN-MIX',
+      authorName: 'FE',
+      content: 'mix q',
+      messageType: 'question'
+    })
+    expect(eventLinesFor(PROJECT_ID).length).toBe(1)
+    expect(eventLinesFor(TARGET_PROJECT_ID).length).toBe(1)
+  })
+
+  it('warns and skips fan-out when target projectId is unknown; owner still receives event', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    svc.createConversation({
+      id: 'CONV-FAN-UNKNOWN',
+      projectId: PROJECT_ID,
+      title: 'unknown target',
+      createdBy: 'FE',
+      participants: [
+        { name: 'FE', type: 'role' as const, role: `${PROJECT_ID}/main` },
+        { name: 'ghost', type: 'role' as const, role: 'no-such-project/main' }
+      ]
+    })
+    svc.addConversationMessage({
+      conversationId: 'CONV-FAN-UNKNOWN',
+      authorName: 'FE',
+      content: 'ghost q',
+      messageType: 'question'
+    })
+    expect(eventLinesFor(PROJECT_ID).length).toBe(1)
+    expect(fs.existsSync(path.join(EVENT_DIR, 'no-such-project.jsonl'))).toBe(false)
+    expect(warn).toHaveBeenCalled()
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('no-such-project'))).toBe(true)
+  })
+
+  it('does not duplicate owner event when owner appears in roles as <ownerProjectId>/...', () => {
+    svc.createConversation({
+      id: 'CONV-FAN-OWNER-IN-ROLES',
+      projectId: PROJECT_ID,
+      title: 'owner in roles',
+      createdBy: 'owner',
+      participants: [
+        { name: 'owner', type: 'role' as const, role: `${PROJECT_ID}/main` },
+        { name: 'target', type: 'role' as const, role: `${TARGET_PROJECT_ID}/main` }
+      ]
+    })
+    svc.addConversationMessage({
+      conversationId: 'CONV-FAN-OWNER-IN-ROLES',
+      authorName: 'owner',
+      content: 'q',
+      messageType: 'question'
+    })
+    expect(eventLinesFor(PROJECT_ID).length).toBe(1)
+    expect(eventLinesFor(TARGET_PROJECT_ID).length).toBe(1)
   })
 })
