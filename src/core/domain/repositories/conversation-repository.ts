@@ -17,7 +17,10 @@ import type {
   CreateConversationActionInput,
   UpdateConversationActionInput
 } from '../task-types'
-import { emitConversationEvent, type ConversationEventType } from '../services/event-emitter'
+import {
+  emitConversationEventFanout,
+  type ConversationEventType
+} from '../services/event-emitter'
 import { generateId, type Param } from './shared'
 
 function rowToConversation(row: Record<string, unknown>): Conversation {
@@ -278,7 +281,8 @@ export class ConversationRepository {
       if (allRoles.length === 0) return
       roles = allRoles
     }
-    emitConversationEvent(conv.projectId, {
+    const targetProjectIds = this.resolveFanoutTargets(roles, conv.projectId)
+    emitConversationEventFanout(conv.projectId, targetProjectIds, {
       type,
       conversationId,
       roles,
@@ -286,6 +290,33 @@ export class ConversationRepository {
       author,
       timestamp
     })
+  }
+
+  // ADR-021 Phase 3: parse "<projectId>/<workspaceId>" address strings from
+  // roles[] and return the unique, validated set of fan-out target projectIds
+  // (owner excluded). Unknown projectIds are logged and skipped — never throw.
+  private resolveFanoutTargets(roles: string[], ownerProjectId: string): string[] {
+    const candidates = new Set<string>()
+    for (const role of roles) {
+      const slash = role.indexOf('/')
+      if (slash <= 0) continue
+      const projectId = role.slice(0, slash)
+      if (projectId === ownerProjectId) continue
+      candidates.add(projectId)
+    }
+    if (candidates.size === 0) return []
+    const targets: string[] = []
+    for (const projectId of candidates) {
+      const exists = this.db.prepare('SELECT 1 FROM projects WHERE id = ?').get(projectId)
+      if (exists) {
+        targets.push(projectId)
+      } else {
+        console.warn(
+          `[conversation-event-emitter] unknown target projectId in role address: ${projectId}`
+        )
+      }
+    }
+    return targets
   }
 
   getMessages(conversationId: string): ConversationMessage[] {
