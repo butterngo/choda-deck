@@ -1,13 +1,13 @@
 ---
-type: spec
+type: decision
 title: "auto-safe label — task contract for autonomous execution"
 projectId: choda-deck
 scope: project
 refs:
   - path: src/core/domain/auto-safe-validator.ts
-    commitSha: HEAD
+    commitSha: 7270e00e712940d91a1aab566231e1791153f255
   - path: src/adapters/mcp/mcp-tools/task-tools.ts
-    commitSha: HEAD
+    commitSha: 7270e00e712940d91a1aab566231e1791153f255
 createdAt: 2026-05-05
 lastVerifiedAt: 2026-05-05
 ---
