@@ -5,6 +5,34 @@
   "author": "Vu Ngo",
   "license": "MIT",
   "packageManager": "pnpm@10.33.0",
+  "bin": {
+    "choda-deck": "dist/mcp-server.cjs"
+  },
+  "files": [
+    "dist/mcp-server.cjs",
+    "dist/session-rules.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude-code",
+    "task-tracking",
+    "sqlite",
+    "agent-orchestration"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/butterngo/choda-deck.git"
+  },
+  "homepage": "https://github.com/butterngo/choda-deck#readme",
+  "bugs": {
+    "url": "https://github.com/butterngo/choda-deck/issues"
+  },
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
