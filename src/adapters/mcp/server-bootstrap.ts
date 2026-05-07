@@ -1,3 +1,5 @@
+import * as fs from 'fs'
+import * as path from 'path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { SqliteTaskService } from '../../core/domain/sqlite-task-service'
@@ -13,6 +15,7 @@ import * as knowledgeTools from './mcp-tools/knowledge-tools'
 
 export async function startMcpServer(): Promise<void> {
   const { dbPath, dataDir } = resolveDataPaths()
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true })
   const svc = new SqliteTaskService(dbPath)
   await svc.initializeAsync()
 
