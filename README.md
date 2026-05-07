@@ -67,6 +67,27 @@ Add to `.claude.json` (user-level) or `.mcp.json` (project-level):
 
 Restart Claude Code → the `choda-tasks` MCP server is online.
 
+## CLI
+
+`choda-deck` ships a read-only CLI that talks to the same SQLite store directly — no AI in the loop, no MCP roundtrip. Use it to verify state, script automations, or pipe to `jq`.
+
+```bash
+choda-deck --help                                # show all subcommands
+choda-deck task list --status TODO --json        # script-friendly
+choda-deck task show TASK-669                    # body + linked conversations
+choda-deck inbox list --project choda-deck
+choda-deck knowledge list
+choda-deck knowledge show ADR-020-embedding-architecture
+choda-deck project context choda-deck            # AI's session_start view
+choda-deck mcp serve                             # start the MCP stdio server
+```
+
+Pass `--json` to any read command for machine-readable output. Plain text is the default for humans.
+
+### Reading freshness
+
+The CLI opens SQLite in WAL mode for shared reads. While the MCP server is actively writing, a CLI read may see a snapshot from a few seconds ago — re-run after 1-2s if state looks stale. See knowledge entry `sqlite-wal-read-consistency` for details.
+
 ## Tools
 
 All tools are namespaced `mcp__choda-tasks__<name>`. Claude calls them on your behalf — you never invoke them directly.
