@@ -21,6 +21,7 @@ import { runInboxList, inboxListHelp } from './commands/inbox-list'
 import { runKnowledgeList, knowledgeListHelp } from './commands/knowledge-list'
 import { runKnowledgeShow, knowledgeShowHelp } from './commands/knowledge-show'
 import { runProjectContext, projectContextHelp } from './commands/project-context'
+import { runSyncExport, syncExportHelp } from './commands/sync-export'
 
 const VERSION = '0.2.0'
 
@@ -35,6 +36,9 @@ Core read commands:
   knowledge list         List knowledge entries
   knowledge show <slug>  Show knowledge entry body
   project context <id>   Compile project context (architecture, state, decisions)
+
+Cross-device sync:
+  sync export --to <dir> Write a content-stable snapshot to <dir>
 
 MCP server:
   mcp serve              Start MCP stdio server (replaces legacy mcp-server bin)
@@ -74,6 +78,8 @@ async function main(): Promise<number> {
       return dispatchKnowledge(sub, rest)
     case 'project':
       return dispatchProject(sub, rest)
+    case 'sync':
+      return dispatchSync(sub, rest)
     case 'mcp':
       return dispatchMcp(sub)
     default:
@@ -146,6 +152,22 @@ async function dispatchProject(sub: string | undefined, rest: string[]): Promise
       return 2
     default:
       process.stderr.write(`error: unknown project subcommand "${sub}"\n`)
+      return 2
+  }
+}
+
+async function dispatchSync(sub: string | undefined, rest: string[]): Promise<number> {
+  switch (sub) {
+    case 'export':
+      return runSyncExport(rest)
+    case '--help':
+      process.stdout.write(syncExportHelp)
+      return 0
+    case undefined:
+      process.stderr.write(`error: missing sync subcommand (export)\n\n${syncExportHelp}`)
+      return 2
+    default:
+      process.stderr.write(`error: unknown sync subcommand "${sub}"\n`)
       return 2
   }
 }
