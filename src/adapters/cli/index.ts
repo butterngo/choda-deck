@@ -21,6 +21,7 @@ import { runInboxList, inboxListHelp } from './commands/inbox-list'
 import { runKnowledgeList, knowledgeListHelp } from './commands/knowledge-list'
 import { runKnowledgeShow, knowledgeShowHelp } from './commands/knowledge-show'
 import { runProjectContext, projectContextHelp } from './commands/project-context'
+import { runRunCommand, runCommandHelp } from './commands/run'
 import { runSyncExport, syncExportHelp } from './commands/sync-export'
 import { runSyncImport, syncImportHelp } from './commands/sync-import'
 
@@ -37,6 +38,9 @@ Core read commands:
   knowledge list         List knowledge entries
   knowledge show <slug>  Show knowledge entry body
   project context <id>   Compile project context (architecture, state, decisions)
+
+Executor commands:
+  run <taskId>           Run Playwright FE test executor pilot (Coder + Tester)
 
 Cross-device sync:
   sync export --to <dir>   Write a content-stable snapshot to <dir>
@@ -80,6 +84,8 @@ async function main(): Promise<number> {
       return dispatchKnowledge(sub, rest)
     case 'project':
       return dispatchProject(sub, rest)
+    case 'run':
+      return dispatchRun(sub, rest)
     case 'sync':
       return dispatchSync(sub, rest)
     case 'mcp':
@@ -156,6 +162,19 @@ async function dispatchProject(sub: string | undefined, rest: string[]): Promise
       process.stderr.write(`error: unknown project subcommand "${sub}"\n`)
       return 2
   }
+}
+
+async function dispatchRun(sub: string | undefined, rest: string[]): Promise<number> {
+  if (sub === '--help') {
+    process.stdout.write(runCommandHelp)
+    return 0
+  }
+  if (sub === undefined) {
+    process.stderr.write(`error: missing task id\n\n${runCommandHelp}`)
+    return 2
+  }
+  // For "run", `sub` is the taskId positional. Forward sub + rest.
+  return runRunCommand([sub, ...rest])
 }
 
 async function dispatchSync(sub: string | undefined, rest: string[]): Promise<number> {
