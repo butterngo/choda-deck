@@ -81,3 +81,26 @@ export function runBackup(db: Backupable, userData: string, now: Date = new Date
   const st = statSync(target)
   return { filename, date: todayStamp(now), size: st.size, mtimeMs: st.mtimeMs }
 }
+
+/**
+ * Write a backup with an explicit name, e.g. `pre-import-2026-05-08T12-00-00Z.db`.
+ *
+ * Used by sync import to capture a one-shot undo snapshot before applying a
+ * remote payload. Does NOT participate in daily-rotation pruning — the
+ * filename pattern is intentionally distinct from `choda-deck-YYYY-MM-DD.db`,
+ * so `listBackups`/`pruneOld` ignore these files. Caller is responsible for
+ * cleanup if accumulation becomes a concern.
+ *
+ * Returns the absolute path of the created backup file.
+ */
+export function createNamedBackup(db: Backupable, userData: string, name: string): string {
+  if (!name || /[\\/]/.test(name)) {
+    throw new Error(`createNamedBackup: invalid name "${name}" (must not contain path separators)`)
+  }
+  const dir = backupDir(userData)
+  ensureDir(dir)
+  const target = join(dir, `${name}.db`)
+  if (existsSync(target)) unlinkSync(target)
+  db.backup(target)
+  return target
+}
