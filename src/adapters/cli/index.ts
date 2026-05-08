@@ -22,6 +22,8 @@ import { runKnowledgeList, knowledgeListHelp } from './commands/knowledge-list'
 import { runKnowledgeShow, knowledgeShowHelp } from './commands/knowledge-show'
 import { runProjectContext, projectContextHelp } from './commands/project-context'
 import { runRunCommand, runCommandHelp } from './commands/run'
+import { runSyncExport, syncExportHelp } from './commands/sync-export'
+import { runSyncImport, syncImportHelp } from './commands/sync-import'
 
 const VERSION = '0.2.0'
 
@@ -39,6 +41,10 @@ Core read commands:
 
 Executor commands:
   run <taskId>           Run Playwright FE test executor pilot (Coder + Tester)
+
+Cross-device sync:
+  sync export --to <dir>   Write a content-stable snapshot to <dir>
+  sync import --from <dir> Apply a snapshot atomically (--dry-run, --yes)
 
 MCP server:
   mcp serve              Start MCP stdio server (replaces legacy mcp-server bin)
@@ -80,6 +86,8 @@ async function main(): Promise<number> {
       return dispatchProject(sub, rest)
     case 'run':
       return dispatchRun(sub, rest)
+    case 'sync':
+      return dispatchSync(sub, rest)
     case 'mcp':
       return dispatchMcp(sub)
     default:
@@ -167,6 +175,26 @@ async function dispatchRun(sub: string | undefined, rest: string[]): Promise<num
   }
   // For "run", `sub` is the taskId positional. Forward sub + rest.
   return runRunCommand([sub, ...rest])
+}
+
+async function dispatchSync(sub: string | undefined, rest: string[]): Promise<number> {
+  switch (sub) {
+    case 'export':
+      return runSyncExport(rest)
+    case 'import':
+      return runSyncImport(rest)
+    case '--help':
+      process.stdout.write(`${syncExportHelp}\n${syncImportHelp}`)
+      return 0
+    case undefined:
+      process.stderr.write(
+        `error: missing sync subcommand (export | import)\n\n${syncExportHelp}\n${syncImportHelp}`
+      )
+      return 2
+    default:
+      process.stderr.write(`error: unknown sync subcommand "${sub}"\n`)
+      return 2
+  }
 }
 
 async function dispatchMcp(sub: string | undefined): Promise<number> {
