@@ -2,6 +2,8 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
+| [sqlite-wal-read-consistency](./sqlite-wal-read-consistency.md) | learning | SQLite WAL read consistency — why CLI may briefly see stale state | 2026-05-07 |  |
+| [cross-device-sync-export-import-spec](./cross-device-sync-export-import-spec.md) | evaluation | Cross-device sync export/import — sequential dual-machine sync without duplicating project knowledge | 2026-05-07 |  |
 | [auto-safe-label-spec](./auto-safe-label-spec.md) | decision | auto-safe label — task contract for autonomous execution | 2026-05-05 |  |
 | [ADR-020-embedding-architecture](./ADR-020-embedding-architecture.md) | decision | ADR-020: Embedding Architecture — local default with provider abstraction for semantic search | 2026-05-04 | ✱ |
 | [ADR-021-cross-project-event-routing](./ADR-021-cross-project-event-routing.md) | decision | ADR-021: Cross-Project Event Routing — Phase 3 | 2026-05-04 |  |
