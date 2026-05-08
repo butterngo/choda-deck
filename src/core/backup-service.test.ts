@@ -8,6 +8,7 @@ import {
   shouldRunDailyBackup,
   pruneOld,
   runBackup,
+  createNamedBackup,
   type Backupable
 } from './backup-service'
 
@@ -121,6 +122,55 @@ describe('backup-service', () => {
       expect(files).toHaveLength(7)
       expect(files).toContain('choda-deck-2026-04-18.db')
       expect(files).not.toContain('choda-deck-2026-04-01.db')
+    })
+  })
+
+  describe('createNamedBackup', () => {
+    it('writes a non-rotation backup file with the given name', () => {
+      const db = new FakeDb()
+      const target = createNamedBackup(db, userData, 'pre-import-2026-05-08T12-00-00Z')
+      expect(target.endsWith('pre-import-2026-05-08T12-00-00Z.db')).toBe(true)
+      expect(existsSync(target)).toBe(true)
+    })
+
+    it('does not appear in listBackups (filename pattern is distinct)', () => {
+      const db = new FakeDb()
+      createNamedBackup(db, userData, 'pre-import-x')
+      expect(listBackups(userData)).toEqual([])
+    })
+
+    it('survives pruneOld — pre-import backups are never rotation-pruned', () => {
+      const db = new FakeDb()
+      const dir = backupDir(userData)
+      mkdirSync(dir, { recursive: true })
+      for (let i = 1; i <= 10; i++) {
+        const name = `choda-deck-2026-04-${String(i).padStart(2, '0')}.db`
+        touch(join(dir, name))
+        const ts = Date.now() / 1000 - (30 - i) * 24 * 60 * 60
+        utimesSync(join(dir, name), ts, ts)
+      }
+      const target = createNamedBackup(db, userData, 'pre-import-stable')
+      pruneOld(userData, 3)
+      expect(existsSync(target)).toBe(true)
+    })
+
+    it('overwrites an existing same-named file', () => {
+      const db = new FakeDb()
+      const a = createNamedBackup(db, userData, 'pre-import-collide')
+      const b = createNamedBackup(db, userData, 'pre-import-collide')
+      expect(a).toBe(b)
+      expect(existsSync(a)).toBe(true)
+    })
+
+    it('rejects names with path separators', () => {
+      const db = new FakeDb()
+      expect(() => createNamedBackup(db, userData, '../escape')).toThrow(/path separators/)
+      expect(() => createNamedBackup(db, userData, 'sub/file')).toThrow(/path separators/)
+    })
+
+    it('rejects empty name', () => {
+      const db = new FakeDb()
+      expect(() => createNamedBackup(db, userData, '')).toThrow(/invalid name/)
     })
   })
 
