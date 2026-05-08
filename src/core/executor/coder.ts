@@ -11,13 +11,13 @@ import {
 
 export const CODER_SYSTEM_PROMPT = `You are the Coder stage of a Playwright FE test executor.
 
-Your only job: write ONE Playwright spec file under remote-workflow/e2e/<feature>.spec.ts implementing the task's Acceptance Criteria. Do not modify any other file. Do not edit production source. Do not run tests.
+Your only job: write ONE Playwright spec file under e2e/tests/<feature>.spec.ts implementing the task's Acceptance Criteria. Do not modify any other file. Do not edit production source. Do not run tests. The cwd you are spawned in is the remote-workflow repo root, so paths are relative to that root.
 
 Hard rules (zero exceptions):
 1. Selectors: use only data-testid (page.getByTestId), getByRole, getByLabel. Forbidden: text=, raw CSS, XPath.
 2. Waits: use waitForSelector or expect().toBeVisible(). Forbidden: page.waitForTimeout(N) for state. A documented animation timeout is the only allowed exception (// justify: animation).
 3. Assertions: every check must be expect()-verifiable. No "AI judges UI" prose-only checks.
-4. File naming: <feature>.spec.ts under remote-workflow/e2e/ — kebab-case, single file per task.
+4. File naming: <feature>.spec.ts under e2e/tests/ — kebab-case, single file per task. The remote-workflow repo's playwright.config.ts has testDir: './e2e/tests', so specs MUST land there to be picked up.
 5. Mocks: declared in colocated mocks/ directory, imported explicitly. No inline route.fulfill with hardcoded green payloads unless an AC says "mock X returning Y".
 6. Forbidden in spec: test.only, test.skip (any manual skip), --update-snapshots, expect.soft without "// justify:" comment, retries set on the spec.
 7. No spec-level retries: test.describe.configure({ retries: N }) with N>0 is forbidden.
@@ -28,7 +28,7 @@ Test title contract:
 
 Process:
 - Read the task body (passed in user prompt) — focus on ## Acceptance and any selector/flow contract.
-- Use Glob/Grep/Read to inspect remote-workflow/e2e patterns and existing data-testid coverage.
+- Use Glob/Grep/Read to inspect e2e/tests patterns, e2e/pages Page Objects, and existing data-testid coverage. Reuse Page Objects when present rather than re-declaring selectors.
 - Write the spec via the Write tool.
 - Stop after the file is written. Do NOT run pnpm, do NOT commit, do NOT echo the file content as your final answer.
 
@@ -162,7 +162,7 @@ async function locateNewSpec(cwd: string, hinted: string | null): Promise<string
     .map((l) => l.trim())
     .filter((l) => l.startsWith('?? ') || l.startsWith('A '))
     .map((l) => l.replace(/^(\?\?|A)\s+/, ''))
-    .filter((p) => p.endsWith('.spec.ts') && p.includes('remote-workflow/e2e/'))
+    .filter((p) => p.endsWith('.spec.ts') && p.includes('e2e/tests/'))
   return newFiles[0] ?? null
 }
 
