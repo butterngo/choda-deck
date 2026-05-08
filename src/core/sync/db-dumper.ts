@@ -133,11 +133,16 @@ function selectTagsForItems(db: Database.Database, itemIds: Set<string>): Row[] 
   return db.prepare(sql).all(...ids) as Row[]
 }
 
+// Relationships are exported only when BOTH endpoints belong to the exported
+// item set. This keeps the per-project snapshot self-contained — importing
+// project A in isolation cannot land a dangling edge to a row in project B.
+// Cross-project edges are dropped from the export and rebuilt on the importing
+// machine the next time both projects sync.
 function selectRelationshipsForItems(db: Database.Database, itemIds: Set<string>): Row[] {
   const ids = [...itemIds]
   const placeholders = ids.map(() => '?').join(',')
   const sql = `SELECT * FROM relationships
-               WHERE from_id IN (${placeholders}) OR to_id IN (${placeholders})
+               WHERE from_id IN (${placeholders}) AND to_id IN (${placeholders})
                ORDER BY from_id, to_id, type`
   return db.prepare(sql).all(...ids, ...ids) as Row[]
 }

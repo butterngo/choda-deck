@@ -262,6 +262,37 @@ describe('runExport — AC #12 content-stable export', () => {
     expect(m.contentHash).toBe(result.contentHash)
   })
 
+  it('drops cross-project relationships so the snapshot is self-contained', () => {
+    seedProject('A', '/repo/a')
+    seedProject('B', '/repo/b')
+    seedTask('TASK-A1', 'A', 'a1')
+    seedTask('TASK-A2', 'A', 'a2')
+    seedTask('TASK-B1', 'B', 'b1')
+    db.prepare("INSERT INTO relationships (from_id, to_id, type) VALUES (?, ?, 'DEPENDS_ON')").run(
+      'TASK-A1',
+      'TASK-A2'
+    )
+    db.prepare("INSERT INTO relationships (from_id, to_id, type) VALUES (?, ?, 'DEPENDS_ON')").run(
+      'TASK-A1',
+      'TASK-B1'
+    )
+
+    runExport({
+      outDir: tmp,
+      appVersion: '0.2.0',
+      db,
+      projectIds: ['A'],
+      git: localGit(),
+      now: () => FROZEN_NOW
+    })
+
+    const tasksFile = JSON.parse(fs.readFileSync(path.join(tmp, 'tasks.json'), 'utf8'))
+    const rels = tasksFile.relationships as Array<{ from_id: string; to_id: string }>
+    const ids = rels.map((r) => `${r.from_id}->${r.to_id}`)
+    expect(ids).toContain('TASK-A1->TASK-A2')
+    expect(ids).not.toContain('TASK-A1->TASK-B1')
+  })
+
   it('round-trip: tasks added, removed, then identical state → final hash matches initial', () => {
     seedProject('p1', '/repo')
     seedTask('TASK-001', 'p1', 'one')

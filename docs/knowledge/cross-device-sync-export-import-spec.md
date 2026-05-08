@@ -174,6 +174,14 @@ Reason: this creates a second authority for code-coupled knowledge, allows drift
 2. Do we need a lightweight repo UUID file in addition to canonical remote to survive origin URL changes?
 3. Should artifacts stay fully out of v1, or do conversations require an optional artifact bundle from day one?
 
+## Known limitations (v1)
+
+**Responsibility:** call out tables intentionally excluded from the 7 domain files so reviewers and future-us can see the seams.
+
+- **`documents`** — code-coupled artefact pointers (ADRs, guides, specs). Project repo is already the source of truth; importing on machine 2 re-derives them once the user pulls the project repo.
+- **`context_sources`** — registers the file paths that `session_start` loads as context. Excluded from v1 export so the snapshot stays bounded to the 7 declared domain files. **Side-effect:** an imported project on machine 2 has no context registered until the user (or `/context-setup`) re-registers; `session_start` will still work but with empty `contextSources`. Revisit if this becomes a friction point.
+- **Cross-project relationships** — the relationship-export filter requires **both** endpoints to live in the exported item set. Cross-project edges (e.g. a task in project A that `DEPENDS_ON` a task in project B) are dropped from any single-project snapshot and reappear naturally the next time both projects sync together. This trade-off keeps each per-project snapshot self-contained — no dangling references on partial import.
+
 ## Related
 
 **Responsibility:** connect this proposal to the existing architecture.
