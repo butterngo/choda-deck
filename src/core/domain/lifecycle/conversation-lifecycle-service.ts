@@ -12,7 +12,6 @@ import type {
 import type { Conversation } from '../task-types'
 import { now } from '../repositories/shared'
 import { ConversationNotFoundError, ConversationStatusError } from './errors'
-import { stripToolCallLeak } from './sanitize'
 
 export class ConversationLifecycleService implements ConversationLifecycleOperations {
   constructor(
@@ -92,19 +91,17 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
       const conv = this.conversations.get(id)
       if (!conv) throw new ConversationNotFoundError(id)
 
-      const cleanDecision = stripToolCallLeak(input.decision)
-
       this.conversations.addMessage({
         conversationId: id,
         authorName: input.author,
-        content: cleanDecision,
+        content: input.decision,
         messageType: 'decision'
       })
 
       const decidedAt = now()
       const updated = this.conversations.update(id, {
         status: 'decided',
-        decisionSummary: cleanDecision,
+        decisionSummary: input.decision,
         decidedAt
       })
 

@@ -210,6 +210,28 @@ describe('decideConversation', () => {
       ConversationNotFoundError
     )
   })
+
+  it('TASK-680: stores 5_000-char decision byte-for-byte (raw, no sanitization)', () => {
+    const id = openFresh()
+    const paragraph = [
+      'Decision payload with every formerly-truncating pattern.',
+      'Generics Promise<T>, comparisons (i < 5), HTML </section>, partial </res, </inv.',
+      '```ts',
+      'const x: Promise<T> = doThing()',
+      'if (x < 5) return </close>',
+      '<function_calls><invoke name="x"><parameter name="y">z</parameter></invoke></function_calls>',
+      '```',
+      'Stored raw — no application-side mutation at MCP boundary.'
+    ].join('\n')
+    const decision = (paragraph + '\n\n').repeat(20).slice(0, 5_000)
+    expect(decision.length).toBe(5_000)
+
+    const r = svc.decideConversation(id, { author: 'Butter', decision })
+
+    expect(r.conversation.decisionSummary).toBe(decision)
+    const msgs = svc.getConversationMessages(id)
+    expect(msgs.at(-1)?.content).toBe(decision)
+  })
 })
 
 describe('closeConversation', () => {
