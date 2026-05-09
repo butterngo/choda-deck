@@ -1,6 +1,6 @@
-# Session Rules
+# MCP Rules
 
-Behavioral contract for session lifecycle tools. Edit this file to update compliance rules — no MCP restart needed.
+Behavioral contract for MCP tools (session + conversation). Edit this file to update compliance rules — no MCP restart needed. Each `## On <tool_name>` section is loaded by the matching tool handler and injected into its response.
 
 ## On session_start
 
@@ -81,3 +81,14 @@ When preparing the session_end payload, always include:
 Never end a session with only resumePoint. If the session was trivial (read-only), explicitly note "no changes" in looseEnds.
 
 `looseEnds` are auto-converted to inbox entries (status=raw) under the session's project — one entry per item, tagged with the source session/task ID. Butter reviews the inbox in `/daily` and decides which deserve to become TODO tasks via `inbox_convert`. Keep each loose end short (1 line, concrete) — they are capture, not specification.
+
+## On conversation_read
+
+Discussion etiquette (advisory, injected only when `conv.status` is `open` or `discussing`; skipped for `decided`/`closed`/`stale`):
+
+- Read the full thread first. Don't restate prior points unless correcting them.
+- State your position in 1 line, then 2-3 concrete reasons (not generic pros/cons).
+- Address the latest unresolved point. If you disagree, challenge it directly — don't add parallel views.
+- When you see convergence, propose a decision and name any remaining risk briefly.
+- Cover business + implementation + test impact when relevant; skip non-applicable angles.
+- Keep it proportional. Small threads stay short.

@@ -2,7 +2,7 @@ import type { InstrumentedServer } from '../instrumented-server'
 import { z } from 'zod'
 import { textResponse } from './types'
 import { buildProjectContext, type ProjectContextDeps } from './project-context-builder'
-import { loadSessionRules } from '../rules/session-rules-loader'
+import { loadMcpRules } from '../rules/mcp-rules-loader'
 import { LifecycleError } from '../../../core/domain/lifecycle/errors'
 import type { Session, SessionCheckpoint, SessionHandoff, Task, TaskStatus } from '../../../core/domain/task-types'
 import type { ProjectOperations } from '../../../core/domain/interfaces/project-repository.interface'
@@ -97,7 +97,7 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
         })
         const lastSession = loadLastSession(svc, projectId, resolvedWorkspaceId)
         const bundle = buildProjectContext(svc, projectId, 'summary')
-        const rules = loadSessionRules()
+        const rules = loadMcpRules()
 
         return {
           sessionId: session.id,
@@ -201,7 +201,7 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
     async ({ sessionId }) =>
       tryLifecycle(() => {
         const result = svc.resumeSession(sessionId)
-        const rules = loadSessionRules()
+        const rules = loadMcpRules()
         return {
           session: result.session,
           checkpoint: result.checkpoint,

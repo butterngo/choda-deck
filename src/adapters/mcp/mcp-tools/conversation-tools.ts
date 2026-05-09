@@ -9,6 +9,14 @@ import {
 } from '../../../core/domain/lifecycle/errors'
 import type { ConversationOperations } from '../../../core/domain/interfaces/conversation-repository.interface'
 import type { ConversationLifecycleOperations } from '../../../core/domain/interfaces/conversation-lifecycle.interface'
+import { loadMcpRules } from '../rules/mcp-rules-loader'
+import type {
+  Conversation,
+  ConversationParticipant,
+  ConversationMessage,
+  ConversationAction,
+  ConversationLink
+} from '../../../core/domain/task-types'
 
 export type ConversationToolsDeps = ConversationOperations & ConversationLifecycleOperations
 
@@ -63,6 +71,45 @@ function tryLifecycle<T>(fn: () => T): ReturnType<typeof textResponse> {
   } catch (e) {
     if (e instanceof LifecycleError) return textResponse(e.message)
     throw e
+  }
+}
+
+export function shouldInjectConversationEtiquette(status: string): boolean {
+  return status === 'open' || status === 'discussing'
+}
+
+export type ReadConversationDeps = Pick<
+  ConversationOperations,
+  | 'getConversation'
+  | 'getConversationParticipants'
+  | 'getConversationMessages'
+  | 'getConversationActions'
+  | 'getConversationLinks'
+>
+
+export interface ConversationReadResponse extends Conversation {
+  participants: ConversationParticipant[]
+  messages: ConversationMessage[]
+  actions: ConversationAction[]
+  links: ConversationLink[]
+  etiquette: string | null
+}
+
+export function readConversation(
+  svc: ReadConversationDeps,
+  conversationId: string
+): ConversationReadResponse | null {
+  const conv = svc.getConversation(conversationId)
+  if (!conv) return null
+  return {
+    ...conv,
+    participants: svc.getConversationParticipants(conversationId),
+    messages: svc.getConversationMessages(conversationId),
+    actions: svc.getConversationActions(conversationId),
+    links: svc.getConversationLinks(conversationId),
+    etiquette: shouldInjectConversationEtiquette(conv.status)
+      ? loadMcpRules().conversationRead
+      : null
   }
 }
 
@@ -271,16 +318,9 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
       inputSchema: { conversationId: z.string() }
     },
     async ({ conversationId }) => {
-      const conv = svc.getConversation(conversationId)
-      if (!conv) return textResponse(`Conversation ${conversationId} not found`)
-
-      return textResponse({
-        ...conv,
-        participants: svc.getConversationParticipants(conversationId),
-        messages: svc.getConversationMessages(conversationId),
-        actions: svc.getConversationActions(conversationId),
-        links: svc.getConversationLinks(conversationId)
-      })
+      const result = readConversation(svc, conversationId)
+      if (!result) return textResponse(`Conversation ${conversationId} not found`)
+      return textResponse(result)
     }
   )
 }
