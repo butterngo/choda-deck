@@ -13,6 +13,7 @@ import * as sessionTools from './mcp-tools/session-tools'
 import * as inboxTools from './mcp-tools/inbox-tools'
 import * as backupTools from './mcp-tools/backup-tools'
 import * as knowledgeTools from './mcp-tools/knowledge-tools'
+import * as statsTools from './mcp-tools/stats-tools'
 
 export async function startMcpServer(): Promise<void> {
   const { dbPath, dataDir } = resolveDataPaths()
@@ -34,6 +35,7 @@ export async function startMcpServer(): Promise<void> {
   inboxTools.register(instrumented, svc)
   backupTools.register(instrumented, svc, dataDir, dbPath)
   knowledgeTools.register(instrumented, svc)
+  statsTools.register(instrumented, svc)
 
   // TASK-681: catch missed migrations to instrumented facade — count must be
   // non-zero, otherwise registration silently bypassed instrumentation.

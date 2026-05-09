@@ -103,7 +103,9 @@ import { CounterRepository } from './repositories/counter-repository'
 import { ToolInvocationsRepository } from './repositories/tool-invocations-repository'
 import type {
   ToolInvocation,
-  ToolInvocationOperations
+  ToolInvocationAggregate,
+  ToolInvocationOperations,
+  ToolInvocationWindow
 } from './interfaces/tool-invocations-repository.interface'
 
 export class SqliteTaskService
@@ -234,6 +236,9 @@ export class SqliteTaskService
   }
   countToolInvocations(): number {
     return this.toolInvocations.countToolInvocations()
+  }
+  queryToolInvocations(window: ToolInvocationWindow): ToolInvocationAggregate[] {
+    return this.toolInvocations.queryToolInvocations(window)
   }
 
   ensureProject(id: string, name: string, cwd: string): void {
