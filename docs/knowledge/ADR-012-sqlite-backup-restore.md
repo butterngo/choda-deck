@@ -5,7 +5,7 @@ projectId: choda-deck
 scope: project
 refs: []
 createdAt: 2026-04-17
-lastVerifiedAt: 2026-04-29
+lastVerifiedAt: 2026-05-08
 ---
 
 # ADR-012: SQLite daily backup + restore — atomic, retained 7 days

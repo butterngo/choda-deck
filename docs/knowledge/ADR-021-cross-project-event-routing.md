@@ -5,7 +5,7 @@ projectId: choda-deck
 scope: project
 refs: []
 createdAt: 2026-05-04
-lastVerifiedAt: 2026-05-04
+lastVerifiedAt: 2026-05-08
 ---
 
 # ADR-021: Cross-Project Event Routing — Phase 3

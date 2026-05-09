@@ -5,7 +5,7 @@ projectId: choda-deck
 scope: project
 refs: []
 createdAt: 2026-04-13
-lastVerifiedAt: 2026-04-29
+lastVerifiedAt: 2026-05-08
 ---
 
 # ADR-005: Vault import + file sync — one-way, manual trigger

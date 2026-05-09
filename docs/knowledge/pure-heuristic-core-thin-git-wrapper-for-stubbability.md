@@ -5,13 +5,13 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/domain/knowledge-suggestions.ts
-    commitSha: 045ef8f38390e1e0c4ade6b0ff164701c96c4db8
+    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
   - path: src/core/domain/knowledge-git.ts
-    commitSha: 045ef8f38390e1e0c4ade6b0ff164701c96c4db8
+    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
   - path: src/core/domain/knowledge-suggestions.test.ts
-    commitSha: 045ef8f38390e1e0c4ade6b0ff164701c96c4db8
+    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
 createdAt: 2026-04-30
-lastVerifiedAt: 2026-04-30
+lastVerifiedAt: 2026-05-08
 ---
 
 # Pure heuristic core, thin git wrapper for stubbability

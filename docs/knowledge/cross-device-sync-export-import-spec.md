@@ -1,11 +1,11 @@
 ---
 type: evaluation
-title: "Cross-device sync export/import — sequential dual-machine sync without duplicating project knowledge"
+title: Cross-device sync export/import — sequential dual-machine sync without duplicating project knowledge
 projectId: choda-deck
 scope: project
 refs: []
 createdAt: 2026-05-07
-lastVerifiedAt: 2026-05-07
+lastVerifiedAt: 2026-05-08
 ---
 
 - Keep **two sync flows**: project repos carry code + `docs/knowledge/*.md`; a separate sync repo carries exported DB state only.

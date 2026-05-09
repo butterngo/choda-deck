@@ -5,13 +5,13 @@ projectId: choda-deck
 scope: project
 refs:
   - path: .claude/skills/save-decision/SKILL.md
-    commitSha: 77072221522773a567dcd770d50ad386124de47b
+    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
   - path: .claude/skills/save-decision/references/generation-steps.md
-    commitSha: 77072221522773a567dcd770d50ad386124de47b
+    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
   - path: src/core/domain/knowledge-service.ts
-    commitSha: 77072221522773a567dcd770d50ad386124de47b
+    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
 createdAt: 2026-04-29
-lastVerifiedAt: 2026-04-29
+lastVerifiedAt: 2026-05-08
 ---
 
 # ADR-019: ADR Numbering Convention — keep ADR-NNN prefix in slug

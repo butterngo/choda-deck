@@ -5,21 +5,21 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/adapters/mcp/mcp-tools/knowledge-tools.ts
-    commitSha: 2123dab54bb2651712c1067ccbbef08b03111963
+    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
   - path: src/core/domain/interfaces/knowledge-operations.interface.ts
-    commitSha: 2123dab54bb2651712c1067ccbbef08b03111963
+    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
   - path: src/core/domain/knowledge-frontmatter.ts
-    commitSha: 2123dab54bb2651712c1067ccbbef08b03111963
+    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
   - path: src/core/domain/knowledge-git.ts
-    commitSha: 2123dab54bb2651712c1067ccbbef08b03111963
+    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
   - path: src/core/domain/knowledge-service.ts
-    commitSha: 2123dab54bb2651712c1067ccbbef08b03111963
+    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
   - path: src/core/domain/knowledge-types.ts
-    commitSha: 2123dab54bb2651712c1067ccbbef08b03111963
+    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
   - path: src/core/domain/repositories/knowledge-repository.ts
-    commitSha: 2123dab54bb2651712c1067ccbbef08b03111963
+    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
 createdAt: 2026-04-29
-lastVerifiedAt: 2026-04-29
+lastVerifiedAt: 2026-05-08
 ---
 
 # ADR-018 — Knowledge Layer Foundation
