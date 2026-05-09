@@ -3,9 +3,17 @@ type: evaluation
 title: Cross-device sync export/import — sequential dual-machine sync without duplicating project knowledge
 projectId: choda-deck
 scope: project
-refs: []
+refs:
+  - path: src/core/sync/canonical-remote.ts
+    commitSha: c21203ebee535d6bf33e46862230fc339c2ba6ce
+  - path: src/core/sync/canonical-json.ts
+    commitSha: c21203ebee535d6bf33e46862230fc339c2ba6ce
+  - path: src/core/sync/export-service.ts
+    commitSha: c21203ebee535d6bf33e46862230fc339c2ba6ce
+  - path: src/core/sync/import-service.ts
+    commitSha: c21203ebee535d6bf33e46862230fc339c2ba6ce
 createdAt: 2026-05-07
-lastVerifiedAt: 2026-05-08
+lastVerifiedAt: 2026-05-09
 ---
 
 - Keep **two sync flows**: project repos carry code + `docs/knowledge/*.md`; a separate sync repo carries exported DB state only.
