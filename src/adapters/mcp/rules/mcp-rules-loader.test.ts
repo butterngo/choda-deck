@@ -2,24 +2,24 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { loadSessionRules } from './session-rules-loader'
+import { loadMcpRules } from './mcp-rules-loader'
 
 function makeTmpFile(content: string): string {
-  const dir = mkdtempSync(join(tmpdir(), 'session-rules-'))
-  const path = join(dir, 'session-rules.md')
+  const dir = mkdtempSync(join(tmpdir(), 'mcp-rules-'))
+  const path = join(dir, 'mcp-rules.md')
   writeFileSync(path, content)
   return path
 }
 
-describe('loadSessionRules', () => {
+describe('loadMcpRules', () => {
   let path: string
 
   beforeEach(() => {
     path = ''
   })
 
-  it('parses all 4 sections in order', () => {
-    path = makeTmpFile(`# Session Rules
+  it('parses all 5 sections in order', () => {
+    path = makeTmpFile(`# MCP Rules
 
 ## On session_start
 
@@ -38,16 +38,25 @@ Resume A
 
 Bullet A
 Bullet B
+
+## On conversation_read
+
+Etiquette A
 `)
-    const rules = loadSessionRules(path)
+    const rules = loadMcpRules(path)
     expect(rules.sessionStart).toBe('Step 1\nStep 2')
     expect(rules.sessionCheckpoint).toBe('Checkpoint A')
     expect(rules.sessionResume).toBe('Resume A')
     expect(rules.sessionEnd).toBe('Bullet A\nBullet B')
+    expect(rules.conversationRead).toBe('Etiquette A')
   })
 
   it('parses sections in reverse order', () => {
-    path = makeTmpFile(`## On session_end
+    path = makeTmpFile(`## On conversation_read
+
+Etiquette zero
+
+## On session_end
 
 End first
 
@@ -63,19 +72,21 @@ Checkpoint third
 
 Start fourth
 `)
-    const rules = loadSessionRules(path)
+    const rules = loadMcpRules(path)
     expect(rules.sessionStart).toBe('Start fourth')
     expect(rules.sessionCheckpoint).toBe('Checkpoint third')
     expect(rules.sessionResume).toBe('Resume second')
     expect(rules.sessionEnd).toBe('End first')
+    expect(rules.conversationRead).toBe('Etiquette zero')
   })
 
   it('returns empty strings when file missing', () => {
-    const rules = loadSessionRules('/nonexistent/path/rules.md')
+    const rules = loadMcpRules('/nonexistent/path/rules.md')
     expect(rules.sessionStart).toBe('')
     expect(rules.sessionCheckpoint).toBe('')
     expect(rules.sessionResume).toBe('')
     expect(rules.sessionEnd).toBe('')
+    expect(rules.conversationRead).toBe('')
   })
 
   it('returns empty for missing section but keeps present ones', () => {
@@ -83,15 +94,16 @@ Start fourth
 
 Only start exists
 
-## On session_resume
+## On conversation_read
 
-Resume exists too
+Etiquette only
 `)
-    const rules = loadSessionRules(path)
+    const rules = loadMcpRules(path)
     expect(rules.sessionStart).toBe('Only start exists')
     expect(rules.sessionCheckpoint).toBe('')
-    expect(rules.sessionResume).toBe('Resume exists too')
+    expect(rules.sessionResume).toBe('')
     expect(rules.sessionEnd).toBe('')
+    expect(rules.conversationRead).toBe('Etiquette only')
   })
 
   it('ignores unrelated heading levels', () => {
@@ -104,17 +116,17 @@ not a section
 
 Real content
 `)
-    const rules = loadSessionRules(path)
+    const rules = loadMcpRules(path)
     expect(rules.sessionStart).toBe('Real content')
   })
 
   it('hot-reload: second read after edit returns new content', () => {
     path = makeTmpFile(`## On session_start\n\nv1\n\n## On session_end\n\ne1\n`)
-    const first = loadSessionRules(path)
+    const first = loadMcpRules(path)
     expect(first.sessionStart).toBe('v1')
 
     writeFileSync(path, `## On session_start\n\nv2\n\n## On session_end\n\ne2\n`)
-    const second = loadSessionRules(path)
+    const second = loadMcpRules(path)
     expect(second.sessionStart).toBe('v2')
     expect(second.sessionEnd).toBe('e2')
   })
@@ -123,8 +135,19 @@ Real content
     path = makeTmpFile(
       `## On session_start\r\n\r\nStep 1\r\n\r\n## On session_end\r\n\r\nEnd step\r\n`
     )
-    const rules = loadSessionRules(path)
+    const rules = loadMcpRules(path)
     expect(rules.sessionStart).toBe('Step 1')
     expect(rules.sessionEnd).toBe('End step')
+  })
+
+  it('parses ## On conversation_read section with multi-line content', () => {
+    path = makeTmpFile(`## On conversation_read
+
+Etiquette guidance:
+- bullet 1
+- bullet 2
+`)
+    const rules = loadMcpRules(path)
+    expect(rules.conversationRead).toBe('Etiquette guidance:\n- bullet 1\n- bullet 2')
   })
 })
