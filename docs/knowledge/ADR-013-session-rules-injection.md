@@ -5,7 +5,7 @@ projectId: choda-deck
 scope: project
 refs: []
 createdAt: 2026-04-18
-lastVerifiedAt: 2026-05-08
+lastVerifiedAt: 2026-05-09
 ---
 
 # ADR-013: Session rules injected via MCP response — compliance through prompt, not validation
@@ -28,7 +28,7 @@ Ship rules **inside the MCP server itself**, injected into every `session_start`
 
 ### Storage
 
-`src/tasks/rules/session-rules.md` — single markdown file in the choda-deck repo, git-tracked, edit-able by Butter without rebuild.
+`src/adapters/mcp/rules/mcp-rules.md` — single markdown file in the choda-deck repo, git-tracked, edit-able by Butter without rebuild. (Originally `src/tasks/rules/session-rules.md` per the open question below; resolved post-refactor + renamed in TASK-683 — see Update section.)
 
 Two sections, parsed by heading:
 
@@ -98,4 +98,17 @@ Butter stays the backstop: if Claude skips, Butter notices and the rule text its
 
 ## Open questions
 
-- Should the rule file live in `src/tasks/rules/` (next to MCP tool code) or `src/rules/` (shared across future MCP servers)? Proposed: `src/tasks/rules/` — stays colocated with what uses it; move later if a second MCP server appears.
+- ~~Should the rule file live in `src/tasks/rules/` (next to MCP tool code) or `src/rules/` (shared across future MCP servers)? Proposed: `src/tasks/rules/` — stays colocated with what uses it; move later if a second MCP server appears.~~ **Resolved**: lives at `src/adapters/mcp/rules/` (post-refactor); renamed to `mcp-rules.md` in TASK-683 when scope generalized to non-session tools.
+
+## Update — TASK-683 (2026-05-09)
+
+The "future MCP tools can carry behavioral contracts the same way" note in *Consequences > Positive* was realized for `conversation_read`. Concrete changes:
+
+- File renamed `session-rules.md` → `mcp-rules.md` (whole-MCP scope, not session-only).
+- Loader generalized: `loadSessionRules` → `loadMcpRules`; interface `SessionRules` → `McpRules`; added field `conversationRead: string`.
+- New section `## On conversation_read` injected into the response of `conversation_read` when `conv.status ∈ {open, discussing}` (skipped for `decided`/`closed`/`stale`).
+- Handler extracted as named export `readConversation(svc, conversationId)` with narrow `Pick<ConversationOperations, …>` deps for testability.
+
+Pattern validated cross-AI (claude + copilot) on `CONV-1778319386427-5` and `CONV-1778337357060-2`. The same `## On <tool_name>` parsing rule (heading match in `parseSection`) and per-call `fs.readFileSync` hot-reload behavior remain unchanged.
+
+Shipped via PR #73. No supersession of ADR-013 — this is the anticipated extension, not a redesign.

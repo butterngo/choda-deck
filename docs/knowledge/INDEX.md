@@ -16,7 +16,7 @@
 | [ADR-014-harness-engine-architecture](./ADR-014-harness-engine-architecture.md) | decision | ADR-014: Staged Pipeline Harness — Planner → Generator → Evaluator with Approval Gates | 2026-05-08 |  |
 | [ADR-015-lifecycle-service-pattern](./ADR-015-lifecycle-service-pattern.md) | decision | ADR-015: Lifecycle Service Pattern (Composite Transactional Ops) | 2026-05-08 |  |
 | [spike-harness-headless-findings](./spike-harness-headless-findings.md) | spike | SPIKE findings — headless `claude -p` spawn contract | 2026-05-08 |  |
-| [ADR-013-session-rules-injection](./ADR-013-session-rules-injection.md) | decision | ADR-013: Session rules injected via MCP response — compliance through prompt, not validation | 2026-05-08 |  |
+| [ADR-013-session-rules-injection](./ADR-013-session-rules-injection.md) | decision | ADR-013: Session rules injected via MCP response — compliance through prompt, not validation | 2026-05-09 |  |
 | [ADR-011-inbox-pipeline](./ADR-011-inbox-pipeline.md) | decision | ADR-011: Inbox Pipeline — raw idea → research → task | 2026-05-08 |  |
 | [ADR-012-sqlite-backup-restore](./ADR-012-sqlite-backup-restore.md) | decision | ADR-012: SQLite daily backup + restore — atomic, retained 7 days | 2026-05-08 |  |
 | [ADR-009-session-lifecycle](./ADR-009-session-lifecycle.md) | decision | ADR-009: Session Lifecycle — workspace-scoped, task-bound sessions | 2026-05-08 |  |
