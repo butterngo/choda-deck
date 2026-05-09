@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { InstrumentedServer } from '../instrumented-server'
 import { z } from 'zod'
 import { textResponse } from './types'
 import { buildProjectContext, type ProjectContextDeps } from './project-context-builder'
@@ -58,7 +58,7 @@ function tryLifecycle<T>(fn: () => T): ReturnType<typeof textResponse> {
   }
 }
 
-export const register = (server: McpServer, svc: SessionToolsDeps, git: GitOps = new GitOpsImpl()): void => {
+export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git: GitOps = new GitOpsImpl()): void => {
   server.registerTool(
     'session_start',
     {

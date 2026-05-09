@@ -1,5 +1,5 @@
 import * as fs from 'node:fs'
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { InstrumentedServer } from '../instrumented-server'
 import { z } from 'zod'
 import { textResponse } from './types'
 import type { ProjectOperations } from '../../../core/domain/interfaces/project-repository.interface'
@@ -7,7 +7,7 @@ import type { WorkspaceOperations } from '../../../core/domain/interfaces/worksp
 
 export type WorkspaceToolsDeps = ProjectOperations & WorkspaceOperations
 
-export const register = (server: McpServer, svc: WorkspaceToolsDeps): void => {
+export const register = (server: InstrumentedServer, svc: WorkspaceToolsDeps): void => {
   server.registerTool(
     'workspace_list',
     {

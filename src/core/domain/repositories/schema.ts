@@ -413,6 +413,19 @@ function createM1Tables(db: Database.Database): void {
   } catch {
     /* exists */
   }
+
+  // TASK-681: MCP tool usage stats (V0). Append-only invocation log.
+  // No project/session/args/response/error-message columns by design (privacy + size).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tool_invocations (
+      id INTEGER PRIMARY KEY,
+      tool_name TEXT NOT NULL,
+      ts TEXT NOT NULL,
+      duration_ms INTEGER NOT NULL,
+      ok INTEGER NOT NULL,
+      error_kind TEXT
+    )
+  `)
 }
 
 function createIndexes(db: Database.Database): void {
@@ -446,6 +459,9 @@ function createIndexes(db: Database.Database): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_knowledge_type ON knowledge_index(project_id, type)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_knowledge_scope ON knowledge_index(project_id, scope)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_knowledge_workspace ON knowledge_index(workspace_id)')
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_tool_invocations_tool_ts ON tool_invocations(tool_name, ts)'
+  )
 }
 
 // Rename any existing task rows whose ID exceeds COUNTER_SANE_MAX (legacy

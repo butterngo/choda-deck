@@ -100,6 +100,11 @@ import { ContextSourceRepository } from './repositories/context-source-repositor
 import { ConversationRepository } from './repositories/conversation-repository'
 import { InboxRepository } from './repositories/inbox-repository'
 import { CounterRepository } from './repositories/counter-repository'
+import { ToolInvocationsRepository } from './repositories/tool-invocations-repository'
+import type {
+  ToolInvocation,
+  ToolInvocationOperations
+} from './interfaces/tool-invocations-repository.interface'
 
 export class SqliteTaskService
   implements
@@ -113,7 +118,8 @@ export class SqliteTaskService
     InboxLifecycleOperations,
     ConversationLifecycleOperations,
     SessionLifecycleOperations,
-    KnowledgeOperations
+    KnowledgeOperations,
+    ToolInvocationOperations
 {
   private readonly db: Database.Database
   private readonly projects: ProjectRepository
@@ -127,6 +133,7 @@ export class SqliteTaskService
   private readonly conversations: ConversationRepository
   private readonly inbox: InboxRepository
   private readonly counters: CounterRepository
+  private readonly toolInvocations: ToolInvocationsRepository
   private readonly inboxLifecycle: InboxLifecycleService
   private readonly conversationLifecycle: ConversationLifecycleService
   private readonly sessionLifecycle: SessionLifecycleService
@@ -152,6 +159,7 @@ export class SqliteTaskService
     this.workspaces = new WorkspaceRepository(this.db)
     this.relationships = new RelationshipRepository(this.db)
     this.counters = new CounterRepository(this.db)
+    this.toolInvocations = new ToolInvocationsRepository(this.db)
     this.tasks = new TaskRepository(this.db, this.relationships, this.counters)
     this.documents = new DocumentRepository(this.db)
     this.tagsRepo = new TagRepository(this.db)
@@ -218,6 +226,14 @@ export class SqliteTaskService
   backup(absolutePath: string): void {
     const escaped = absolutePath.replace(/'/g, "''")
     this.db.exec(`VACUUM INTO '${escaped}'`)
+  }
+
+  // ── Tool invocations (TASK-681) ────────────────────────────────────────────
+  recordToolInvocation(invocation: ToolInvocation): void {
+    this.toolInvocations.recordToolInvocation(invocation)
+  }
+  countToolInvocations(): number {
+    return this.toolInvocations.countToolInvocations()
   }
 
   ensureProject(id: string, name: string, cwd: string): void {

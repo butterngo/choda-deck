@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { InstrumentedServer } from '../instrumented-server'
 import { z } from 'zod'
 import { textResponse } from './types'
 import type { KnowledgeOperations } from '../../../core/domain/interfaces/knowledge-operations.interface'
@@ -7,7 +7,7 @@ import type { KnowledgeScope, KnowledgeType } from '../../../core/domain/knowled
 const TYPE_ENUM = ['spike', 'decision', 'postmortem', 'learning', 'evaluation'] as const
 const SCOPE_ENUM = ['project', 'cross'] as const
 
-export const register = (server: McpServer, svc: KnowledgeOperations): void => {
+export const register = (server: InstrumentedServer, svc: KnowledgeOperations): void => {
   server.registerTool(
     'knowledge_create',
     {
