@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { InstrumentedServer } from '../instrumented-server'
 import { z } from 'zod'
 import { textResponse } from './types'
 import { now } from '../../../core/domain/repositories/shared'
@@ -66,7 +66,7 @@ function tryLifecycle<T>(fn: () => T): ReturnType<typeof textResponse> {
   }
 }
 
-export const register = (server: McpServer, svc: ConversationToolsDeps): void => {
+export const register = (server: InstrumentedServer, svc: ConversationToolsDeps): void => {
   server.registerTool(
     'conversation_open',
     {

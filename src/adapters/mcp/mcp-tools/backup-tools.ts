@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync } from 'fs'
 import { join } from 'path'
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { InstrumentedServer } from '../instrumented-server'
 import { z } from 'zod'
 import { textResponse } from './types'
 import { backupDir, listBackups, runBackup, type Backupable } from '../../../core/backup-service'
@@ -18,7 +18,7 @@ export interface BackupToolsDeps extends Backupable {
 // backup_restore — both processes would race on the file lock.
 
 export function register(
-  server: McpServer,
+  server: InstrumentedServer,
   svc: BackupToolsDeps,
   dataDir: string,
   dbPath: string

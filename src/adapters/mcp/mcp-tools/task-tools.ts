@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { InstrumentedServer } from '../instrumented-server'
 import { z } from 'zod'
 import { textResponse } from './types'
 import type { TaskOperations } from '../../../core/domain/interfaces/task-repository.interface'
@@ -42,7 +42,7 @@ export function defaultBody(id: string, title: string): string {
 `
 }
 
-export const register = (server: McpServer, svc: TaskToolsDeps): void => {
+export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void => {
   server.registerTool(
     'task_context',
     {

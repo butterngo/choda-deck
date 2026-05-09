@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { InstrumentedServer } from '../instrumented-server'
 import { z } from 'zod'
 import { textResponse } from './types'
 import { LifecycleError } from '../../../core/domain/lifecycle/errors'
@@ -17,7 +17,7 @@ function tryLifecycle<T>(fn: () => T): ReturnType<typeof textResponse> {
   }
 }
 
-export const register = (server: McpServer, svc: InboxToolsDeps): void => {
+export const register = (server: InstrumentedServer, svc: InboxToolsDeps): void => {
   server.registerTool(
     'inbox_add',
     {

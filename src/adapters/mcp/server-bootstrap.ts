@@ -4,6 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { SqliteTaskService } from '../../core/domain/sqlite-task-service'
 import { resolveDataPaths } from '../../core/paths'
+import { createInstrumentedServer } from './instrumented-server'
 import * as taskTools from './mcp-tools/task-tools'
 import * as conversationTools from './mcp-tools/conversation-tools'
 import * as projectTools from './mcp-tools/project-tools'
@@ -23,15 +24,20 @@ export async function startMcpServer(): Promise<void> {
     { name: 'choda-tasks', version: '0.2.0' },
     { capabilities: { tools: {} } }
   )
+  const instrumented = createInstrumentedServer(server, svc)
 
-  taskTools.register(server, svc)
-  conversationTools.register(server, svc)
-  projectTools.register(server, svc)
-  workspaceTools.register(server, svc)
-  sessionTools.register(server, svc)
-  inboxTools.register(server, svc)
-  backupTools.register(server, svc, dataDir, dbPath)
-  knowledgeTools.register(server, svc)
+  taskTools.register(instrumented, svc)
+  conversationTools.register(instrumented, svc)
+  projectTools.register(instrumented, svc)
+  workspaceTools.register(instrumented, svc)
+  sessionTools.register(instrumented, svc)
+  inboxTools.register(instrumented, svc)
+  backupTools.register(instrumented, svc, dataDir, dbPath)
+  knowledgeTools.register(instrumented, svc)
+
+  // TASK-681: catch missed migrations to instrumented facade — count must be
+  // non-zero, otherwise registration silently bypassed instrumentation.
+  console.error(`[choda-deck] registered ${instrumented.registeredToolNames.length} MCP tools`)
 
   const transport = new StdioServerTransport()
   await server.connect(transport)
