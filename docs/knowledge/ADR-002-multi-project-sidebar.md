@@ -5,7 +5,7 @@ projectId: choda-deck
 scope: project
 refs: []
 createdAt: 2026-04-12
-lastVerifiedAt: 2026-04-29
+lastVerifiedAt: 2026-05-08
 ---
 
 # ADR-002: Multi-project sidebar with per-project terminal sessions

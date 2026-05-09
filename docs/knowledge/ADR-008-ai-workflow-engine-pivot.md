@@ -5,7 +5,7 @@ projectId: choda-deck
 scope: project
 refs: []
 createdAt: 2026-04-15
-lastVerifiedAt: 2026-04-29
+lastVerifiedAt: 2026-05-08
 ---
 
 # ADR-008: Pivot — Choda Deck as AI Development Workflow Engine

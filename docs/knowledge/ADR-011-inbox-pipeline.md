@@ -5,7 +5,7 @@ projectId: choda-deck
 scope: project
 refs: []
 createdAt: 2026-04-17
-lastVerifiedAt: 2026-04-29
+lastVerifiedAt: 2026-05-08
 ---
 
 # ADR-011: Inbox Pipeline — raw idea → research → task
