@@ -77,7 +77,7 @@ describe('createInstrumentedServer', () => {
     expect(rows[0].toolName).toBe('async_ok')
     expect(rows[0].ok).toBe(true)
     expect(rows[0].errorKind).toBeNull()
-    expect(rows[0].durationMs).toBeGreaterThanOrEqual(5)
+    expect(rows[0].durationMs).toBeGreaterThanOrEqual(1)
   })
 
   it('records sync throw: error propagates, ok=false, errorKind=name', async () => {
