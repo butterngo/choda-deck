@@ -8,6 +8,7 @@ import type { GitOps } from './knowledge-git'
 import { GitOpsImpl } from './knowledge-git'
 import { parseFrontmatter, serializeFrontmatter } from './knowledge-frontmatter'
 import { KNOWLEDGE_TYPES, KNOWLEDGE_SCOPES } from './knowledge-types'
+import { isLikelyWorktreePath } from '../worktree-path'
 import type {
   CreateKnowledgeInput,
   KnowledgeEntry,
@@ -97,6 +98,11 @@ export class KnowledgeService implements KnowledgeOperations {
 
     const stalenessCwd = workspaceCwd ?? project.cwd
     const filePath = this.resolveFilePath(input.scope, project.cwd, slug, workspaceCwd)
+    if (isLikelyWorktreePath(filePath)) {
+      throw new KnowledgeValidationError(
+        `target path is inside a git worktree (${filePath}) — knowledge there would be orphaned when the worktree is removed. Create knowledge from the main checkout instead.`
+      )
+    }
     if (fs.existsSync(filePath)) {
       throw new KnowledgeConflictError(slug, `file already exists at ${filePath}`)
     }
