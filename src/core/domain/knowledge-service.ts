@@ -472,6 +472,11 @@ export class KnowledgeService implements KnowledgeOperations {
     workspaceId: string,
     workspaceCwd: string
   ): void {
+    // Guard against resurrecting a deleted worktree: writeIndexMd() does
+    // mkdirSync(recursive) which would silently rebuild docs/knowledge/ inside
+    // a workspace whose cwd has been removed (e.g. orphan worktrees handled by
+    // cleanup_worktree_orphans). Skip the regen — the workspace is gone.
+    if (!fs.existsSync(workspaceCwd)) return
     const rows = this.knowledge.list({ projectId, workspaceId, scope: 'project' })
     this.writeIndexMd(workspaceCwd, `Knowledge — ${projectId}/${workspaceId}`, rows)
   }
