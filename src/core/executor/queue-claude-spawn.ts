@@ -113,6 +113,13 @@ export function createQueueRuntime(opts: {
       }
       return r.stdout
     },
+    gitCurrentBranch: async (cwd) => {
+      const r = await runProcess('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, timeoutMs: 30_000 })
+      if (r.exitCode !== 0) {
+        throw new Error(`git rev-parse --abbrev-ref HEAD failed (${r.exitCode}): ${r.stderr.slice(0, 500)}`)
+      }
+      return r.stdout.trim()
+    },
     mkdir: async (dir) => {
       await fsp.mkdir(dir, { recursive: true })
     },

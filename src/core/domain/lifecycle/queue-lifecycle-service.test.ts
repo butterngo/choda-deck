@@ -42,6 +42,7 @@ function buildRuntime(
     exec?: (cmd: string, state: FakeRuntimeState) => Promise<ExecShellResult>
     porcelain?: string
     diff?: string
+    branch?: string
   } = {}
 ): { runtime: QueueRuntime; state: FakeRuntimeState } {
   const state: FakeRuntimeState = {
@@ -71,6 +72,7 @@ function buildRuntime(
     },
     gitStatusPorcelain: async () => state.porcelain,
     gitDiff: async () => state.diff,
+    gitCurrentBranch: async () => overrides.branch ?? 'main',
     mkdir: async (dir) => {
       state.dirs.add(dir)
     },
@@ -596,5 +598,110 @@ describe('runQueue — admission order is deterministic', () => {
     expect(r.failed.map((x) => x.id)).toEqual([c.id])
     // 3 spawns × $0.05 = $0.15 (post-hoc cost is recorded for the failing task too)
     expect(r.totalCostUsd).toBeCloseTo(0.15, 5)
+  })
+})
+
+describe('runQueue — queue-run.json artifact', () => {
+  it('all-DONE: 2 tasks → halted: false and 2 DONE entries with cost + numTurns', async () => {
+    const a = createReadyAutoSafeTask({ title: 'A' })
+    const b = createReadyAutoSafeTask({ title: 'B' })
+    const { runtime, state } = buildRuntime({
+      spawn: async () => ({
+        isError: false,
+        totalCostUsd: 0.12,
+        numTurns: 5,
+        resultText: 'ok',
+        rawJson: '{}'
+      })
+    })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const raw = state.files.get(path.join(r.artifactDir, 'queue-run.json'))
+    expect(raw).toBeDefined()
+    const payload = JSON.parse(raw!)
+    expect(payload.halted).toBe(false)
+    expect(payload.haltReason).toBeNull()
+    expect(payload.tasks).toHaveLength(2)
+    expect(payload.tasks[0]).toMatchObject({ id: a.id, outcome: 'DONE', costUsd: 0.12, numTurns: 5 })
+    expect(payload.tasks[1]).toMatchObject({ id: b.id, outcome: 'DONE', costUsd: 0.12, numTurns: 5 })
+  })
+
+  it('first-fail halt: task 1 FAILED (ac-failed), task 2 SKIPPED', async () => {
+    const a = createReadyAutoSafeTask({ title: 'A' })
+    const b = createReadyAutoSafeTask({ title: 'B' })
+    const { runtime, state } = buildRuntime({
+      exec: async () => ({ exitCode: 1, stdout: '', stderr: 'lint failed' })
+    })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    expect(payload.halted).toBe(true)
+    expect(payload.haltReason).toContain('ac-failed')
+    expect(payload.tasks).toHaveLength(2)
+    expect(payload.tasks[0]).toMatchObject({ id: a.id, outcome: 'FAILED', reason: expect.stringContaining('ac-failed') })
+    expect(payload.tasks[1]).toMatchObject({ id: b.id, outcome: 'SKIPPED' })
+  })
+
+  it('cost-cap halt: expensive task → FAILED with cost-cap-exceeded reason', async () => {
+    const t = createReadyAutoSafeTask()
+    const { runtime, state } = buildRuntime({
+      spawn: async () => ({
+        isError: false,
+        totalCostUsd: 0.75,
+        numTurns: 5,
+        resultText: 'ok',
+        rawJson: '{}'
+      })
+    })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q', maxCostPerTask: 0.5 })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    expect(payload.tasks).toHaveLength(1)
+    expect(payload.tasks[0]).toMatchObject({
+      id: t.id,
+      outcome: 'FAILED',
+      costUsd: 0.75,
+      reason: expect.stringContaining('cost-cap-exceeded')
+    })
+  })
+
+  it('spawn-error halt: 1 FAILED (spawn-error) + remaining SKIPPED', async () => {
+    const a = createReadyAutoSafeTask({ title: 'A' })
+    const b = createReadyAutoSafeTask({ title: 'B' })
+    const { runtime, state } = buildRuntime({
+      spawn: async () => {
+        throw new Error('claude binary missing')
+      }
+    })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    expect(payload.tasks).toHaveLength(2)
+    expect(payload.tasks[0]).toMatchObject({ id: a.id, outcome: 'FAILED', reason: expect.stringContaining('spawn-error') })
+    expect(payload.tasks[1]).toMatchObject({ id: b.id, outcome: 'SKIPPED' })
+  })
+
+  it('dry-run: does not write queue-run.json', async () => {
+    createReadyAutoSafeTask()
+    const { runtime, state } = buildRuntime()
+    const queue = buildService(runtime)
+    await queue.runQueue({ workspaceId: 'ws-q', dryRun: true })
+
+    const hasQueueRunJson = [...state.files.keys()].some((k) => k.includes('queue-run.json'))
+    expect(hasQueueRunJson).toBe(false)
+  })
+
+  it('branch capture: gitCurrentBranch result appears in queue-run.json', async () => {
+    createReadyAutoSafeTask()
+    const { runtime, state } = buildRuntime({ branch: 'feature/x' })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    expect(payload.branch).toBe('feature/x')
   })
 })

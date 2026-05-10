@@ -54,6 +54,7 @@ function buildRuntime(
     },
     gitStatusPorcelain: async () => overrides.porcelain ?? '',
     gitDiff: async () => 'diff\n',
+    gitCurrentBranch: async () => 'main',
     mkdir: async () => {},
     writeFile: async () => {},
     artifactsDir: '/artifacts',

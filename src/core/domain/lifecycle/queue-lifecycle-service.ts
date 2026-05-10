@@ -71,6 +71,7 @@ export interface QueueRuntime {
   execShell: ExecShellFn
   gitStatusPorcelain(cwd: string): Promise<string>
   gitDiff(cwd: string): Promise<string>
+  gitCurrentBranch(cwd: string): Promise<string>
   mkdir(dir: string): Promise<void>
   writeFile(file: string, content: string): Promise<void>
   artifactsDir: string
@@ -105,6 +106,11 @@ export interface QueueRunResult {
   artifactDir: string
 }
 
+type TaskOutcomeEntry =
+  | { id: string; outcome: 'DONE'; costUsd: number; numTurns: number }
+  | { id: string; outcome: 'FAILED'; costUsd?: number; reason: string }
+  | { id: string; outcome: 'SKIPPED' }
+
 export class QueueLifecycleService {
   constructor(
     private readonly tasks: TaskRepository,
@@ -122,6 +128,9 @@ export class QueueLifecycleService {
 
     const porcelain = await this.runtime.gitStatusPorcelain(ws.cwd)
     if (porcelain.trim()) throw new QueueDirtyTreeError(ws.cwd, porcelain)
+
+    const startedAt = new Date().toISOString()
+    const branch = await this.runtime.gitCurrentBranch(ws.cwd)
 
     const eligible = this.collectEligibleTasks(ws)
     const taskCap = opts.maxTasks ?? eligible.length
@@ -151,102 +160,131 @@ export class QueueLifecycleService {
     const claudeBin = opts.claudeBin ?? 'claude'
     const acTimeoutMs = opts.acTimeoutMs ?? DEFAULT_AC_TIMEOUT_MS
 
+    const taskOutcomes: TaskOutcomeEntry[] = []
     const done: Task[] = []
     const failed: Task[] = []
     let totalCostUsd = 0
     let halted = false
     let haltReason: string | null = null
+    let skipped: Task[] = []
 
-    for (let i = 0; i < tasks.length; i++) {
-      const task = tasks[i]
+    try {
+      for (let i = 0; i < tasks.length; i++) {
+        const task = tasks[i]
 
-      // Per-queue admission gate — halt before spawning if next-task could exceed cap.
-      if (
-        opts.maxQueueCost !== undefined &&
-        totalCostUsd + maxCostPerTask > opts.maxQueueCost
-      ) {
-        halted = true
-        haltReason = `queue-cost-cap-exceeded: cumulative ${totalCostUsd.toFixed(
-          2
-        )} + per-task ${maxCostPerTask.toFixed(2)} > ${opts.maxQueueCost.toFixed(2)}`
-        break
-      }
-
-      const taskDir = path.join(artifactDir, 'tasks', task.id)
-      await this.runtime.mkdir(taskDir)
-      const promptText = task.body ?? ''
-      await this.runtime.writeFile(path.join(taskDir, 'prompt.md'), promptText)
-
-      const startResult = this.sessions.startSession({
-        projectId: ws.projectId,
-        workspaceId: ws.id,
-        taskId: task.id
-      })
-      const sessionId = startResult.session.id
-
-      const spawnAttempt = await this.spawnWithRetry({
-        taskBody: promptText,
-        cwd: ws.cwd,
-        model,
-        maxBudgetUsd,
-        queueMcpEmptyPath: this.runtime.queueMcpEmptyPath,
-        claudeBin
-      })
-      if (spawnAttempt.error) {
-        const reason = `spawn-error: ${spawnAttempt.error.message}`
-        await this.writeDiffArtifact(taskDir, ws.cwd)
-        await this.failTask(task, sessionId, reason, taskDir)
-        failed.push(task)
-        halted = true
-        haltReason = reason
-        break
-      }
-      const spawn = spawnAttempt.output
-
-      await this.runtime.writeFile(path.join(taskDir, 'claude.json'), spawn.rawJson)
-      await this.writeDiffArtifact(taskDir, ws.cwd)
-      totalCostUsd = round4(totalCostUsd + spawn.totalCostUsd)
-
-      if (spawn.isError) {
-        const reason = `claude-error: ${spawn.resultText.slice(0, 500)}`
-        await this.failTask(task, sessionId, reason, taskDir)
-        failed.push(task)
-        halted = true
-        haltReason = reason
-        break
-      }
-
-      const acReason = await this.runAcCommands(promptText, ws.cwd, taskDir, acTimeoutMs)
-      if (acReason) {
-        await this.failTask(task, sessionId, acReason, taskDir)
-        failed.push(task)
-        halted = true
-        haltReason = acReason
-        break
-      }
-
-      if (spawn.totalCostUsd > maxCostPerTask) {
-        const reason = `cost-cap-exceeded: ${spawn.totalCostUsd.toFixed(
-          2
-        )} > ${maxCostPerTask.toFixed(2)}`
-        await this.failTask(task, sessionId, reason, taskDir)
-        failed.push(task)
-        halted = true
-        haltReason = reason
-        break
-      }
-
-      this.sessions.endSession(sessionId, {
-        handoff: {
-          resumePoint: `auto-completed by queue runner (queue ${queueRunId})`,
-          decisions: [`Queue ${queueRunId} marked ${task.id} DONE — diff at ${taskDir}/diff.patch`]
+        // Per-queue admission gate — halt before spawning if next-task could exceed cap.
+        if (
+          opts.maxQueueCost !== undefined &&
+          totalCostUsd + maxCostPerTask > opts.maxQueueCost
+        ) {
+          halted = true
+          haltReason = `queue-cost-cap-exceeded: cumulative ${totalCostUsd.toFixed(
+            2
+          )} + per-task ${maxCostPerTask.toFixed(2)} > ${opts.maxQueueCost.toFixed(2)}`
+          break
         }
-      })
-      done.push(task)
+
+        const taskDir = path.join(artifactDir, 'tasks', task.id)
+        await this.runtime.mkdir(taskDir)
+        const promptText = task.body ?? ''
+        await this.runtime.writeFile(path.join(taskDir, 'prompt.md'), promptText)
+
+        const startResult = this.sessions.startSession({
+          projectId: ws.projectId,
+          workspaceId: ws.id,
+          taskId: task.id
+        })
+        const sessionId = startResult.session.id
+
+        const spawnAttempt = await this.spawnWithRetry({
+          taskBody: promptText,
+          cwd: ws.cwd,
+          model,
+          maxBudgetUsd,
+          queueMcpEmptyPath: this.runtime.queueMcpEmptyPath,
+          claudeBin
+        })
+        if (spawnAttempt.error) {
+          const reason = `spawn-error: ${spawnAttempt.error.message}`
+          await this.writeDiffArtifact(taskDir, ws.cwd)
+          await this.failTask(task, sessionId, reason, taskDir)
+          taskOutcomes.push({ id: task.id, outcome: 'FAILED', reason })
+          failed.push(task)
+          halted = true
+          haltReason = reason
+          break
+        }
+        const spawn = spawnAttempt.output
+
+        await this.runtime.writeFile(path.join(taskDir, 'claude.json'), spawn.rawJson)
+        await this.writeDiffArtifact(taskDir, ws.cwd)
+        totalCostUsd = round4(totalCostUsd + spawn.totalCostUsd)
+
+        if (spawn.isError) {
+          const reason = `claude-error: ${spawn.resultText.slice(0, 500)}`
+          await this.failTask(task, sessionId, reason, taskDir)
+          taskOutcomes.push({ id: task.id, outcome: 'FAILED', costUsd: spawn.totalCostUsd, reason })
+          failed.push(task)
+          halted = true
+          haltReason = reason
+          break
+        }
+
+        const acReason = await this.runAcCommands(promptText, ws.cwd, taskDir, acTimeoutMs)
+        if (acReason) {
+          await this.failTask(task, sessionId, acReason, taskDir)
+          taskOutcomes.push({ id: task.id, outcome: 'FAILED', costUsd: spawn.totalCostUsd, reason: acReason })
+          failed.push(task)
+          halted = true
+          haltReason = acReason
+          break
+        }
+
+        if (spawn.totalCostUsd > maxCostPerTask) {
+          const reason = `cost-cap-exceeded: ${spawn.totalCostUsd.toFixed(
+            2
+          )} > ${maxCostPerTask.toFixed(2)}`
+          await this.failTask(task, sessionId, reason, taskDir)
+          taskOutcomes.push({ id: task.id, outcome: 'FAILED', costUsd: spawn.totalCostUsd, reason })
+          failed.push(task)
+          halted = true
+          haltReason = reason
+          break
+        }
+
+        this.sessions.endSession(sessionId, {
+          handoff: {
+            resumePoint: `auto-completed by queue runner (queue ${queueRunId})`,
+            decisions: [`Queue ${queueRunId} marked ${task.id} DONE — diff at ${taskDir}/diff.patch`]
+          }
+        })
+        taskOutcomes.push({ id: task.id, outcome: 'DONE', costUsd: spawn.totalCostUsd, numTurns: spawn.numTurns })
+        done.push(task)
+      }
+    } finally {
+      skipped = tasks.slice(done.length + failed.length)
+      for (const t of skipped) {
+        taskOutcomes.push({ id: t.id, outcome: 'SKIPPED' })
+      }
+      const runMeta = {
+        queueRunId,
+        workspaceId: opts.workspaceId,
+        branch,
+        model,
+        claudeBin,
+        startedAt,
+        endedAt: new Date().toISOString(),
+        maxCostPerTask,
+        maxQueueCost: opts.maxQueueCost ?? null,
+        maxTasks: opts.maxTasks ?? null,
+        totalCostUsd,
+        halted,
+        haltReason,
+        tasks: taskOutcomes
+      }
+      await this.runtime.writeFile(path.join(artifactDir, 'queue-run.json'), JSON.stringify(runMeta, null, 2))
     }
 
-    const completedCount = done.length + failed.length
-    const skipped = tasks.slice(completedCount)
     return { done, failed, skipped, totalCostUsd, halted, haltReason, queueRunId, artifactDir }
   }
 
