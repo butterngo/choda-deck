@@ -37,6 +37,7 @@ export function createQueueClaudeSpawner(opts: {
   return async (input: SpawnClaudeInput): Promise<SpawnClaudeOutput> => {
     const args = [
       '-p',
+      input.taskBody,
       '--model',
       input.model,
       '--output-format',
