@@ -22,6 +22,7 @@ import { runKnowledgeList, knowledgeListHelp } from './commands/knowledge-list'
 import { runKnowledgeShow, knowledgeShowHelp } from './commands/knowledge-show'
 import { runProjectContext, projectContextHelp } from './commands/project-context'
 import { runRunCommand, runCommandHelp } from './commands/run'
+import { runRunQueueCommand } from './commands/run-queue'
 import { runSyncExport, syncExportHelp } from './commands/sync-export'
 import { runSyncImport, syncImportHelp } from './commands/sync-import'
 
@@ -41,6 +42,7 @@ Core read commands:
 
 Executor commands:
   run <taskId>           Run Playwright FE test executor pilot (Coder + Tester)
+  run-queue              Run autonomous queue of READY auto-safe tasks (ADR-019)
 
 Cross-device sync:
   sync export --to <dir>   Write a content-stable snapshot to <dir>
@@ -86,6 +88,8 @@ async function main(): Promise<number> {
       return dispatchProject(sub, rest)
     case 'run':
       return dispatchRun(sub, rest)
+    case 'run-queue':
+      return runRunQueueCommand(sub === undefined ? [] : [sub, ...rest])
     case 'sync':
       return dispatchSync(sub, rest)
     case 'mcp':
