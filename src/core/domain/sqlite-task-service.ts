@@ -28,6 +28,7 @@ import type {
   StartSessionResult,
   EndSessionInput,
   EndSessionResult,
+  AbandonSessionResult,
   CheckpointSessionInput,
   CheckpointSessionResult,
   ResumeSessionResult
@@ -509,6 +510,9 @@ export class SqliteTaskService
   }
   endSession(id: string, input: EndSessionInput): EndSessionResult {
     return this.sessionLifecycle.endSession(id, input)
+  }
+  abandonSession(id: string, reason: string): AbandonSessionResult {
+    return this.sessionLifecycle.abandonSession(id, reason)
   }
   checkpointSession(id: string, input: CheckpointSessionInput): CheckpointSessionResult {
     return this.sessionLifecycle.checkpointSession(id, input)

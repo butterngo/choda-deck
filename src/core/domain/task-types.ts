@@ -138,6 +138,10 @@ export interface SessionHandoff {
   resumePoint?: string
   looseEnds?: string[]
   tasksUpdated?: string[]
+  /**
+   * Set by `abandonSession` (failure path) — distinguishes from `endSession` (success/done path).
+   */
+  failureReason?: string
   testResults?: {
     passed: string[]
     skipped: string[]

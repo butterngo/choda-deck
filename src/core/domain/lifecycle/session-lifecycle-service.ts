@@ -4,6 +4,7 @@ import type { ContextSourceRepository } from '../repositories/context-source-rep
 import type { ConversationRepository } from '../repositories/conversation-repository'
 import type { TaskRepository } from '../repositories/task-repository'
 import type {
+  AbandonSessionResult,
   CheckpointSessionInput,
   CheckpointSessionResult,
   EndSessionInput,
@@ -108,6 +109,42 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
       })
 
       return { session: updated, closedConversationIds, taskUpdated }
+    })
+    return tx()
+  }
+
+  abandonSession(id: string, reason: string): AbandonSessionResult {
+    const tx = this.db.transaction((): AbandonSessionResult => {
+      const session = this.sessions.get(id)
+      if (!session) throw new SessionNotFoundError(id)
+      if (session.status !== 'active') {
+        throw new SessionStatusError(id, session.status, 'only active sessions can be abandoned')
+      }
+
+      const endedAt = now()
+      const decisionSummary = `Abandoned: ${reason}`
+
+      const closedConversationIds: string[] = []
+      const linkedConvs = this.conversations.findByLink('session', id)
+      for (const conv of linkedConvs) {
+        if (conv.status === 'closed') continue
+        this.conversations.update(conv.id, {
+          status: 'closed',
+          decisionSummary,
+          closedAt: endedAt
+        })
+        closedConversationIds.push(conv.id)
+      }
+
+      // Intentionally do NOT touch session.taskId — task stays IN-PROGRESS for human review.
+      const handoff = { ...(session.handoff ?? {}), failureReason: reason }
+      const updated = this.sessions.update(id, {
+        status: 'completed',
+        endedAt,
+        handoff
+      })
+
+      return { session: updated, closedConversationIds }
     })
     return tx()
   }

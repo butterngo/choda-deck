@@ -87,3 +87,13 @@ export class WorkspaceResolutionError extends LifecycleError {
     this.name = 'WorkspaceResolutionError'
   }
 }
+
+export class QueueDirtyTreeError extends LifecycleError {
+  constructor(cwd: string, porcelain: string) {
+    super(
+      'QUEUE_DIRTY_TREE',
+      `Queue refuses to start: working tree at ${cwd} is dirty. Commit or stash first.\n${porcelain.trim()}`
+    )
+    this.name = 'QueueDirtyTreeError'
+  }
+}

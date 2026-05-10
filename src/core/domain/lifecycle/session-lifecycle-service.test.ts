@@ -138,6 +138,103 @@ describe('endSession', () => {
   })
 })
 
+describe('abandonSession', () => {
+  it('happy path: active → completed with handoff.failureReason; task stays IN-PROGRESS', () => {
+    const task = svc.createTask({ projectId: 'proj-s', title: 'Bound task' })
+    const started = svc.startSession({ projectId: 'proj-s', taskId: task.id })
+
+    const r = svc.abandonSession(started.session.id, 'AC step 2 failed: lint errors')
+
+    expect(r.session.status).toBe('completed')
+    expect(r.session.endedAt).not.toBeNull()
+    expect(r.session.handoff?.failureReason).toBe('AC step 2 failed: lint errors')
+    // Task intentionally untouched — leaves human-review breadcrumb in IN-PROGRESS state.
+    expect(svc.getTask(task.id)?.status).toBe('IN-PROGRESS')
+  })
+
+  it('preserves prior handoff fields and adds failureReason on top', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    svc.updateSession(started.session.id, {
+      handoff: { resumePoint: 'mid-attempt', decisions: ['picked option A'] }
+    })
+
+    const r = svc.abandonSession(started.session.id, 'spawn crashed')
+
+    expect(r.session.handoff?.resumePoint).toBe('mid-attempt')
+    expect(r.session.handoff?.decisions).toEqual(['picked option A'])
+    expect(r.session.handoff?.failureReason).toBe('spawn crashed')
+  })
+
+  it('closes session-linked conversations with abandon-prefixed decisionSummary', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    const conv = svc.openConversation({
+      projectId: 'proj-s',
+      title: 'Mid-session discussion',
+      createdBy: 'Butter',
+      initialMessage: { content: 'thoughts?', type: 'question' }
+    })
+
+    const r = svc.abandonSession(started.session.id, 'cost cap exceeded')
+
+    expect(r.closedConversationIds).toEqual([conv.id])
+    const after = svc.getConversation(conv.id)
+    expect(after?.status).toBe('closed')
+    expect(after?.decisionSummary).toBe('Abandoned: cost cap exceeded')
+  })
+
+  it('does not touch task when session has no taskId', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    expect(() => svc.abandonSession(started.session.id, 'no-task abort')).not.toThrow()
+    expect(svc.getSession(started.session.id)?.handoff?.failureReason).toBe('no-task abort')
+  })
+
+  it('throws SessionNotFoundError on missing id', () => {
+    expect(() => svc.abandonSession('SESSION-999', 'r')).toThrowError(SessionNotFoundError)
+  })
+
+  it('throws SessionStatusError when session already completed', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    svc.endSession(started.session.id, { handoff: { resumePoint: 'r' } })
+    expect(() => svc.abandonSession(started.session.id, 'r')).toThrowError(SessionStatusError)
+  })
+
+  it('throws SessionStatusError when session already abandoned', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    svc.abandonSession(started.session.id, 'first abort')
+    expect(() => svc.abandonSession(started.session.id, 'second abort')).toThrowError(
+      SessionStatusError
+    )
+  })
+
+  it('rolls back transaction on conversation close failure — task and session stay intact', () => {
+    const task = svc.createTask({ projectId: 'proj-s', title: 'Atomic' })
+    const started = svc.startSession({ projectId: 'proj-s', taskId: task.id })
+    const conv = svc.openConversation({
+      projectId: 'proj-s',
+      title: 'Mid',
+      createdBy: 'Butter',
+      initialMessage: { content: 'q', type: 'question' }
+    })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lifecycle = (svc as any).sessionLifecycle
+    const orig = lifecycle.conversations.update.bind(lifecycle.conversations)
+    lifecycle.conversations.update = () => {
+      throw new Error('simulated conv update failure')
+    }
+
+    expect(() => svc.abandonSession(started.session.id, 'will rollback')).toThrow(
+      'simulated conv update failure'
+    )
+
+    lifecycle.conversations.update = orig
+
+    expect(svc.getSession(started.session.id)?.status).toBe('active')
+    expect(svc.getConversation(conv.id)?.status).toBe('open')
+    expect(svc.getTask(task.id)?.status).toBe('IN-PROGRESS')
+  })
+})
+
 describe('startSession taskId binding', () => {
   it('links task to session and sets it to IN-PROGRESS', () => {
     const task = svc.createTask({ projectId: 'proj-s', title: 'Bound task' })

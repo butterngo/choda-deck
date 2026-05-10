@@ -2,7 +2,7 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
-| [playwright-pilot-skill](./playwright-pilot-skill.md) | learning | Playwright pilot skill — global Claude Code skill for FE executor | 2026-05-08 |  |
+| [ADR-019-autonomous-queue-runner](./ADR-019-autonomous-queue-runner.md) | decision | ADR-019: Autonomous Queue Runner — sequential `auto-safe` task executor | 2026-05-10 |  |
 | [cross-device-sync-export-import-spec](./cross-device-sync-export-import-spec.md) | evaluation | Cross-device sync export/import — sequential dual-machine sync without duplicating project knowledge | 2026-05-09 |  |
 | [auto-safe-label-spec](./auto-safe-label-spec.md) | decision | auto-safe label — task contract for autonomous execution | 2026-05-08 | ✱ |
 | [ADR-020-embedding-architecture](./ADR-020-embedding-architecture.md) | decision | ADR-020: Embedding Architecture — local default with provider abstraction for semantic search | 2026-05-08 | ✱ |
@@ -10,7 +10,7 @@
 | [ADR-022-workspace-scoped-knowledge](./ADR-022-workspace-scoped-knowledge.md) | decision | ADR-022: Workspace-scoped knowledge — multi-repo project support | 2026-05-08 | ✱ |
 | [pure-heuristic-core-thin-git-wrapper-for-stubbability](./pure-heuristic-core-thin-git-wrapper-for-stubbability.md) | decision | Pure heuristic core, thin git wrapper for stubbability | 2026-05-08 |  |
 | [ADR-018-knowledge-layer](./ADR-018-knowledge-layer.md) | decision | Knowledge Layer Foundation — code-coupled MD with frontmatter and staleness tracking | 2026-05-08 | ✱ |
-| [ADR-019-adr-numbering-convention](./ADR-019-adr-numbering-convention.md) | decision | ADR-019: ADR Numbering Convention — keep ADR-NNN prefix in slug | 2026-05-08 |  |
+| [ADR-019-adr-numbering-convention](./ADR-019-adr-numbering-convention.md) | decision | ADR-019: ADR Numbering Convention — keep ADR-NNN prefix in slug | 2026-05-08 | ✱ |
 | [ADR-017-headless-spawn-strategy](./ADR-017-headless-spawn-strategy.md) | decision | ADR-017: Headless Spawn Strategy — `claude -p` (default config) over Anthropic SDK Direct | 2026-05-08 |  |
 | [ADR-016-graphify-integration](./ADR-016-graphify-integration.md) | decision | ADR-016: Graphify Integration — Query-Only Phase 1, Manual Refresh | 2026-05-08 |  |
 | [ADR-014-harness-engine-architecture](./ADR-014-harness-engine-architecture.md) | decision | ADR-014: Staged Pipeline Harness — Planner → Generator → Evaluator with Approval Gates | 2026-05-08 |  |
