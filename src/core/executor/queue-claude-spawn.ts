@@ -59,7 +59,8 @@ export function createQueueClaudeSpawner(opts: {
 
     const result = await runProcess(input.claudeBin, args, {
       cwd: input.cwd,
-      timeoutMs: spawnTimeoutMs
+      timeoutMs: spawnTimeoutMs,
+      stdin: input.taskBody
     })
 
     const rawJson = result.stdout
