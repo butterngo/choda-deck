@@ -37,7 +37,6 @@ export function createQueueClaudeSpawner(opts: {
   return async (input: SpawnClaudeInput): Promise<SpawnClaudeOutput> => {
     const args = [
       '-p',
-      input.taskBody,
       '--model',
       input.model,
       '--output-format',
@@ -60,7 +59,8 @@ export function createQueueClaudeSpawner(opts: {
 
     const result = await runProcess(input.claudeBin, args, {
       cwd: input.cwd,
-      timeoutMs: spawnTimeoutMs
+      timeoutMs: spawnTimeoutMs,
+      stdin: input.taskBody
     })
 
     const rawJson = result.stdout

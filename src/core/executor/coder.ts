@@ -223,6 +223,9 @@ interface RunOptions {
   cwd: string
   timeoutMs: number
   env?: NodeJS.ProcessEnv
+  /** Optional string to pipe to child stdin and then close. Use when prompts are multi-line / contain
+   * shell-special chars where positional-arg passing would be mangled by cmd.exe with shell:true. */
+  stdin?: string
 }
 
 export function runProcess(cmd: string, args: string[], opts: RunOptions): Promise<ProcResult> {
@@ -259,6 +262,12 @@ export function runProcess(cmd: string, args: string[], opts: RunOptions): Promi
       }
       resolve({ exitCode: code ?? -1, stdout, stderr })
     })
+
+    if (opts.stdin !== undefined && child.stdin) {
+      child.stdin.end(opts.stdin)
+    } else if (child.stdin) {
+      child.stdin.end()
+    }
   })
 }
 
