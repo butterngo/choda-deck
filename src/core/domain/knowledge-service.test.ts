@@ -138,6 +138,41 @@ describe('createKnowledge', () => {
   })
 })
 
+describe('createKnowledge — worktree guard', () => {
+  it('rejects workspace whose cwd is a git worktree', () => {
+    const workspaces = new WorkspaceRepository(db)
+    const worktreeCwd = path.join(tmpDir, 'repo.worktrees', 'task-1')
+    fs.mkdirSync(worktreeCwd, { recursive: true })
+    workspaces.add('proj-k', 'ws-wt', 'wt', worktreeCwd)
+
+    const svcWithWs = new KnowledgeService({
+      db,
+      knowledge: repo,
+      projects,
+      workspaces,
+      git,
+      contentRoot: path.join(tmpDir, 'vault'),
+      now: () => new Date('2026-04-29T00:00:00Z')
+    })
+
+    expect(() =>
+      svcWithWs.createKnowledge({
+        projectId: 'proj-k',
+        workspaceId: 'ws-wt',
+        type: 'spike',
+        scope: 'project',
+        title: 'Worktree Spike',
+        body: 'b',
+        refs: []
+      })
+    ).toThrow(KnowledgeValidationError)
+
+    const expectedPath = path.join(worktreeCwd, 'docs', 'knowledge', 'worktree-spike.md')
+    expect(fs.existsSync(expectedPath)).toBe(false)
+    expect(repo.get('worktree-spike')).toBeNull()
+  })
+})
+
 describe('getKnowledge — staleness', () => {
   it('returns isStale=true with per-ref commitsSince', () => {
     git.headSha = 'sha-aaa'
