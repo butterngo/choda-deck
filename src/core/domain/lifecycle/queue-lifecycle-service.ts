@@ -72,6 +72,7 @@ export interface QueueRuntime {
   gitStatusPorcelain(cwd: string): Promise<string>
   gitDiff(cwd: string): Promise<string>
   gitCurrentBranch(cwd: string): Promise<string>
+  gitHeadSha(cwd: string): Promise<string>
   mkdir(dir: string): Promise<void>
   writeFile(file: string, content: string): Promise<void>
   artifactsDir: string
@@ -131,6 +132,7 @@ export class QueueLifecycleService {
 
     const startedAt = new Date().toISOString()
     const branch = await this.runtime.gitCurrentBranch(ws.cwd)
+    const commitSha = await this.runtime.gitHeadSha(ws.cwd)
 
     const eligible = this.collectEligibleTasks(ws)
     const taskCap = opts.maxTasks ?? eligible.length
@@ -270,6 +272,7 @@ export class QueueLifecycleService {
         queueRunId,
         workspaceId: opts.workspaceId,
         branch,
+        commitSha,
         model,
         claudeBin,
         startedAt,

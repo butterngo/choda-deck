@@ -43,6 +43,7 @@ function buildRuntime(
     porcelain?: string
     diff?: string
     branch?: string
+    commitSha?: string
   } = {}
 ): { runtime: QueueRuntime; state: FakeRuntimeState } {
   const state: FakeRuntimeState = {
@@ -73,6 +74,7 @@ function buildRuntime(
     gitStatusPorcelain: async () => state.porcelain,
     gitDiff: async () => state.diff,
     gitCurrentBranch: async () => overrides.branch ?? 'main',
+    gitHeadSha: async () => overrides.commitSha ?? 'abc1234567890def1234567890abcdef12345678',
     mkdir: async (dir) => {
       state.dirs.add(dir)
     },
@@ -703,5 +705,16 @@ describe('runQueue — queue-run.json artifact', () => {
 
     const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
     expect(payload.branch).toBe('feature/x')
+  })
+
+  it('commit-sha capture: gitHeadSha result appears in queue-run.json', async () => {
+    createReadyAutoSafeTask()
+    const sha = 'deadbeef1234567890abcdef1234567890abcdef'
+    const { runtime, state } = buildRuntime({ commitSha: sha })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    expect(payload.commitSha).toBe(sha)
   })
 })
