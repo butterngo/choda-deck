@@ -7,12 +7,13 @@ export interface CliServices {
   svc: SqliteTaskService
   dbPath: string
   dataDir: string
+  artifactsDir: string
 }
 
 export async function createCliServices(): Promise<CliServices> {
-  const { dbPath, dataDir } = resolveDataPaths()
+  const { dbPath, dataDir, artifactsDir } = resolveDataPaths()
   fs.mkdirSync(path.dirname(dbPath), { recursive: true })
   const svc = new SqliteTaskService(dbPath)
   await svc.initializeAsync()
-  return { svc, dbPath, dataDir }
+  return { svc, dbPath, dataDir, artifactsDir }
 }

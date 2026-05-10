@@ -36,6 +36,10 @@ import type {
 import { InboxLifecycleService } from './lifecycle/inbox-lifecycle-service'
 import { ConversationLifecycleService } from './lifecycle/conversation-lifecycle-service'
 import { SessionLifecycleService } from './lifecycle/session-lifecycle-service'
+import {
+  QueueLifecycleService,
+  type QueueRuntime
+} from './lifecycle/queue-lifecycle-service'
 import { KnowledgeService } from './knowledge-service'
 import { KnowledgeRepository } from './repositories/knowledge-repository'
 import type { KnowledgeOperations } from './interfaces/knowledge-operations.interface'
@@ -519,6 +523,17 @@ export class SqliteTaskService
   }
   resumeSession(id: string): ResumeSessionResult {
     return this.sessionLifecycle.resumeSession(id)
+  }
+
+  // ── Queue lifecycle (autonomous queue runner per ADR-019) ─────────────────
+  createQueueLifecycle(runtime: QueueRuntime): QueueLifecycleService {
+    return new QueueLifecycleService(
+      this.tasks,
+      this.workspaces,
+      this.conversations,
+      this.sessionLifecycle,
+      runtime
+    )
   }
 
   // ── Knowledge ─────────────────────────────────────────────────────────────
