@@ -10,6 +10,7 @@ refs:
     commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
 createdAt: 2026-05-05
 lastVerifiedAt: 2026-05-11
+auditRef: docs/knowledge/auto-safe-validator-audit-2026-05-11.md
 ---
 
 # auto-safe label — task contract for autonomous execution
@@ -73,21 +74,38 @@ const result = validateAutoSafeTask(task)
 
 Pure function — reads `task.body` only, no DB access. Safe to call from anywhere.
 
-## MCP enforcement
+## Enforcement timing
+
+The validator is invoked at exactly two points in the execution chain:
+
+### At label-add (mutation gate)
 
 `task_update` and `tasks_update_batch` enforce the contract via `enforceAutoSafe()` in `src/adapters/mcp/mcp-tools/task-tools.ts`:
 
 1. Hook fires only when the incoming `labels` array contains `auto-safe`.
-2. Skip if the current task already has the label (idempotent re-update).
+2. **Skip if the current task already has the label** (idempotent re-update — avoids re-validating tasks that are mid-execution or DONE).
 3. Probe = current task with body overridden by incoming `body` if provided (so a single update call can fix the body and apply the label atomically).
 4. If validation fails, throw with all errors listed — caller sees exactly what's missing.
 
+**Implication of rule 2**: A body-only `task_update` on a task that already carries `auto-safe` (no `labels` field in the payload, or `labels` field that still includes `auto-safe`) does NOT re-run the validator. The body can diverge from the contract at mutation time. The queue re-validation below is the only enforcement that catches this.
+
 Other tools that mutate labels (e.g. import scripts, batch reassignment) **do not** route through this hook; they bypass the validator by design (treat them as administrative). If a future tool route adds label mutation, it must call `enforceAutoSafe` explicitly.
+
+### At queue pick-up (READY tasks only)
+
+`collectEligibleTasks()` in `src/core/domain/lifecycle/queue-lifecycle-service.ts` re-runs `validateAutoSafeTask(t).valid` on every candidate before spawning. A task with `auto-safe` whose body no longer satisfies the contract is silently excluded from the eligible set — it will not be executed until the body is corrected and the task re-queued.
+
+This means: if a body edit on a READY task invalidates the contract, the queue sweep catches it even though the mutation gate was bypassed.
+
+### After task completion
+
+No enforcement runs on tasks in terminal states (DONE, FAILED, CANCELLED). Body edits after a task completes may leave the body in a state that would fail the validator (e.g., adding post-execution notes that replace the scope hour line). This is **intentional and harmless** — the label is informational at that point and the task will never be re-queued.
 
 ## Out of scope
 
 - **No runner / orchestrator.** This spec describes only the contract and its enforcement on `task_update`. Whether/when to spawn an executor is a separate decision (see ADR-017 for the spawn primitive choice).
 - **No retroactive validation.** Existing tasks with `auto-safe` already on them are not re-validated when this validator ships. The label sticks until next mutation.
+- **No post-completion body re-validation.** Body edits on DONE/FAILED/CANCELLED tasks are not re-validated. See "After task completion" above.
 - **No knowledge-base scrubbing.** This validator does not check whether referenced files exist on disk — the label is a *self-attestation* by the task author, not a static analysis.
 
 ## Revisit when
@@ -101,3 +119,4 @@ Other tools that mutate labels (e.g. import scripts, batch reassignment) **do no
 - ADR-017: headless spawn strategy — orthogonal, applies if/when an autonomous runner is built.
 - TASK-652: implementation task.
 - Feedback memory `ac_post_build_smoke` — origin of the smoke-step requirement.
+- Audit: `docs/knowledge/auto-safe-validator-audit-2026-05-11.md` — TASK-704 bypass investigation (verdict: spec leak by design, no code fix).
