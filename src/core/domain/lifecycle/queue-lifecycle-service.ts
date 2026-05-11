@@ -106,6 +106,18 @@ export interface QueueRunOptions {
   acTimeoutMs?: number
 }
 
+/**
+ * Typed halt classification. Drives exit-code mapping in run-queue CLI without
+ * regex-matching the free-form `haltReason` string. Add a new variant whenever a
+ * new halt site is introduced in `runQueue`.
+ */
+export type HaltCode =
+  | 'queue-cost-cap'
+  | 'cost-cap'
+  | 'spawn-error'
+  | 'claude-error'
+  | 'ac-failed'
+
 export interface QueueRunResult {
   done: Task[]
   failed: Task[]
@@ -114,6 +126,8 @@ export interface QueueRunResult {
   totalCostUsd: number
   halted: boolean
   haltReason: string | null
+  /** Typed halt classification — null when not halted. Drives CLI exit codes. */
+  haltCode: HaltCode | null
   queueRunId: string
   artifactDir: string
 }
@@ -160,6 +174,7 @@ export class QueueLifecycleService {
         totalCostUsd: 0,
         halted: false,
         haltReason: null,
+        haltCode: null,
         queueRunId,
         artifactDir
       }
@@ -188,6 +203,7 @@ export class QueueLifecycleService {
     let totalCostUsd = 0
     let halted = false
     let haltReason: string | null = null
+    let haltCode: HaltCode | null = null
     let skipped: Task[] = []
 
     const profile = this.runtime.mcpProfile
@@ -212,6 +228,7 @@ export class QueueLifecycleService {
           totalCostUsd + maxCostPerTask > opts.maxQueueCost
         ) {
           halted = true
+          haltCode = 'queue-cost-cap'
           haltReason = `queue-cost-cap-exceeded: cumulative ${totalCostUsd.toFixed(
             2
           )} + per-task ${maxCostPerTask.toFixed(2)} > ${opts.maxQueueCost.toFixed(2)}`
@@ -249,6 +266,7 @@ export class QueueLifecycleService {
           taskOutcomes.push({ id: task.id, outcome: 'FAILED', reason })
           failed.push(task)
           halted = true
+          haltCode = 'spawn-error'
           haltReason = reason
           break
         }
@@ -275,6 +293,7 @@ export class QueueLifecycleService {
           taskOutcomes.push({ id: task.id, outcome: 'FAILED', costUsd: spawn.totalCostUsd, reason })
           failed.push(task)
           halted = true
+          haltCode = 'claude-error'
           haltReason = reason
           break
         }
@@ -286,6 +305,7 @@ export class QueueLifecycleService {
           taskOutcomes.push({ id: task.id, outcome: 'FAILED', costUsd: spawn.totalCostUsd, reason: acReason })
           failed.push(task)
           halted = true
+          haltCode = 'ac-failed'
           haltReason = acReason
           break
         }
@@ -299,6 +319,7 @@ export class QueueLifecycleService {
           taskOutcomes.push({ id: task.id, outcome: 'FAILED', costUsd: spawn.totalCostUsd, reason })
           failed.push(task)
           halted = true
+          haltCode = 'cost-cap'
           haltReason = reason
           break
         }
@@ -336,6 +357,7 @@ export class QueueLifecycleService {
         totalCostUsd,
         halted,
         haltReason,
+        haltCode,
         mcp_tokens_per_spawn: mcpTokensPerSpawn,
         tool_schema_tokens_total: computeToolSchemaTokens(),
         mcp_profile_used: profile,
@@ -350,7 +372,17 @@ export class QueueLifecycleService {
       await this.runtime.writeFile(path.join(artifactDir, 'queue-run.json'), JSON.stringify(runMeta, null, 2))
     }
 
-    return { done, failed, skipped, totalCostUsd, halted, haltReason, queueRunId, artifactDir }
+    return {
+      done,
+      failed,
+      skipped,
+      totalCostUsd,
+      halted,
+      haltReason,
+      haltCode,
+      queueRunId,
+      artifactDir
+    }
   }
 
   /**
