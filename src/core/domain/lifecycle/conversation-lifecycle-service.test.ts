@@ -280,15 +280,36 @@ describe('reopenConversation', () => {
     expect(() => svc.reopenConversation(id)).toThrowError(ConversationStatusError)
   })
 
-  it('closed → discussing (closed implies decided was set)', () => {
+  it('closed → discussing clears closedAt + decidedAt + decisionSummary', () => {
     const id = openFresh()
     svc.decideConversation(id, { author: 'Butter', decision: 'go' })
     svc.closeConversation(id)
-    expect(svc.getConversation(id)?.status).toBe('closed')
+    const closed = svc.getConversation(id)
+    expect(closed?.status).toBe('closed')
+    expect(closed?.decidedAt).not.toBeNull()
+    expect(closed?.closedAt).not.toBeNull()
+    expect(closed?.decisionSummary).toBe('go')
 
     const conv = svc.reopenConversation(id)
     expect(conv.status).toBe('discussing')
-    expect(conv.decidedAt).not.toBeNull()
+    expect(conv.decidedAt).toBeNull()
+    expect(conv.closedAt).toBeNull()
+    expect(conv.decisionSummary).toBeNull()
+  })
+
+  it('decided → discussing (skip close) clears decidedAt + decisionSummary', () => {
+    const id = openFresh()
+    svc.decideConversation(id, { author: 'Butter', decision: 'go' })
+    const decided = svc.getConversation(id)
+    expect(decided?.status).toBe('decided')
+    expect(decided?.decidedAt).not.toBeNull()
+    expect(decided?.decisionSummary).toBe('go')
+
+    const conv = svc.reopenConversation(id)
+    expect(conv.status).toBe('discussing')
+    expect(conv.decidedAt).toBeNull()
+    expect(conv.closedAt).toBeNull()
+    expect(conv.decisionSummary).toBeNull()
   })
 
   it('preserves message history through close → reopen cycle', () => {
