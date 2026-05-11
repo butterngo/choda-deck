@@ -8,7 +8,7 @@ import type {
   SpawnClaudeInput,
   SpawnClaudeOutput
 } from '../domain/lifecycle/queue-lifecycle-service'
-import { runProcess } from './coder'
+import { runProcess, runShell } from './coder'
 
 /**
  * Production spawner for `QueueLifecycleService` — wraps `runProcess` (also used by
@@ -79,12 +79,11 @@ export function createQueueClaudeSpawner(opts: {
 }
 
 /**
- * Production execShell — bash on POSIX, `cmd /c` on Windows. Captures stdout/stderr and exit code.
+ * Production execShell — `sh -c` on POSIX, `cmd /c` on Windows. Captures stdout/stderr and exit
+ * code. Shell operators (`&&`, `||`, pipes) work because the command is passed to the system shell.
  */
 export const productionExecShell: ExecShellFn = async (cmd, opts) => {
-  // Pass through the raw command string with shell:true so users can write `pnpm test x && pnpm lint`
-  // and have shell operators work. Quoting/escaping is the AC author's responsibility.
-  const r = await runProcess(cmd, [], { cwd: opts.cwd, timeoutMs: opts.timeoutMs })
+  const r = await runShell(cmd, { cwd: opts.cwd, timeoutMs: opts.timeoutMs })
   return r as ExecShellResult
 }
 
