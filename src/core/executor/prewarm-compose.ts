@@ -64,7 +64,7 @@ export async function composePrewarmPrefix(taskBody: string, cwd: string): Promi
     const excerpt =
       pointer.startLine !== undefined && pointer.endLine !== undefined
         ? lines.slice(pointer.startLine - 1, pointer.endLine)
-        : lines.slice(0, 5)
+        : lines.slice(0, 20)
 
     sections.push(`## ${pointer.filePath}\n${excerpt.join('\n')}`)
   }

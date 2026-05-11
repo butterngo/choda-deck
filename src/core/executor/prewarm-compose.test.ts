@@ -12,7 +12,7 @@ describe('composePrewarmPrefix', () => {
     await fsp.mkdir(path.join(tmpDir, 'src'), { recursive: true })
     await fsp.writeFile(
       path.join(tmpDir, 'src', 'foo.ts'),
-      'line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\n'
+      Array.from({ length: 25 }, (_, i) => `line${i + 1}`).join('\n') + '\n'
     )
     await fsp.writeFile(
       path.join(tmpDir, 'src', 'bar.ts'),
@@ -35,12 +35,12 @@ describe('composePrewarmPrefix', () => {
     expect(prefix).not.toContain('line5')
   })
 
-  it('parses File Pointers without line range (uses first 5 lines)', async () => {
+  it('parses File Pointers without line range (uses first 20 lines)', async () => {
     const body = '## File Pointers\n- `src/foo.ts` — no range\n'
     const prefix = await composePrewarmPrefix(body, tmpDir)
     expect(prefix).toContain('line1')
-    expect(prefix).toContain('line5')
-    expect(prefix).not.toContain('line6')
+    expect(prefix).toContain('line20')
+    expect(prefix).not.toContain('line21')
   })
 
   it('skips missing paths gracefully', async () => {
