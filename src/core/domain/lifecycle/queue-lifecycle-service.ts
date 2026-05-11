@@ -12,6 +12,11 @@ const DEFAULT_MAX_COST_PER_TASK = 1.5
 const DEFAULT_MODEL = 'claude-sonnet-4-6'
 const DEFAULT_AC_TIMEOUT_MS = 10 * 60 * 1000
 const AUTO_FAILED_LABEL = 'auto-failed'
+const TOKENS_PER_CHAR = 3.5
+
+function estimateMcpTokens(content: string): number {
+  return Math.ceil(content.length / TOKENS_PER_CHAR)
+}
 
 /**
  * Narrow set of transient-error patterns per ADR-019 v2 line 202-204.
@@ -78,6 +83,7 @@ export interface QueueRuntime {
   gitHeadSha(cwd: string): Promise<string>
   mkdir(dir: string): Promise<void>
   writeFile(file: string, content: string): Promise<void>
+  readFile(file: string): Promise<string>
   artifactsDir: string
   queueMcpEmptyPath: string
   mcpProfile: string
@@ -165,6 +171,15 @@ export class QueueLifecycleService {
     const model = opts.model ?? DEFAULT_MODEL
     const claudeBin = opts.claudeBin ?? 'claude'
     const acTimeoutMs = opts.acTimeoutMs ?? DEFAULT_AC_TIMEOUT_MS
+
+    let mcpTokensPerSpawn = 0
+    try {
+      const mcpConfig = await this.runtime.readFile(this.runtime.queueMcpEmptyPath)
+      mcpTokensPerSpawn = estimateMcpTokens(mcpConfig)
+    } catch {
+      // If we can't read the file, fall back to 0 (shouldn't happen in practice)
+      mcpTokensPerSpawn = 0
+    }
 
     const taskOutcomes: TaskOutcomeEntry[] = []
     const done: Task[] = []
@@ -320,7 +335,7 @@ export class QueueLifecycleService {
         totalCostUsd,
         halted,
         haltReason,
-        mcp_tokens_per_spawn: 0,
+        mcp_tokens_per_spawn: mcpTokensPerSpawn,
         tool_schema_tokens_total: 0,
         mcp_profile_used: profile,
         cache_read_input_tokens: queueCacheReadTokens,

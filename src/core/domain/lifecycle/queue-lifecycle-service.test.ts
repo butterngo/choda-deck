@@ -32,6 +32,7 @@ interface FakeRuntimeState {
   spawnCalls: SpawnClaudeInput[]
   execCalls: { cmd: string; cwd: string }[]
   files: Map<string, string>
+  fileReads: Map<string, string>
   dirs: Set<string>
   porcelain: string
   diff: string
@@ -46,12 +47,16 @@ function buildRuntime(
     branch?: string
     commitSha?: string
     mcpProfile?: string
+    mcpConfigContent?: string
   } = {}
 ): { runtime: QueueRuntime; state: FakeRuntimeState } {
   const state: FakeRuntimeState = {
     spawnCalls: [],
     execCalls: [],
     files: new Map(),
+    fileReads: new Map([
+      ['/templates/queue-mcp-empty.json', overrides.mcpConfigContent ?? '{"mcpServers":{}}\n']
+    ]),
     dirs: new Set(),
     porcelain: overrides.porcelain ?? '',
     diff: overrides.diff ?? 'diff --git a/x b/x\n+ change\n'
@@ -82,6 +87,11 @@ function buildRuntime(
     },
     writeFile: async (file, content) => {
       state.files.set(file, content)
+    },
+    readFile: async (file) => {
+      const content = state.fileReads.get(file)
+      if (!content) throw new Error(`File not found: ${file}`)
+      return content
     },
     artifactsDir: '/artifacts',
     queueMcpEmptyPath: '/templates/queue-mcp-empty.json',
@@ -733,6 +743,37 @@ describe('runQueue — ADR-019 Phase-2 metrics (7 fields in queue-run.json)', ()
 
     const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
     expect(payload.task_outcome_per_mcp_profile).toEqual({ empty: { success: 0, failed: 1 } })
+  })
+
+  it('mcp_tokens_per_spawn measured from empty profile config file', async () => {
+    createReadyAutoSafeTask()
+    // Empty profile: {"mcpServers":{}}\n = 18 chars → ceil(18/3.5) = 6 tokens
+    const { runtime, state } = buildRuntime()
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    expect(payload.mcp_tokens_per_spawn).toBe(6)
+  })
+
+  it('mcp_tokens_per_spawn scales with MCP config file size', async () => {
+    createReadyAutoSafeTask({ title: 'small' })
+    createReadyAutoSafeTask({ title: 'large' })
+
+    // Test 1: small config (5 chars → 2 tokens)
+    const { runtime: runtime1, state: state1 } = buildRuntime({ mcpConfigContent: '12345' })
+    const queue1 = buildService(runtime1)
+    const r1 = await queue1.runQueue({ workspaceId: 'ws-q', maxTasks: 1 })
+    const payload1 = JSON.parse(state1.files.get(path.join(r1.artifactDir, 'queue-run.json'))!)
+    expect(payload1.mcp_tokens_per_spawn).toBe(2)
+
+    // Test 2: large config (70 chars → 20 tokens)
+    const largeConfig = 'x'.repeat(70)
+    const { runtime: runtime2, state: state2 } = buildRuntime({ mcpConfigContent: largeConfig })
+    const queue2 = buildService(runtime2)
+    const r2 = await queue2.runQueue({ workspaceId: 'ws-q', maxTasks: 2 })
+    const payload2 = JSON.parse(state2.files.get(path.join(r2.artifactDir, 'queue-run.json'))!)
+    expect(payload2.mcp_tokens_per_spawn).toBe(20)
   })
 })
 
