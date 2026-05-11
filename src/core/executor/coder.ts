@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import type { Task } from '../domain/task-types'
@@ -228,6 +228,47 @@ interface RunOptions {
   stdin?: string
 }
 
+function wireChild(
+  child: ChildProcessWithoutNullStreams,
+  opts: RunOptions,
+  label: string,
+  resolve: (r: ProcResult) => void,
+  reject: (err: Error) => void
+): void {
+  let stdout = ''
+  let stderr = ''
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    child.kill('SIGKILL')
+  }, opts.timeoutMs)
+
+  child.stdout.on('data', (d) => {
+    stdout += d.toString()
+  })
+  child.stderr.on('data', (d) => {
+    stderr += d.toString()
+  })
+  child.on('error', (err) => {
+    clearTimeout(timer)
+    reject(err)
+  })
+  child.on('close', (code) => {
+    clearTimeout(timer)
+    if (timedOut) {
+      reject(new Error(`process timed out after ${opts.timeoutMs}ms: ${label}`))
+      return
+    }
+    resolve({ exitCode: code ?? -1, stdout, stderr })
+  })
+
+  if (opts.stdin !== undefined && child.stdin) {
+    child.stdin.end(opts.stdin)
+  } else if (child.stdin) {
+    child.stdin.end()
+  }
+}
+
 export function runProcess(cmd: string, args: string[], opts: RunOptions): Promise<ProcResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
@@ -236,38 +277,21 @@ export function runProcess(cmd: string, args: string[], opts: RunOptions): Promi
       shell: process.platform === 'win32',
       windowsHide: true
     })
-    let stdout = ''
-    let stderr = ''
-    let timedOut = false
-    const timer = setTimeout(() => {
-      timedOut = true
-      child.kill('SIGKILL')
-    }, opts.timeoutMs)
+    wireChild(child, opts, `${cmd} ${args.join(' ')}`, resolve, reject)
+  })
+}
 
-    child.stdout.on('data', (d) => {
-      stdout += d.toString()
+/** Runs a shell command string via the system shell (`sh -c` on POSIX, `cmd /c` on Windows).
+ * Use this when the command may contain shell operators (`&&`, `||`, pipes). */
+export function runShell(cmd: string, opts: RunOptions): Promise<ProcResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, [], {
+      cwd: opts.cwd,
+      env: { ...process.env, ...opts.env },
+      shell: true,
+      windowsHide: true
     })
-    child.stderr.on('data', (d) => {
-      stderr += d.toString()
-    })
-    child.on('error', (err) => {
-      clearTimeout(timer)
-      reject(err)
-    })
-    child.on('close', (code) => {
-      clearTimeout(timer)
-      if (timedOut) {
-        reject(new Error(`process timed out after ${opts.timeoutMs}ms: ${cmd} ${args.join(' ')}`))
-        return
-      }
-      resolve({ exitCode: code ?? -1, stdout, stderr })
-    })
-
-    if (opts.stdin !== undefined && child.stdin) {
-      child.stdin.end(opts.stdin)
-    } else if (child.stdin) {
-      child.stdin.end()
-    }
+    wireChild(child, opts, cmd, resolve, reject)
   })
 }
 

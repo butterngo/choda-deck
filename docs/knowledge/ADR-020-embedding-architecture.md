@@ -5,19 +5,19 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/domain/embedding/embedding-store.ts
-    commitSha: 47e20ee8c6fbc44a043cfcb2f6ebf786b17a462f
+    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
   - path: src/core/domain/embedding/local-embedding-provider.ts
-    commitSha: 47e20ee8c6fbc44a043cfcb2f6ebf786b17a462f
+    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
   - path: src/core/domain/embedding/embedding-provider-factory.ts
-    commitSha: 47e20ee8c6fbc44a043cfcb2f6ebf786b17a462f
+    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
   - path: src/core/domain/sqlite-task-service.ts
-    commitSha: 47e20ee8c6fbc44a043cfcb2f6ebf786b17a462f
+    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
   - path: src/core/domain/knowledge-service.ts
-    commitSha: 47e20ee8c6fbc44a043cfcb2f6ebf786b17a462f
+    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
   - path: src/adapters/mcp/mcp-tools/knowledge-tools.ts
-    commitSha: 47e20ee8c6fbc44a043cfcb2f6ebf786b17a462f
+    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
 createdAt: 2026-05-04
-lastVerifiedAt: 2026-05-04
+lastVerifiedAt: 2026-05-11
 ---
 
 # ADR-020: Embedding Architecture — local default with provider abstraction for semantic search
