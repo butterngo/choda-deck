@@ -9,7 +9,9 @@ const REQUIRED_FIELDS = [
   'cache_read_input_tokens',
   'cache_hit_estimate',
   'spawn_mode',
-  'task_outcome_per_mcp_profile'
+  'task_outcome_per_mcp_profile',
+  'files_touched_count',
+  'new_files_created_count'
 ]
 
 const filePath = process.argv[2]
@@ -39,6 +41,8 @@ for (const field of REQUIRED_FIELDS) {
     case 'mcp_tokens_per_spawn':
     case 'tool_schema_tokens_total':
     case 'cache_read_input_tokens':
+    case 'files_touched_count':
+    case 'new_files_created_count':
       if (typeof v !== 'number') invalid.push(`${field}: expected number, got ${typeof v}`)
       break
     case 'mcp_profile_used':
@@ -66,4 +70,4 @@ if (missing.length || invalid.length) {
   process.exit(1)
 }
 
-process.stdout.write(`OK: ${filePath} passes schema validation (7 metrics fields present)\n`)
+process.stdout.write(`OK: ${filePath} passes schema validation (9 metrics fields present)\n`)
