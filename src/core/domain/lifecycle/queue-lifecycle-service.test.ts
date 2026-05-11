@@ -219,6 +219,32 @@ describe('runQueue — task filtering', () => {
     // Newest (c) remained eligible but never admitted; runQueue ignores it (not in `tasks` slice).
     expect(svc.getTask(c.id)?.status).toBe('READY')
   })
+
+  it('skips tasks with auto-failed label even when status=READY (TASK-711 Quirk 3)', async () => {
+    const good = createReadyAutoSafeTask({ title: 'good' })
+    const failedAgain = createReadyAutoSafeTask({ title: 'failedAgain' })
+    svc.updateTask(failedAgain.id, {
+      labels: ['auto-safe', 'auto-failed']
+    })
+
+    const { runtime } = buildRuntime()
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+    expect(r.done.map((x) => x.id)).toEqual([good.id])
+  })
+
+  it('re-admits task after auto-failed label is removed', async () => {
+    const t = createReadyAutoSafeTask()
+    svc.updateTask(t.id, { labels: ['auto-safe', 'auto-failed'] })
+    const { runtime } = buildRuntime()
+    const queue = buildService(runtime)
+    const first = await queue.runQueue({ workspaceId: 'ws-q' })
+    expect(first.done).toHaveLength(0)
+
+    svc.updateTask(t.id, { labels: ['auto-safe'] })
+    const second = await queue.runQueue({ workspaceId: 'ws-q' })
+    expect(second.done.map((x) => x.id)).toEqual([t.id])
+  })
 })
 
 describe('runQueue — happy path SUCCESS', () => {
@@ -239,12 +265,21 @@ describe('runQueue — happy path SUCCESS', () => {
     expect(sessions.every((s) => s.status === 'completed')).toBe(true)
   })
 
-  it('passes maxBudgetUsd = maxCostPerTask / 2 to the spawn', async () => {
+  it('passes maxBudgetUsd = maxCostPerTask * 0.95 to the spawn (TASK-705 F1 recalibrate)', async () => {
     createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
     await queue.runQueue({ workspaceId: 'ws-q', maxCostPerTask: 1.0 })
-    expect(state.spawnCalls[0].maxBudgetUsd).toBeCloseTo(0.5, 5)
+    expect(state.spawnCalls[0].maxBudgetUsd).toBeCloseTo(0.95, 5)
+  })
+
+  it('uses default maxCostPerTask = 1.5 (TASK-705 F3 cold-cache safety)', async () => {
+    createReadyAutoSafeTask()
+    const { runtime, state } = buildRuntime()
+    const queue = buildService(runtime)
+    await queue.runQueue({ workspaceId: 'ws-q' })
+    // default 1.5 × 0.95 = 1.425 → round2 = 1.42 (float-precision banker rounding)
+    expect(state.spawnCalls[0].maxBudgetUsd).toBeCloseTo(1.42, 5)
   })
 
   it('uses default model claude-sonnet-4-6 when not overridden', async () => {
@@ -289,7 +324,7 @@ describe('runQueue — happy path SUCCESS', () => {
 })
 
 describe('runQueue — FAILURE flow (halt-on-fail)', () => {
-  it('halts on claude is_error: labels task auto-failed, abandons session, task stays IN-PROGRESS', async () => {
+  it('halts on claude is_error: labels task auto-failed, abandons session, resets status to READY (TASK-711 Quirk 3)', async () => {
     const t = createReadyAutoSafeTask()
     const { runtime } = buildRuntime({
       // 'tool-use logic error' is non-transient — must not trigger retry, halts immediately.
@@ -308,7 +343,7 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
     expect(r.haltReason).toContain('claude-error')
     expect(r.failed.map((x) => x.id)).toEqual([t.id])
     const after = svc.getTask(t.id)
-    expect(after?.status).toBe('IN-PROGRESS')
+    expect(after?.status).toBe('READY')
     expect(after?.labels).toContain('auto-failed')
     expect(after?.labels).toContain('auto-safe')
     // Session bound to the task is now completed (abandoned)
@@ -329,7 +364,7 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
     expect(r.haltReason).toContain('ac-failed')
     expect(r.haltReason).toContain('pnpm run lint')
     expect(r.failed.map((x) => x.id)).toEqual([t.id])
-    expect(svc.getTask(t.id)?.status).toBe('IN-PROGRESS')
+    expect(svc.getTask(t.id)?.status).toBe('READY')
     expect(svc.getTask(t.id)?.labels).toContain('auto-failed')
   })
 
@@ -350,7 +385,7 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
     expect(r.halted).toBe(true)
     expect(r.haltReason).toContain('cost-cap-exceeded')
     expect(r.failed.map((x) => x.id)).toEqual([t.id])
-    expect(svc.getTask(t.id)?.status).toBe('IN-PROGRESS')
+    expect(svc.getTask(t.id)?.status).toBe('READY')
     expect(svc.getTask(t.id)?.labels).toContain('auto-failed')
   })
 

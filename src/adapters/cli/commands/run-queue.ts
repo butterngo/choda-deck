@@ -17,7 +17,7 @@ Required:
   --workspace <id>          Workspace label (e.g. choda-deck)
 
 Options:
-  --max-cost-per-task <n>   Per-task post-hoc cost cap, USD (default: 0.50)
+  --max-cost-per-task <n>   Per-task post-hoc cost cap, USD (default: 1.50)
   --max-tasks <n>           Stop after at most N tasks
   --dry-run                 Validate workspace + clean tree + list eligible tasks; do not spawn
   --json                    Emit JSON summary to stdout
