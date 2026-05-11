@@ -9,10 +9,12 @@ import type {
   SpawnClaudeOutput
 } from '../../../core/domain/lifecycle/queue-lifecycle-service'
 import {
+  computeExitCode,
   executeWithServices,
   runRunQueueCommand,
   runQueueCommandHelp
 } from './run-queue'
+import type { QueueRunResult } from '../../../core/domain/lifecycle/queue-lifecycle-service'
 
 const TEST_DB = path.join(__dirname, '__test-run-queue-cli__.db')
 let svc: SqliteTaskService
@@ -272,5 +274,58 @@ describe('run-queue CLI — happy path + halt', () => {
     expect(result.exitCode).toBe(5)
     expect(result.halted).toBe(true)
     expect(result.haltReason).toMatch(/cost-cap-exceeded/)
+    expect(result.haltCode).toBe('cost-cap')
+  })
+
+})
+
+describe('computeExitCode — typed haltCode mapping (regression guard for TASK-718)', () => {
+  const baseResult: Omit<QueueRunResult, 'failed' | 'haltCode' | 'haltReason'> = {
+    done: [],
+    skipped: [],
+    totalCostUsd: 0,
+    halted: false,
+    queueRunId: 'q-test',
+    artifactDir: '/tmp'
+  }
+  const failed = [{ id: 'TASK-X' } as QueueRunResult['failed'][number]]
+
+  it('all DONE → exit 0 regardless of haltCode', () => {
+    expect(computeExitCode({ ...baseResult, failed: [], haltCode: null, haltReason: null })).toBe(0)
+  })
+
+  it('cost-cap haltCode → exit 5 even when haltReason text has no legacy substring', () => {
+    expect(
+      computeExitCode({
+        ...baseResult,
+        failed,
+        haltCode: 'cost-cap',
+        haltReason: 'budget tripped (renamed — no legacy substring)'
+      })
+    ).toBe(5)
+  })
+
+  it('queue-cost-cap haltCode → exit 5', () => {
+    expect(
+      computeExitCode({
+        ...baseResult,
+        failed,
+        haltCode: 'queue-cost-cap',
+        haltReason: 'whatever message'
+      })
+    ).toBe(5)
+  })
+
+  it('non-cost halt codes → exit 1', () => {
+    for (const code of ['spawn-error', 'claude-error', 'ac-failed'] as const) {
+      expect(
+        computeExitCode({
+          ...baseResult,
+          failed,
+          haltCode: code,
+          haltReason: 'cost-cap-exceeded look-alike — must be ignored'
+        })
+      ).toBe(1)
+    }
   })
 })

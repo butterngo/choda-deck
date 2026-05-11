@@ -2,6 +2,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { parseArgs } from 'node:util'
 import type {
+  HaltCode,
   QueueRuntime,
   QueueRunOptions,
   QueueRunResult
@@ -48,6 +49,7 @@ export interface RunQueueResultPayload {
   totalCostUsd: number
   halted: boolean
   haltReason: string | null
+  haltCode: HaltCode | null
   artifactDir: string | null
   notes: string[]
 }
@@ -146,6 +148,7 @@ export async function executeWithServices(
       totalCostUsd: 0,
       halted: false,
       haltReason: null,
+      haltCode: null,
       artifactDir: null,
       notes: [`workspace "${input.workspaceId}" not registered`]
     }
@@ -178,6 +181,7 @@ export async function executeWithServices(
         totalCostUsd: 0,
         halted: true,
         haltReason: err.message,
+        haltCode: null,
         artifactDir: null,
         notes: [err.message]
       }
@@ -192,6 +196,7 @@ export async function executeWithServices(
         totalCostUsd: 0,
         halted: false,
         haltReason: null,
+        haltCode: null,
         artifactDir: null,
         notes: [err.message]
       }
@@ -215,14 +220,15 @@ export async function executeWithServices(
     totalCostUsd: runResult.totalCostUsd,
     halted: runResult.halted,
     haltReason: runResult.haltReason,
+    haltCode: runResult.haltCode,
     artifactDir: runResult.artifactDir,
     notes
   }
 }
 
-function computeExitCode(r: QueueRunResult): number {
+export function computeExitCode(r: QueueRunResult): number {
   if (r.failed.length === 0) return 0
-  if (r.haltReason && /cost-cap-exceeded/i.test(r.haltReason)) return 5
+  if (r.haltCode === 'queue-cost-cap' || r.haltCode === 'cost-cap') return 5
   return 1
 }
 
