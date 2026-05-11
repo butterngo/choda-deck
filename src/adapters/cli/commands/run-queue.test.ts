@@ -59,7 +59,8 @@ function buildRuntime(
     mkdir: async () => {},
     writeFile: async () => {},
     artifactsDir: '/artifacts',
-    queueMcpEmptyPath: '/templates/queue-mcp-empty.json'
+    queueMcpEmptyPath: '/templates/queue-mcp-empty.json',
+    mcpProfile: 'empty'
   }
 }
 
