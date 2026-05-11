@@ -2,7 +2,7 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
-| [ADR-019-autonomous-queue-runner](./ADR-019-autonomous-queue-runner.md) | decision | ADR-019: Autonomous Queue Runner — sequential `auto-safe` task executor | 2026-05-11 |  |
+| [ADR-019-autonomous-queue-runner](./ADR-019-autonomous-queue-runner.md) | decision | ADR-019: Autonomous Queue Runner — sequential `auto-safe` task executor | 2026-05-11 | ✱ |
 | [cross-device-sync-export-import-spec](./cross-device-sync-export-import-spec.md) | evaluation | Cross-device sync export/import — sequential dual-machine sync without duplicating project knowledge | 2026-05-11 |  |
 | [auto-safe-label-spec](./auto-safe-label-spec.md) | decision | auto-safe label — task contract for autonomous execution | 2026-05-11 |  |
 | [ADR-020-embedding-architecture](./ADR-020-embedding-architecture.md) | decision | ADR-020: Embedding Architecture — local default with provider abstraction for semantic search | 2026-05-11 |  |
@@ -15,7 +15,6 @@
 | [ADR-016-graphify-integration](./ADR-016-graphify-integration.md) | decision | ADR-016: Graphify Integration — Query-Only Phase 1, Manual Refresh | 2026-05-08 |  |
 | [ADR-014-harness-engine-architecture](./ADR-014-harness-engine-architecture.md) | decision | ADR-014: Staged Pipeline Harness — Planner → Generator → Evaluator with Approval Gates | 2026-05-08 |  |
 | [ADR-015-lifecycle-service-pattern](./ADR-015-lifecycle-service-pattern.md) | decision | ADR-015: Lifecycle Service Pattern (Composite Transactional Ops) | 2026-05-08 |  |
-| [spike-harness-headless-findings](./spike-harness-headless-findings.md) | spike | SPIKE findings — headless `claude -p` spawn contract | 2026-05-08 |  |
 | [ADR-013-session-rules-injection](./ADR-013-session-rules-injection.md) | decision | ADR-013: Session rules injected via MCP response — compliance through prompt, not validation | 2026-05-09 |  |
 | [ADR-011-inbox-pipeline](./ADR-011-inbox-pipeline.md) | decision | ADR-011: Inbox Pipeline — raw idea → research → task | 2026-05-08 |  |
 | [ADR-012-sqlite-backup-restore](./ADR-012-sqlite-backup-restore.md) | decision | ADR-012: SQLite daily backup + restore — atomic, retained 7 days | 2026-05-08 |  |

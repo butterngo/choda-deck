@@ -714,7 +714,7 @@ Secondary reasons (historical):
   - R7 mitigation branches on workspace type: git workspace → commit checkpoint; non-git workspace → snapshot listed files into `artifacts/<session>/snapshot/`. Runtime detected via `git rev-parse --is-inside-work-tree`.
   - R3 reverse direction addressed: starting a pipeline while an interactive thread is open prompts Butter to close-and-retry or cancel. No auto-close.
   - Prompt delivery mechanism corrected from "stdin-only" (inaccurate) to `-p` argument. Explicit argv size caveat + fallback pattern (pass path, Claude reads via tool) for large inputs.
-- **2026-04-19 (v3.4 — TASK-537 spike findings)** — Real `claude -p` validation surfaced 5 corrections. See `spike-harness-headless-findings.md` for evidence.
+- **2026-04-19 (v3.4 — TASK-537 spike findings)** — Real `claude -p` validation surfaced 5 corrections.
   - Tool restriction flag wrong: `--allowed-tools` only pre-approves; `--tools` is the actual gate. Tool tables, sequence diagram, implementation sketch updated. Pre-approve still uses `--allowed-tools`.
   - Bash subcommand pattern syntax: `Bash(git *)` (space inside parens), not `Bash(git:*)` (colon). Fixed in tool tables and sequence diagram.
   - Hermetic spawn contract added: `--setting-sources user` (workspace settings leak via cwd, confirmed Test 7), `--no-session-persistence`, `--model <explicit>`, `--output-format json` are mandatory on every harness spawn.
