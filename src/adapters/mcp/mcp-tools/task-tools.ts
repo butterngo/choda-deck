@@ -185,25 +185,6 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
       return textResponse(svc.updateTask(id, input))
     }
   )
-
-  server.registerTool(
-    'tasks_update_batch',
-    {
-      description: 'Update multiple tasks with the same patch (e.g. bulk mark DONE)',
-      inputSchema: {
-        ids: z.array(z.string()).describe('List of task IDs to update'),
-        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED']).optional(),
-        priority: z.enum(['critical', 'high', 'medium', 'low']).nullable().optional(),
-        labels: z.array(z.string()).optional(),
-        pinned: z.boolean().optional()
-      }
-    },
-    async ({ ids, ...patch }) => {
-      for (const id of ids) enforceAutoSafe(svc, id, patch)
-      const results = ids.map((id) => svc.updateTask(id, patch))
-      return textResponse(results)
-    }
-  )
 }
 
 function enforceAutoSafe(svc: TaskToolsDeps, id: string, input: UpdateTaskInput): void {

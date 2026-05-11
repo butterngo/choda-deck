@@ -37,7 +37,7 @@ export function register(
     'backup_create',
     {
       description:
-        'Create a SQLite backup at <dataDir>/backups/choda-deck-<YYYY-MM-DD>.db (overwrites same-day file, prunes to 7 newest). Returns the new BackupInfo. Run before risky operations like tasks_update_batch.',
+        'Create a SQLite backup at <dataDir>/backups/choda-deck-<YYYY-MM-DD>.db (overwrites same-day file, prunes to 7 newest). Returns the new BackupInfo. Run before risky bulk operations.',
       inputSchema: {}
     },
     async () => textResponse(runBackup(svc, dataDir))

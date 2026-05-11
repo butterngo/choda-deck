@@ -96,11 +96,11 @@ All tools are namespaced `mcp__choda-tasks__<name>`. Claude calls them on your b
 |---|---|---|
 | **Project** | `project_add`, `project_list`, `project_context` | Multi-project setup. Each project has its own task list and metadata. |
 | **Workspace** | `workspace_add`, `workspace_list`, `workspace_archive`, `workspace_remove` | Sub-scope inside a project (e.g. `frontend`, `backend`, `infra`). Knowledge entries can be scoped to a workspace. |
-| **Task** | `task_create`, `task_list`, `task_update`, `task_context`, `tasks_update_batch` | TODO → READY → IN-PROGRESS → DONE/BLOCKED. Each task has body + acceptance criteria + labels + priority. |
+| **Task** | `task_create`, `task_list`, `task_update`, `task_context` | TODO → READY → IN-PROGRESS → DONE/BLOCKED. Each task has body + acceptance criteria + labels + priority. |
 | **Session** | `session_start`, `session_checkpoint`, `session_end`, `session_resume`, `session_list` | Bind a work session to a task. Checkpoint progress so the next session resumes with full context. |
 | **Conversation** | `conversation_open`, `conversation_add`, `conversation_decide`, `conversation_close`, `conversation_reopen`, `conversation_list`, `conversation_read`, `conversation_poll` | Structured threads (e.g. FE/BE alignment, ADR debate). `decide` logs the resolution. |
 | **Inbox** | `inbox_add`, `inbox_research`, `inbox_convert`, `inbox_ready`, `inbox_archive`, `inbox_delete`, `inbox_list`, `inbox_get`, `inbox_update` | Capture-now, decide-later. Items move `raw` → `researching` → `ready` → `converted` (to a task) or `archived`. |
-| **Knowledge** | `knowledge_create`, `knowledge_list`, `knowledge_get`, `knowledge_search`, `knowledge_update`, `knowledge_verify`, `knowledge_register_existing`, `knowledge_delete` | ADRs / decision logs with frontmatter. `refs[]` tracks implementation files + commit SHAs → staleness banner when code drifts. |
+| **Knowledge** | `knowledge_create`, `knowledge_list`, `knowledge_get`, `knowledge_search`, `knowledge_update`, `knowledge_verify`, `knowledge_delete` | ADRs / decision logs with frontmatter. `refs[]` tracks implementation files + commit SHAs → staleness banner when code drifts. |
 | **Backup** | `backup_create`, `backup_list`, `backup_restore` | Daily auto-backup of the SQLite DB. Manual create + restore when you need to roll back. |
 
 ## Common workflows

@@ -56,24 +56,6 @@ export const register = (server: InstrumentedServer, svc: KnowledgeOperations): 
   )
 
   server.registerTool(
-    'knowledge_register_existing',
-    {
-      description:
-        'Index an existing knowledge MD file without writing/overwriting it. Reads frontmatter, INSERTs (or upserts on slug match) into knowledge_index, schedules embedding. Use for backfill of pre-existing ADRs (e.g. workspace ADRs migrated under a multi-repo project). Frontmatter projectId + workspaceId must match the arguments.',
-      inputSchema: {
-        filePath: z.string().describe('Absolute path to the existing .md file'),
-        projectId: z.string().describe('Project ID (must match frontmatter)'),
-        workspaceId: z
-          .string()
-          .optional()
-          .describe('Workspace ID (must match frontmatter; omit for project-level entries)')
-      }
-    },
-    async ({ filePath, projectId, workspaceId }) =>
-      textResponse(svc.registerExistingKnowledge({ filePath, projectId, workspaceId }))
-  )
-
-  server.registerTool(
     'knowledge_get',
     {
       description:
