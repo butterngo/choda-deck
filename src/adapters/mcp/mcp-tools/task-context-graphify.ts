@@ -83,7 +83,34 @@ const KEYWORD_STOPWORDS = new Set<string>([
   'feature',
   'work',
   'change',
-  'changes'
+  'changes',
+  'trong',
+  'không',
+  'trên',
+  'dưới',
+  'chứa',
+  'đúng',
+  'ngược',
+  'phải',
+  'cần',
+  'nếu',
+  'khi',
+  'như',
+  'theo',
+  'sau',
+  'trước'
+])
+
+const LABEL_KEY_PREFIX = /^(assignee|adr|phase)[:-]/i
+const LABEL_EXACT_DROP = new Set<string>([
+  'auto-safe',
+  'bug',
+  'feat',
+  'fix',
+  'test',
+  'metrics',
+  'chore',
+  'docs'
 ])
 
 export type GraphifyDeps = ProjectOperations & WorkspaceOperations
@@ -102,10 +129,11 @@ export function buildGraphifyContext(
   }
 
   const keywords = extractKeywords(task)
-  if (keywords.length === 0) {
+  const filePointerPaths = extractFilePointers(task.body ?? '')
+  if (keywords.length === 0 && filePointerPaths.length === 0) {
     return {
       status: 'no-matches',
-      message: 'Task title/AC/labels produced no usable keywords.'
+      message: 'Task title/AC/labels/file-pointers produced no usable signal.'
     }
   }
 
@@ -113,11 +141,14 @@ export function buildGraphifyContext(
   const nodeIndex = new Map<string, GraphNode>(data.nodes.map((n) => [n.id, n]))
   const adj = buildAdjacency(data.links)
 
-  const startNodes = findStartNodes(data.nodes, keywords, 3)
+  const startNodes = findStartNodes(data.nodes, keywords, filePointerPaths, 3)
   if (startNodes.length === 0) {
     return {
       status: 'no-matches',
-      message: `No graph nodes matched keywords: ${keywords.join(', ')}`
+      message:
+        filePointerPaths.length > 0
+          ? `File pointers not in graph: ${filePointerPaths.join(', ')}; keywords: ${keywords.join(', ')}`
+          : `No graph nodes matched keywords: ${keywords.join(', ')}`
     }
   }
 
@@ -166,7 +197,9 @@ function findGraphPath(projectId: string, svc: GraphifyDeps): string | null {
 function extractKeywords(task: Task): string[] {
   const acSection = extractAcceptanceSection(task.body ?? '')
   const raw = `${task.title} ${acSection}`.split(/\s+/)
-  const fromLabels = (task.labels ?? []).map((l) => l.toLowerCase())
+  const fromLabels = (task.labels ?? [])
+    .map((l) => l.toLowerCase())
+    .filter((l) => !LABEL_KEY_PREFIX.test(l) && !LABEL_EXACT_DROP.has(l))
   const all = [...raw.map((t) => t.toLowerCase()), ...fromLabels]
   const deduped = new Set<string>()
   for (const t of all) {
@@ -178,6 +211,19 @@ function extractKeywords(task: Task): string[] {
   return Array.from(deduped)
 }
 
+function extractFilePointers(body: string): string[] {
+  const match = body.match(/(?:^|\n)##\s*File Pointers\s*\n[\s\S]*?(?=\n##\s|$)/i)
+  if (!match) return []
+  const paths: string[] = []
+  for (const line of match[0].split('\n')) {
+    if (/\(NEW\)/i.test(line)) continue
+    const pathMatch = line.match(/^\s*-\s+`([^`]+)`/)
+    if (!pathMatch) continue
+    paths.push(pathMatch[1].replace(/\\/g, '/'))
+  }
+  return paths
+}
+
 function cleanToken(t: string): string {
   // Strip markdown/punctuation on edges but preserve internal `_` and `-`
   // so identifiers like `session_start` and `auto-detect` stay intact.
@@ -185,12 +231,46 @@ function cleanToken(t: string): string {
 }
 
 function extractAcceptanceSection(body: string): string {
-  const match = body.match(/##\s*Acceptance[\s\S]*?(?=\n##\s|\n$|$)/i)
+  const match = body.match(/(?:^|\n)##\s*Acceptance\s*\n[\s\S]*?(?=\n##\s|$)/i)
   if (!match) return ''
   return match[0].slice(0, 500)
 }
 
 function findStartNodes(
+  nodes: GraphNode[],
+  keywords: string[],
+  filePointerPaths: string[],
+  topK: number
+): Array<{ id: string; score: number }> {
+  if (filePointerPaths.length > 0) {
+    const fileMatches = findStartNodesByFile(nodes, filePointerPaths)
+    if (fileMatches.length > 0) return fileMatches
+  }
+  return findStartNodesByKeyword(nodes, keywords, topK)
+}
+
+function findStartNodesByFile(
+  nodes: GraphNode[],
+  paths: string[]
+): Array<{ id: string; score: number }> {
+  const targets = new Set(paths.map((p) => p.replace(/\\/g, '/')))
+  const matches: Array<{ id: string; score: number }> = []
+  for (const n of nodes) {
+    if (!n.source_file) continue
+    const normalized = n.source_file.replace(/\\/g, '/')
+    if (targets.has(normalized)) {
+      matches.push({ id: n.id, score: 100 })
+    }
+  }
+  matches.sort((a, b) => {
+    if (a.id < b.id) return -1
+    if (a.id > b.id) return 1
+    return 0
+  })
+  return matches
+}
+
+function findStartNodesByKeyword(
   nodes: GraphNode[],
   keywords: string[],
   topK: number

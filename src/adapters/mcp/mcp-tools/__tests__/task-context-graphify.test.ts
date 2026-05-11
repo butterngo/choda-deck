@@ -172,6 +172,127 @@ describe('buildGraphifyContext', () => {
     expect(result).not.toHaveProperty('status')
   })
 
+  it('uses ## File Pointers paths to find start nodes (trust body author over keyword match)', () => {
+    writeFixtureGraph(
+      tmp,
+      [
+        { id: 'target_class', label: 'TargetClass', source_file: 'src/target.ts' },
+        { id: 'target_method', label: 'TargetClass.run', source_file: 'src/target.ts' },
+        { id: 'noisy_match', label: 'RefactorService', source_file: 'src/noisy.ts' }
+      ],
+      [{ source: 'target_class', target: 'target_method', relation: 'method', confidence_score: 1.0 }]
+    )
+    const task = makeTask({
+      title: 'refactor',
+      body: '## File Pointers\n\n- `src/target.ts` — actual edit target\n- `src/new-file.ts` (NEW) — should be skipped\n\n## Acceptance\n- [ ] do thing\n'
+    })
+    const result = buildGraphifyContext(task, makeDeps([tmp]))
+    if ('affected_files' in result) {
+      expect(result.affected_files[0]?.path).toBe('src/target.ts')
+      const paths = result.affected_files.map((f) => f.path)
+      expect(paths).not.toContain('src/noisy.ts')
+    } else {
+      throw new Error('expected affected_files result')
+    }
+  })
+
+  it('extractAcceptanceSection ignores `## Acceptance` mentions inside prose (only matches real heading)', () => {
+    writeFixtureGraph(
+      tmp,
+      [
+        { id: 'real_target', label: 'RealTarget', source_file: 'src/real.ts' },
+        { id: 'noise_node', label: 'NoiseWord', source_file: 'src/noise.ts' }
+      ],
+      []
+    )
+    const task = makeTask({
+      title: 'work',
+      body:
+        '## Context\n\n' +
+        'The `## Acceptance` template enforces noise across all tasks.\n\n' +
+        '## Acceptance\n\n' +
+        '- [ ] verify realtarget behavior\n'
+    })
+    const result = buildGraphifyContext(task, makeDeps([tmp]))
+    if ('affected_files' in result) {
+      expect(result.keywords_used).toContain('realtarget')
+      expect(result.keywords_used).not.toContain('noise')
+    } else {
+      throw new Error('expected affected_files result')
+    }
+  })
+
+  it('extractFilePointers ignores `## File Pointers` mentions inside prose (only matches real heading)', () => {
+    writeFixtureGraph(
+      tmp,
+      [
+        { id: 'real_target', label: 'RealTarget', source_file: 'src/real.ts' },
+        { id: 'noisy', label: 'NoisyMatch', source_file: 'src/noisy.ts' }
+      ],
+      []
+    )
+    const task = makeTask({
+      title: 'refactor',
+      body:
+        '## Context\n\n' +
+        'The `## File Pointers` section in body must be parsed correctly even when it appears inside prose like this.\n\n' +
+        '## File Pointers\n\n' +
+        '- `src/real.ts` — actual target\n\n' +
+        '## Acceptance\n- [ ] do thing\n'
+    })
+    const result = buildGraphifyContext(task, makeDeps([tmp]))
+    if ('affected_files' in result) {
+      expect(result.affected_files[0]?.path).toBe('src/real.ts')
+      expect(result.affected_files.map((f) => f.path)).not.toContain('src/noisy.ts')
+    } else {
+      throw new Error('expected affected_files result')
+    }
+  })
+
+  it('drops label keys (assignee:, adr-, phase-) and exact label drops (auto-safe, bug, ...) from keywords', () => {
+    writeFixtureGraph(
+      tmp,
+      [{ id: 'graphify_node', label: 'GraphifyHelper', source_file: 'g.ts' }],
+      []
+    )
+    const task = makeTask({
+      title: 'graphify pipeline',
+      labels: ['assignee:butter', 'adr-019', 'phase-2', 'auto-safe', 'bug', 'graphify']
+    })
+    const result = buildGraphifyContext(task, makeDeps([tmp]))
+    if ('affected_files' in result) {
+      expect(result.keywords_used).not.toContain('assignee:butter')
+      expect(result.keywords_used).not.toContain('adr-019')
+      expect(result.keywords_used).not.toContain('phase-2')
+      expect(result.keywords_used).not.toContain('auto-safe')
+      expect(result.keywords_used).not.toContain('bug')
+      expect(result.keywords_used).toContain('graphify')
+    } else {
+      throw new Error('expected affected_files result')
+    }
+  })
+
+  it('filters Vietnamese stopwords (>3 chars) from keywords', () => {
+    writeFixtureGraph(
+      tmp,
+      [{ id: 'graph_helper', label: 'GraphHelper', source_file: 'g.ts' }],
+      []
+    )
+    const task = makeTask({
+      title: 'graph trong không chứa theo'
+    })
+    const result = buildGraphifyContext(task, makeDeps([tmp]))
+    if ('affected_files' in result) {
+      expect(result.keywords_used).toContain('graph')
+      expect(result.keywords_used).not.toContain('trong')
+      expect(result.keywords_used).not.toContain('không')
+      expect(result.keywords_used).not.toContain('chứa')
+      expect(result.keywords_used).not.toContain('theo')
+    } else {
+      throw new Error('expected affected_files result')
+    }
+  })
+
   it('marks stale when file is older than 7 days', () => {
     const graphPath = writeFixtureGraph(
       tmp,
