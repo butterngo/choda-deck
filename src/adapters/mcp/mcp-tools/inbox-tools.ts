@@ -163,23 +163,4 @@ export const register = (server: InstrumentedServer, svc: InboxToolsDeps): void 
     },
     async ({ id, reason }) => tryLifecycle(() => svc.archiveInbox(id, reason))
   )
-
-  server.registerTool(
-    'inbox_delete',
-    {
-      description: 'Hard delete an inbox item. Only allowed for raw or archived items.',
-      inputSchema: { id: z.string() }
-    },
-    async ({ id }) => {
-      const item = svc.getInbox(id)
-      if (!item) return textResponse(`Inbox ${id} not found`)
-      if (item.status !== 'raw' && item.status !== 'archived') {
-        return textResponse(
-          `Inbox ${id} is ${item.status} — only raw or archived items can be deleted`
-        )
-      }
-      svc.deleteInbox(id)
-      return textResponse({ deleted: id })
-    }
-  )
 }
