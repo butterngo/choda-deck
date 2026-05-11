@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import type { Task } from '../domain/task-types'
@@ -229,7 +229,7 @@ interface RunOptions {
 }
 
 function wireChild(
-  child: ReturnType<typeof spawn>,
+  child: ChildProcessWithoutNullStreams,
   opts: RunOptions,
   label: string,
   resolve: (r: ProcResult) => void,
