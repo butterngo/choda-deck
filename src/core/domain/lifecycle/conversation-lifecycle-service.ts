@@ -141,7 +141,12 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
           'only decided or closed conversations can reopen'
         )
       }
-      const updated = this.conversations.update(id, { status: 'discussing' })
+      const updated = this.conversations.update(id, {
+        status: 'discussing',
+        closedAt: null,
+        decidedAt: null,
+        decisionSummary: null
+      })
       this.conversations.emitLifecycleEvent(id, 'conversation.reopen', 'system', now())
       return updated
     })
