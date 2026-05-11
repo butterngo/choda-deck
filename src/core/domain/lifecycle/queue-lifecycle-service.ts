@@ -8,7 +8,7 @@ import { parseAcCommands } from './ac-parser'
 import { QueueDirtyTreeError, TaskNotFoundError, WorkspaceResolutionError } from './errors'
 import type { SessionLifecycleService } from './session-lifecycle-service'
 
-const DEFAULT_MAX_COST_PER_TASK = 0.5
+const DEFAULT_MAX_COST_PER_TASK = 1.5
 const DEFAULT_MODEL = 'claude-sonnet-4-6'
 const DEFAULT_AC_TIMEOUT_MS = 10 * 60 * 1000
 const AUTO_FAILED_LABEL = 'auto-failed'
@@ -160,7 +160,7 @@ export class QueueLifecycleService {
     await this.runtime.mkdir(artifactDir)
 
     const maxCostPerTask = opts.maxCostPerTask ?? DEFAULT_MAX_COST_PER_TASK
-    const maxBudgetUsd = round2(maxCostPerTask / 2)
+    const maxBudgetUsd = round2(maxCostPerTask * 0.95)
     const model = opts.model ?? DEFAULT_MODEL
     const claudeBin = opts.claudeBin ?? 'claude'
     const acTimeoutMs = opts.acTimeoutMs ?? DEFAULT_AC_TIMEOUT_MS
@@ -360,7 +360,12 @@ export class QueueLifecycleService {
   private collectEligibleTasks(ws: WorkspaceRow): Task[] {
     const candidates = this.tasks.find({ projectId: ws.projectId, status: 'READY' })
     return candidates
-      .filter((t) => t.labels.includes(AUTO_SAFE_LABEL) && validateAutoSafeTask(t).valid)
+      .filter(
+        (t) =>
+          t.labels.includes(AUTO_SAFE_LABEL) &&
+          !t.labels.includes(AUTO_FAILED_LABEL) &&
+          validateAutoSafeTask(t).valid
+      )
       .sort((x, y) => x.id.localeCompare(y.id))
   }
 
@@ -399,7 +404,7 @@ export class QueueLifecycleService {
     const nextLabels = refreshed.labels.includes(AUTO_FAILED_LABEL)
       ? refreshed.labels
       : [...refreshed.labels, AUTO_FAILED_LABEL]
-    this.tasks.update(task.id, { labels: nextLabels })
+    this.tasks.update(task.id, { labels: nextLabels, status: 'READY' })
 
     const linkedConvs = this.conversations.findByLink('task', task.id)
     for (const conv of linkedConvs) {
