@@ -172,4 +172,4 @@ Frontmatter changes are committed in the workflow-engine repo (separate commit, 
 - ADR-018: Knowledge Layer Foundation — superseded for multi-repo projects only; storage rule (§4) extended, scope split (§2) unchanged.
 - ADR-021: Cross-project event routing — established the `projectId/workspaceId` address convention that this ADR's `workspace_id` column makes structural.
 - TASK-651: implementation task tracking this ADR's work (schema, tooling, backfill).
-- TASK-643: sqlite-vec semantic search — verifies cross-project + cross-workspace search still func
+- TASK-643: sqlite-vec semantic search — verifies cross-project + cross-workspace search still functions after migration.

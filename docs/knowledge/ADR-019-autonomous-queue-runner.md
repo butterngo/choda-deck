@@ -5,15 +5,15 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/executor/coder.ts
-    commitSha: 2e4f4e5b68f047d287f0816c6afc1b9f546c48c8
+    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
   - path: src/core/domain/auto-safe-validator.ts
-    commitSha: 2e4f4e5b68f047d287f0816c6afc1b9f546c48c8
+    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
   - path: src/core/domain/lifecycle/session-lifecycle-service.ts
-    commitSha: 2e4f4e5b68f047d287f0816c6afc1b9f546c48c8
+    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
   - path: src/core/paths.ts
-    commitSha: 2e4f4e5b68f047d287f0816c6afc1b9f546c48c8
+    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
 createdAt: 2026-05-10
-lastVerifiedAt: 2026-05-10
+lastVerifiedAt: 2026-05-11
 ---
 
 # ADR-019: Autonomous Queue Runner — sequential `auto-safe` task executor
