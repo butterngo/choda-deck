@@ -735,6 +735,84 @@ describe('runQueue — ADR-019 Phase-2 metrics (7 fields in queue-run.json)', ()
   })
 })
 
+describe('runQueue — TASK-707 diff metrics (files_touched + new_files)', () => {
+  const TWO_MOD_ONE_NEW_DIFF = [
+    'diff --git a/src/a.ts b/src/a.ts',
+    'index 1111111..2222222 100644',
+    '--- a/src/a.ts',
+    '+++ b/src/a.ts',
+    '@@ -1 +1 @@',
+    '-old',
+    '+new',
+    'diff --git a/src/b.ts b/src/b.ts',
+    'index 3333333..4444444 100644',
+    '--- a/src/b.ts',
+    '+++ b/src/b.ts',
+    '@@ -1 +1 @@',
+    '-old',
+    '+new',
+    'diff --git a/src/c.ts b/src/c.ts',
+    'new file mode 100644',
+    'index 0000000..5555555',
+    '--- /dev/null',
+    '+++ b/src/c.ts',
+    '@@ -0,0 +1 @@',
+    '+content',
+    ''
+  ].join('\n')
+
+  it('writes files_touched_count + new_files_created_count parsed from diff.patch', async () => {
+    createReadyAutoSafeTask()
+    const { runtime, state } = buildRuntime({ diff: TWO_MOD_ONE_NEW_DIFF })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    expect(payload.files_touched_count).toBe(2)
+    expect(payload.new_files_created_count).toBe(1)
+  })
+
+  it('aggregates counts across multiple spawns', async () => {
+    createReadyAutoSafeTask({ title: 'A' })
+    createReadyAutoSafeTask({ title: 'B' })
+    const { runtime, state } = buildRuntime({ diff: TWO_MOD_ONE_NEW_DIFF })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    // 2 spawns × (2 modified + 1 new) = 4 touched, 2 new
+    expect(payload.files_touched_count).toBe(4)
+    expect(payload.new_files_created_count).toBe(2)
+  })
+
+  it('empty diff → both counts = 0', async () => {
+    createReadyAutoSafeTask()
+    const { runtime, state } = buildRuntime({ diff: '' })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    expect(payload.files_touched_count).toBe(0)
+    expect(payload.new_files_created_count).toBe(0)
+  })
+
+  it('counts diff even when spawn fails (spawn-error path still writes diff.patch)', async () => {
+    createReadyAutoSafeTask()
+    const { runtime, state } = buildRuntime({
+      diff: TWO_MOD_ONE_NEW_DIFF,
+      spawn: async () => {
+        throw new Error('claude binary missing')
+      }
+    })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    expect(payload.files_touched_count).toBe(2)
+    expect(payload.new_files_created_count).toBe(1)
+  })
+})
+
 describe('runQueue — admission order is deterministic', () => {
   it('advances totalCostUsd across all successful tasks before halting', async () => {
     const a = createReadyAutoSafeTask({ title: 'A' })

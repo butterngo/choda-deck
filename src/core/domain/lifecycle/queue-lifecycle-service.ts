@@ -177,6 +177,8 @@ export class QueueLifecycleService {
     let queueCacheReadTokens = 0
     let queueTotalInputTokens = 0
     let hasTokenData = false
+    let queueFilesTouched = 0
+    let queueNewFilesCreated = 0
     const profileOutcomes: Record<string, { success: number; failed: number }> = {}
     const bumpProfile = (outcome: 'success' | 'failed'): void => {
       if (!profileOutcomes[profile]) profileOutcomes[profile] = { success: 0, failed: 0 }
@@ -221,7 +223,9 @@ export class QueueLifecycleService {
         })
         if (spawnAttempt.error) {
           const reason = `spawn-error: ${spawnAttempt.error.message}`
-          await this.writeDiffArtifact(taskDir, ws.cwd)
+          const errStats = await this.writeDiffArtifact(taskDir, ws.cwd)
+          queueFilesTouched += errStats.filesTouched
+          queueNewFilesCreated += errStats.newFiles
           await this.failTask(task, sessionId, reason, taskDir)
           bumpProfile('failed')
           taskOutcomes.push({ id: task.id, outcome: 'FAILED', reason })
@@ -241,7 +245,9 @@ export class QueueLifecycleService {
         }
 
         await this.runtime.writeFile(path.join(taskDir, 'claude.json'), spawn.rawJson)
-        await this.writeDiffArtifact(taskDir, ws.cwd)
+        const diffStats = await this.writeDiffArtifact(taskDir, ws.cwd)
+        queueFilesTouched += diffStats.filesTouched
+        queueNewFilesCreated += diffStats.newFiles
         totalCostUsd = round4(totalCostUsd + spawn.totalCostUsd)
 
         if (spawn.isError) {
@@ -319,6 +325,8 @@ export class QueueLifecycleService {
         cache_hit_estimate: cacheHitEstimate,
         spawn_mode: profile === 'empty' ? 'zero-mcp' : 'selective',
         task_outcome_per_mcp_profile: profileOutcomes,
+        files_touched_count: queueFilesTouched,
+        new_files_created_count: queueNewFilesCreated,
         tasks: taskOutcomes
       }
       await this.runtime.writeFile(path.join(artifactDir, 'queue-run.json'), JSON.stringify(runMeta, null, 2))
@@ -388,9 +396,13 @@ export class QueueLifecycleService {
     return null
   }
 
-  private async writeDiffArtifact(taskDir: string, cwd: string): Promise<void> {
+  private async writeDiffArtifact(
+    taskDir: string,
+    cwd: string
+  ): Promise<{ filesTouched: number; newFiles: number }> {
     const diff = await this.runtime.gitDiff(cwd)
     await this.runtime.writeFile(path.join(taskDir, 'diff.patch'), diff)
+    return parseDiffStats(diff)
   }
 
   private async failTask(
@@ -427,4 +439,14 @@ function round2(n: number): number {
 
 function round4(n: number): number {
   return Math.round(n * 10000) / 10000
+}
+
+function parseDiffStats(diff: string): { filesTouched: number; newFiles: number } {
+  let totalFiles = 0
+  let newFiles = 0
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('diff --git ')) totalFiles += 1
+    else if (line.startsWith('new file mode')) newFiles += 1
+  }
+  return { filesTouched: totalFiles - newFiles, newFiles }
 }
