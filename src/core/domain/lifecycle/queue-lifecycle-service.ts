@@ -7,6 +7,7 @@ import { AUTO_SAFE_LABEL, validateAutoSafeTask } from '../auto-safe-validator'
 import { parseAcCommands } from './ac-parser'
 import { QueueDirtyTreeError, TaskNotFoundError, WorkspaceResolutionError } from './errors'
 import type { SessionLifecycleService } from './session-lifecycle-service'
+import { computeToolSchemaTokens } from '../../executor/queue-claude-spawn'
 
 const DEFAULT_MAX_COST_PER_TASK = 1.5
 const DEFAULT_MODEL = 'claude-sonnet-4-6'
@@ -336,7 +337,7 @@ export class QueueLifecycleService {
         halted,
         haltReason,
         mcp_tokens_per_spawn: mcpTokensPerSpawn,
-        tool_schema_tokens_total: 0,
+        tool_schema_tokens_total: computeToolSchemaTokens(),
         mcp_profile_used: profile,
         cache_read_input_tokens: queueCacheReadTokens,
         cache_hit_estimate: cacheHitEstimate,

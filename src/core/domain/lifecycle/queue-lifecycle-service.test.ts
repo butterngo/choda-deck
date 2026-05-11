@@ -11,6 +11,7 @@ import {
   type SpawnClaudeOutput
 } from './queue-lifecycle-service'
 import { QueueDirtyTreeError, WorkspaceResolutionError } from './errors'
+import { computeToolSchemaTokens } from '../../executor/queue-claude-spawn'
 
 const TEST_DB = path.join(__dirname, '__test-queue-lifecycle__.db')
 let svc: SqliteTaskService
@@ -1068,5 +1069,13 @@ describe('runQueue — queue-run.json artifact', () => {
 
     const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
     expect(payload.commitSha).toBe(sha)
+  })
+})
+
+describe('computeToolSchemaTokens', () => {
+  it('measures canonical spawn tool strings > 0 tokens', () => {
+    const tokens = computeToolSchemaTokens()
+    expect(tokens).toBeGreaterThan(0)
+    expect(tokens).toBeLessThan(50)
   })
 })

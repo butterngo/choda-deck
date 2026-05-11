@@ -11,6 +11,15 @@ import type {
 import { runProcess, runShell } from './coder'
 import { composePrewarmPrefix } from './prewarm-compose'
 
+const QUEUE_SPAWN_TOOLS = 'Read,Edit,Write,Bash,Grep,Glob'
+const QUEUE_SPAWN_ALLOWED_TOOLS = 'Bash(pnpm *) Bash(node *) Bash(git diff*) Bash(git status*)'
+const TOKENS_PER_CHAR = 3.5
+
+export function computeToolSchemaTokens(): number {
+  const totalChars = QUEUE_SPAWN_TOOLS.length + QUEUE_SPAWN_ALLOWED_TOOLS.length
+  return Math.ceil(totalChars / TOKENS_PER_CHAR)
+}
+
 /**
  * Production spawner for `QueueLifecycleService` — wraps `runProcess` (also used by
  * `ClaudePCoderDriver`) with the canonical queue spawn signature locked in ADR-019 v2:
@@ -49,9 +58,9 @@ export function createQueueClaudeSpawner(opts: {
       '--mcp-config',
       input.queueMcpEmptyPath,
       '--tools',
-      'Read,Edit,Write,Bash,Grep,Glob',
+      QUEUE_SPAWN_TOOLS,
       '--allowed-tools',
-      'Bash(pnpm *) Bash(node *) Bash(git diff*) Bash(git status*)',
+      QUEUE_SPAWN_ALLOWED_TOOLS,
       '--permission-mode',
       'bypassPermissions',
       '--max-budget-usd',
