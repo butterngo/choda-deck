@@ -9,6 +9,7 @@ import type {
   SpawnClaudeOutput
 } from '../domain/lifecycle/queue-lifecycle-service'
 import { runProcess, runShell } from './coder'
+import { composePrewarmPrefix } from './prewarm-compose'
 
 /**
  * Production spawner for `QueueLifecycleService` — wraps `runProcess` (also used by
@@ -57,10 +58,14 @@ export function createQueueClaudeSpawner(opts: {
       input.maxBudgetUsd.toFixed(2)
     ]
 
+    const prewarm = input.prewarm !== false
+    const prefix = prewarm ? await composePrewarmPrefix(input.taskBody, input.cwd) : ''
+    const stdin = prefix ? `${prefix}\n\n${input.taskBody}` : input.taskBody
+
     const result = await runProcess(input.claudeBin, args, {
       cwd: input.cwd,
       timeoutMs: spawnTimeoutMs,
-      stdin: input.taskBody
+      stdin
     })
 
     const rawJson = result.stdout

@@ -42,6 +42,7 @@ export interface SpawnClaudeInput {
   maxBudgetUsd: number
   queueMcpEmptyPath: string
   claudeBin: string
+  prewarm?: boolean
 }
 
 export interface SpawnClaudeOutput {
