@@ -4,6 +4,7 @@ import * as path from 'path'
 import { SqliteTaskService } from '../sqlite-task-service'
 import {
   QueueLifecycleService,
+  resolveModelForTask,
   type ExecShellResult,
   type QueueRuntime,
   type SpawnClaudeInput,
@@ -810,6 +811,76 @@ describe('runQueue — TASK-707 diff metrics (files_touched + new_files)', () =>
     const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
     expect(payload.files_touched_count).toBe(2)
     expect(payload.new_files_created_count).toBe(1)
+  })
+})
+
+describe('resolveModelForTask — unit', () => {
+  const base = { id: 't1', projectId: 'p1', title: 'T', status: 'READY' as const, priority: 'medium' as const, body: null, createdAt: '', updatedAt: '' }
+
+  it('returns defaultModel when no model: label present', () => {
+    expect(resolveModelForTask({ ...base, labels: ['auto-safe'] }, 'claude-sonnet-4-6')).toBe('claude-sonnet-4-6')
+  })
+
+  it('returns overridden model when model: label present', () => {
+    expect(resolveModelForTask({ ...base, labels: ['auto-safe', 'model:claude-haiku-4-5-20251001'] }, 'claude-sonnet-4-6')).toBe('claude-haiku-4-5-20251001')
+  })
+
+  it('first model: label wins when multiple present', () => {
+    expect(resolveModelForTask({ ...base, labels: ['model:claude-haiku-4-5-20251001', 'model:claude-opus-4-7'] }, 'claude-sonnet-4-6')).toBe('claude-haiku-4-5-20251001')
+  })
+
+  it('ignores labels that do not match model: prefix (e.g. "models:x", "xmodel:y")', () => {
+    expect(resolveModelForTask({ ...base, labels: ['models:haiku', 'xmodel:sonnet'] }, 'claude-sonnet-4-6')).toBe('claude-sonnet-4-6')
+  })
+})
+
+describe('runQueue — per-task model label override', () => {
+  it('passes model:haiku label value to spawnClaude instead of default', async () => {
+    const t = svc.createTask({
+      projectId: 'proj-q',
+      title: 'Haiku task',
+      labels: ['auto-safe', 'model:claude-haiku-4-5-20251001'],
+      body: VALID_BODY
+    })
+    svc.updateTask(t.id, { status: 'READY' })
+
+    const { runtime, state } = buildRuntime()
+    const queue = buildService(runtime)
+    await queue.runQueue({ workspaceId: 'ws-q' })
+
+    expect(state.spawnCalls[0].model).toBe('claude-haiku-4-5-20251001')
+  })
+
+  it('uses runOptions.model (or default) for tasks without model: label', async () => {
+    const a = svc.createTask({ projectId: 'proj-q', title: 'A', labels: ['auto-safe'], body: VALID_BODY })
+    svc.updateTask(a.id, { status: 'READY' })
+    const b = svc.createTask({ projectId: 'proj-q', title: 'B', labels: ['auto-safe', 'model:claude-haiku-4-5-20251001'], body: VALID_BODY })
+    svc.updateTask(b.id, { status: 'READY' })
+
+    const { runtime, state } = buildRuntime()
+    const queue = buildService(runtime)
+    await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const calls = state.spawnCalls
+    expect(calls).toHaveLength(2)
+    const models = calls.map((c) => c.model).sort()
+    expect(models).toEqual(['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'])
+  })
+
+  it('unknown model value passes through as-is (no whitelist)', async () => {
+    const t = svc.createTask({
+      projectId: 'proj-q',
+      title: 'Unknown model',
+      labels: ['auto-safe', 'model:some-future-model'],
+      body: VALID_BODY
+    })
+    svc.updateTask(t.id, { status: 'READY' })
+
+    const { runtime, state } = buildRuntime()
+    const queue = buildService(runtime)
+    await queue.runQueue({ workspaceId: 'ws-q' })
+
+    expect(state.spawnCalls[0].model).toBe('some-future-model')
   })
 })
 

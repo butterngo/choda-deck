@@ -214,10 +214,11 @@ export class QueueLifecycleService {
         })
         const sessionId = startResult.session.id
 
+        const taskModel = resolveModelForTask(task, model)
         const spawnAttempt = await this.spawnWithRetry({
           taskBody: promptText,
           cwd: ws.cwd,
-          model,
+          model: taskModel,
           maxBudgetUsd,
           queueMcpEmptyPath: this.runtime.queueMcpEmptyPath,
           claudeBin
@@ -432,6 +433,20 @@ export class QueueLifecycleService {
 
     this.sessions.abandonSession(sessionId, reason)
   }
+}
+
+export function resolveModelForTask(task: Task, defaultModel: string): string {
+  for (const label of task.labels) {
+    const m = label.match(/^model:(.+)$/)
+    if (m) {
+      const value = m[1]
+      if (!value.startsWith('claude-')) {
+        process.stderr.write(`[queue] warning: model label "${label}" value does not start with "claude-"\n`)
+      }
+      return value
+    }
+  }
+  return defaultModel
 }
 
 function round2(n: number): number {
