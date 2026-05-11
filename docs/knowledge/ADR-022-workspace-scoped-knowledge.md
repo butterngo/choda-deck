@@ -5,21 +5,21 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/domain/repositories/schema.ts
-    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
+    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
   - path: src/core/domain/repositories/knowledge-repository.ts
-    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
+    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
   - path: src/core/domain/knowledge-service.ts
-    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
+    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
   - path: src/core/domain/knowledge-types.ts
-    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
+    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
   - path: src/core/domain/knowledge-frontmatter.ts
-    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
+    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
   - path: src/adapters/mcp/mcp-tools/knowledge-tools.ts
-    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
+    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
   - path: src/core/domain/interfaces/knowledge-operations.interface.ts
-    commitSha: cf8db885cd9bf9ba9cee2d8f2af5ba75a1b6add1
+    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
 createdAt: 2026-05-04
-lastVerifiedAt: 2026-05-08
+lastVerifiedAt: 2026-05-11
 ---
 
 # ADR-022: Workspace-scoped knowledge — multi-repo project support
@@ -172,4 +172,4 @@ Frontmatter changes are committed in the workflow-engine repo (separate commit, 
 - ADR-018: Knowledge Layer Foundation — superseded for multi-repo projects only; storage rule (§4) extended, scope split (§2) unchanged.
 - ADR-021: Cross-project event routing — established the `projectId/workspaceId` address convention that this ADR's `workspace_id` column makes structural.
 - TASK-651: implementation task tracking this ADR's work (schema, tooling, backfill).
-- TASK-643: sqlite-vec semantic search — verifies cross-project + cross-workspace search still functions after migration.
+- TASK-643: sqlite-vec semantic search — verifies cross-project + cross-workspace search still func
