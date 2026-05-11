@@ -50,6 +50,8 @@ export interface SpawnClaudeOutput {
   numTurns: number
   resultText: string
   rawJson: string
+  totalInputTokens?: number | null
+  cacheReadInputTokens?: number | null
 }
 
 export type SpawnClaudeFn = (input: SpawnClaudeInput) => Promise<SpawnClaudeOutput>
@@ -77,6 +79,7 @@ export interface QueueRuntime {
   writeFile(file: string, content: string): Promise<void>
   artifactsDir: string
   queueMcpEmptyPath: string
+  mcpProfile: string
 }
 
 export interface QueueRunOptions {
@@ -170,6 +173,16 @@ export class QueueLifecycleService {
     let haltReason: string | null = null
     let skipped: Task[] = []
 
+    const profile = this.runtime.mcpProfile
+    let queueCacheReadTokens = 0
+    let queueTotalInputTokens = 0
+    let hasTokenData = false
+    const profileOutcomes: Record<string, { success: number; failed: number }> = {}
+    const bumpProfile = (outcome: 'success' | 'failed'): void => {
+      if (!profileOutcomes[profile]) profileOutcomes[profile] = { success: 0, failed: 0 }
+      profileOutcomes[profile][outcome] += 1
+    }
+
     try {
       for (let i = 0; i < tasks.length; i++) {
         const task = tasks[i]
@@ -210,6 +223,7 @@ export class QueueLifecycleService {
           const reason = `spawn-error: ${spawnAttempt.error.message}`
           await this.writeDiffArtifact(taskDir, ws.cwd)
           await this.failTask(task, sessionId, reason, taskDir)
+          bumpProfile('failed')
           taskOutcomes.push({ id: task.id, outcome: 'FAILED', reason })
           failed.push(task)
           halted = true
@@ -218,6 +232,14 @@ export class QueueLifecycleService {
         }
         const spawn = spawnAttempt.output
 
+        const cacheRead = spawn.cacheReadInputTokens ?? null
+        const inputTokens = spawn.totalInputTokens ?? null
+        if (cacheRead !== null) queueCacheReadTokens += cacheRead
+        if (inputTokens !== null) {
+          queueTotalInputTokens += inputTokens
+          hasTokenData = true
+        }
+
         await this.runtime.writeFile(path.join(taskDir, 'claude.json'), spawn.rawJson)
         await this.writeDiffArtifact(taskDir, ws.cwd)
         totalCostUsd = round4(totalCostUsd + spawn.totalCostUsd)
@@ -225,6 +247,7 @@ export class QueueLifecycleService {
         if (spawn.isError) {
           const reason = `claude-error: ${spawn.resultText.slice(0, 500)}`
           await this.failTask(task, sessionId, reason, taskDir)
+          bumpProfile('failed')
           taskOutcomes.push({ id: task.id, outcome: 'FAILED', costUsd: spawn.totalCostUsd, reason })
           failed.push(task)
           halted = true
@@ -235,6 +258,7 @@ export class QueueLifecycleService {
         const acReason = await this.runAcCommands(promptText, ws.cwd, taskDir, acTimeoutMs)
         if (acReason) {
           await this.failTask(task, sessionId, acReason, taskDir)
+          bumpProfile('failed')
           taskOutcomes.push({ id: task.id, outcome: 'FAILED', costUsd: spawn.totalCostUsd, reason: acReason })
           failed.push(task)
           halted = true
@@ -247,6 +271,7 @@ export class QueueLifecycleService {
             2
           )} > ${maxCostPerTask.toFixed(2)}`
           await this.failTask(task, sessionId, reason, taskDir)
+          bumpProfile('failed')
           taskOutcomes.push({ id: task.id, outcome: 'FAILED', costUsd: spawn.totalCostUsd, reason })
           failed.push(task)
           halted = true
@@ -260,6 +285,7 @@ export class QueueLifecycleService {
             decisions: [`Queue ${queueRunId} marked ${task.id} DONE — diff at ${taskDir}/diff.patch`]
           }
         })
+        bumpProfile('success')
         taskOutcomes.push({ id: task.id, outcome: 'DONE', costUsd: spawn.totalCostUsd, numTurns: spawn.numTurns })
         done.push(task)
       }
@@ -268,6 +294,9 @@ export class QueueLifecycleService {
       for (const t of skipped) {
         taskOutcomes.push({ id: t.id, outcome: 'SKIPPED' })
       }
+      const cacheHitEstimate = hasTokenData
+        ? Math.min(1, Math.max(0, queueCacheReadTokens / Math.max(queueTotalInputTokens, 1)))
+        : null
       const runMeta = {
         queueRunId,
         workspaceId: opts.workspaceId,
@@ -283,6 +312,13 @@ export class QueueLifecycleService {
         totalCostUsd,
         halted,
         haltReason,
+        mcp_tokens_per_spawn: 0,
+        tool_schema_tokens_total: 0,
+        mcp_profile_used: profile,
+        cache_read_input_tokens: queueCacheReadTokens,
+        cache_hit_estimate: cacheHitEstimate,
+        spawn_mode: profile === 'empty' ? 'zero-mcp' : 'selective',
+        task_outcome_per_mcp_profile: profileOutcomes,
         tasks: taskOutcomes
       }
       await this.runtime.writeFile(path.join(artifactDir, 'queue-run.json'), JSON.stringify(runMeta, null, 2))

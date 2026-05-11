@@ -44,6 +44,7 @@ function buildRuntime(
     diff?: string
     branch?: string
     commitSha?: string
+    mcpProfile?: string
   } = {}
 ): { runtime: QueueRuntime; state: FakeRuntimeState } {
   const state: FakeRuntimeState = {
@@ -82,7 +83,8 @@ function buildRuntime(
       state.files.set(file, content)
     },
     artifactsDir: '/artifacts',
-    queueMcpEmptyPath: '/templates/queue-mcp-empty.json'
+    queueMcpEmptyPath: '/templates/queue-mcp-empty.json',
+    mcpProfile: overrides.mcpProfile ?? 'empty'
   }
   return { runtime, state }
 }
@@ -570,6 +572,131 @@ describe('runQueue — retry-1x for transient errors', () => {
     expect(r.halted).toBe(true)
     expect(r.haltReason).toContain('ac-failed')
     expect(svc.getTask(t.id)?.labels).toContain('auto-failed')
+  })
+})
+
+describe('runQueue — ADR-019 Phase-2 metrics (7 fields in queue-run.json)', () => {
+  it('writes all 7 metrics fields with correct shape', async () => {
+    createReadyAutoSafeTask()
+    const { runtime, state } = buildRuntime({
+      spawn: async () => ({
+        isError: false,
+        totalCostUsd: 0.05,
+        numTurns: 2,
+        resultText: 'ok',
+        rawJson: '{}',
+        totalInputTokens: 1000,
+        cacheReadInputTokens: 400
+      })
+    })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    expect(typeof payload.mcp_tokens_per_spawn).toBe('number')
+    expect(typeof payload.tool_schema_tokens_total).toBe('number')
+    expect(typeof payload.mcp_profile_used).toBe('string')
+    expect(typeof payload.cache_read_input_tokens).toBe('number')
+    expect(typeof payload.spawn_mode).toBe('string')
+    expect(typeof payload.task_outcome_per_mcp_profile).toBe('object')
+    // cache_hit_estimate must be number ∈ [0,1] when token data is present
+    expect(typeof payload.cache_hit_estimate).toBe('number')
+    expect(payload.cache_hit_estimate).toBeGreaterThanOrEqual(0)
+    expect(payload.cache_hit_estimate).toBeLessThanOrEqual(1)
+  })
+
+  it('aggregates cache tokens across all spawns and computes cache_hit_estimate', async () => {
+    createReadyAutoSafeTask({ title: 'A' })
+    createReadyAutoSafeTask({ title: 'B' })
+    const { runtime, state } = buildRuntime({
+      spawn: async () => ({
+        isError: false,
+        totalCostUsd: 0.05,
+        numTurns: 1,
+        resultText: 'ok',
+        rawJson: '{}',
+        totalInputTokens: 1000,
+        cacheReadInputTokens: 600
+      })
+    })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    // 2 spawns × 1000 input, 2 × 600 cache_read
+    expect(payload.cache_read_input_tokens).toBe(1200)
+    // 1200 / 2000 = 0.6
+    expect(payload.cache_hit_estimate).toBeCloseTo(0.6, 5)
+  })
+
+  it('cache_hit_estimate is null when spawn JSON has no total_input_tokens', async () => {
+    createReadyAutoSafeTask()
+    const { runtime, state } = buildRuntime()
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    expect(payload.cache_hit_estimate).toBeNull()
+  })
+
+  it('task_outcome_per_mcp_profile aggregates success+failed per profile', async () => {
+    createReadyAutoSafeTask({ title: 'A' })
+    createReadyAutoSafeTask({ title: 'B' })
+    let n = 0
+    const { runtime, state } = buildRuntime({
+      spawn: async () => {
+        n += 1
+        return {
+          isError: n === 2,
+          totalCostUsd: 0.05,
+          numTurns: 1,
+          resultText: n === 2 ? 'boom' : 'ok',
+          rawJson: '{}'
+        }
+      }
+    })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    expect(payload.task_outcome_per_mcp_profile).toEqual({ empty: { success: 1, failed: 1 } })
+  })
+
+  it('mcp_profile_used=empty and spawn_mode=zero-mcp for canonical empty profile', async () => {
+    createReadyAutoSafeTask()
+    const { runtime, state } = buildRuntime()
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    expect(payload.mcp_profile_used).toBe('empty')
+    expect(payload.spawn_mode).toBe('zero-mcp')
+  })
+
+  it('mcp_profile_used and spawn_mode=selective when mcpProfile is not "empty"', async () => {
+    createReadyAutoSafeTask()
+    const { runtime, state } = buildRuntime({ mcpProfile: 'playwright' })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    expect(payload.mcp_profile_used).toBe('playwright')
+    expect(payload.spawn_mode).toBe('selective')
+    expect(payload.task_outcome_per_mcp_profile).toEqual({ playwright: { success: 1, failed: 0 } })
+  })
+
+  it('spawn-error counts as failed in task_outcome_per_mcp_profile', async () => {
+    createReadyAutoSafeTask()
+    const { runtime, state } = buildRuntime({
+      spawn: async () => {
+        throw new Error('claude binary missing')
+      }
+    })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    expect(payload.task_outcome_per_mcp_profile).toEqual({ empty: { success: 0, failed: 1 } })
   })
 })
 

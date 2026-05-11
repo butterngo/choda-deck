@@ -134,7 +134,8 @@ export function createQueueRuntime(opts: {
       await fsp.writeFile(file, content, 'utf8')
     },
     artifactsDir: opts.artifactsDir,
-    queueMcpEmptyPath: opts.queueMcpEmptyPath
+    queueMcpEmptyPath: opts.queueMcpEmptyPath,
+    mcpProfile: 'empty'
   }
 }
 
@@ -143,6 +144,8 @@ interface ClaudeJsonShape {
   total_cost_usd?: unknown
   num_turns?: unknown
   result?: unknown
+  total_input_tokens?: unknown
+  cache_read_input_tokens?: unknown
 }
 
 function parseClaudeJson(rawJson: string): SpawnClaudeOutput {
@@ -155,7 +158,9 @@ function parseClaudeJson(rawJson: string): SpawnClaudeOutput {
       totalCostUsd: 0,
       numTurns: 0,
       resultText: `claude -p stdout is not valid JSON (first 500 chars): ${rawJson.slice(0, 500)}`,
-      rawJson
+      rawJson,
+      totalInputTokens: null,
+      cacheReadInputTokens: null
     }
   }
   return {
@@ -163,6 +168,8 @@ function parseClaudeJson(rawJson: string): SpawnClaudeOutput {
     totalCostUsd: typeof parsed.total_cost_usd === 'number' ? parsed.total_cost_usd : 0,
     numTurns: typeof parsed.num_turns === 'number' ? parsed.num_turns : 0,
     resultText: typeof parsed.result === 'string' ? parsed.result : '',
-    rawJson
+    rawJson,
+    totalInputTokens: typeof parsed.total_input_tokens === 'number' ? parsed.total_input_tokens : null,
+    cacheReadInputTokens: typeof parsed.cache_read_input_tokens === 'number' ? parsed.cache_read_input_tokens : null
   }
 }
