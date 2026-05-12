@@ -9,7 +9,7 @@ import type {
   SpawnClaudeOutput
 } from '../domain/lifecycle/queue-lifecycle-service'
 import { runProcess, runShell } from './coder'
-import { composePrewarmPrefix } from './prewarm-compose'
+import { composePrewarmPrefix, PrewarmPointerResolveError } from './prewarm-compose'
 
 const QUEUE_SPAWN_TOOLS = 'Read,Edit,Write,Bash,Grep,Glob'
 const QUEUE_SPAWN_ALLOWED_TOOLS = 'Bash(pnpm *) Bash(node *) Bash(git diff*) Bash(git status*)'
@@ -68,7 +68,25 @@ export function createQueueClaudeSpawner(opts: {
     ]
 
     const prewarm = input.prewarm !== false
-    const prefix = prewarm ? await composePrewarmPrefix(input.taskBody, input.cwd) : ''
+    let prefix: string
+    if (prewarm) {
+      try {
+        prefix = await composePrewarmPrefix(input.taskBody, input.cwd)
+      } catch (e) {
+        if (e instanceof PrewarmPointerResolveError) {
+          return {
+            isError: true,
+            totalCostUsd: 0,
+            numTurns: 0,
+            resultText: `prewarm-rejected: ${e.errors.join('; ')}`,
+            rawJson: ''
+          }
+        }
+        throw e
+      }
+    } else {
+      prefix = ''
+    }
     const stdin = prefix ? `${prefix}\n\n${input.taskBody}` : input.taskBody
 
     const result = await runProcess(input.claudeBin, args, {
