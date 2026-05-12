@@ -19,6 +19,7 @@ devchoda-deckchoda-deck.db
 vault-graph.json
 graphify-out/*
 !graphify-out/cache/
+src/graphify-out/
 .graphify_python
 tsconfig.node.tsbuildinfo
 tsconfig.web.tsbuildinfo
