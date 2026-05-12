@@ -126,6 +126,13 @@ export function createQueueRuntime(opts: {
       }
       return r.stdout
     },
+    gitUntrackedFiles: async (cwd) => {
+      const r = await runProcess('git', ['ls-files', '--others', '--exclude-standard'], { cwd, timeoutMs: 30_000 })
+      if (r.exitCode !== 0) {
+        throw new Error(`git ls-files failed (${r.exitCode}): ${r.stderr.slice(0, 500)}`)
+      }
+      return r.stdout.split('\n').map((s) => s.trim()).filter(Boolean)
+    },
     gitCurrentBranch: async (cwd) => {
       const r = await runProcess('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, timeoutMs: 30_000 })
       if (r.exitCode !== 0) {

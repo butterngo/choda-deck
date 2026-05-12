@@ -37,6 +37,7 @@ interface FakeRuntimeState {
   dirs: Set<string>
   porcelain: string
   diff: string
+  untracked: string[]
 }
 
 function buildRuntime(
@@ -45,6 +46,7 @@ function buildRuntime(
     exec?: (cmd: string, state: FakeRuntimeState) => Promise<ExecShellResult>
     porcelain?: string
     diff?: string
+    untracked?: string[]
     branch?: string
     commitSha?: string
     mcpProfile?: string
@@ -60,7 +62,8 @@ function buildRuntime(
     ]),
     dirs: new Set(),
     porcelain: overrides.porcelain ?? '',
-    diff: overrides.diff ?? 'diff --git a/x b/x\n+ change\n'
+    diff: overrides.diff ?? 'diff --git a/x b/x\n+ change\n',
+    untracked: overrides.untracked ?? []
   }
   const runtime: QueueRuntime = {
     spawnClaude: async (input) => {
@@ -81,6 +84,7 @@ function buildRuntime(
     },
     gitStatusPorcelain: async () => state.porcelain,
     gitDiff: async () => state.diff,
+    gitUntrackedFiles: async () => state.untracked,
     gitCurrentBranch: async () => overrides.branch ?? 'main',
     gitHeadSha: async () => overrides.commitSha ?? 'abc1234567890def1234567890abcdef12345678',
     mkdir: async (dir) => {
@@ -861,6 +865,51 @@ describe('runQueue — TASK-707 diff metrics (files_touched + new_files)', () =>
     const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
     expect(payload.files_touched_count).toBe(2)
     expect(payload.new_files_created_count).toBe(1)
+  })
+
+  it('untracked-only: gitDiff empty, gitUntrackedFiles returns 2 → newFiles=2, filesTouched=0', async () => {
+    createReadyAutoSafeTask()
+    const { runtime, state } = buildRuntime({
+      diff: '',
+      untracked: ['src/a.ts', 'src/b.ts']
+    })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    expect(payload.new_files_created_count).toBe(2)
+    expect(payload.files_touched_count).toBe(0)
+  })
+
+  it('mixed: 1 modified + 1 staged-new in diff, 1 untracked → newFiles=2, filesTouched=1', async () => {
+    createReadyAutoSafeTask()
+    const ONE_MOD_ONE_STAGED_NEW = [
+      'diff --git a/src/a.ts b/src/a.ts',
+      'index 1111111..2222222 100644',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -1 +1 @@',
+      '-old',
+      '+new',
+      'diff --git a/src/c.ts b/src/c.ts',
+      'new file mode 100644',
+      'index 0000000..5555555',
+      '--- /dev/null',
+      '+++ b/src/c.ts',
+      '@@ -0,0 +1 @@',
+      '+content',
+      ''
+    ].join('\n')
+    const { runtime, state } = buildRuntime({
+      diff: ONE_MOD_ONE_STAGED_NEW,
+      untracked: ['src/extra.ts']
+    })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
+    expect(payload.new_files_created_count).toBe(2)
+    expect(payload.files_touched_count).toBe(1)
   })
 })
 

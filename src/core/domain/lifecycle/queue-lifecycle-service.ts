@@ -80,6 +80,7 @@ export interface QueueRuntime {
   execShell: ExecShellFn
   gitStatusPorcelain(cwd: string): Promise<string>
   gitDiff(cwd: string): Promise<string>
+  gitUntrackedFiles(cwd: string): Promise<string[]>
   gitCurrentBranch(cwd: string): Promise<string>
   gitHeadSha(cwd: string): Promise<string>
   mkdir(dir: string): Promise<void>
@@ -452,7 +453,9 @@ export class QueueLifecycleService {
   ): Promise<{ filesTouched: number; newFiles: number }> {
     const diff = await this.runtime.gitDiff(cwd)
     await this.runtime.writeFile(path.join(taskDir, 'diff.patch'), diff)
-    return parseDiffStats(diff)
+    const stats = parseDiffStats(diff)
+    const untracked = await this.runtime.gitUntrackedFiles(cwd)
+    return { filesTouched: stats.filesTouched, newFiles: stats.newFiles + untracked.length }
   }
 
   private async failTask(
