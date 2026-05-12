@@ -56,6 +56,7 @@ function buildRuntime(
     },
     gitStatusPorcelain: async () => overrides.porcelain ?? '',
     gitDiff: async () => 'diff\n',
+    gitUntrackedFiles: async () => [],
     gitCurrentBranch: async () => 'main',
     gitHeadSha: async () => 'abc1234567890def1234567890abcdef12345678',
     mkdir: async () => {},
