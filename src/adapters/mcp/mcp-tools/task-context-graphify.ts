@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { splitLines } from '../../../core/utils/lines'
 import type { Task } from '../../../core/domain/task-types'
 import type { ProjectOperations } from '../../../core/domain/interfaces/project-repository.interface'
 import type { WorkspaceOperations } from '../../../core/domain/interfaces/workspace-repository.interface'
@@ -215,7 +216,7 @@ function extractFilePointers(body: string): string[] {
   const match = body.match(/(?:^|\n)##\s*File Pointers\s*\n[\s\S]*?(?=\n##\s|$)/i)
   if (!match) return []
   const paths: string[] = []
-  for (const line of match[0].split('\n')) {
+  for (const line of splitLines(match[0])) {
     if (/\(NEW\)/i.test(line)) continue
     const pathMatch = line.match(/^\s*-\s+`([^`]+)`/)
     if (!pathMatch) continue

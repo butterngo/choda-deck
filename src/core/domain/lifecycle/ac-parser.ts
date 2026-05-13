@@ -1,3 +1,5 @@
+import { splitLines } from '../../utils/lines'
+
 /**
  * Parse `## Acceptance` section of a task body and extract shell commands
  * to execute as the task's acceptance gate.
@@ -33,7 +35,7 @@ export function parseAcCommands(body: string): string[] {
 }
 
 function extractAcSection(body: string): string | null {
-  const lines = body.split('\n')
+  const lines = splitLines(body)
   const startIdx = lines.findIndex((l) => /^##\s+Acceptance\b/i.test(l))
   if (startIdx === -1) return null
   let endIdx = lines.length
@@ -54,7 +56,7 @@ function extractAcSection(body: string): string | null {
 }
 
 function extractFromBashBlock(content: string, out: string[]): void {
-  for (const raw of content.split('\n')) {
+  for (const raw of splitLines(content)) {
     const line = raw.trim()
     if (!line || line.startsWith('#')) continue
     out.push(line)
@@ -63,7 +65,7 @@ function extractFromBashBlock(content: string, out: string[]): void {
 
 function extractFromProse(prose: string, out: string[]): void {
   const inlineRe = /`((?:pnpm|node)\s[^`]+)`/g
-  for (const line of prose.split('\n')) {
+  for (const line of splitLines(prose)) {
     let matched = false
     let m: RegExpExecArray | null
     inlineRe.lastIndex = 0

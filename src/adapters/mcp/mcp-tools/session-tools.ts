@@ -13,6 +13,7 @@ import type { InboxOperations } from '../../../core/domain/interfaces/inbox-repo
 import type { SessionLifecycleOperations } from '../../../core/domain/interfaces/session-lifecycle.interface'
 import { resolveWorkspaceId } from './workspace-resolver'
 import type { GitOps } from '../../../core/domain/knowledge-git'
+import { splitLines } from '../../../core/utils/lines'
 import { GitOpsImpl } from '../../../core/domain/knowledge-git'
 import {
   collectFilesByCommit,
@@ -297,7 +298,7 @@ function buildProjectSummary(bundle: ReturnType<typeof buildProjectContext>): st
   if (!bundle) return null
   const pieces: string[] = []
   if (bundle.architecture) {
-    pieces.push(bundle.architecture.split('\n').slice(0, 3).join(' ').slice(0, 200))
+    pieces.push(splitLines(bundle.architecture).slice(0, 3).join(' ').slice(0, 200))
   }
   return pieces.length > 0 ? pieces.join(' — ') : null
 }

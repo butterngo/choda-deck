@@ -108,6 +108,22 @@ Exceptions (flag in code comment):
 - Schema DDL files (`repositories/schema.ts`) — many table definitions are ok in one place; splitting fragments the source of truth.
 - Pure type definitions (`task-types.ts`) — data shapes don't need per-file splitting.
 
+## Line-based parsing (CRLF-safe)
+
+When splitting file contents or subprocess stdout into lines, **use `splitLines()` from `src/core/utils/lines.ts`** — never `content.split('\n')`:
+
+```ts
+import { splitLines } from '../utils/lines'
+
+const lines = splitLines(content) // splits on /\r?\n/
+```
+
+Choda-deck ships Windows-first. Artifact files (`queue-run.json` neighbors, `ac-log.txt`, captured stdout) frequently carry CRLF endings, and `git checkout` with `core.autocrlf=true` rewrites LF → CRLF on the working copy. A naive `split('\n')` leaves a trailing `\r` on every line; strict equality checks (`line === '--- stdout ---'`) silently fail.
+
+Origin: TASK-726 PR #95 commit `50ac5ae` — a CRLF blind spot in `queue-report.ts` parsers passed unit tests on Ubuntu CI but produced empty stdout columns on Windows CI. ADR-023 Fix 3 promotes the rule.
+
+In-memory string splits (e.g. sorting lines of a single composed string, asserting on test fixtures with hard-coded `\n`) may stay on `'\n'` **with a justification comment**.
+
 ## Lint
 
 ESLint config is `@electron-toolkit/eslint-config-ts` + `eslint-config-prettier`. Run `pnpm run lint` before considering TypeScript work done.

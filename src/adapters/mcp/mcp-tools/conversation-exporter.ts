@@ -1,5 +1,6 @@
 import * as fs from 'fs'
 import * as path from 'path'
+import { splitLines } from '../../../core/utils/lines'
 import type { ConversationOperations } from '../../../core/domain/interfaces/conversation-repository.interface'
 import type { Conversation, ConversationMessage, ConversationAction } from '../../../core/domain/task-types'
 
@@ -59,7 +60,7 @@ function renderConversationSection(
 
 function renderMessageLine(msg: ConversationMessage): string {
   const date = msg.createdAt.slice(0, 10)
-  const oneLine = msg.content.split('\n').join(' ')
+  const oneLine = splitLines(msg.content).join(' ')
   return `- **${date} ${msg.authorName} (${msg.messageType}):** ${oneLine}`
 }
 

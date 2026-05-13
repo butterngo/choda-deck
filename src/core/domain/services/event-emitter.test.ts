@@ -7,6 +7,7 @@ import {
   emitConversationEventFanout,
   normalizeEventTimestamp
 } from './event-emitter'
+import { splitLines } from '../../utils/lines'
 
 const TMP_ROOT = path.join(os.tmpdir(), 'choda-test-event-emitter')
 
@@ -79,7 +80,7 @@ describe('emitConversationEvent', () => {
       })
     })
     const file = path.join(dir, 'proj-2.jsonl')
-    const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean)
+    const lines = splitLines(fs.readFileSync(file, 'utf8')).filter(Boolean)
     expect(lines.length).toBe(2)
     expect(JSON.parse(lines[0]).conversationId).toBe('CONV-A')
     expect(JSON.parse(lines[1]).conversationId).toBe('CONV-B')
@@ -149,7 +150,7 @@ describe('emitConversationEventFanout', () => {
 
   function readLines(file: string): string[] {
     if (!fs.existsSync(file)) return []
-    return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean)
+    return splitLines(fs.readFileSync(file, 'utf8')).filter(Boolean)
   }
 
   it('writes the same JSONL line to owner and each unique target', () => {

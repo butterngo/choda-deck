@@ -3,6 +3,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import { SqliteTaskService } from '../sqlite-task-service'
+import { splitLines } from '../../utils/lines'
 
 const TMP_ROOT = path.join(os.tmpdir(), 'choda-test-event-emit')
 const TEST_DB = path.join(TMP_ROOT, 'event-emit.db')
@@ -16,7 +17,7 @@ let savedEventDir: string | undefined
 function eventLinesFor(projectId: string): string[] {
   const file = path.join(EVENT_DIR, `${projectId}.jsonl`)
   if (!fs.existsSync(file)) return []
-  return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean)
+  return splitLines(fs.readFileSync(file, 'utf8')).filter(Boolean)
 }
 
 function eventLines(): string[] {
