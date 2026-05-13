@@ -46,7 +46,11 @@ npx choda-deck
 
 Requires Node.js >= 20.
 
-## Wire it into Claude Code
+## Wire it into your MCP client
+
+choda-deck speaks stock MCP stdio — works with any client that supports the protocol. Pick the one you use:
+
+### Claude Code
 
 Add to `.claude.json` (user-level) or `.mcp.json` (project-level):
 
@@ -66,6 +70,42 @@ Add to `.claude.json` (user-level) or `.mcp.json` (project-level):
 ```
 
 Restart Claude Code → the `choda-tasks` MCP server is online.
+
+### Claude Desktop
+
+Edit `claude_desktop_config.json` (same `mcpServers` schema as above):
+
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux:** `~/.config/Claude/claude_desktop_config.json`
+
+Quit + reopen Claude Desktop. The hammer icon shows `choda-tasks` connected.
+
+### GitHub Copilot (VS Code)
+
+Create `.vscode/mcp.json` in your workspace (or add to User Settings):
+
+```json
+{
+  "servers": {
+    "choda-tasks": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "choda-deck"],
+      "env": {
+        "CHODA_DATA_DIR": "/absolute/path/to/data",
+        "CHODA_CONTENT_ROOT": "/absolute/path/to/your/notes-or-vault"
+      }
+    }
+  }
+}
+```
+
+Note: Copilot uses `servers` (not `mcpServers`) and requires `"type": "stdio"`. Reload VS Code window → tools appear in Copilot Chat under agent mode.
+
+### Other clients (Cursor, Continue, Zed, …)
+
+Any MCP-compatible client works. Use the `command` / `args` / `env` triple — drop it into whatever the client calls its MCP config block.
 
 ## CLI
 
@@ -102,6 +142,7 @@ All tools are namespaced `mcp__choda-tasks__<name>`. Claude calls them on your b
 | **Inbox** | `inbox_add`, `inbox_research`, `inbox_convert`, `inbox_ready`, `inbox_archive`, `inbox_list`, `inbox_get`, `inbox_update` | Capture-now, decide-later. Items move `raw` → `researching` → `ready` → `converted` (to a task) or `archived`. |
 | **Knowledge** | `knowledge_create`, `knowledge_list`, `knowledge_get`, `knowledge_search`, `knowledge_update`, `knowledge_verify`, `knowledge_delete` | ADRs / decision logs with frontmatter. `refs[]` tracks implementation files + commit SHAs → staleness banner when code drifts. |
 | **Backup** | `backup_create`, `backup_list`, `backup_restore` | Daily auto-backup of the SQLite DB. Manual create + restore when you need to roll back. |
+| **Ops** | `stats_report`, `cleanup_worktree_orphans` | Tool-usage telemetry (per-tool calls / error rate / dead-in-window) + worktree GC. |
 
 ## Common workflows
 
@@ -182,7 +223,7 @@ See [`docs/architecture.md`](https://github.com/butterngo/choda-deck/blob/main/d
 
 ## Status
 
-`0.1.0` — early, dogfooded daily by the author. API may move before `1.0`. Issues + PRs welcome.
+`0.2.0` — early, dogfooded daily by the author. API may move before `1.0`. Issues + PRs welcome.
 
 ## License
 
