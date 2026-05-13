@@ -51,7 +51,7 @@ export function validateAutoSafeTask(task: Task): AutoSafeValidationResult {
 
   if (mentionsBuildSensitive(body) && !hasSmokeStep(ac)) {
     errors.push(
-      '## Acceptance must include a smoke step (body mentions build:mcp / loader / asset copy)'
+      '## Acceptance must include a smoke step (body mentions build:mcp / build:cli / loader / asset copy)'
     )
   }
 
@@ -93,9 +93,9 @@ function parseScopeHours(section: string): number | null {
 }
 
 function mentionsBuildSensitive(body: string): boolean {
-  return /build:mcp|\bloader\b|asset\s+cop/i.test(body)
+  return /build:(?:mcp|cli)|\bloader\b|asset\s+cop/i.test(body)
 }
 
 function hasSmokeStep(ac: string): boolean {
-  return /\bsmoke\b/i.test(ac) || /pnpm\s+run\s+build:mcp/i.test(ac)
+  return /\bsmoke\b/i.test(ac) || /pnpm\s+run\s+build:(?:mcp|cli)/i.test(ac)
 }
