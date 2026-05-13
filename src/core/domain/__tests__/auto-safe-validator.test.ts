@@ -102,8 +102,55 @@ Note: this changes \`build:mcp\` output.
     const result = validateAutoSafeTask(taskWith(body))
     expect(result.valid).toBe(false)
     expect(result.errors).toContain(
-      '## Acceptance must include a smoke step (body mentions build:mcp / loader / asset copy)'
+      '## Acceptance must include a smoke step (body mentions build:mcp / build:cli / loader / asset copy)'
     )
+  })
+
+  it('fails when body mentions build:cli but AC has no smoke step', () => {
+    const body = `# TASK-999: example
+
+## Acceptance
+
+- [ ] \`pnpm run lint\` clean
+- [ ] \`pnpm test\` exits 0
+
+## File Pointers
+
+- src/adapters/cli/commands/foo.ts
+
+## Scope
+
+~1h
+
+Touches the \`build:cli\` bundle output.
+`
+    const result = validateAutoSafeTask(taskWith(body))
+    expect(result.valid).toBe(false)
+    expect(result.errors).toContain(
+      '## Acceptance must include a smoke step (body mentions build:mcp / build:cli / loader / asset copy)'
+    )
+  })
+
+  it('passes when body mentions build:cli and AC has a smoke step via pnpm run build:cli', () => {
+    const body = `# TASK-999: example
+
+## Acceptance
+
+- [ ] \`pnpm run lint\` clean
+- [ ] \`pnpm run build:cli\` then \`node dist/cli.cjs --help\` exits 0
+
+## File Pointers
+
+- src/adapters/cli/commands/foo.ts
+
+## Scope
+
+~1h
+
+Touches the \`build:cli\` bundle output.
+`
+    const result = validateAutoSafeTask(taskWith(body))
+    expect(result).toEqual({ valid: true, errors: [] })
   })
 
   it('passes when body mentions loader and AC has a smoke step', () => {
