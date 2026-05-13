@@ -1,0 +1,6 @@
+$ node -e "process.stdout.write('a')" && node -e "process.stdout.write('b')"
+exit 0
+--- stdout ---
+ab
+--- stderr ---
+

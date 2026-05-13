@@ -4,6 +4,7 @@ out
 .DS_Store
 .eslintcache
 *.log*
+!src/**/__tests__/fixtures/**/*.log
 
 # Personal Claude Code context — never commit
 CLAUDE.local.md

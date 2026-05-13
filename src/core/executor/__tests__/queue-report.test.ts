@@ -4,7 +4,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { renderQueueReport } from '../queue-report'
 
-const FIXTURE_DIR = path.join(__dirname, '../../../../data/artifacts/queue-1778471338165-1qtq')
+const FIXTURE_DIR = path.join(__dirname, 'fixtures/queue-1778471338165-1qtq')
 
 describe('renderQueueReport — TASK-703 fixture', () => {
   it('contains task id, key filenames, and AC pass result', async () => {
