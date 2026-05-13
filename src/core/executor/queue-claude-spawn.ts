@@ -11,6 +11,7 @@ import type {
 } from '../domain/lifecycle/queue-lifecycle-service'
 import { runProcess, runShell } from './coder'
 import { composePrewarmPrefix, PrewarmPointerResolveError } from './prewarm-compose'
+import { splitLines } from '../utils/lines'
 
 const QUEUE_SPAWN_TOOLS = 'Read,Edit,Write,Bash,Grep,Glob'
 const QUEUE_SPAWN_ALLOWED_TOOLS = 'Bash(pnpm *) Bash(node *) Bash(git diff*) Bash(git status*)'
@@ -150,7 +151,7 @@ export function createQueueRuntime(opts: {
       if (r.exitCode !== 0) {
         throw new Error(`git ls-files failed (${r.exitCode}): ${r.stderr.slice(0, 500)}`)
       }
-      return r.stdout.split('\n').map((s) => s.trim()).filter(Boolean)
+      return splitLines(r.stdout).map((s) => s.trim()).filter(Boolean)
     },
     gitCurrentBranch: async (cwd) => {
       const r = await runProcess('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, timeoutMs: 30_000 })

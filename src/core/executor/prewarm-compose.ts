@@ -1,5 +1,6 @@
 import * as fsp from 'node:fs/promises'
 import * as path from 'node:path'
+import { splitLines } from '../utils/lines'
 
 export interface FilePointer {
   filePath: string
@@ -62,7 +63,7 @@ function extractSection(body: string, heading: string): string {
 }
 
 export function findLineHint(filePath: string, body: string): [number, number] | null {
-  const lines = body.split('\n')
+  const lines = splitLines(body)
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].includes(filePath)) {
       const window = lines.slice(i, i + 3).join('\n')
@@ -84,7 +85,7 @@ export async function findSymbolLine(absPath: string, symbol: string): Promise<n
   } catch {
     return null
   }
-  const lines = content.split('\n')
+  const lines = splitLines(content)
   const symbolRe = new RegExp(`(function|class|const|export|interface|type)\\s+${symbol}\\b`)
   for (let i = 0; i < lines.length; i++) {
     if (symbolRe.test(lines[i])) {
@@ -147,7 +148,7 @@ export async function resolvePointers(
       const lineNum = await findSymbolLine(absPath, symbol)
       if (lineNum !== null) {
         const content = await fsp.readFile(absPath, 'utf8')
-        const totalLines = content.split('\n').length
+        const totalLines = splitLines(content).length
         const start = Math.max(1, lineNum - 5)
         const end = Math.min(totalLines, lineNum + 5)
         resolved.push({ ...pointer, startLine: start, endLine: end })
@@ -194,7 +195,7 @@ export async function composePrewarmPrefix(taskBody: string, cwd: string): Promi
       continue
     }
 
-    const lines = fileContent.split('\n')
+    const lines = splitLines(fileContent)
     const excerpt = lines.slice(pointer.startLine - 1, pointer.endLine)
     sections.push(`## ${pointer.filePath}\n${excerpt.join('\n')}`)
   }

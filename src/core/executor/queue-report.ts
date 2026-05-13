@@ -1,5 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { splitLines } from '../utils/lines'
 
 interface QueueRunMeta {
   queueRunId: string
@@ -220,7 +221,7 @@ function parseDiff(patch: string): ParsedFile[] {
   const blocks = patch.split(/(?=^diff --git )/m).filter((b) => b.startsWith('diff --git '))
 
   for (const block of blocks) {
-    const blockLines = block.split(/\r?\n/)
+    const blockLines = splitLines(block)
     const match = blockLines[0].match(/^diff --git a\/.+ b\/(.+)$/)
     if (!match) continue
     const filePath = match[1]
@@ -258,7 +259,7 @@ function readAcLogs(taskDir: string): AcLogEntry[] {
 }
 
 function parseAcLog(index: number, content: string): ParsedAcLog {
-  const lines = content.split(/\r?\n/)
+  const lines = splitLines(content)
   let command = ''
   let exitCode = -1
   let stdout = ''
@@ -279,7 +280,7 @@ function parseAcLog(index: number, content: string): ParsedAcLog {
 }
 
 function extractKeyResult(stdout: string): string {
-  const trimmed = stdout.split('\n').map((l) => l.trim()).filter(Boolean)
+  const trimmed = splitLines(stdout).map((l) => l.trim()).filter(Boolean)
   if (trimmed.length === 0) return '*(no output)*'
   const testSummary = trimmed.find((l) => l.startsWith('Test Files') || l.startsWith('Tests '))
   if (testSummary) return testSummary

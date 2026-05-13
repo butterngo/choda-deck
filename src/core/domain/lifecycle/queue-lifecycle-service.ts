@@ -1,4 +1,5 @@
 import * as path from 'node:path'
+import { splitLines } from '../../utils/lines'
 import type { ConversationRepository } from '../repositories/conversation-repository'
 import type { TaskRepository } from '../repositories/task-repository'
 import type { WorkspaceRepository, WorkspaceRow } from '../repositories/workspace-repository'
@@ -956,7 +957,7 @@ function preflightAbortMessage(preflight: PreflightResult): string | null {
 function parseDiffStats(diff: string): { filesTouched: number; newFiles: number } {
   let totalFiles = 0
   let newFiles = 0
-  for (const line of diff.split('\n')) {
+  for (const line of splitLines(diff)) {
     if (line.startsWith('diff --git ')) totalFiles += 1
     else if (line.startsWith('new file mode')) newFiles += 1
   }
