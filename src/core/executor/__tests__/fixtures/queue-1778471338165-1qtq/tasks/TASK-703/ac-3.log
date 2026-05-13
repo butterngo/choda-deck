@@ -1,0 +1,21 @@
+$ pnpm test
+exit 0
+--- stdout ---
+
+> choda-deck@0.1.1 test C:\dev\choda-deck
+> node scripts/test.mjs run
+
+
+ RUN  v4.1.5 C:/dev/choda-deck
+
+
+ Test Files  49 passed (49)
+      Tests  582 passed | 1 todo (583)
+   Start at  10:50:52
+   Duration  13.82s (transform 3.10s, setup 0ms, import 5.55s, tests 46.25s, environment 4ms)
+
+
+--- stderr ---
+(node:19896) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+

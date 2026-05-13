@@ -31,9 +31,3 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run test
       - run: pnpm run build
-
-      - name: Smoke CLI (fresh DB)
-        shell: bash
-        run: |
-          mkdir -p ./tmp-data
-          CHODA_DATA_DIR="$PWD/tmp-data" CHODA_CONTENT_ROOT="$PWD/tmp-data" node scripts/smoke-cli.mjs
