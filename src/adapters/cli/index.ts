@@ -13,6 +13,7 @@
  */
 
 import { runRunQueueCommand } from './commands/run-queue'
+import { runQueueReportCommand } from './commands/queue-report'
 
 const VERSION = '0.2.0'
 
@@ -21,8 +22,9 @@ const ROOT_HELP = `choda-deck v${VERSION}
 Usage: choda-deck <command> [options]
 
 Commands:
-  mcp serve     Start MCP stdio server
-  run-queue     Run autonomous queue of READY auto-safe tasks (ADR-019)
+  mcp serve           Start MCP stdio server
+  run-queue           Run autonomous queue of READY auto-safe tasks (ADR-019)
+  queue report <id>   Regenerate report.md for an existing artifact directory
 
 Meta:
   --help        Show this help
@@ -48,10 +50,20 @@ async function main(): Promise<number> {
       return runRunQueueCommand(sub === undefined ? [] : [sub, ...rest])
     case 'mcp':
       return dispatchMcp(sub)
+    case 'queue':
+      return dispatchQueue(sub, rest)
     default:
       process.stderr.write(`error: unknown command "${group}"\n\n${ROOT_HELP}`)
       return 2
   }
+}
+
+async function dispatchQueue(sub: string | undefined, rest: string[]): Promise<number> {
+  if (sub !== 'report') {
+    process.stderr.write(`error: only "queue report" is supported (got "${sub ?? ''}")\n`)
+    return 2
+  }
+  return runQueueReportCommand(rest)
 }
 
 async function dispatchMcp(sub: string | undefined): Promise<number> {

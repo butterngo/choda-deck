@@ -1,6 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { parseArgs } from 'node:util'
+import { renderQueueReport } from '../../../core/executor/queue-report'
 import type {
   HaltCode,
   QueueRuntime,
@@ -103,6 +104,17 @@ export async function runRunQueueCommand(argv: string[]): Promise<number> {
     claudeBin: parsed.values['claude-bin'],
     model: parsed.values.model
   })
+
+  if (result.artifactDir) {
+    try {
+      const markdown = await renderQueueReport(result.artifactDir)
+      fs.writeFileSync(path.join(result.artifactDir, 'report.md'), markdown, 'utf8')
+    } catch (err) {
+      process.stderr.write(
+        `run-queue: warning — failed to write report.md: ${err instanceof Error ? err.message : String(err)}\n`
+      )
+    }
+  }
 
   if (json) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
