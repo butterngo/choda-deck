@@ -95,7 +95,7 @@ All tools are namespaced `mcp__choda-tasks__<name>`. Claude calls them on your b
 | Domain | Tools | What it does |
 |---|---|---|
 | **Project** | `project_add`, `project_list`, `project_context` | Multi-project setup. Each project has its own task list and metadata. |
-| **Workspace** | `workspace_add`, `workspace_list`, `workspace_archive`, `workspace_remove` | Sub-scope inside a project (e.g. `frontend`, `backend`, `infra`). Knowledge entries can be scoped to a workspace. |
+| **Workspace** | `workspace_add`, `workspace_list`, `workspace_archive` | Sub-scope inside a project (e.g. `frontend`, `backend`, `infra`). Knowledge entries can be scoped to a workspace. |
 | **Task** | `task_create`, `task_list`, `task_update`, `task_context` | TODO → READY → IN-PROGRESS → DONE/BLOCKED. Each task has body + acceptance criteria + labels + priority. |
 | **Session** | `session_start`, `session_checkpoint`, `session_end`, `session_resume`, `session_list` | Bind a work session to a task. Checkpoint progress so the next session resumes with full context. |
 | **Conversation** | `conversation_open`, `conversation_add`, `conversation_decide`, `conversation_close`, `conversation_reopen`, `conversation_list`, `conversation_read`, `conversation_poll` | Structured threads (e.g. FE/BE alignment, ADR debate). `decide` logs the resolution. |

@@ -71,41 +71,6 @@ export const register = (server: InstrumentedServer, svc: WorkspaceToolsDeps): v
     }
   )
 
-  server.registerTool(
-    'workspace_remove',
-    {
-      description:
-        'Remove a workspace. Default soft (archive). Pass hard=true for permanent DELETE — rejected if any sessions still reference the workspace.',
-      inputSchema: {
-        projectId: z.string().describe('Parent project ID'),
-        workspaceId: z.string().describe('Workspace ID to remove'),
-        hard: z
-          .boolean()
-          .optional()
-          .describe('true = permanent DELETE (rejected if referenced); default false = soft archive')
-      }
-    },
-    async ({ projectId, workspaceId, hard }) => {
-      if (!hard) {
-        return textResponse(archiveOrError(svc, projectId, workspaceId))
-      }
-      const ws = svc.getWorkspace(workspaceId)
-      if (!ws) return textResponse(`Workspace ${workspaceId} not found`)
-      if (ws.projectId !== projectId) {
-        return textResponse(
-          `Workspace ${workspaceId} belongs to project ${ws.projectId}, not ${projectId}`
-        )
-      }
-      const refs = svc.countWorkspaceReferences(workspaceId)
-      if (refs.sessions > 0) {
-        return textResponse(
-          `Cannot hard-delete workspace ${workspaceId} — ${refs.sessions} session(s) still reference it. Use workspace_archive instead.`
-        )
-      }
-      svc.deleteWorkspace(workspaceId)
-      return textResponse({ ok: true, hard: true })
-    }
-  )
 }
 
 function archiveOrError(

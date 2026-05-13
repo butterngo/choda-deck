@@ -41,9 +41,7 @@ function makeDeps(workspaceCwds: string[] = [], projectCwd: string | null = null
         archivedAt: null
       })),
     archiveWorkspace: () => null,
-    unarchiveWorkspace: () => null,
-    deleteWorkspace: () => {},
-    countWorkspaceReferences: () => ({ sessions: 0 })
+    unarchiveWorkspace: () => null
   }
 }
 
