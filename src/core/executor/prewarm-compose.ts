@@ -1,7 +1,7 @@
 import * as fsp from 'node:fs/promises'
 import * as path from 'node:path'
 
-interface FilePointer {
+export interface FilePointer {
   filePath: string
   startLine: number | undefined
   endLine: number | undefined
@@ -18,7 +18,7 @@ export class PrewarmPointerResolveError extends Error {
   }
 }
 
-function extractFilePointersSection(taskBody: string): string | null {
+export function extractFilePointersSection(taskBody: string): string | null {
   const headingIdx = taskBody.indexOf('## File Pointers')
   if (headingIdx === -1) return null
   const afterHeading = taskBody.slice(headingIdx + '## File Pointers'.length)
@@ -27,7 +27,7 @@ function extractFilePointersSection(taskBody: string): string | null {
   return afterHeading.slice(0, sectionEnd)
 }
 
-function parseFilePointers(section: string): FilePointer[] {
+export function parseFilePointers(section: string): FilePointer[] {
   const pointers: FilePointer[] = []
   const lineRe = /^-\s+(?:`([^`]+)`|(\S+))/gm
   let m: RegExpExecArray | null
