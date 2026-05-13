@@ -4,18 +4,38 @@ import * as path from 'node:path'
 interface QueueRunMeta {
   queueRunId: string
   workspaceId: string
-  branch: string
+  /** Present on `run-queue` runs (single branch for the whole queue). */
+  branch?: string
   model: string
   startedAt: string
   endedAt: string
   totalCostUsd: number
-  halted: boolean
-  haltReason: string | null
-  tasks: Array<{
+  /** Present on `run-queue` runs only. */
+  halted?: boolean
+  haltReason?: string | null
+  /** Present on `queue start` runs. */
+  baseRef?: string
+  baseSha?: string | null
+  midRunPolicy?: 'continue' | 'halt-first-fail'
+  preflightAborted?: boolean
+  preflightAbortReason?: string | null
+  /** `run-queue` shape — outcome is uppercase string per `TaskOutcomeEntry`. */
+  tasks?: Array<{
     id: string
     outcome: string
     costUsd?: number
     numTurns?: number
+  }>
+  /** `queue start` shape — per-task worktree/branch/headSha plus DONE|FAILED|SKIPPED_PREFLIGHT outcome. */
+  taskOutcomes?: Array<{
+    taskId: string
+    worktreePath: string | null
+    branch: string | null
+    headSha: string | null
+    outcome: 'DONE' | 'FAILED' | 'SKIPPED_PREFLIGHT'
+    costUsd?: number
+    numTurns?: number
+    reason?: string
   }>
 }
 
@@ -49,21 +69,54 @@ export async function renderQueueReport(queueRunDir: string): Promise<string> {
 
   const meta: QueueRunMeta = JSON.parse(fs.readFileSync(queueRunJsonPath, 'utf8'))
   const lines: string[] = []
+  const isQueueStart = Array.isArray(meta.taskOutcomes)
 
   lines.push(`# Queue Run Report — \`${meta.queueRunId}\``)
   lines.push('')
   lines.push('| | |')
   lines.push('|---|---|')
   lines.push(`| Workspace | \`${meta.workspaceId}\` |`)
-  lines.push(`| Branch | \`${meta.branch}\` |`)
+  if (meta.branch) lines.push(`| Branch | \`${meta.branch}\` |`)
+  if (meta.baseRef) lines.push(`| Base ref | \`${meta.baseRef}\` |`)
+  if (meta.baseSha) lines.push(`| Base SHA | \`${meta.baseSha}\` |`)
   lines.push(`| Started | ${formatUtc(meta.startedAt)} |`)
   lines.push(`| Ended | ${formatUtc(meta.endedAt)} |`)
   lines.push(`| Duration | ${formatDuration(meta.startedAt, meta.endedAt)} |`)
   lines.push(`| Model | \`${meta.model}\` |`)
   lines.push(`| Total cost | $${meta.totalCostUsd.toFixed(4)} |`)
-  lines.push(`| Halted | ${meta.halted ? 'yes' : 'no'} |`)
+  if (isQueueStart) {
+    lines.push(`| Mid-run policy | ${meta.midRunPolicy ?? 'continue'} |`)
+    lines.push(`| Pre-flight aborted | ${meta.preflightAborted ? 'yes' : 'no'} |`)
+    if (meta.preflightAbortReason) {
+      lines.push(`| Pre-flight reason | ${escapeTable(meta.preflightAbortReason)} |`)
+    }
+  } else {
+    lines.push(`| Halted | ${meta.halted ? 'yes' : 'no'} |`)
+  }
 
-  for (const task of meta.tasks) {
+  const normalizedTasks: Array<{
+    id: string
+    outcome: string
+    costUsd?: number
+    numTurns?: number
+    worktreePath?: string | null
+    branch?: string | null
+    headSha?: string | null
+    reason?: string
+  }> = isQueueStart
+    ? (meta.taskOutcomes ?? []).map((t) => ({
+        id: t.taskId,
+        outcome: t.outcome,
+        costUsd: t.costUsd,
+        numTurns: t.numTurns,
+        worktreePath: t.worktreePath,
+        branch: t.branch,
+        headSha: t.headSha,
+        reason: t.reason
+      }))
+    : (meta.tasks ?? []).map((t) => ({ ...t }))
+
+  for (const task of normalizedTasks) {
     lines.push('')
     lines.push(`## ${task.id}`)
     lines.push('')
@@ -71,14 +124,20 @@ export async function renderQueueReport(queueRunDir: string): Promise<string> {
     const taskDir = path.join(queueRunDir, 'tasks', task.id)
     const claudeJsonPath = path.join(taskDir, 'claude.json')
 
+    lines.push(`- **Outcome:** ${task.outcome}`)
+    if (isQueueStart) {
+      if (task.worktreePath) lines.push(`- **Worktree:** \`${task.worktreePath}\``)
+      if (task.branch) lines.push(`- **Branch:** \`${task.branch}\``)
+      if (task.headSha) lines.push(`- **Head SHA:** \`${task.headSha}\``)
+      if (task.reason) lines.push(`- **Reason:** ${task.reason}`)
+    }
+
     if (!fs.existsSync(claudeJsonPath)) {
-      lines.push(`- **Outcome:** ${task.outcome}`)
       lines.push('')
       lines.push('*(spawn crashed — no claude output available)*')
       continue
     }
 
-    lines.push(`- **Outcome:** ${task.outcome}`)
     if (task.costUsd !== undefined && task.numTurns !== undefined) {
       lines.push(`- **Cost:** $${task.costUsd.toFixed(4)} · **Turns:** ${task.numTurns}`)
     }

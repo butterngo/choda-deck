@@ -8,6 +8,11 @@ import { parseAcCommands } from './ac-parser'
 import { QueueDirtyTreeError, TaskNotFoundError, WorkspaceResolutionError } from './errors'
 import type { SessionLifecycleService } from './session-lifecycle-service'
 import { computeToolSchemaTokens } from '../../executor/queue-claude-spawn'
+import {
+  validateQueueStartPreflight,
+  type PreflightGitFns,
+  type PreflightResult
+} from './queue-start-preflight'
 
 const DEFAULT_MAX_COST_PER_TASK = 1.5
 const DEFAULT_MODEL = 'claude-sonnet-4-6'
@@ -70,12 +75,26 @@ export type ExecShellFn = (
   opts: { cwd: string; timeoutMs: number }
 ) => Promise<ExecShellResult>
 
+export interface GitWorktreeAddOpts {
+  /** The main checkout cwd — `git worktree add` runs from here. */
+  repoCwd: string
+  /** Target worktree path — e.g. `<repo>.worktrees/<taskId>`. */
+  worktreePath: string
+  /** New branch to create — e.g. `auto/<taskId>`. */
+  branch: string
+  /** Base SHA the new branch starts from. Captured once during pre-flight. */
+  baseSha: string
+}
+
 /**
  * Externally-injected runtime: spawn, shell, git, fs and pre-resolved paths.
  * Letting the caller supply these keeps the service pure for unit tests and
  * lets the CLI wire production wrappers (`runProcess` from `coder.ts`, `fs/promises`).
+ *
+ * Extends `PreflightGitFns` so `runQueueStart` can pass `this.runtime` directly
+ * into `validateQueueStartPreflight` — single runtime covers both queue methods.
  */
-export interface QueueRuntime {
+export interface QueueRuntime extends PreflightGitFns {
   spawnClaude: SpawnClaudeFn
   execShell: ExecShellFn
   gitStatusPorcelain(cwd: string): Promise<string>
@@ -83,6 +102,8 @@ export interface QueueRuntime {
   gitUntrackedFiles(cwd: string): Promise<string[]>
   gitCurrentBranch(cwd: string): Promise<string>
   gitHeadSha(cwd: string): Promise<string>
+  /** `git worktree add -b <branch> <worktreePath> <baseSha>` from `repoCwd`. */
+  gitWorktreeAdd(opts: GitWorktreeAddOpts): Promise<void>
   mkdir(dir: string): Promise<void>
   writeFile(file: string, content: string): Promise<void>
   readFile(file: string): Promise<string>
@@ -131,6 +152,55 @@ export interface QueueRunResult {
   haltCode: HaltCode | null
   queueRunId: string
   artifactDir: string
+}
+
+export interface QueueStartOptions {
+  workspaceId: string
+  /** Git ref the per-task worktrees fork from. Captured once to `baseSha`. */
+  baseRef: string
+  /** Parent dir for per-task worktrees — e.g. `<repo>.worktrees`. */
+  worktreesParentDir: string
+  /** Branch prefix per task — final branch is `${branchPrefix}${task.id}`. Default `auto/`. */
+  branchPrefix?: string
+  /** Skip tasks that pre-flight fails for, run the rest. Default abort-all. */
+  forceContinue?: boolean
+  maxCostPerTask?: number
+  maxTasks?: number
+  /** Validate workspace + run preflight, do not spawn. */
+  dryRun?: boolean
+  model?: string
+  claudeBin?: string
+  acTimeoutMs?: number
+}
+
+export interface QueueStartTaskOutcome {
+  taskId: string
+  /** null when the task was skipped by per-task preflight (worktree never added). */
+  worktreePath: string | null
+  branch: string | null
+  /** HEAD SHA inside the worktree post-spawn. null if worktree wasn't created. */
+  headSha: string | null
+  outcome: 'DONE' | 'FAILED' | 'SKIPPED_PREFLIGHT'
+  costUsd?: number
+  numTurns?: number
+  reason?: string
+}
+
+export interface QueueStartResult {
+  workspaceId: string
+  queueRunId: string
+  artifactDir: string
+  baseRef: string
+  /** null only when pre-flight aborted at the global-error stage (no baseSha resolved). */
+  baseSha: string | null
+  taskOutcomes: QueueStartTaskOutcome[]
+  totalCostUsd: number
+  /** True when default abort-all policy tripped and zero tasks executed. */
+  preflightAborted: boolean
+  preflightAbortReason: string | null
+  doneCount: number
+  failedCount: number
+  preflightSkippedCount: number
 }
 
 type TaskOutcomeEntry =
@@ -387,6 +457,367 @@ export class QueueLifecycleService {
   }
 
   /**
+   * `choda-deck queue start` orchestration per ADR-019 Phase 3 / TASK-728.
+   *
+   * Differs from `runQueue` on three axes:
+   *  - Pre-flight halt-all (`validateQueueStartPreflight`) before any spawn — global error
+   *    aborts the whole batch; per-task failure aborts unless `forceContinue` is set.
+   *  - Each task spawns in its own `git worktree add -b auto/<taskId> <baseSha>` cwd so
+   *    diffs and branches don't collide. Worktrees are left intact regardless of outcome —
+   *    cleanup is the orphan-cleaner's job (TASK-687).
+   *  - Mid-run policy is CONTINUE: a failure writes artifacts + marks AUTO_FAILED + moves
+   *    on. There is no `haltCode`; the runner only stops at end-of-list.
+   */
+  async runQueueStart(opts: QueueStartOptions): Promise<QueueStartResult> {
+    const ws = this.workspaces.get(opts.workspaceId)
+    if (!ws) {
+      throw new WorkspaceResolutionError(`workspace ${opts.workspaceId} not found`)
+    }
+
+    const branchPrefix = opts.branchPrefix ?? 'auto/'
+    const startedAt = new Date().toISOString()
+
+    const eligible = this.collectEligibleTasks(ws)
+    const taskCap = opts.maxTasks ?? eligible.length
+    const allTasks = eligible.slice(0, taskCap)
+
+    const queueRunId = `${Date.now()}-${Math.floor(Math.random() * 1e6).toString(36)}`
+    const artifactDir = path.join(this.runtime.artifactsDir, `queue-start-${queueRunId}`)
+
+    const preflight = await validateQueueStartPreflight({
+      tasks: allTasks,
+      repoCwd: ws.cwd,
+      baseRef: opts.baseRef,
+      worktreesParentDir: opts.worktreesParentDir,
+      branchPrefix,
+      fns: this.runtime
+    })
+
+    if (opts.dryRun) {
+      return this.emptyQueueStartResult({
+        workspaceId: opts.workspaceId,
+        queueRunId,
+        artifactDir,
+        baseRef: opts.baseRef,
+        baseSha: preflight.baseSha,
+        preflightAborted: !preflight.ok && !opts.forceContinue,
+        preflightAbortReason: preflightAbortMessage(preflight),
+        taskOutcomes: allTasks.map((t) => ({
+          taskId: t.id,
+          worktreePath: null,
+          branch: null,
+          headSha: null,
+          outcome: 'SKIPPED_PREFLIGHT'
+        }))
+      })
+    }
+
+    if (preflight.globalErrors.length > 0 || (!preflight.ok && !opts.forceContinue)) {
+      await this.runtime.mkdir(artifactDir)
+      const taskOutcomes: QueueStartTaskOutcome[] = allTasks.map((task) => {
+        const fail = preflight.failures.find((f) => f.taskId === task.id)
+        return {
+          taskId: task.id,
+          worktreePath: null,
+          branch: null,
+          headSha: null,
+          outcome: 'SKIPPED_PREFLIGHT',
+          reason: fail ? `preflight: ${fail.reasons.join('; ')}` : 'preflight: aborted by global error'
+        }
+      })
+      await this.writeQueueStartMeta(artifactDir, {
+        queueRunId,
+        workspaceId: opts.workspaceId,
+        baseRef: opts.baseRef,
+        baseSha: preflight.baseSha,
+        midRunPolicy: 'continue',
+        startedAt,
+        endedAt: new Date().toISOString(),
+        model: opts.model ?? DEFAULT_MODEL,
+        claudeBin: opts.claudeBin ?? 'claude',
+        totalCostUsd: 0,
+        preflightAborted: true,
+        preflightAbortReason: preflightAbortMessage(preflight),
+        taskOutcomes
+      })
+      return {
+        workspaceId: opts.workspaceId,
+        queueRunId,
+        artifactDir,
+        baseRef: opts.baseRef,
+        baseSha: preflight.baseSha,
+        taskOutcomes,
+        totalCostUsd: 0,
+        preflightAborted: true,
+        preflightAbortReason: preflightAbortMessage(preflight),
+        doneCount: 0,
+        failedCount: 0,
+        preflightSkippedCount: taskOutcomes.length
+      }
+    }
+
+    // From here we have a valid baseSha — either preflight ok, or forceContinue was set
+    // and only globalErrors are absent (per-task failures will be filtered below).
+    const baseSha = preflight.baseSha!
+    await this.runtime.mkdir(artifactDir)
+
+    const failedTaskIds = new Set(preflight.failures.map((f) => f.taskId))
+    const maxCostPerTask = opts.maxCostPerTask ?? DEFAULT_MAX_COST_PER_TASK
+    const maxBudgetUsd = round2(maxCostPerTask * 0.95)
+    const model = opts.model ?? DEFAULT_MODEL
+    const claudeBin = opts.claudeBin ?? 'claude'
+    const acTimeoutMs = opts.acTimeoutMs ?? DEFAULT_AC_TIMEOUT_MS
+
+    const taskOutcomes: QueueStartTaskOutcome[] = []
+    let totalCostUsd = 0
+
+    for (const task of allTasks) {
+      if (failedTaskIds.has(task.id)) {
+        const fail = preflight.failures.find((f) => f.taskId === task.id)!
+        taskOutcomes.push({
+          taskId: task.id,
+          worktreePath: null,
+          branch: null,
+          headSha: null,
+          outcome: 'SKIPPED_PREFLIGHT',
+          reason: `preflight: ${fail.reasons.join('; ')}`
+        })
+        continue
+      }
+
+      const worktreePath = path.join(opts.worktreesParentDir, task.id)
+      const branch = `${branchPrefix}${task.id}`
+      const taskDir = path.join(artifactDir, 'tasks', task.id)
+      await this.runtime.mkdir(taskDir)
+      const promptText = task.body ?? ''
+      await this.runtime.writeFile(path.join(taskDir, 'prompt.md'), promptText)
+
+      try {
+        await this.runtime.gitWorktreeAdd({
+          repoCwd: ws.cwd,
+          worktreePath,
+          branch,
+          baseSha
+        })
+      } catch (err) {
+        const reason = `worktree-add-failed: ${err instanceof Error ? err.message : String(err)}`
+        const startResult = this.sessions.startSession({
+          projectId: ws.projectId,
+          workspaceId: ws.id,
+          taskId: task.id
+        })
+        await this.failTask(task, startResult.session.id, reason, taskDir)
+        taskOutcomes.push({
+          taskId: task.id,
+          worktreePath,
+          branch,
+          headSha: null,
+          outcome: 'FAILED',
+          reason
+        })
+        continue
+      }
+
+      const startResult = this.sessions.startSession({
+        projectId: ws.projectId,
+        workspaceId: ws.id,
+        taskId: task.id
+      })
+      const sessionId = startResult.session.id
+
+      const taskModel = resolveModelForTask(task, model)
+      const spawnAttempt = await this.spawnWithRetry({
+        taskBody: promptText,
+        cwd: worktreePath,
+        model: taskModel,
+        maxBudgetUsd,
+        queueMcpEmptyPath: this.runtime.queueMcpEmptyPath,
+        claudeBin
+      })
+
+      if (spawnAttempt.error) {
+        const reason = `spawn-error: ${spawnAttempt.error.message}`
+        await this.writeDiffArtifact(taskDir, worktreePath)
+        await this.failTask(task, sessionId, reason, taskDir)
+        const headSha = await this.safeHeadSha(worktreePath)
+        taskOutcomes.push({
+          taskId: task.id,
+          worktreePath,
+          branch,
+          headSha,
+          outcome: 'FAILED',
+          reason
+        })
+        continue
+      }
+      const spawn = spawnAttempt.output
+
+      await this.runtime.writeFile(path.join(taskDir, 'claude.json'), spawn.rawJson)
+      await this.writeDiffArtifact(taskDir, worktreePath)
+      totalCostUsd = round4(totalCostUsd + spawn.totalCostUsd)
+
+      if (spawn.isError) {
+        const reason = `claude-error: ${spawn.resultText.slice(0, 500)}`
+        await this.failTask(task, sessionId, reason, taskDir)
+        const headSha = await this.safeHeadSha(worktreePath)
+        taskOutcomes.push({
+          taskId: task.id,
+          worktreePath,
+          branch,
+          headSha,
+          outcome: 'FAILED',
+          costUsd: spawn.totalCostUsd,
+          reason
+        })
+        continue
+      }
+
+      const acReason = await this.runAcCommands(promptText, worktreePath, taskDir, acTimeoutMs)
+      if (acReason) {
+        await this.failTask(task, sessionId, acReason, taskDir)
+        const headSha = await this.safeHeadSha(worktreePath)
+        taskOutcomes.push({
+          taskId: task.id,
+          worktreePath,
+          branch,
+          headSha,
+          outcome: 'FAILED',
+          costUsd: spawn.totalCostUsd,
+          reason: acReason
+        })
+        continue
+      }
+
+      if (spawn.totalCostUsd > maxCostPerTask) {
+        const reason = `cost-cap-exceeded: ${spawn.totalCostUsd.toFixed(
+          2
+        )} > ${maxCostPerTask.toFixed(2)}`
+        await this.failTask(task, sessionId, reason, taskDir)
+        const headSha = await this.safeHeadSha(worktreePath)
+        taskOutcomes.push({
+          taskId: task.id,
+          worktreePath,
+          branch,
+          headSha,
+          outcome: 'FAILED',
+          costUsd: spawn.totalCostUsd,
+          reason
+        })
+        continue
+      }
+
+      this.sessions.endSession(sessionId, {
+        handoff: {
+          resumePoint: `auto-completed by queue start (run ${queueRunId})`,
+          decisions: [
+            `Queue start ${queueRunId} marked ${task.id} DONE — worktree ${worktreePath}, branch ${branch}`
+          ]
+        }
+      })
+      const headSha = await this.safeHeadSha(worktreePath)
+      taskOutcomes.push({
+        taskId: task.id,
+        worktreePath,
+        branch,
+        headSha,
+        outcome: 'DONE',
+        costUsd: spawn.totalCostUsd,
+        numTurns: spawn.numTurns
+      })
+    }
+
+    const doneCount = taskOutcomes.filter((o) => o.outcome === 'DONE').length
+    const failedCount = taskOutcomes.filter((o) => o.outcome === 'FAILED').length
+    const preflightSkippedCount = taskOutcomes.filter((o) => o.outcome === 'SKIPPED_PREFLIGHT').length
+
+    await this.writeQueueStartMeta(artifactDir, {
+      queueRunId,
+      workspaceId: opts.workspaceId,
+      baseRef: opts.baseRef,
+      baseSha,
+      midRunPolicy: 'continue',
+      startedAt,
+      endedAt: new Date().toISOString(),
+      model,
+      claudeBin,
+      totalCostUsd,
+      preflightAborted: false,
+      preflightAbortReason: null,
+      taskOutcomes
+    })
+
+    return {
+      workspaceId: opts.workspaceId,
+      queueRunId,
+      artifactDir,
+      baseRef: opts.baseRef,
+      baseSha,
+      taskOutcomes,
+      totalCostUsd,
+      preflightAborted: false,
+      preflightAbortReason: null,
+      doneCount,
+      failedCount,
+      preflightSkippedCount
+    }
+  }
+
+  /**
+   * `gitHeadSha` may throw if the worktree disappeared between spawn and query; swallow
+   * that into a `null` outcome rather than failing the whole loop.
+   */
+  private async safeHeadSha(cwd: string): Promise<string | null> {
+    try {
+      return await this.runtime.gitHeadSha(cwd)
+    } catch {
+      return null
+    }
+  }
+
+  private async writeQueueStartMeta(
+    artifactDir: string,
+    meta: {
+      queueRunId: string
+      workspaceId: string
+      baseRef: string
+      baseSha: string | null
+      midRunPolicy: 'continue'
+      startedAt: string
+      endedAt: string
+      model: string
+      claudeBin: string
+      totalCostUsd: number
+      preflightAborted: boolean
+      preflightAbortReason: string | null
+      taskOutcomes: QueueStartTaskOutcome[]
+    }
+  ): Promise<void> {
+    await this.runtime.writeFile(
+      path.join(artifactDir, 'queue-run.json'),
+      JSON.stringify(meta, null, 2)
+    )
+  }
+
+  private emptyQueueStartResult(seed: {
+    workspaceId: string
+    queueRunId: string
+    artifactDir: string
+    baseRef: string
+    baseSha: string | null
+    preflightAborted: boolean
+    preflightAbortReason: string | null
+    taskOutcomes: QueueStartTaskOutcome[]
+  }): QueueStartResult {
+    return {
+      ...seed,
+      totalCostUsd: 0,
+      doneCount: 0,
+      failedCount: 0,
+      preflightSkippedCount: seed.taskOutcomes.length
+    }
+  }
+
+  /**
    * Spawn with at most one retry for transient errors. The same prompt is sent on retry —
    * Claude is stateless across `-p` invocations so this is safe. Final attempt's output
    * (success or last failure) is what flows into per-task artifact writing and post-hoc
@@ -506,6 +937,20 @@ function round2(n: number): number {
 
 function round4(n: number): number {
   return Math.round(n * 10000) / 10000
+}
+
+function preflightAbortMessage(preflight: PreflightResult): string | null {
+  if (preflight.ok) return null
+  const parts: string[] = []
+  if (preflight.globalErrors.length > 0) {
+    parts.push(`global: ${preflight.globalErrors.join('; ')}`)
+  }
+  if (preflight.failures.length > 0) {
+    parts.push(
+      `tasks: ${preflight.failures.map((f) => `${f.taskId} (${f.reasons.join(', ')})`).join('; ')}`
+    )
+  }
+  return parts.join(' | ')
 }
 
 function parseDiffStats(diff: string): { filesTouched: number; newFiles: number } {

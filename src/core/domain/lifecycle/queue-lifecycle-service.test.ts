@@ -87,6 +87,15 @@ function buildRuntime(
     gitUntrackedFiles: async () => state.untracked,
     gitCurrentBranch: async () => overrides.branch ?? 'main',
     gitHeadSha: async () => overrides.commitSha ?? 'abc1234567890def1234567890abcdef12345678',
+    gitWorktreeAdd: async () => {
+      // runQueue doesn't call this; runQueueStart tests build their own fixture below.
+    },
+    pathExists: async () => true,
+    isWritable: async () => true,
+    resolveRef: async () => overrides.commitSha ?? 'abc1234567890def1234567890abcdef12345678',
+    branchExists: async () => false,
+    ghAuthStatus: async () => true,
+    fileExistsAtSha: async () => true,
     mkdir: async (dir) => {
       state.dirs.add(dir)
     },
