@@ -14,6 +14,7 @@
 
 import { runRunQueueCommand } from './commands/run-queue'
 import { runQueueReportCommand } from './commands/queue-report'
+import { runQueueStartCommand } from './commands/queue-start'
 
 const VERSION = '0.2.0'
 
@@ -23,7 +24,8 @@ Usage: choda-deck <command> [options]
 
 Commands:
   mcp serve           Start MCP stdio server
-  run-queue           Run autonomous queue of READY auto-safe tasks (ADR-019)
+  run-queue           Run autonomous queue (deprecated; superseded by \`queue start\`)
+  queue start         Batch trigger READY auto-safe tasks with per-task worktrees
   queue report <id>   Regenerate report.md for an existing artifact directory
 
 Meta:
@@ -59,11 +61,12 @@ async function main(): Promise<number> {
 }
 
 async function dispatchQueue(sub: string | undefined, rest: string[]): Promise<number> {
-  if (sub !== 'report') {
-    process.stderr.write(`error: only "queue report" is supported (got "${sub ?? ''}")\n`)
-    return 2
-  }
-  return runQueueReportCommand(rest)
+  if (sub === 'report') return runQueueReportCommand(rest)
+  if (sub === 'start') return runQueueStartCommand(rest)
+  process.stderr.write(
+    `error: only "queue start" and "queue report" are supported (got "${sub ?? ''}")\n`
+  )
+  return 2
 }
 
 async function dispatchMcp(sub: string | undefined): Promise<number> {

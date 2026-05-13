@@ -1,5 +1,6 @@
 import * as fsp from 'node:fs/promises'
 import * as path from 'node:path'
+import * as os from 'node:os'
 import type {
   ExecShellFn,
   ExecShellResult,
@@ -164,6 +165,64 @@ export function createQueueRuntime(opts: {
         throw new Error(`git rev-parse HEAD failed (${r.exitCode}): ${r.stderr.slice(0, 500)}`)
       }
       return r.stdout.trim()
+    },
+    gitWorktreeAdd: async ({ repoCwd, worktreePath, branch, baseSha }) => {
+      const r = await runProcess(
+        'git',
+        ['worktree', 'add', '-b', branch, worktreePath, baseSha],
+        { cwd: repoCwd, timeoutMs: 60_000 }
+      )
+      if (r.exitCode !== 0) {
+        throw new Error(`git worktree add failed (${r.exitCode}): ${r.stderr.slice(0, 500)}`)
+      }
+    },
+    pathExists: async (p) => {
+      try {
+        await fsp.access(p)
+        return true
+      } catch {
+        return false
+      }
+    },
+    isWritable: async (dirPath) => {
+      // Cross-platform writability probe: touch a temp file. `fs.access(W_OK)` lies on
+      // Windows for read-only dirs, so we do a real write attempt and clean up.
+      const probe = path.join(dirPath, `.choda-write-probe-${process.pid}-${Date.now()}`)
+      try {
+        await fsp.writeFile(probe, '')
+        await fsp.unlink(probe)
+        return true
+      } catch {
+        return false
+      }
+    },
+    resolveRef: async (repoCwd, ref) => {
+      const r = await runProcess('git', ['rev-parse', '--verify', `${ref}^{commit}`], {
+        cwd: repoCwd,
+        timeoutMs: 30_000
+      })
+      if (r.exitCode !== 0) return null
+      const sha = r.stdout.trim()
+      return sha.length > 0 ? sha : null
+    },
+    branchExists: async (repoCwd, branch) => {
+      const r = await runProcess('git', ['show-ref', '--verify', `refs/heads/${branch}`], {
+        cwd: repoCwd,
+        timeoutMs: 30_000
+      })
+      return r.exitCode === 0
+    },
+    ghAuthStatus: async () => {
+      const r = await runProcess('gh', ['auth', 'status'], { cwd: os.tmpdir(), timeoutMs: 30_000 })
+      return r.exitCode === 0
+    },
+    fileExistsAtSha: async (repoCwd, sha, relPath) => {
+      const normalized = relPath.split(path.sep).join('/')
+      const r = await runProcess('git', ['cat-file', '-e', `${sha}:${normalized}`], {
+        cwd: repoCwd,
+        timeoutMs: 30_000
+      })
+      return r.exitCode === 0
     },
     mkdir: async (dir) => {
       await fsp.mkdir(dir, { recursive: true })
