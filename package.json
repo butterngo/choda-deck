@@ -1,6 +1,6 @@
 {
   "name": "choda-deck",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "MCP server providing SQLite-backed task/session/conversation orchestration for Claude Code.",
   "author": "Vu Ngo",
   "license": "MIT",
