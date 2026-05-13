@@ -161,7 +161,7 @@ function parseDiff(patch: string): ParsedFile[] {
   const blocks = patch.split(/(?=^diff --git )/m).filter((b) => b.startsWith('diff --git '))
 
   for (const block of blocks) {
-    const blockLines = block.split('\n')
+    const blockLines = block.split(/\r?\n/)
     const match = blockLines[0].match(/^diff --git a\/.+ b\/(.+)$/)
     if (!match) continue
     const filePath = match[1]
@@ -199,7 +199,7 @@ function readAcLogs(taskDir: string): AcLogEntry[] {
 }
 
 function parseAcLog(index: number, content: string): ParsedAcLog {
-  const lines = content.split('\n')
+  const lines = content.split(/\r?\n/)
   let command = ''
   let exitCode = -1
   let stdout = ''
