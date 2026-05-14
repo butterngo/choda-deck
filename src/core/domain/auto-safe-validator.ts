@@ -99,3 +99,38 @@ function mentionsBuildSensitive(body: string): boolean {
 function hasSmokeStep(ac: string): boolean {
   return /\bsmoke\b/i.test(ac) || /pnpm\s+run\s+build:(?:mcp|cli)/i.test(ac)
 }
+
+export function suggestFixesFor(errors: string[]): string[] {
+  return errors.map(errorToSuggestion)
+}
+
+function errorToSuggestion(err: string): string {
+  if (/body is empty/i.test(err)) {
+    return 'Fill in the task body with `## Acceptance`, `## File Pointers`, and `## Scope` sections (Context + Test Plan are also recommended)'
+  }
+  if (/Missing ## Acceptance/i.test(err)) {
+    return 'Add an `## Acceptance` section with a checklist of verifiable items'
+  }
+  if (/Acceptance has no verifiable shell command/i.test(err)) {
+    return 'Add a verifiable shell command to `## Acceptance` — e.g. `pnpm test`, `pnpm run lint`, or a fenced bash code block'
+  }
+  if (/Missing ## File Pointers/i.test(err)) {
+    return 'Add a `## File Pointers` section listing the files to edit (e.g. `- Edit: src/path/file.ts`)'
+  }
+  if (/File Pointers has no concrete path/i.test(err)) {
+    return 'List at least one concrete file path in `## File Pointers` (must end in .ts/.tsx/.js/.json/.md/etc)'
+  }
+  if (/Missing ## Scope/i.test(err)) {
+    return `Add a \`## Scope\` section with an hour estimate (e.g. \`~2h — short description\`, must be ≤${AUTO_SAFE_SCOPE_HOURS_CEILING}h)`
+  }
+  if (/Scope has no parseable hour estimate/i.test(err)) {
+    return `Express scope in hours: \`~2h\`, \`1.5h\`, or \`2-3h\` (must be ≤${AUTO_SAFE_SCOPE_HOURS_CEILING}h)`
+  }
+  if (/Scope estimate .* exceeds auto-safe ceiling/i.test(err)) {
+    return `Scope exceeds ${AUTO_SAFE_SCOPE_HOURS_CEILING}h ceiling — split into subtasks or reduce scope below ${AUTO_SAFE_SCOPE_HOURS_CEILING}h`
+  }
+  if (/must include a smoke step/i.test(err)) {
+    return 'Add a smoke step to `## Acceptance` — body touches build artifacts (build:mcp/build:cli/loader/asset copy); include `pnpm run build:mcp` (or equivalent) in AC'
+  }
+  return `No suggestion mapped for: ${err}`
+}
