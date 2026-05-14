@@ -163,7 +163,8 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
     'task_update',
     {
       description:
-        'Update a task. Status=DONE is hard-blocked if any subtask or blockedBy task is not DONE/CANCELLED — error lists blockers.',
+        'Update a task. Status=DONE is hard-blocked if any subtask or blockedBy task is not DONE/CANCELLED — error lists blockers. ' +
+        '`body` and `title` are locked when status ∈ {IN-PROGRESS, DONE, CANCELLED} to prevent silent spec drift — reset to TODO/READY first.',
       inputSchema: {
         id: z.string().describe('Task ID'),
         title: z.string().optional(),
@@ -181,9 +182,28 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
       }
     },
     async ({ id, ...input }) => {
+      enforceBodyTitleLock(svc, id, input)
       enforceAutoSafe(svc, id, input)
       return textResponse(svc.updateTask(id, input))
     }
+  )
+}
+
+const LOCKED_STATUSES = ['IN-PROGRESS', 'DONE', 'CANCELLED'] as const
+
+function enforceBodyTitleLock(svc: TaskToolsDeps, id: string, input: UpdateTaskInput): void {
+  const touchingBody = 'body' in input
+  const touchingTitle = 'title' in input
+  if (!touchingBody && !touchingTitle) return
+  const current = svc.getTask(id)
+  if (!current) return
+  if (!LOCKED_STATUSES.includes(current.status as (typeof LOCKED_STATUSES)[number])) return
+  const field = touchingBody && touchingTitle ? 'body/title' : touchingBody ? 'body' : 'title'
+  throw new Error(
+    `task_update: cannot update ${field} when status=${current.status}.\n` +
+      `Reason: worker may be executing with current AC; silent spec drift causes ` +
+      `drift between code and intent.\n` +
+      `To update: reset status to TODO or READY first, update ${field}, then resume.`
   )
 }
 
