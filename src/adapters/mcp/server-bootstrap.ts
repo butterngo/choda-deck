@@ -15,9 +15,10 @@ import * as backupTools from './mcp-tools/backup-tools'
 import * as knowledgeTools from './mcp-tools/knowledge-tools'
 import * as statsTools from './mcp-tools/stats-tools'
 import * as cleanupTools from './mcp-tools/cleanup-tools'
+import * as cleanupArtifacts from './mcp-tools/cleanup-artifacts'
 
 export async function startMcpServer(): Promise<void> {
-  const { dbPath, dataDir } = resolveDataPaths()
+  const { dbPath, dataDir, artifactsDir } = resolveDataPaths()
   fs.mkdirSync(path.dirname(dbPath), { recursive: true })
   const svc = new SqliteTaskService(dbPath)
   await svc.initializeAsync()
@@ -38,6 +39,7 @@ export async function startMcpServer(): Promise<void> {
   knowledgeTools.register(instrumented, svc)
   statsTools.register(instrumented, svc)
   cleanupTools.register(instrumented, svc)
+  cleanupArtifacts.register(instrumented, artifactsDir)
 
   // TASK-681: catch missed migrations to instrumented facade — count must be
   // non-zero, otherwise registration silently bypassed instrumentation.
