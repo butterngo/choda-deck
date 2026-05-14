@@ -182,7 +182,7 @@ export class TaskRepository {
 
   getSubtasks(parentId: string): Task[] {
     const rows = this.db
-      .prepare('SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at')
+      .prepare('SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at, rowid ASC')
       .all(parentId) as Array<Record<string, unknown>>
     return rows.map((r) => rowToTask(r, this.getBlockedBy(r.id as string)))
   }
@@ -336,5 +336,5 @@ function buildTaskQuery(filter: TaskFilter): { sql: string; params: Param[] } {
 
   const where = wheres.length > 0 ? `WHERE ${wheres.join(' AND ')}` : ''
   const limit = filter.limit ? `LIMIT ${filter.limit}` : ''
-  return { sql: `SELECT * FROM tasks ${where} ORDER BY created_at DESC ${limit}`, params }
+  return { sql: `SELECT * FROM tasks ${where} ORDER BY created_at DESC, rowid DESC ${limit}`, params }
 }

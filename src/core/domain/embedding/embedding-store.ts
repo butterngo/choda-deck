@@ -140,7 +140,7 @@ export class EmbeddingStore {
       .prepare(
         `SELECT slug FROM knowledge_index
          WHERE embedding_provider_id IS NULL OR embedding_provider_id <> ?
-         ORDER BY created_at ASC`
+         ORDER BY created_at ASC, rowid ASC`
       )
       .all(activeProviderId) as Array<{ slug: string }>
     return rows.map((r) => r.slug)

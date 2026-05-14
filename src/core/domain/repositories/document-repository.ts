@@ -74,7 +74,7 @@ export class DocumentRepository {
   findByProject(projectId: string, type?: DocumentType): Document[] {
     const rows = type
       ? (this.db
-          .prepare('SELECT * FROM documents WHERE project_id = ? AND type = ? ORDER BY created_at')
+          .prepare('SELECT * FROM documents WHERE project_id = ? AND type = ? ORDER BY created_at, rowid ASC')
           .all(projectId, type) as Array<Record<string, unknown>>)
       : (this.db
           .prepare('SELECT * FROM documents WHERE project_id = ? ORDER BY type, created_at')

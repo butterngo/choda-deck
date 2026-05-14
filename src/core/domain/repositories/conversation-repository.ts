@@ -149,11 +149,11 @@ export class ConversationRepository {
     const rows = status
       ? (this.db
           .prepare(
-            'SELECT * FROM conversations WHERE project_id = ? AND status = ? ORDER BY created_at DESC'
+            'SELECT * FROM conversations WHERE project_id = ? AND status = ? ORDER BY created_at DESC, rowid DESC'
           )
           .all(projectId, status) as Array<Record<string, unknown>>)
       : (this.db
-          .prepare('SELECT * FROM conversations WHERE project_id = ? ORDER BY created_at DESC')
+          .prepare('SELECT * FROM conversations WHERE project_id = ? ORDER BY created_at DESC, rowid DESC')
           .all(projectId) as Array<Record<string, unknown>>)
     return rows.map(rowToConversation)
   }

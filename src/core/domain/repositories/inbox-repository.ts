@@ -100,7 +100,7 @@ export class InboxRepository {
 
     const where = wheres.length > 0 ? `WHERE ${wheres.join(' AND ')}` : ''
     const rows = this.db
-      .prepare(`SELECT * FROM inbox_items ${where} ORDER BY created_at DESC`)
+      .prepare(`SELECT * FROM inbox_items ${where} ORDER BY created_at DESC, rowid DESC`)
       .all(...(params as (string | number | null)[])) as Array<Record<string, unknown>>
     return rows.map(rowToInbox)
   }
