@@ -10,6 +10,7 @@ import type { WorkspaceOperations } from '../../../core/domain/interfaces/worksp
 import { buildGraphifyContext } from './task-context-graphify'
 import {
   AUTO_SAFE_LABEL,
+  suggestFixesFor,
   validateAutoSafeTask
 } from '../../../core/domain/auto-safe-validator'
 import type { Task, UpdateTaskInput } from '../../../core/domain/task-types'
@@ -47,7 +48,7 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
     'task_context',
     {
       description:
-        'Get full context for a task: task details + dependencies + body. Body follows template with ## Context / ## Acceptance / ## Test Plan / ## Related sections — read ## Acceptance for done criteria (tick each item before marking DONE); if empty, ask user to define before starting work.',
+        'Get full context for a task: task details + dependencies + body + `auto_safe` block. Body follows template with ## Context / ## Acceptance / ## Test Plan / ## Related sections — read ## Acceptance for done criteria (tick each item before marking DONE); if empty, ask user to define before starting work. The `auto_safe` field reports `{ labeled, valid, errors, suggestions }` — when `valid: false`, `errors[i]` ↔ `suggestions[i]` give actionable fixes to make the task queue-eligible.',
       inputSchema: { id: z.string().describe('Task ID (e.g. TASK-401)') }
     },
     async ({ id }) => {
@@ -74,6 +75,14 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
 
       const graphify_context = buildGraphifyContext(task, svc)
 
+      const validation = validateAutoSafeTask(task)
+      const auto_safe = {
+        labeled: task.labels.includes(AUTO_SAFE_LABEL),
+        valid: validation.valid,
+        errors: validation.errors,
+        suggestions: suggestFixesFor(validation.errors)
+      }
+
       return textResponse({
         task,
         dependencies: deps,
@@ -82,7 +91,8 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
         relationships: rels,
         conversations,
         body: task.body,
-        graphify_context
+        graphify_context,
+        auto_safe
       })
     }
   )

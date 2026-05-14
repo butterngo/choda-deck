@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { validateAutoSafeTask } from '../auto-safe-validator'
+import { suggestFixesFor, validateAutoSafeTask } from '../auto-safe-validator'
 import type { Task } from '../task-types'
 
 const baseTask: Task = {
@@ -203,5 +203,92 @@ git status
 `
     const result = validateAutoSafeTask(taskWith(body))
     expect(result).toEqual({ valid: true, errors: [] })
+  })
+})
+
+describe('suggestFixesFor', () => {
+  it('returns an empty array when there are no errors', () => {
+    expect(suggestFixesFor([])).toEqual([])
+  })
+
+  it('preserves order — suggestion[i] ↔ error[i]', () => {
+    const errors = ['Missing ## Scope section', 'Missing ## File Pointers section']
+    const out = suggestFixesFor(errors)
+    expect(out).toHaveLength(2)
+    expect(out[0]).toMatch(/scope/i)
+    expect(out[1]).toMatch(/file pointers/i)
+  })
+
+  it.each([
+    {
+      label: 'empty body',
+      body: null as string | null,
+      match: /fill in the task body/i
+    },
+    {
+      label: 'missing AC',
+      body: '# T\n\n## File Pointers\n- src/foo.ts\n\n## Scope\n~1h\n',
+      match: /add an `## Acceptance` section/i
+    },
+    {
+      label: 'AC without shell command',
+      body: '# T\n\n## Acceptance\n- [ ] do the thing\n\n## File Pointers\n- src/foo.ts\n\n## Scope\n~1h\n',
+      match: /verifiable shell command/i
+    },
+    {
+      label: 'missing File Pointers',
+      body: '# T\n\n## Acceptance\n- [ ] `pnpm test`\n\n## Scope\n~1h\n',
+      match: /add a `## File Pointers` section/i
+    },
+    {
+      label: 'File Pointers without concrete path',
+      body: '# T\n\n## Acceptance\n- [ ] `pnpm test`\n\n## File Pointers\n- the thing\n\n## Scope\n~1h\n',
+      match: /concrete file path/i
+    },
+    {
+      label: 'missing Scope',
+      body: '# T\n\n## Acceptance\n- [ ] `pnpm test`\n\n## File Pointers\n- src/foo.ts\n',
+      match: /add a `## Scope` section/i
+    },
+    {
+      label: 'Scope without parseable hours',
+      body: '# T\n\n## Acceptance\n- [ ] `pnpm test`\n\n## File Pointers\n- src/foo.ts\n\n## Scope\nsmall task\n',
+      match: /express scope in hours/i
+    },
+    {
+      label: 'Scope exceeds ceiling',
+      body: '# T\n\n## Acceptance\n- [ ] `pnpm test`\n\n## File Pointers\n- src/foo.ts\n\n## Scope\n~5h\n',
+      match: /ceiling/i
+    },
+    {
+      label: 'missing smoke step',
+      body: '# T\n\n## Acceptance\n- [ ] `pnpm test`\n\n## File Pointers\n- src/foo.ts\n\n## Scope\n~1h\n\nbuild:mcp note\n',
+      match: /smoke step/i
+    }
+  ])('maps "$label" to an actionable suggestion', ({ body, match }) => {
+    const task: Task = { ...baseTask, body }
+    const { errors } = validateAutoSafeTask(task)
+    expect(errors.length).toBeGreaterThan(0)
+    const suggestions = suggestFixesFor(errors)
+    expect(suggestions).toHaveLength(errors.length)
+    expect(suggestions.some((s) => match.test(s))).toBe(true)
+    expect(suggestions.every((s) => !/no suggestion mapped/i.test(s))).toBe(true)
+  })
+
+  it('never returns the "no suggestion mapped" fallback for any error emitted by validateAutoSafeTask', () => {
+    const bodies: Array<string | null> = [
+      null,
+      '# T\n\nNo sections here.',
+      '# T\n\n## Acceptance\n- [ ] do thing\n\n## File Pointers\n- src/foo.ts\n\n## Scope\n~10h\n',
+      '# T\n\n## Acceptance\n- [ ] `pnpm test`\n\n## File Pointers\n- src/foo.ts\n\n## Scope\nsmall\n',
+      '# T\n\n## Acceptance\n- [ ] `pnpm test`\n\n## File Pointers\n- src/foo.ts\n\n## Scope\n~1h\n\nbuild:mcp note\n'
+    ]
+    for (const body of bodies) {
+      const { errors } = validateAutoSafeTask({ ...baseTask, body })
+      const suggestions = suggestFixesFor(errors)
+      for (const s of suggestions) {
+        expect(s).not.toMatch(/no suggestion mapped/i)
+      }
+    }
   })
 })
