@@ -78,7 +78,7 @@ export class KnowledgeRepository {
       where.push('type = ?')
       params.push(filter.type)
     }
-    const sql = `SELECT * FROM knowledge_index ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY created_at DESC`
+    const sql = `SELECT * FROM knowledge_index ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY created_at DESC, rowid DESC`
     const rows = this.db.prepare(sql).all(...params) as Record<string, unknown>[]
     return rows.map(rowToIndex)
   }
