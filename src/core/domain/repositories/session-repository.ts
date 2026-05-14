@@ -104,22 +104,27 @@ export class SessionRepository {
   }
 
   findByProject(projectId: string, status?: SessionStatus): Session[] {
+    // rowid DESC is a deterministic tiebreaker when started_at ties at ms precision —
+    // see TASK-729: ISO timestamps collide on fast back-to-back createSession calls,
+    // and SQLite ORDER BY with no secondary is implementation-defined.
     const rows = status
       ? (this.db
           .prepare(
-            'SELECT * FROM sessions WHERE project_id = ? AND status = ? ORDER BY started_at DESC'
+            'SELECT * FROM sessions WHERE project_id = ? AND status = ? ORDER BY started_at DESC, rowid DESC'
           )
           .all(projectId, status) as Array<Record<string, unknown>>)
       : (this.db
-          .prepare('SELECT * FROM sessions WHERE project_id = ? ORDER BY started_at DESC')
+          .prepare(
+            'SELECT * FROM sessions WHERE project_id = ? ORDER BY started_at DESC, rowid DESC'
+          )
           .all(projectId) as Array<Record<string, unknown>>)
     return rows.map(rowToSession)
   }
 
   getActive(projectId: string, workspaceId?: string): Session | null {
     const sql = workspaceId
-      ? "SELECT * FROM sessions WHERE project_id = ? AND workspace_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1"
-      : "SELECT * FROM sessions WHERE project_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1"
+      ? "SELECT * FROM sessions WHERE project_id = ? AND workspace_id = ? AND status = 'active' ORDER BY started_at DESC, rowid DESC LIMIT 1"
+      : "SELECT * FROM sessions WHERE project_id = ? AND status = 'active' ORDER BY started_at DESC, rowid DESC LIMIT 1"
     const params = workspaceId ? [projectId, workspaceId] : [projectId]
     const row = this.db.prepare(sql).get(...params) as Record<string, unknown> | undefined
     return row ? rowToSession(row) : null

@@ -74,6 +74,38 @@ describe('session per workspace', () => {
     expect(feLast!.resumePoint).toBe('FE resume')
   })
 
+  it('loadLastSession deterministic when started_at ties (TASK-729)', () => {
+    // Force tied startedAt on two completed sessions for the same workspace.
+    // Pre-fix: SQLite ORDER BY started_at DESC with no tiebreaker returned an
+    // arbitrary row, so the .find() in loadLastSession could pick the older
+    // session (with no handoff) → resumePoint=null. Repo now adds `rowid DESC`.
+    const tied = '2026-04-20T00:00:00.000Z'
+    const older = svc.createSession({
+      projectId: 'ar',
+      workspaceId: 'tied-ws',
+      startedAt: tied
+    })
+    svc.updateSession(older.id, {
+      status: 'completed',
+      endedAt: '2026-04-20',
+      handoff: { resumePoint: 'older' }
+    })
+    const newer = svc.createSession({
+      projectId: 'ar',
+      workspaceId: 'tied-ws',
+      startedAt: tied
+    })
+    svc.updateSession(newer.id, {
+      status: 'completed',
+      endedAt: '2026-04-20',
+      handoff: { resumePoint: 'newer' }
+    })
+
+    const last = loadLastSession(svc, 'ar', 'tied-ws')
+    expect(last!.id).toBe(newer.id)
+    expect(last!.resumePoint).toBe('newer')
+  })
+
   it('migration: legacy abandoned rows collapse to completed', () => {
     // Use a separate fresh service to simulate a pre-migration DB
     const legacyDb = path.join(__dirname, '__test-legacy-sessions__.db')
