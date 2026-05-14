@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SpawnClaudeInput } from '../domain/lifecycle/queue-lifecycle-service'
-import { createQueueClaudeSpawner, QUEUE_AC_FINAL_VERIFY_NUDGE } from './queue-claude-spawn'
+import {
+  createQueueClaudeSpawner,
+  createQueueRuntime,
+  QUEUE_AC_FINAL_VERIFY_NUDGE
+} from './queue-claude-spawn'
 
 vi.mock('./coder', () => ({
   runProcess: vi.fn(),
@@ -68,6 +72,38 @@ describe('createQueueClaudeSpawner — prewarm stdin', () => {
     await spawner({ ...baseInput, prewarm: false })
     expect(capturedStdin).toContain(QUEUE_AC_FINAL_VERIFY_NUDGE)
     expect(capturedStdin?.startsWith(baseInput.taskBody)).toBe(true)
+  })
+})
+
+describe('createQueueRuntime — resolveRef (TASK-736 Windows caret regression)', () => {
+  it('does not pass a `^` caret in any arg (cmd.exe escape strips it on win32 shell:true)', async () => {
+    const { runProcess } = await import('./coder')
+    const spy = vi.mocked(runProcess)
+    spy.mockClear()
+    spy.mockResolvedValueOnce({ exitCode: 0, stdout: 'abc123\n', stderr: '' })
+
+    const rt = createQueueRuntime({ artifactsDir: '/fake/artifacts', queueMcpEmptyPath: '/fake/mcp-empty.json' })
+    const sha = await rt.resolveRef('/fake/repo', 'main')
+
+    expect(sha).toBe('abc123')
+    expect(spy).toHaveBeenCalledTimes(1)
+    const [bin, args] = spy.mock.calls[0]
+    expect(bin).toBe('git')
+    for (const a of args) {
+      expect(a).not.toContain('^')
+    }
+  })
+
+  it('returns null when git exits non-zero', async () => {
+    const { runProcess } = await import('./coder')
+    const spy = vi.mocked(runProcess)
+    spy.mockClear()
+    spy.mockResolvedValueOnce({ exitCode: 128, stdout: '', stderr: 'unknown revision' })
+
+    const rt = createQueueRuntime({ artifactsDir: '/fake/artifacts', queueMcpEmptyPath: '/fake/mcp-empty.json' })
+    const sha = await rt.resolveRef('/fake/repo', 'doesnt-exist')
+
+    expect(sha).toBeNull()
   })
 })
 

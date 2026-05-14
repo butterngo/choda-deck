@@ -208,7 +208,11 @@ export function createQueueRuntime(opts: {
       }
     },
     resolveRef: async (repoCwd, ref) => {
-      const r = await runProcess('git', ['rev-parse', '--verify', `${ref}^{commit}`], {
+      // `git log -1 --format=%H <ref>` returns the commit SHA, peeling annotated
+      // tags. Equivalent to `rev-parse --verify <ref>^{commit}` but without the
+      // `^` caret, which cmd.exe strips when child_process spawns with shell:true
+      // on Windows (turning `main^{commit}` into `main{commit}` → unresolvable).
+      const r = await runProcess('git', ['log', '-1', '--format=%H', ref], {
         cwd: repoCwd,
         timeoutMs: 30_000
       })
