@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SpawnClaudeInput } from '../domain/lifecycle/queue-lifecycle-service'
-import { createQueueClaudeSpawner } from './queue-claude-spawn'
+import { createQueueClaudeSpawner, QUEUE_AC_FINAL_VERIFY_NUDGE } from './queue-claude-spawn'
 
 vi.mock('./coder', () => ({
   runProcess: vi.fn(),
@@ -50,10 +50,24 @@ describe('createQueueClaudeSpawner — prewarm stdin', () => {
     expect(capturedStdin).toContain(baseInput.taskBody)
   })
 
-  it('stdin equals taskBody when prewarm is false', async () => {
+  it('stdin starts with taskBody when prewarm is false', async () => {
     const spawner = createQueueClaudeSpawner()
     await spawner({ ...baseInput, prewarm: false })
-    expect(capturedStdin).toBe(baseInput.taskBody)
+    expect(capturedStdin?.startsWith(baseInput.taskBody)).toBe(true)
+  })
+
+  it('appends AC final-verify nudge to stdin (TASK-732, ADR-023 Fix 1)', async () => {
+    const spawner = createQueueClaudeSpawner()
+    await spawner(baseInput)
+    expect(capturedStdin).toContain('re-run every command in ## Acceptance ONCE MORE')
+    expect(capturedStdin?.endsWith(QUEUE_AC_FINAL_VERIFY_NUDGE)).toBe(true)
+  })
+
+  it('appends nudge even when prewarm is off', async () => {
+    const spawner = createQueueClaudeSpawner()
+    await spawner({ ...baseInput, prewarm: false })
+    expect(capturedStdin).toContain(QUEUE_AC_FINAL_VERIFY_NUDGE)
+    expect(capturedStdin?.startsWith(baseInput.taskBody)).toBe(true)
   })
 })
 

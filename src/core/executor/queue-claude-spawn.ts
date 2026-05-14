@@ -17,6 +17,15 @@ const QUEUE_SPAWN_TOOLS = 'Read,Edit,Write,Bash,Grep,Glob'
 const QUEUE_SPAWN_ALLOWED_TOOLS = 'Bash(pnpm *) Bash(node *) Bash(git diff*) Bash(git status*)'
 const TOKENS_PER_CHAR = 3.5
 
+/**
+ * Trailing role nudge appended to every queue spawn stdin. Forces a final-state AC
+ * re-verification before declaring done. Origin: TASK-726 retro — Claude ran AC mid-edit
+ * (pass), declared done, post-spawn check caught a regression at FINAL filesystem state,
+ * wasted $1+ spawn. ADR-023 Fix 1.
+ */
+export const QUEUE_AC_FINAL_VERIFY_NUDGE =
+  'After all file edits, re-run every command in ## Acceptance ONCE MORE before declaring done. If any AC command exits non-zero, fix and re-run, until all pass at the FINAL filesystem state.'
+
 export function computeToolSchemaTokens(): number {
   const totalChars = QUEUE_SPAWN_TOOLS.length + QUEUE_SPAWN_ALLOWED_TOOLS.length
   return Math.ceil(totalChars / TOKENS_PER_CHAR)
@@ -89,7 +98,8 @@ export function createQueueClaudeSpawner(opts: {
     } else {
       prefix = ''
     }
-    const stdin = prefix ? `${prefix}\n\n${input.taskBody}` : input.taskBody
+    const body = prefix ? `${prefix}\n\n${input.taskBody}` : input.taskBody
+    const stdin = `${body}\n\n${QUEUE_AC_FINAL_VERIFY_NUDGE}`
 
     const result = await runProcess(input.claudeBin, args, {
       cwd: input.cwd,
