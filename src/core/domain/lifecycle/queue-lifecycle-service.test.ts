@@ -395,6 +395,66 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
     expect(svc.getTask(t.id)?.labels).toContain('auto-failed')
   })
 
+  it('passes when AC command exits with the expected non-zero code (TASK-740)', async () => {
+    const t = createReadyAutoSafeTask({
+      body: [
+        '## Goal',
+        'Negative-path smoke',
+        '',
+        '## Acceptance',
+        '- [ ] `node scripts/exiter.mjs` exit 3 (workspace-not-found path)',
+        '',
+        '## File Pointers',
+        '- src/foo.ts',
+        '',
+        '## Scope',
+        '~1h'
+      ].join('\n')
+    })
+    const { runtime, state } = buildRuntime({
+      exec: async () => ({ exitCode: 3, stdout: '', stderr: 'not found' })
+    })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    expect(r.halted).toBe(false)
+    expect(r.failed).toEqual([])
+    expect(r.done.map((x) => x.id)).toEqual([t.id])
+    expect(svc.getTask(t.id)?.status).toBe('DONE')
+    // Verifier still actually ran the command (not skipped)
+    expect(state.execCalls.map((c) => c.cmd)).toEqual(['node scripts/exiter.mjs'])
+  })
+
+  it('halts when AC neg-exit hint does not match actual exit (TASK-740)', async () => {
+    const t = createReadyAutoSafeTask({
+      body: [
+        '## Goal',
+        'Negative-path smoke',
+        '',
+        '## Acceptance',
+        '- [ ] `node scripts/exiter.mjs` exit 3 (should-be-3)',
+        '',
+        '## File Pointers',
+        '- src/foo.ts',
+        '',
+        '## Scope',
+        '~1h'
+      ].join('\n')
+    })
+    const { runtime } = buildRuntime({
+      // Returns exit 0 — does NOT match expected 3 → should ac-fail
+      exec: async () => ({ exitCode: 0, stdout: 'oops succeeded', stderr: '' })
+    })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    expect(r.halted).toBe(true)
+    expect(r.haltCode).toBe('ac-failed')
+    expect(r.haltReason).toContain('expected 3')
+    expect(r.haltReason).toContain('exit 0')
+    expect(r.failed.map((x) => x.id)).toEqual([t.id])
+  })
+
   it('halts on cost-cap-exceeded (post-hoc)', async () => {
     const t = createReadyAutoSafeTask()
     const { runtime } = buildRuntime({
