@@ -246,6 +246,10 @@ export function createQueueRuntime(opts: {
       await fsp.mkdir(path.dirname(file), { recursive: true })
       await fsp.writeFile(file, content, 'utf8')
     },
+    appendFile: async (file, content) => {
+      await fsp.mkdir(path.dirname(file), { recursive: true })
+      await fsp.appendFile(file, content, 'utf8')
+    },
     readFile: async (file) => {
       return await fsp.readFile(file, 'utf8')
     },

@@ -107,11 +107,46 @@ export interface QueueRuntime extends PreflightGitFns {
   gitWorktreeAdd(opts: GitWorktreeAddOpts): Promise<void>
   mkdir(dir: string): Promise<void>
   writeFile(file: string, content: string): Promise<void>
+  /** Append-only writer for the per-event `queue.jsonl` stream (ADR-019, TASK-741). */
+  appendFile(file: string, content: string): Promise<void>
   readFile(file: string): Promise<string>
   artifactsDir: string
   queueMcpEmptyPath: string
   mcpProfile: string
 }
+
+/**
+ * ADR-019 `queue.jsonl` event schema. Backward-compatible with the Phase 1 ntfy
+ * notifier consumer (`choda-deck-companion/packages/notifier/src/notifier.ts`).
+ * Consumer accepts unknown extras via index signature, so we only emit the
+ * fields the spec actually requires.
+ */
+export type QueueJsonlEvent =
+  | { event: 'task.started'; queueRunId: string; taskId: string; taskIndex: number }
+  | {
+      event: 'task.finished'
+      queueRunId: string
+      taskId: string
+      taskIndex: number
+      outcome: 'DONE' | 'FAILED'
+      costUsd: number
+      durationMs: number
+    }
+  | {
+      event: 'run.finished'
+      queueRunId: string
+      taskCount: number
+      totalCostUsd: number
+      durationMs: number
+    }
+  | {
+      event: 'run.failed'
+      queueRunId: string
+      taskCount: number
+      totalCostUsd: number
+      durationMs: number
+      failedTaskIndex: number
+    }
 
 export interface QueueRunOptions {
   workspaceId: string
@@ -218,6 +253,13 @@ export class QueueLifecycleService {
     private readonly runtime: QueueRuntime
   ) {}
 
+  private async emitQueueEvent(artifactDir: string, event: QueueJsonlEvent): Promise<void> {
+    await this.runtime.appendFile(
+      path.join(artifactDir, 'queue.jsonl'),
+      JSON.stringify(event) + '\n'
+    )
+  }
+
   async runQueue(opts: QueueRunOptions): Promise<QueueRunResult> {
     const ws = this.workspaces.get(opts.workspaceId)
     if (!ws) {
@@ -277,6 +319,8 @@ export class QueueLifecycleService {
     let haltReason: string | null = null
     let haltCode: HaltCode | null = null
     let skipped: Task[] = []
+    let failedTaskIndex: number | null = null
+    const runStartedMs = Date.parse(startedAt)
 
     const profile = this.runtime.mcpProfile
     let queueCacheReadTokens = 0
@@ -304,6 +348,7 @@ export class QueueLifecycleService {
           haltReason = `queue-cost-cap-exceeded: cumulative ${totalCostUsd.toFixed(
             2
           )} + per-task ${maxCostPerTask.toFixed(2)} > ${opts.maxQueueCost.toFixed(2)}`
+          failedTaskIndex = i + 1
           break
         }
 
@@ -311,6 +356,15 @@ export class QueueLifecycleService {
         await this.runtime.mkdir(taskDir)
         const promptText = task.body ?? ''
         await this.runtime.writeFile(path.join(taskDir, 'prompt.md'), promptText)
+
+        const taskIndex = i + 1
+        const taskStartedMs = Date.now()
+        await this.emitQueueEvent(artifactDir, {
+          event: 'task.started',
+          queueRunId,
+          taskId: task.id,
+          taskIndex
+        })
 
         const startResult = this.sessions.startSession({
           projectId: ws.projectId,
@@ -337,9 +391,19 @@ export class QueueLifecycleService {
           bumpProfile('failed')
           taskOutcomes.push({ id: task.id, outcome: 'FAILED', reason })
           failed.push(task)
+          await this.emitQueueEvent(artifactDir, {
+            event: 'task.finished',
+            queueRunId,
+            taskId: task.id,
+            taskIndex,
+            outcome: 'FAILED',
+            costUsd: 0,
+            durationMs: Date.now() - taskStartedMs
+          })
           halted = true
           haltCode = 'spawn-error'
           haltReason = reason
+          failedTaskIndex = taskIndex
           break
         }
         const spawn = spawnAttempt.output
@@ -364,9 +428,19 @@ export class QueueLifecycleService {
           bumpProfile('failed')
           taskOutcomes.push({ id: task.id, outcome: 'FAILED', costUsd: spawn.totalCostUsd, reason })
           failed.push(task)
+          await this.emitQueueEvent(artifactDir, {
+            event: 'task.finished',
+            queueRunId,
+            taskId: task.id,
+            taskIndex,
+            outcome: 'FAILED',
+            costUsd: spawn.totalCostUsd,
+            durationMs: Date.now() - taskStartedMs
+          })
           halted = true
           haltCode = 'claude-error'
           haltReason = reason
+          failedTaskIndex = taskIndex
           break
         }
 
@@ -376,9 +450,19 @@ export class QueueLifecycleService {
           bumpProfile('failed')
           taskOutcomes.push({ id: task.id, outcome: 'FAILED', costUsd: spawn.totalCostUsd, reason: acReason })
           failed.push(task)
+          await this.emitQueueEvent(artifactDir, {
+            event: 'task.finished',
+            queueRunId,
+            taskId: task.id,
+            taskIndex,
+            outcome: 'FAILED',
+            costUsd: spawn.totalCostUsd,
+            durationMs: Date.now() - taskStartedMs
+          })
           halted = true
           haltCode = 'ac-failed'
           haltReason = acReason
+          failedTaskIndex = taskIndex
           break
         }
 
@@ -390,9 +474,19 @@ export class QueueLifecycleService {
           bumpProfile('failed')
           taskOutcomes.push({ id: task.id, outcome: 'FAILED', costUsd: spawn.totalCostUsd, reason })
           failed.push(task)
+          await this.emitQueueEvent(artifactDir, {
+            event: 'task.finished',
+            queueRunId,
+            taskId: task.id,
+            taskIndex,
+            outcome: 'FAILED',
+            costUsd: spawn.totalCostUsd,
+            durationMs: Date.now() - taskStartedMs
+          })
           halted = true
           haltCode = 'cost-cap'
           haltReason = reason
+          failedTaskIndex = taskIndex
           break
         }
 
@@ -405,6 +499,15 @@ export class QueueLifecycleService {
         bumpProfile('success')
         taskOutcomes.push({ id: task.id, outcome: 'DONE', costUsd: spawn.totalCostUsd, numTurns: spawn.numTurns })
         done.push(task)
+        await this.emitQueueEvent(artifactDir, {
+          event: 'task.finished',
+          queueRunId,
+          taskId: task.id,
+          taskIndex,
+          outcome: 'DONE',
+          costUsd: spawn.totalCostUsd,
+          durationMs: Date.now() - taskStartedMs
+        })
       }
     } finally {
       skipped = tasks.slice(done.length + failed.length)
@@ -442,6 +545,25 @@ export class QueueLifecycleService {
         tasks: taskOutcomes
       }
       await this.runtime.writeFile(path.join(artifactDir, 'queue-run.json'), JSON.stringify(runMeta, null, 2))
+      const runDurationMs = Date.now() - runStartedMs
+      if (halted) {
+        await this.emitQueueEvent(artifactDir, {
+          event: 'run.failed',
+          queueRunId,
+          taskCount: tasks.length,
+          totalCostUsd,
+          durationMs: runDurationMs,
+          failedTaskIndex: failedTaskIndex ?? done.length + failed.length
+        })
+      } else {
+        await this.emitQueueEvent(artifactDir, {
+          event: 'run.finished',
+          queueRunId,
+          taskCount: tasks.length,
+          totalCostUsd,
+          durationMs: runDurationMs
+        })
+      }
     }
 
     return {
@@ -561,6 +683,7 @@ export class QueueLifecycleService {
     // and only globalErrors are absent (per-task failures will be filtered below).
     const baseSha = preflight.baseSha!
     await this.runtime.mkdir(artifactDir)
+    const runStartedMs = Date.parse(startedAt)
 
     const failedTaskIds = new Set(preflight.failures.map((f) => f.taskId))
     const maxCostPerTask = opts.maxCostPerTask ?? DEFAULT_MAX_COST_PER_TASK
@@ -571,6 +694,7 @@ export class QueueLifecycleService {
 
     const taskOutcomes: QueueStartTaskOutcome[] = []
     let totalCostUsd = 0
+    let executedCount = 0
 
     for (const task of allTasks) {
       if (failedTaskIds.has(task.id)) {
@@ -592,6 +716,16 @@ export class QueueLifecycleService {
       await this.runtime.mkdir(taskDir)
       const promptText = task.body ?? ''
       await this.runtime.writeFile(path.join(taskDir, 'prompt.md'), promptText)
+
+      executedCount += 1
+      const taskIndex = executedCount
+      const taskStartedMs = Date.now()
+      await this.emitQueueEvent(artifactDir, {
+        event: 'task.started',
+        queueRunId,
+        taskId: task.id,
+        taskIndex
+      })
 
       try {
         await this.runtime.gitWorktreeAdd({
@@ -615,6 +749,15 @@ export class QueueLifecycleService {
           headSha: null,
           outcome: 'FAILED',
           reason
+        })
+        await this.emitQueueEvent(artifactDir, {
+          event: 'task.finished',
+          queueRunId,
+          taskId: task.id,
+          taskIndex,
+          outcome: 'FAILED',
+          costUsd: 0,
+          durationMs: Date.now() - taskStartedMs
         })
         continue
       }
@@ -649,6 +792,15 @@ export class QueueLifecycleService {
           outcome: 'FAILED',
           reason
         })
+        await this.emitQueueEvent(artifactDir, {
+          event: 'task.finished',
+          queueRunId,
+          taskId: task.id,
+          taskIndex,
+          outcome: 'FAILED',
+          costUsd: 0,
+          durationMs: Date.now() - taskStartedMs
+        })
         continue
       }
       const spawn = spawnAttempt.output
@@ -670,6 +822,15 @@ export class QueueLifecycleService {
           costUsd: spawn.totalCostUsd,
           reason
         })
+        await this.emitQueueEvent(artifactDir, {
+          event: 'task.finished',
+          queueRunId,
+          taskId: task.id,
+          taskIndex,
+          outcome: 'FAILED',
+          costUsd: spawn.totalCostUsd,
+          durationMs: Date.now() - taskStartedMs
+        })
         continue
       }
 
@@ -685,6 +846,15 @@ export class QueueLifecycleService {
           outcome: 'FAILED',
           costUsd: spawn.totalCostUsd,
           reason: acReason
+        })
+        await this.emitQueueEvent(artifactDir, {
+          event: 'task.finished',
+          queueRunId,
+          taskId: task.id,
+          taskIndex,
+          outcome: 'FAILED',
+          costUsd: spawn.totalCostUsd,
+          durationMs: Date.now() - taskStartedMs
         })
         continue
       }
@@ -703,6 +873,15 @@ export class QueueLifecycleService {
           outcome: 'FAILED',
           costUsd: spawn.totalCostUsd,
           reason
+        })
+        await this.emitQueueEvent(artifactDir, {
+          event: 'task.finished',
+          queueRunId,
+          taskId: task.id,
+          taskIndex,
+          outcome: 'FAILED',
+          costUsd: spawn.totalCostUsd,
+          durationMs: Date.now() - taskStartedMs
         })
         continue
       }
@@ -725,6 +904,15 @@ export class QueueLifecycleService {
         costUsd: spawn.totalCostUsd,
         numTurns: spawn.numTurns
       })
+      await this.emitQueueEvent(artifactDir, {
+        event: 'task.finished',
+        queueRunId,
+        taskId: task.id,
+        taskIndex,
+        outcome: 'DONE',
+        costUsd: spawn.totalCostUsd,
+        durationMs: Date.now() - taskStartedMs
+      })
     }
 
     const doneCount = taskOutcomes.filter((o) => o.outcome === 'DONE').length
@@ -745,6 +933,19 @@ export class QueueLifecycleService {
       preflightAborted: false,
       preflightAbortReason: null,
       taskOutcomes
+    })
+
+    // runQueueStart is continue-on-fail (no halt), so the run always reaches a
+    // clean end-of-list — emit `run.finished` regardless of per-task failures.
+    // Phase 1 notifier maps this to a "Done · N tasks" push. Per-task failures
+    // are visible via `queue-run.json` + per-task artifacts; preflight aborts
+    // emit no `queue.jsonl` (return-early path above) and signal via CLI exit.
+    await this.emitQueueEvent(artifactDir, {
+      event: 'run.finished',
+      queueRunId,
+      taskCount: executedCount,
+      totalCostUsd,
+      durationMs: Date.now() - runStartedMs
     })
 
     return {

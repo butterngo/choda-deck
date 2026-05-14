@@ -61,6 +61,7 @@ function buildRuntime(
     gitHeadSha: async () => 'abc1234567890def1234567890abcdef12345678',
     mkdir: async () => {},
     writeFile: async () => {},
+    appendFile: async () => {},
     artifactsDir: '/artifacts',
     queueMcpEmptyPath: '/templates/queue-mcp-empty.json',
     mcpProfile: 'empty'

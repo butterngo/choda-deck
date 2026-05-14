@@ -102,6 +102,9 @@ function buildRuntime(
     writeFile: async (file, content) => {
       state.files.set(file, content)
     },
+    appendFile: async (file, content) => {
+      state.files.set(file, (state.files.get(file) ?? '') + content)
+    },
     readFile: async (file) => {
       const content = state.fileReads.get(file)
       if (!content) throw new Error(`File not found: ${file}`)
@@ -1197,6 +1200,152 @@ describe('runQueue — queue-run.json artifact', () => {
 
     const payload = JSON.parse(state.files.get(path.join(r.artifactDir, 'queue-run.json'))!)
     expect(payload.commitSha).toBe(sha)
+  })
+})
+
+describe('runQueue — queue.jsonl event stream (TASK-741, ADR-019)', () => {
+  function readJsonlEvents(state: FakeRuntimeState, artifactDir: string): Record<string, unknown>[] {
+    const raw = state.files.get(path.join(artifactDir, 'queue.jsonl'))
+    if (!raw) return []
+    return raw
+      .split('\n')
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+  }
+
+  it('all-DONE: N tasks → N × task.started + N × task.finished(DONE) + 1 × run.finished', async () => {
+    const a = createReadyAutoSafeTask({ title: 'A' })
+    const b = createReadyAutoSafeTask({ title: 'B' })
+    const { runtime, state } = buildRuntime({
+      spawn: async () => ({
+        isError: false,
+        totalCostUsd: 0.07,
+        numTurns: 2,
+        resultText: 'ok',
+        rawJson: '{}'
+      })
+    })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const events = readJsonlEvents(state, r.artifactDir)
+    const eventTypes = events.map((e) => e.event)
+    expect(eventTypes).toEqual([
+      'task.started',
+      'task.finished',
+      'task.started',
+      'task.finished',
+      'run.finished'
+    ])
+
+    expect(events[0]).toMatchObject({
+      event: 'task.started',
+      queueRunId: r.queueRunId,
+      taskId: a.id,
+      taskIndex: 1
+    })
+    expect(events[1]).toMatchObject({
+      event: 'task.finished',
+      queueRunId: r.queueRunId,
+      taskId: a.id,
+      taskIndex: 1,
+      outcome: 'DONE',
+      costUsd: 0.07
+    })
+    expect(events[1].durationMs).toBeTypeOf('number')
+    expect(events[2]).toMatchObject({ event: 'task.started', taskId: b.id, taskIndex: 2 })
+    expect(events[3]).toMatchObject({ event: 'task.finished', taskId: b.id, taskIndex: 2, outcome: 'DONE' })
+    expect(events[4]).toMatchObject({
+      event: 'run.finished',
+      queueRunId: r.queueRunId,
+      taskCount: 2,
+      totalCostUsd: r.totalCostUsd
+    })
+    expect(events[4].durationMs).toBeTypeOf('number')
+  })
+
+  it('ac-failed halt: task 1 fails → task.started + task.finished(FAILED) + run.failed with failedTaskIndex=1, no events for skipped task', async () => {
+    const a = createReadyAutoSafeTask({ title: 'A' })
+    createReadyAutoSafeTask({ title: 'B' })
+    const { runtime, state } = buildRuntime({
+      exec: async () => ({ exitCode: 1, stdout: '', stderr: 'lint failed' })
+    })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const events = readJsonlEvents(state, r.artifactDir)
+    expect(events.map((e) => e.event)).toEqual(['task.started', 'task.finished', 'run.failed'])
+    expect(events[0]).toMatchObject({ event: 'task.started', taskId: a.id, taskIndex: 1 })
+    expect(events[1]).toMatchObject({
+      event: 'task.finished',
+      taskId: a.id,
+      taskIndex: 1,
+      outcome: 'FAILED'
+    })
+    expect(events[2]).toMatchObject({
+      event: 'run.failed',
+      queueRunId: r.queueRunId,
+      taskCount: 2,
+      failedTaskIndex: 1
+    })
+    expect(events[2].durationMs).toBeTypeOf('number')
+  })
+
+  it('cost-cap halt: failedTaskIndex matches halting task position (1-based)', async () => {
+    const a = createReadyAutoSafeTask({ title: 'A' })
+    createReadyAutoSafeTask({ title: 'B' })
+    let n = 0
+    const { runtime, state } = buildRuntime({
+      spawn: async () => {
+        n += 1
+        return {
+          isError: false,
+          totalCostUsd: n === 1 ? 0.05 : 5.0,
+          numTurns: 1,
+          resultText: 'ok',
+          rawJson: '{}'
+        }
+      }
+    })
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q', maxCostPerTask: 1.0 })
+
+    const events = readJsonlEvents(state, r.artifactDir)
+    // task A succeeds, task B trips cost-cap → 4 events: started/finished×2 + run.failed
+    expect(events.map((e) => e.event)).toEqual([
+      'task.started',
+      'task.finished',
+      'task.started',
+      'task.finished',
+      'run.failed'
+    ])
+    expect(events[1]).toMatchObject({ taskId: a.id, outcome: 'DONE' })
+    expect(events[3]).toMatchObject({ outcome: 'FAILED', taskIndex: 2 })
+    expect(events[4]).toMatchObject({ event: 'run.failed', failedTaskIndex: 2 })
+  })
+
+  it('each line of queue.jsonl is independently JSON-parseable (no pretty-print, newline-delimited)', async () => {
+    createReadyAutoSafeTask({ title: 'A' })
+    const { runtime, state } = buildRuntime()
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q' })
+
+    const raw = state.files.get(path.join(r.artifactDir, 'queue.jsonl'))!
+    expect(raw.endsWith('\n')).toBe(true)
+    const lines = raw.split('\n').filter((l) => l.length > 0)
+    for (const line of lines) {
+      expect(() => JSON.parse(line)).not.toThrow()
+      expect(line).not.toContain('\n')
+    }
+  })
+
+  it('dry-run: does not write queue.jsonl', async () => {
+    createReadyAutoSafeTask()
+    const { runtime, state } = buildRuntime()
+    const queue = buildService(runtime)
+    const r = await queue.runQueue({ workspaceId: 'ws-q', dryRun: true })
+
+    expect(state.files.get(path.join(r.artifactDir, 'queue.jsonl'))).toBeUndefined()
   })
 })
 

@@ -123,6 +123,9 @@ function buildRuntime(
     writeFile: async (file, content) => {
       state.files.set(file, content)
     },
+    appendFile: async (file, content) => {
+      state.files.set(file, (state.files.get(file) ?? '') + content)
+    },
     readFile: async () => '{"mcpServers":{}}\n',
     artifactsDir: '/artifacts',
     queueMcpEmptyPath: '/templates/queue-mcp-empty.json',
@@ -455,5 +458,144 @@ describe('runQueueStart — workspace not found', () => {
         worktreesParentDir: 'C:/repo.worktrees'
       })
     ).rejects.toBeInstanceOf(WorkspaceResolutionError)
+  })
+})
+
+describe('runQueueStart — queue.jsonl event stream (TASK-741, ADR-019)', () => {
+  function readJsonlEvents(state: FakeState, artifactDir: string): Record<string, unknown>[] {
+    const raw = state.files.get(path.join(artifactDir, 'queue.jsonl'))
+    if (!raw) return []
+    return raw
+      .split('\n')
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+  }
+
+  it('all-DONE: 2 tasks → 2 × task.started + 2 × task.finished(DONE) + 1 × run.finished', async () => {
+    const a = createReadyAutoSafeTask('A')
+    const b = createReadyAutoSafeTask('B')
+    const { runtime, state } = buildRuntime()
+    const queue = buildService(runtime)
+
+    const result = await queue.runQueueStart({
+      workspaceId: 'ws-q',
+      baseRef: 'main',
+      worktreesParentDir: 'C:/repo.worktrees'
+    })
+
+    const events = readJsonlEvents(state, result.artifactDir)
+    expect(events.map((e) => e.event)).toEqual([
+      'task.started',
+      'task.finished',
+      'task.started',
+      'task.finished',
+      'run.finished'
+    ])
+    expect(events[0]).toMatchObject({
+      event: 'task.started',
+      queueRunId: result.queueRunId,
+      taskId: a.id,
+      taskIndex: 1
+    })
+    expect(events[1]).toMatchObject({ event: 'task.finished', taskId: a.id, outcome: 'DONE' })
+    expect(events[2]).toMatchObject({ event: 'task.started', taskId: b.id, taskIndex: 2 })
+    expect(events[3]).toMatchObject({ event: 'task.finished', taskId: b.id, outcome: 'DONE' })
+    expect(events[4]).toMatchObject({
+      event: 'run.finished',
+      queueRunId: result.queueRunId,
+      taskCount: 2
+    })
+  })
+
+  it('continue-on-fail: failing task emits task.finished(FAILED), next task still runs, run.finished (NOT run.failed) at end', async () => {
+    const a = createReadyAutoSafeTask('A')
+    const b = createReadyAutoSafeTask('B')
+    const failures = new Map<string, SpawnClaudeOutput>([
+      [
+        a.tag,
+        {
+          isError: true,
+          totalCostUsd: 0.02,
+          numTurns: 0,
+          resultText: 'boom',
+          rawJson: '{"is_error":true,"total_cost_usd":0.02,"num_turns":0,"result":"boom"}'
+        }
+      ]
+    ])
+    const { runtime, state } = buildRuntime({ spawnFailures: failures })
+    const queue = buildService(runtime)
+
+    const result = await queue.runQueueStart({
+      workspaceId: 'ws-q',
+      baseRef: 'main',
+      worktreesParentDir: 'C:/repo.worktrees'
+    })
+
+    const events = readJsonlEvents(state, result.artifactDir)
+    expect(events.map((e) => e.event)).toEqual([
+      'task.started',
+      'task.finished',
+      'task.started',
+      'task.finished',
+      'run.finished'
+    ])
+    expect(events[1]).toMatchObject({ taskId: a.id, outcome: 'FAILED', costUsd: 0.02 })
+    expect(events[3]).toMatchObject({ taskId: b.id, outcome: 'DONE' })
+    expect(events.find((e) => e.event === 'run.failed')).toBeUndefined()
+  })
+
+  it('preflight-skipped tasks emit no events (only executed tasks appear in stream)', async () => {
+    const a = createReadyAutoSafeTask('A')
+    const b = createReadyAutoSafeTask('B')
+    const { runtime, state } = buildRuntime({
+      preExistingBranches: [`auto/${a.id}`]
+    })
+    const queue = buildService(runtime)
+
+    const result = await queue.runQueueStart({
+      workspaceId: 'ws-q',
+      baseRef: 'main',
+      worktreesParentDir: 'C:/repo.worktrees',
+      forceContinue: true
+    })
+
+    const events = readJsonlEvents(state, result.artifactDir)
+    // Task a is preflight-skipped, only b emits events
+    expect(events.map((e) => e.event)).toEqual(['task.started', 'task.finished', 'run.finished'])
+    expect(events[0]).toMatchObject({ taskId: b.id, taskIndex: 1 })
+    expect(events[2]).toMatchObject({ event: 'run.finished', taskCount: 1 })
+  })
+
+  it('preflight abort (default policy, no forceContinue): emits no queue.jsonl', async () => {
+    const a = createReadyAutoSafeTask('A')
+    createReadyAutoSafeTask('B')
+    const { runtime, state } = buildRuntime({
+      preExistingBranches: [`auto/${a.id}`]
+    })
+    const queue = buildService(runtime)
+
+    const result = await queue.runQueueStart({
+      workspaceId: 'ws-q',
+      baseRef: 'main',
+      worktreesParentDir: 'C:/repo.worktrees'
+    })
+
+    expect(result.preflightAborted).toBe(true)
+    expect(state.files.get(path.join(result.artifactDir, 'queue.jsonl'))).toBeUndefined()
+  })
+
+  it('dry-run: emits no queue.jsonl', async () => {
+    createReadyAutoSafeTask('A')
+    const { runtime, state } = buildRuntime()
+    const queue = buildService(runtime)
+
+    const result = await queue.runQueueStart({
+      workspaceId: 'ws-q',
+      baseRef: 'main',
+      worktreesParentDir: 'C:/repo.worktrees',
+      dryRun: true
+    })
+
+    expect(state.files.get(path.join(result.artifactDir, 'queue.jsonl'))).toBeUndefined()
   })
 })
