@@ -1,11 +1,26 @@
 import type Database from 'better-sqlite3'
 
+const SCHEMA_VERSION = 1
+
 export function initSchema(db: Database.Database): void {
   createCoreTables(db)
   runLegacyMigrations(db)
   createM1Tables(db)
   createIndexes(db)
   cleanupPoisonedTaskIds(db)
+  seedSchemaVersion(db)
+}
+
+function seedSchemaVersion(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_version (
+      version INTEGER NOT NULL
+    )
+  `)
+  const row = db.prepare('SELECT version FROM schema_version LIMIT 1').get()
+  if (!row) {
+    db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(SCHEMA_VERSION)
+  }
 }
 
 function createCoreTables(db: Database.Database): void {
