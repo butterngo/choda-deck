@@ -31,3 +31,5 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run test
       - run: pnpm run build
+      - name: Smoke CLI (fresh DB)
+        run: node scripts/smoke-cli.mjs
