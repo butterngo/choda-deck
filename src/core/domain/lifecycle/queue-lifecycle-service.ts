@@ -868,12 +868,12 @@ export class QueueLifecycleService {
   ): Promise<string | null> {
     const cmds = parseAcCommands(body)
     for (let i = 0; i < cmds.length; i++) {
-      const cmd = cmds[i]
+      const { cmd, expectedExit } = cmds[i]
       const r = await this.runtime.execShell(cmd, { cwd, timeoutMs })
-      const log = `$ ${cmd}\nexit ${r.exitCode}\n--- stdout ---\n${r.stdout}\n--- stderr ---\n${r.stderr}\n`
+      const log = `$ ${cmd}\nexit ${r.exitCode} (expected ${expectedExit})\n--- stdout ---\n${r.stdout}\n--- stderr ---\n${r.stderr}\n`
       await this.runtime.writeFile(path.join(taskDir, `ac-${i}.log`), log)
-      if (r.exitCode !== 0) {
-        return `ac-failed: \`${cmd}\` exit ${r.exitCode}`
+      if (r.exitCode !== expectedExit) {
+        return `ac-failed: \`${cmd}\` exit ${r.exitCode} (expected ${expectedExit})`
       }
     }
     return null
