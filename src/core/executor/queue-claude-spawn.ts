@@ -12,6 +12,7 @@ import type {
 import { runProcess, runShell } from './coder'
 import { composePrewarmPrefix, PrewarmPointerResolveError } from './prewarm-compose'
 import { splitLines } from '../utils/lines'
+import { loadAccountsConfig } from './accounts-config'
 
 const QUEUE_SPAWN_TOOLS = 'Read,Edit,Write,Bash,Grep,Glob'
 const QUEUE_SPAWN_ALLOWED_TOOLS = 'Bash(pnpm *) Bash(node *) Bash(git diff*) Bash(git status*)'
@@ -53,8 +54,10 @@ export function computeToolSchemaTokens(): number {
  */
 export function createQueueClaudeSpawner(opts: {
   spawnTimeoutMs?: number
+  dataDir?: string
 } = {}): SpawnClaudeFn {
   const spawnTimeoutMs = opts.spawnTimeoutMs ?? 30 * 60 * 1000
+  const accountsConfig = opts.dataDir ? loadAccountsConfig(opts.dataDir) : null
   return async (input: SpawnClaudeInput): Promise<SpawnClaudeOutput> => {
     const args = [
       '-p',
@@ -101,10 +104,26 @@ export function createQueueClaudeSpawner(opts: {
     const body = prefix ? `${prefix}\n\n${input.taskBody}` : input.taskBody
     const stdin = `${body}\n\n${QUEUE_AC_FINAL_VERIFY_NUDGE}`
 
+    let env: NodeJS.ProcessEnv | undefined
+    if (input.account) {
+      const resolved = accountsConfig ? accountsConfig.resolve(input.account) : null
+      if (!resolved) {
+        return {
+          isError: true,
+          totalCostUsd: 0,
+          numTurns: 0,
+          resultText: `account "${input.account}" not found in accounts.json`,
+          rawJson: ''
+        }
+      }
+      env = { CLAUDE_CONFIG_DIR: resolved }
+    }
+
     const result = await runProcess(input.claudeBin, args, {
       cwd: input.cwd,
       timeoutMs: spawnTimeoutMs,
-      stdin
+      stdin,
+      env
     })
 
     const rawJson = result.stdout
@@ -138,9 +157,10 @@ export function createQueueRuntime(opts: {
   artifactsDir: string
   queueMcpEmptyPath: string
   spawnTimeoutMs?: number
+  dataDir?: string
 }): QueueRuntime {
   return {
-    spawnClaude: createQueueClaudeSpawner({ spawnTimeoutMs: opts.spawnTimeoutMs }),
+    spawnClaude: createQueueClaudeSpawner({ spawnTimeoutMs: opts.spawnTimeoutMs, dataDir: opts.dataDir }),
     execShell: productionExecShell,
     gitStatusPorcelain: async (cwd) => {
       const r = await runProcess('git', ['status', '--porcelain'], { cwd, timeoutMs: 30_000 })
