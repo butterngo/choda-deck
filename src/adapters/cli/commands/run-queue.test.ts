@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fs from 'fs'
+import * as os from 'os'
 import * as path from 'path'
 import { SqliteTaskService } from '../../../core/domain/sqlite-task-service'
 import type {
@@ -62,6 +63,7 @@ function buildRuntime(
     mkdir: async () => {},
     writeFile: async () => {},
     appendFile: async () => {},
+    readFile: async () => '{}',
     artifactsDir: '/artifacts',
     queueMcpEmptyPath: '/templates/queue-mcp-empty.json',
     mcpProfile: 'empty'
@@ -279,6 +281,51 @@ describe('run-queue CLI — happy path + halt', () => {
     expect(result.haltCode).toBe('cost-cap')
   })
 
+})
+
+describe('run-queue CLI — --account flag plumbing', () => {
+  it('--account alt passes account name through SpawnClaudeInput when accounts.json resolves it', async () => {
+    const t = svc.createTask({
+      projectId: 'proj-q',
+      title: 'Account test task',
+      labels: ['auto-safe'],
+      body: VALID_BODY
+    })
+    svc.updateTask(t.id, { status: 'READY' })
+
+    const altConfigDir = path.join(os.tmpdir(), '.claude-alt-test')
+    const dataDir = path.dirname(TEST_DB)
+    fs.writeFileSync(
+      path.join(dataDir, 'accounts.json'),
+      JSON.stringify({ accounts: { alt: altConfigDir } }),
+      'utf8'
+    )
+
+    let capturedAccount: string | undefined
+    const result = await executeWithServices(
+      {
+        workspaceId: 'ws-q',
+        maxCostPerTask: undefined,
+        maxTasks: undefined,
+        dryRun: false,
+        claudeBin: undefined,
+        model: undefined,
+        account: 'alt'
+      },
+      makeServices(),
+      buildRuntime({
+        spawn: async (input) => {
+          capturedAccount = input.account
+          return { isError: false, totalCostUsd: 0.01, numTurns: 1, resultText: 'ok', rawJson: '{}' }
+        }
+      })
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(capturedAccount).toBe('alt')
+
+    fs.unlinkSync(path.join(dataDir, 'accounts.json'))
+  })
 })
 
 describe('computeExitCode — typed haltCode mapping (regression guard for TASK-718)', () => {

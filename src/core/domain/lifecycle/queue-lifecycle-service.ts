@@ -55,6 +55,7 @@ export interface SpawnClaudeInput {
   queueMcpEmptyPath: string
   claudeBin: string
   prewarm?: boolean
+  account?: string
 }
 
 export interface SpawnClaudeOutput {
@@ -160,6 +161,7 @@ export interface QueueRunOptions {
   dryRun?: boolean
   model?: string
   claudeBin?: string
+  account?: string
   /** AC command exec timeout. Default 10 min. */
   acTimeoutMs?: number
 }
@@ -206,6 +208,7 @@ export interface QueueStartOptions {
   dryRun?: boolean
   model?: string
   claudeBin?: string
+  account?: string
   acTimeoutMs?: number
 }
 
@@ -217,6 +220,7 @@ export interface QueueStartTaskOutcome {
   /** HEAD SHA inside the worktree post-spawn. null if worktree wasn't created. */
   headSha: string | null
   outcome: 'DONE' | 'FAILED' | 'SKIPPED_PREFLIGHT'
+  account?: string | null
   costUsd?: number
   numTurns?: number
   reason?: string
@@ -240,8 +244,8 @@ export interface QueueStartResult {
 }
 
 type TaskOutcomeEntry =
-  | { id: string; outcome: 'DONE'; costUsd: number; numTurns: number }
-  | { id: string; outcome: 'FAILED'; costUsd?: number; reason: string }
+  | { id: string; outcome: 'DONE'; costUsd: number; numTurns: number; account: string | null }
+  | { id: string; outcome: 'FAILED'; costUsd?: number; reason: string; account: string | null }
   | { id: string; outcome: 'SKIPPED' }
 
 export class QueueLifecycleService {
@@ -380,7 +384,8 @@ export class QueueLifecycleService {
           model: taskModel,
           maxBudgetUsd,
           queueMcpEmptyPath: this.runtime.queueMcpEmptyPath,
-          claudeBin
+          claudeBin,
+          account: opts.account
         })
         if (spawnAttempt.error) {
           const reason = `spawn-error: ${spawnAttempt.error.message}`
@@ -389,7 +394,7 @@ export class QueueLifecycleService {
           queueNewFilesCreated += errStats.newFiles
           await this.failTask(task, sessionId, reason, taskDir)
           bumpProfile('failed')
-          taskOutcomes.push({ id: task.id, outcome: 'FAILED', reason })
+          taskOutcomes.push({ id: task.id, outcome: 'FAILED', reason, account: opts.account ?? null })
           failed.push(task)
           await this.emitQueueEvent(artifactDir, {
             event: 'task.finished',
@@ -426,7 +431,7 @@ export class QueueLifecycleService {
           const reason = `claude-error: ${spawn.resultText.slice(0, 500)}`
           await this.failTask(task, sessionId, reason, taskDir)
           bumpProfile('failed')
-          taskOutcomes.push({ id: task.id, outcome: 'FAILED', costUsd: spawn.totalCostUsd, reason })
+          taskOutcomes.push({ id: task.id, outcome: 'FAILED', costUsd: spawn.totalCostUsd, reason, account: opts.account ?? null })
           failed.push(task)
           await this.emitQueueEvent(artifactDir, {
             event: 'task.finished',
@@ -448,7 +453,7 @@ export class QueueLifecycleService {
         if (acReason) {
           await this.failTask(task, sessionId, acReason, taskDir)
           bumpProfile('failed')
-          taskOutcomes.push({ id: task.id, outcome: 'FAILED', costUsd: spawn.totalCostUsd, reason: acReason })
+          taskOutcomes.push({ id: task.id, outcome: 'FAILED', costUsd: spawn.totalCostUsd, reason: acReason, account: opts.account ?? null })
           failed.push(task)
           await this.emitQueueEvent(artifactDir, {
             event: 'task.finished',
@@ -472,7 +477,7 @@ export class QueueLifecycleService {
           )} > ${maxCostPerTask.toFixed(2)}`
           await this.failTask(task, sessionId, reason, taskDir)
           bumpProfile('failed')
-          taskOutcomes.push({ id: task.id, outcome: 'FAILED', costUsd: spawn.totalCostUsd, reason })
+          taskOutcomes.push({ id: task.id, outcome: 'FAILED', costUsd: spawn.totalCostUsd, reason, account: opts.account ?? null })
           failed.push(task)
           await this.emitQueueEvent(artifactDir, {
             event: 'task.finished',
@@ -497,7 +502,7 @@ export class QueueLifecycleService {
           }
         })
         bumpProfile('success')
-        taskOutcomes.push({ id: task.id, outcome: 'DONE', costUsd: spawn.totalCostUsd, numTurns: spawn.numTurns })
+        taskOutcomes.push({ id: task.id, outcome: 'DONE', costUsd: spawn.totalCostUsd, numTurns: spawn.numTurns, account: opts.account ?? null })
         done.push(task)
         await this.emitQueueEvent(artifactDir, {
           event: 'task.finished',
@@ -630,7 +635,8 @@ export class QueueLifecycleService {
           worktreePath: null,
           branch: null,
           headSha: null,
-          outcome: 'SKIPPED_PREFLIGHT'
+          outcome: 'SKIPPED_PREFLIGHT',
+          account: opts.account ?? null
         }))
       })
     }
@@ -645,7 +651,8 @@ export class QueueLifecycleService {
           branch: null,
           headSha: null,
           outcome: 'SKIPPED_PREFLIGHT',
-          reason: fail ? `preflight: ${fail.reasons.join('; ')}` : 'preflight: aborted by global error'
+          reason: fail ? `preflight: ${fail.reasons.join('; ')}` : 'preflight: aborted by global error',
+          account: opts.account ?? null
         }
       })
       await this.writeQueueStartMeta(artifactDir, {
@@ -705,7 +712,8 @@ export class QueueLifecycleService {
           branch: null,
           headSha: null,
           outcome: 'SKIPPED_PREFLIGHT',
-          reason: `preflight: ${fail.reasons.join('; ')}`
+          reason: `preflight: ${fail.reasons.join('; ')}`,
+          account: opts.account ?? null
         })
         continue
       }
@@ -748,7 +756,8 @@ export class QueueLifecycleService {
           branch,
           headSha: null,
           outcome: 'FAILED',
-          reason
+          reason,
+          account: opts.account ?? null
         })
         await this.emitQueueEvent(artifactDir, {
           event: 'task.finished',
@@ -776,7 +785,8 @@ export class QueueLifecycleService {
         model: taskModel,
         maxBudgetUsd,
         queueMcpEmptyPath: this.runtime.queueMcpEmptyPath,
-        claudeBin
+        claudeBin,
+        account: opts.account
       })
 
       if (spawnAttempt.error) {
@@ -790,7 +800,8 @@ export class QueueLifecycleService {
           branch,
           headSha,
           outcome: 'FAILED',
-          reason
+          reason,
+          account: opts.account ?? null
         })
         await this.emitQueueEvent(artifactDir, {
           event: 'task.finished',
@@ -820,7 +831,8 @@ export class QueueLifecycleService {
           headSha,
           outcome: 'FAILED',
           costUsd: spawn.totalCostUsd,
-          reason
+          reason,
+          account: opts.account ?? null
         })
         await this.emitQueueEvent(artifactDir, {
           event: 'task.finished',
@@ -845,7 +857,8 @@ export class QueueLifecycleService {
           headSha,
           outcome: 'FAILED',
           costUsd: spawn.totalCostUsd,
-          reason: acReason
+          reason: acReason,
+          account: opts.account ?? null
         })
         await this.emitQueueEvent(artifactDir, {
           event: 'task.finished',
@@ -872,7 +885,8 @@ export class QueueLifecycleService {
           headSha,
           outcome: 'FAILED',
           costUsd: spawn.totalCostUsd,
-          reason
+          reason,
+          account: opts.account ?? null
         })
         await this.emitQueueEvent(artifactDir, {
           event: 'task.finished',
@@ -902,7 +916,8 @@ export class QueueLifecycleService {
         headSha,
         outcome: 'DONE',
         costUsd: spawn.totalCostUsd,
-        numTurns: spawn.numTurns
+        numTurns: spawn.numTurns,
+        account: opts.account ?? null
       })
       await this.emitQueueEvent(artifactDir, {
         event: 'task.finished',

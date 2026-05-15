@@ -10,6 +10,7 @@ import type {
 } from '../../../core/domain/lifecycle/queue-lifecycle-service'
 import { WorkspaceResolutionError } from '../../../core/domain/lifecycle/errors'
 import { createQueueRuntime } from '../../../core/executor/queue-claude-spawn'
+import { loadAccountsConfig } from '../../../core/executor/accounts-config'
 import type { CliServices } from '../service-factory'
 import { createCliServices } from '../service-factory'
 
@@ -34,6 +35,7 @@ Options:
   --json                       Emit JSON summary to stdout
   --claude-bin <path>          claude executable (default: claude)
   --model <id>                 Claude model (default: claude-sonnet-4-6)
+  --account <name>             Claude account from data/accounts.json
   --help                       Show this help
 
 Exit codes:
@@ -76,6 +78,7 @@ export async function runQueueStartCommand(argv: string[]): Promise<number> {
       json: { type: 'boolean', default: false },
       'claude-bin': { type: 'string' },
       model: { type: 'string' },
+      account: { type: 'string' },
       help: { type: 'boolean', default: false }
     },
     allowPositionals: false,
@@ -115,7 +118,8 @@ export async function runQueueStartCommand(argv: string[]): Promise<number> {
     maxTasks: maxTasks ?? undefined,
     dryRun: parsed.values['dry-run'] === true,
     claudeBin: parsed.values['claude-bin'],
-    model: parsed.values.model
+    model: parsed.values.model,
+    account: parsed.values.account
   })
 
   if (result.artifactDir) {
@@ -148,14 +152,39 @@ interface ExecuteInput {
   dryRun: boolean
   claudeBin: string | undefined
   model: string | undefined
+  account: string | undefined
 }
 
 export async function execute(input: ExecuteInput): Promise<QueueStartResultPayload> {
   const services = await createCliServices()
+
+  if (input.account !== undefined) {
+    const accountsConfig = loadAccountsConfig(services.dataDir)
+    if (accountsConfig.resolve(input.account) === null) {
+      process.stderr.write(`error: account "${input.account}" not found in data/accounts.json\n`)
+      return {
+        exitCode: 2,
+        workspaceId: input.workspaceId,
+        queueRunId: null,
+        artifactDir: null,
+        baseRef: input.baseRef,
+        baseSha: null,
+        done: [],
+        failed: [],
+        skippedPreflight: [],
+        totalCostUsd: 0,
+        preflightAborted: false,
+        preflightAbortReason: null,
+        notes: []
+      }
+    }
+  }
+
   const queueMcpEmptyPath = ensureQueueMcpEmpty(services.dataDir)
   const runtime = createQueueRuntime({
     artifactsDir: services.artifactsDir,
-    queueMcpEmptyPath
+    queueMcpEmptyPath,
+    dataDir: services.dataDir
   })
   return executeWithServices(input, services, runtime)
 }
@@ -200,7 +229,8 @@ export async function executeWithServices(
     maxTasks: input.maxTasks,
     dryRun: input.dryRun,
     claudeBin: input.claudeBin,
-    model: input.model
+    model: input.model,
+    account: input.account
   }
 
   let runResult: QueueStartResult
