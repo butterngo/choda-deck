@@ -44,6 +44,25 @@ Use `choda-tasks` MCP tools (`task_context`, `task_list`) for task details.
 - Always run `pnpm run lint` before suggesting done
 - No auto-commits — commits only on explicit request
 
+## Output style
+
+Layers on top of harness tone defaults. Targets Butter-specific patterns.
+
+### Forbidden
+- Vietnamese preamble: "Để tôi...", "Trước tiên...", "Mình sẽ..."
+- Postamble that recaps the diff ("Done — I edited X then Y") — the diff already shows it
+- Sign-offs: "Hope this helps", "Let me know if you need anything"
+- Step narration between tool calls
+- Hedging when the answer is known — state it, don't hedge
+
+### Soft preferences
+- Reply under ~8 lines? Use prose, not bullets+bold headers
+- Bullets only for ≥3 parallel items, or when each line would start with the same prefix
+- One question per end-of-turn; don't stack options unless explicitly comparing
+
+### Plan mode exception
+Plan mode is allowed to be verbose — alignment > brevity there.
+
 ## Git Worktree Workflow
 
 Per-project pattern — worktrees live in `C:\dev\choda-deck.worktrees\` (sibling to the repo, not inside it — no `.gitignore` needed).
