@@ -106,6 +106,8 @@ export interface QueueRuntime extends PreflightGitFns {
   gitHeadSha(cwd: string): Promise<string>
   /** `git worktree add -b <branch> <worktreePath> <baseSha>` from `repoCwd`. */
   gitWorktreeAdd(opts: GitWorktreeAddOpts): Promise<void>
+  /** `git worktree remove --force <worktreePath>` + `git branch -d <branch>` from `repoCwd`. */
+  gitWorktreeRemove(opts: { repoCwd: string; worktreePath: string; branch: string }): Promise<void>
   mkdir(dir: string): Promise<void>
   writeFile(file: string, content: string): Promise<void>
   /** Append-only writer for the per-event `queue.jsonl` stream (ADR-019, TASK-741). */
@@ -247,6 +249,10 @@ type TaskOutcomeEntry =
   | { id: string; outcome: 'DONE'; costUsd: number; numTurns: number; account: string | null }
   | { id: string; outcome: 'FAILED'; costUsd?: number; reason: string; account: string | null }
   | { id: string; outcome: 'SKIPPED' }
+
+type PreflightEffect =
+  | { kind: 'worktree'; repoCwd: string; worktreePath: string; branch: string }
+  | { kind: 'session'; id: string; taskId: string }
 
 export class QueueLifecycleService {
   constructor(
@@ -735,6 +741,10 @@ export class QueueLifecycleService {
         taskIndex
       })
 
+      // Track per-task side-effects so any setup failure can be rolled back in reverse.
+      const effects: PreflightEffect[] = []
+      let setupFailReason: string | null = null
+      let sessionId = ''
       try {
         await this.runtime.gitWorktreeAdd({
           repoCwd: ws.cwd,
@@ -742,21 +752,31 @@ export class QueueLifecycleService {
           branch,
           baseSha
         })
-      } catch (err) {
-        const reason = `worktree-add-failed: ${err instanceof Error ? err.message : String(err)}`
+        effects.push({ kind: 'worktree', repoCwd: ws.cwd, worktreePath, branch })
+
         const startResult = this.sessions.startSession({
           projectId: ws.projectId,
           workspaceId: ws.id,
           taskId: task.id
         })
-        await this.failTask(task, startResult.session.id, reason, taskDir)
+        sessionId = startResult.session.id
+        effects.push({ kind: 'session', id: sessionId, taskId: task.id })
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err)
+        const step = effects.length === 0 ? 'worktree-add' : 'session-start'
+        setupFailReason = `${step}-failed: ${errMsg}`
+      }
+
+      if (setupFailReason !== null) {
+        await this.rollbackPreflightEffects(effects, setupFailReason)
+        this.markTaskFailed(task, setupFailReason, taskDir)
         taskOutcomes.push({
           taskId: task.id,
-          worktreePath,
-          branch,
+          worktreePath: effects.length > 0 ? worktreePath : null,
+          branch: effects.length > 0 ? branch : null,
           headSha: null,
           outcome: 'FAILED',
-          reason,
+          reason: setupFailReason,
           account: opts.account ?? null
         })
         await this.emitQueueEvent(artifactDir, {
@@ -770,13 +790,6 @@ export class QueueLifecycleService {
         })
         continue
       }
-
-      const startResult = this.sessions.startSession({
-        projectId: ws.projectId,
-        workspaceId: ws.id,
-        taskId: task.id
-      })
-      const sessionId = startResult.session.id
 
       const taskModel = resolveModelForTask(task, model)
       const spawnAttempt = await this.spawnWithRetry({
@@ -1106,12 +1119,33 @@ export class QueueLifecycleService {
     return { filesTouched: stats.filesTouched, newFiles: stats.newFiles + untracked.length }
   }
 
-  private async failTask(
-    task: Task,
-    sessionId: string,
-    reason: string,
-    taskDir: string
+  private async rollbackPreflightEffects(
+    effects: PreflightEffect[],
+    reason: string
   ): Promise<void> {
+    for (let i = effects.length - 1; i >= 0; i--) {
+      const effect = effects[i]
+      try {
+        if (effect.kind === 'worktree') {
+          await this.runtime.gitWorktreeRemove({
+            repoCwd: effect.repoCwd,
+            worktreePath: effect.worktreePath,
+            branch: effect.branch
+          })
+        } else {
+          this.sessions.abandonSession(effect.id, `preflight-rollback: ${reason}`)
+          this.tasks.update(effect.taskId, { status: 'READY' })
+        }
+      } catch (rollbackErr) {
+        process.stderr.write(
+          `[queue] preflight rollback failed for ${effect.kind}: ` +
+            `${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}\n`
+        )
+      }
+    }
+  }
+
+  private markTaskFailed(task: Task, reason: string, taskDir: string): void {
     const refreshed = this.tasks.get(task.id)
     if (!refreshed) throw new TaskNotFoundError(task.id)
     const nextLabels = refreshed.labels.includes(AUTO_FAILED_LABEL)
@@ -1129,7 +1163,15 @@ export class QueueLifecycleService {
         messageType: 'comment'
       })
     }
+  }
 
+  private async failTask(
+    task: Task,
+    sessionId: string,
+    reason: string,
+    taskDir: string
+  ): Promise<void> {
+    this.markTaskFailed(task, reason, taskDir)
     this.sessions.abandonSession(sessionId, reason)
   }
 }

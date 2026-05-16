@@ -37,6 +37,7 @@ interface FakeState {
   spawnCalls: SpawnClaudeInput[]
   execCalls: { cmd: string; cwd: string }[]
   worktreeCalls: GitWorktreeAddOpts[]
+  worktreeRemoveCalls: { repoCwd: string; worktreePath: string; branch: string }[]
   worktreeShouldFail: Map<string, string>
   branches: Set<string>
   /** Paths that exist on the fake fs — parent dir is added on setup, worktree paths get
@@ -71,6 +72,7 @@ function buildRuntime(
     spawnCalls: [],
     execCalls: [],
     worktreeCalls: [],
+    worktreeRemoveCalls: [],
     worktreeShouldFail: overrides.worktreeShouldFail ?? new Map(),
     branches: new Set(overrides.preExistingBranches ?? []),
     existingPaths,
@@ -109,6 +111,11 @@ function buildRuntime(
       if (reason) throw new Error(reason)
       state.existingPaths.add(opts.worktreePath)
       state.branches.add(opts.branch)
+    },
+    gitWorktreeRemove: async (opts) => {
+      state.worktreeRemoveCalls.push(opts)
+      state.existingPaths.delete(opts.worktreePath)
+      state.branches.delete(opts.branch)
     },
     pathExists: async (p) => state.existingPaths.has(p),
     isWritable: async () => overrides.parentDirWritable !== false,
@@ -597,5 +604,109 @@ describe('runQueueStart — queue.jsonl event stream (TASK-741, ADR-019)', () =>
     })
 
     expect(state.files.get(path.join(result.artifactDir, 'queue.jsonl'))).toBeUndefined()
+  })
+})
+
+describe('runQueueStart — preflight rollback (TASK-755)', () => {
+  it('rolls back worktree when session-start fails after worktree was added', async () => {
+    const a = createReadyAutoSafeTask('A')
+    const b = createReadyAutoSafeTask('B')
+
+    // Pre-create an orphan active session for task A (simulates a crashed previous run).
+    // Then revert task to READY so collectEligibleTasks still picks it up —
+    // but startSession will throw TaskLockedBySessionError when the runner tries.
+    const internals = svc as unknown as { sessionLifecycle: { startSession: (i: unknown) => unknown } }
+    internals.sessionLifecycle.startSession({
+      projectId: 'proj-q',
+      workspaceId: 'ws-q',
+      taskId: a.id
+    })
+    svc.updateTask(a.id, { status: 'READY' })
+
+    const { runtime, state } = buildRuntime()
+    const queue = buildService(runtime)
+
+    const result = await queue.runQueueStart({
+      workspaceId: 'ws-q',
+      baseRef: 'main',
+      worktreesParentDir: 'C:/repo.worktrees'
+    })
+
+    // Worktree was added then rolled back
+    expect(state.worktreeCalls).toHaveLength(2) // a attempted, b succeeds
+    expect(state.worktreeRemoveCalls).toHaveLength(1)
+    expect(state.worktreeRemoveCalls[0].worktreePath).toBe(path.join('C:/repo.worktrees', a.id))
+    expect(state.worktreeRemoveCalls[0].branch).toBe(`auto/${a.id}`)
+
+    // Task A has no orphan worktree on fake-fs, task A status intact
+    expect(state.existingPaths.has(path.join('C:/repo.worktrees', a.id))).toBe(false)
+
+    // Task A outcome is FAILED (setup could not complete)
+    const outcomeA = result.taskOutcomes.find((o) => o.taskId === a.id)!
+    expect(outcomeA.outcome).toBe('FAILED')
+    expect(outcomeA.reason).toMatch(/session-start-failed/)
+
+    // Task B was unaffected — still ran successfully
+    const outcomeB = result.taskOutcomes.find((o) => o.taskId === b.id)!
+    expect(outcomeB.outcome).toBe('DONE')
+    expect(result.doneCount).toBe(1)
+    expect(result.failedCount).toBe(1)
+  })
+
+  it('no rollback when worktree-add itself fails (nothing was created)', async () => {
+    const a = createReadyAutoSafeTask('A')
+    const { runtime, state } = buildRuntime({
+      worktreeShouldFail: new Map([[`auto/${a.id}`, 'disk full']])
+    })
+    const queue = buildService(runtime)
+
+    const result = await queue.runQueueStart({
+      workspaceId: 'ws-q',
+      baseRef: 'main',
+      worktreesParentDir: 'C:/repo.worktrees'
+    })
+
+    // No rollback needed — gitWorktreeRemove was never called
+    expect(state.worktreeRemoveCalls).toHaveLength(0)
+    const outcomeA = result.taskOutcomes.find((o) => o.taskId === a.id)!
+    expect(outcomeA.outcome).toBe('FAILED')
+    expect(outcomeA.reason).toMatch(/worktree-add-failed/)
+    // Task gets auto-failed label from markTaskFailed
+    expect(svc.getTask(a.id)?.labels).toContain('auto-failed')
+  })
+
+  it('rollback failure is logged but does not mask the original setup error', async () => {
+    const a = createReadyAutoSafeTask('A')
+
+    // Pre-create orphan session so startSession throws
+    const internals = svc as unknown as { sessionLifecycle: { startSession: (i: unknown) => unknown } }
+    internals.sessionLifecycle.startSession({
+      projectId: 'proj-q',
+      workspaceId: 'ws-q',
+      taskId: a.id
+    })
+    svc.updateTask(a.id, { status: 'READY' })
+
+    // Simulate gitWorktreeRemove throwing during rollback
+    const { runtime, state } = buildRuntime()
+    runtime.gitWorktreeRemove = async () => {
+      // Track the call but throw to simulate rollback failure
+      state.worktreeRemoveCalls.push({ repoCwd: '', worktreePath: 'fail', branch: 'fail' })
+      throw new Error('rollback: worktree remove failed')
+    }
+    const queue = buildService(runtime)
+
+    // Should not throw — rollback failure is logged, original setup error drives outcome
+    const result = await queue.runQueueStart({
+      workspaceId: 'ws-q',
+      baseRef: 'main',
+      worktreesParentDir: 'C:/repo.worktrees'
+    })
+
+    const outcomeA = result.taskOutcomes.find((o) => o.taskId === a.id)!
+    expect(outcomeA.outcome).toBe('FAILED')
+    expect(outcomeA.reason).toMatch(/session-start-failed/)
+    // rollbackPreflightEffects was still called (worktreeRemoveCalls has 1 entry)
+    expect(state.worktreeRemoveCalls).toHaveLength(1)
   })
 })

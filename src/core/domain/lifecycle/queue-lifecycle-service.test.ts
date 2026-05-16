@@ -90,6 +90,9 @@ function buildRuntime(
     gitWorktreeAdd: async () => {
       // runQueue doesn't call this; runQueueStart tests build their own fixture below.
     },
+    gitWorktreeRemove: async () => {
+      // runQueue doesn't call this.
+    },
     pathExists: async () => true,
     isWritable: async () => true,
     resolveRef: async () => overrides.commitSha ?? 'abc1234567890def1234567890abcdef12345678',
