@@ -372,3 +372,68 @@ export interface InboxFilter {
   projectId?: string | null
   status?: InboxStatus
 }
+
+// ── Agent Memory Layer (Phase 1 — ADR-023) ──────────────────────────────────
+
+export type SessionEventType =
+  | 'tool_call'
+  | 'decision'
+  | 'observation'
+  | 'task_update'
+  | 'memory_write'
+  | 'memory_recall'
+
+export interface SessionEvent {
+  id: string
+  sessionId: string
+  eventType: SessionEventType
+  payloadJson: string | null
+  memoryCandidate: boolean
+  createdAt: string
+}
+
+export interface CreateSessionEventInput {
+  id?: string
+  sessionId: string
+  eventType: SessionEventType
+  payloadJson?: string
+  memoryCandidate?: boolean
+}
+
+export type MemoryScopeType = 'user' | 'project' | 'workspace' | 'task'
+export type MemoryType = 'episodic' | 'procedural'
+
+export interface AgentMemory {
+  id: string
+  scopeType: MemoryScopeType
+  scopeId: string
+  memoryType: MemoryType
+  content: string
+  tags: string[]
+  importance: number
+  sourceSessionId: string | null
+  sourceEventIds: string[]
+  createdAt: string
+  lastRecalledAt: string | null
+  recallCount: number
+}
+
+export interface CreateAgentMemoryInput {
+  id?: string
+  scopeType: MemoryScopeType
+  scopeId: string
+  memoryType: MemoryType
+  content: string
+  tags?: string[]
+  importance?: number
+  sourceSessionId?: string
+  sourceEventIds?: string[]
+}
+
+export interface MemoryRecallQuery {
+  scopeType: MemoryScopeType
+  scopeId: string
+  memoryType?: MemoryType
+  tags?: string[]
+  limit?: number
+}

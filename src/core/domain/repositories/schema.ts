@@ -1,11 +1,12 @@
 import type Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 
 export function initSchema(db: Database.Database): void {
   createCoreTables(db)
   runLegacyMigrations(db)
   createM1Tables(db)
+  createM2Tables(db)
   createIndexes(db)
   cleanupPoisonedTaskIds(db)
   seedSchemaVersion(db)
@@ -17,9 +18,13 @@ function seedSchemaVersion(db: Database.Database): void {
       version INTEGER NOT NULL
     )
   `)
-  const row = db.prepare('SELECT version FROM schema_version LIMIT 1').get()
+  const row = db.prepare('SELECT version FROM schema_version LIMIT 1').get() as
+    | { version: number }
+    | undefined
   if (!row) {
     db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(SCHEMA_VERSION)
+  } else if (row.version < SCHEMA_VERSION) {
+    db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION)
   }
 }
 
@@ -443,6 +448,35 @@ function createM1Tables(db: Database.Database): void {
   `)
 }
 
+function createM2Tables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_events (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES sessions(id),
+      event_type TEXT NOT NULL,
+      payload_json TEXT,
+      memory_candidate INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_memories (
+      id TEXT PRIMARY KEY,
+      scope_type TEXT NOT NULL CHECK (scope_type IN ('user','project','workspace','task')),
+      scope_id TEXT NOT NULL,
+      memory_type TEXT NOT NULL CHECK (memory_type IN ('episodic','procedural')),
+      content TEXT NOT NULL,
+      tags TEXT,
+      importance INTEGER DEFAULT 50,
+      source_session_id TEXT,
+      source_event_ids TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      last_recalled_at TEXT,
+      recall_count INTEGER DEFAULT 0
+    )
+  `)
+}
+
 function createIndexes(db: Database.Database): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(project_id, status)')
@@ -476,6 +510,15 @@ function createIndexes(db: Database.Database): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_knowledge_workspace ON knowledge_index(workspace_id)')
   db.exec(
     'CREATE INDEX IF NOT EXISTS idx_tool_invocations_tool_ts ON tool_invocations(tool_name, ts)'
+  )
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_session_events_session ON session_events(session_id, created_at)'
+  )
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_agent_memories_scope ON agent_memories(scope_type, scope_id, memory_type)'
+  )
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_agent_memories_recall ON agent_memories(importance DESC, recall_count DESC)'
   )
 }
 
