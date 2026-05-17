@@ -501,10 +501,16 @@ export class QueueLifecycleService {
           break
         }
 
-        this.sessions.endSession(sessionId, {
-          handoff: {
-            resumePoint: `auto-completed by queue runner (queue ${queueRunId})`,
-            decisions: [`Queue ${queueRunId} marked ${task.id} DONE — diff at ${taskDir}/diff.patch`]
+        this.tasks.update(task.id, { status: 'REVIEW' })
+        this.sessions.checkpointSession(sessionId, {
+          checkpoint: {
+            outcome: 'pass',
+            diffPath: path.join(taskDir, 'diff.patch'),
+            claudeJsonPath: path.join(taskDir, 'claude.json'),
+            acLogPath: path.join(taskDir, 'ac-0.log'),
+            costUsd: spawn.totalCostUsd,
+            numTurns: spawn.numTurns,
+            awaitingReview: true
           }
         })
         bumpProfile('success')
@@ -913,12 +919,16 @@ export class QueueLifecycleService {
         continue
       }
 
-      this.sessions.endSession(sessionId, {
-        handoff: {
-          resumePoint: `auto-completed by queue start (run ${queueRunId})`,
-          decisions: [
-            `Queue start ${queueRunId} marked ${task.id} DONE — worktree ${worktreePath}, branch ${branch}`
-          ]
+      this.tasks.update(task.id, { status: 'REVIEW' })
+      this.sessions.checkpointSession(sessionId, {
+        checkpoint: {
+          outcome: 'pass',
+          diffPath: path.join(taskDir, 'diff.patch'),
+          claudeJsonPath: path.join(taskDir, 'claude.json'),
+          acLogPath: path.join(taskDir, 'ac-0.log'),
+          costUsd: spawn.totalCostUsd,
+          numTurns: spawn.numTurns,
+          awaitingReview: true
         }
       })
       const headSha = await this.safeHeadSha(worktreePath)
@@ -1133,8 +1143,10 @@ export class QueueLifecycleService {
             branch: effect.branch
           })
         } else {
-          this.sessions.abandonSession(effect.id, `preflight-rollback: ${reason}`)
-          this.tasks.update(effect.taskId, { status: 'READY' })
+          this.sessions.checkpointSession(effect.id, {
+            checkpoint: { outcome: 'fail', reason: `preflight-rollback: ${reason}` }
+          })
+          this.tasks.update(effect.taskId, { status: 'REVIEW' })
         }
       } catch (rollbackErr) {
         process.stderr.write(
@@ -1151,7 +1163,7 @@ export class QueueLifecycleService {
     const nextLabels = refreshed.labels.includes(AUTO_FAILED_LABEL)
       ? refreshed.labels
       : [...refreshed.labels, AUTO_FAILED_LABEL]
-    this.tasks.update(task.id, { labels: nextLabels, status: 'READY' })
+    this.tasks.update(task.id, { labels: nextLabels, status: 'REVIEW' })
 
     const linkedConvs = this.conversations.findByLink('task', task.id)
     for (const conv of linkedConvs) {
@@ -1172,7 +1184,14 @@ export class QueueLifecycleService {
     taskDir: string
   ): Promise<void> {
     this.markTaskFailed(task, reason, taskDir)
-    this.sessions.abandonSession(sessionId, reason)
+    this.sessions.checkpointSession(sessionId, {
+      checkpoint: {
+        outcome: 'fail',
+        reason,
+        diffPath: path.join(taskDir, 'diff.patch'),
+        claudeJsonPath: path.join(taskDir, 'claude.json')
+      }
+    })
   }
 }
 
