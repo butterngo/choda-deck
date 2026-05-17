@@ -128,6 +128,18 @@ export function createQueueClaudeSpawner(opts: {
 
     const rawJson = result.stdout
     if (result.exitCode !== 0) {
+      // claude -p emits a full result envelope to stdout (cost, turns, errors[]) even when
+      // it exits non-zero — e.g. budget cap, max turns, prompt error. Parse it so the queue
+      // record preserves real cost + cause instead of $0 + empty stderr (TASK-791).
+      const envelope = tryParseClaudeEnvelope(rawJson)
+      if (envelope) {
+        const parsed = envelopeToOutput(envelope, rawJson)
+        return {
+          ...parsed,
+          isError: true,
+          resultText: `claude -p exited ${result.exitCode}: ${parsed.resultText}`
+        }
+      }
       return {
         isError: true,
         totalCostUsd: 0,
@@ -207,6 +219,23 @@ export function createQueueRuntime(opts: {
         throw new Error(`git worktree add failed (${r.exitCode}): ${r.stderr.slice(0, 500)}`)
       }
     },
+    gitWorktreeRemove: async ({ repoCwd, worktreePath, branch }) => {
+      const r1 = await runProcess(
+        'git',
+        ['worktree', 'remove', '--force', worktreePath],
+        { cwd: repoCwd, timeoutMs: 60_000 }
+      )
+      if (r1.exitCode !== 0) {
+        throw new Error(`git worktree remove failed (${r1.exitCode}): ${r1.stderr.slice(0, 500)}`)
+      }
+      const r2 = await runProcess('git', ['branch', '-d', branch], {
+        cwd: repoCwd,
+        timeoutMs: 30_000
+      })
+      if (r2.exitCode !== 0) {
+        throw new Error(`git branch -d failed (${r2.exitCode}): ${r2.stderr.slice(0, 500)}`)
+      }
+    },
     pathExists: async (p) => {
       try {
         await fsp.access(p)
@@ -284,15 +313,46 @@ interface ClaudeJsonShape {
   total_cost_usd?: unknown
   num_turns?: unknown
   result?: unknown
+  errors?: unknown
   total_input_tokens?: unknown
   cache_read_input_tokens?: unknown
 }
 
-function parseClaudeJson(rawJson: string): SpawnClaudeOutput {
-  let parsed: ClaudeJsonShape
+function tryParseClaudeEnvelope(rawJson: string): ClaudeJsonShape | null {
+  if (!rawJson || rawJson.trim().length === 0) return null
   try {
-    parsed = JSON.parse(rawJson) as ClaudeJsonShape
+    const parsed = JSON.parse(rawJson)
+    if (parsed === null || typeof parsed !== 'object') return null
+    return parsed as ClaudeJsonShape
   } catch {
+    return null
+  }
+}
+
+function extractEnvelopeText(envelope: ClaudeJsonShape): string {
+  if (typeof envelope.result === 'string' && envelope.result.length > 0) return envelope.result
+  if (Array.isArray(envelope.errors)) {
+    const errs = envelope.errors.filter((e): e is string => typeof e === 'string')
+    if (errs.length > 0) return errs.join('; ')
+  }
+  return ''
+}
+
+function envelopeToOutput(envelope: ClaudeJsonShape, rawJson: string): SpawnClaudeOutput {
+  return {
+    isError: envelope.is_error === true,
+    totalCostUsd: typeof envelope.total_cost_usd === 'number' ? envelope.total_cost_usd : 0,
+    numTurns: typeof envelope.num_turns === 'number' ? envelope.num_turns : 0,
+    resultText: extractEnvelopeText(envelope),
+    rawJson,
+    totalInputTokens: typeof envelope.total_input_tokens === 'number' ? envelope.total_input_tokens : null,
+    cacheReadInputTokens: typeof envelope.cache_read_input_tokens === 'number' ? envelope.cache_read_input_tokens : null
+  }
+}
+
+function parseClaudeJson(rawJson: string): SpawnClaudeOutput {
+  const envelope = tryParseClaudeEnvelope(rawJson)
+  if (!envelope) {
     return {
       isError: true,
       totalCostUsd: 0,
@@ -303,13 +363,5 @@ function parseClaudeJson(rawJson: string): SpawnClaudeOutput {
       cacheReadInputTokens: null
     }
   }
-  return {
-    isError: parsed.is_error === true,
-    totalCostUsd: typeof parsed.total_cost_usd === 'number' ? parsed.total_cost_usd : 0,
-    numTurns: typeof parsed.num_turns === 'number' ? parsed.num_turns : 0,
-    resultText: typeof parsed.result === 'string' ? parsed.result : '',
-    rawJson,
-    totalInputTokens: typeof parsed.total_input_tokens === 'number' ? parsed.total_input_tokens : null,
-    cacheReadInputTokens: typeof parsed.cache_read_input_tokens === 'number' ? parsed.cache_read_input_tokens : null
-  }
+  return envelopeToOutput(envelope, rawJson)
 }

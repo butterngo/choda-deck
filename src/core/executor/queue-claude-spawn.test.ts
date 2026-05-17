@@ -128,3 +128,115 @@ describe('createQueueClaudeSpawner — prewarm rejection', () => {
     expect(runProcessSpy).not.toHaveBeenCalled()
   })
 })
+
+describe('createQueueClaudeSpawner — non-zero exit preserves envelope cost + reason (TASK-791)', () => {
+  it('parses stdout envelope when exit !=0: keeps cost, joins errors[] into resultText', async () => {
+    const budgetEnvelope = JSON.stringify({
+      type: 'result',
+      subtype: 'error_max_budget_usd',
+      is_error: true,
+      num_turns: 22,
+      total_cost_usd: 1.4289005499999996,
+      errors: ['Reached maximum budget ($1.42)']
+    })
+    const { runProcess } = await import('./coder')
+    vi.mocked(runProcess).mockResolvedValueOnce({
+      exitCode: 1,
+      stdout: budgetEnvelope,
+      stderr: ''
+    })
+
+    const spawner = createQueueClaudeSpawner()
+    const result = await spawner({ ...baseInput, prewarm: false })
+
+    expect(result.isError).toBe(true)
+    expect(result.totalCostUsd).toBeCloseTo(1.4289, 4)
+    expect(result.numTurns).toBe(22)
+    expect(result.resultText).toContain('claude -p exited 1:')
+    expect(result.resultText).toContain('Reached maximum budget')
+    expect(result.rawJson).toBe(budgetEnvelope)
+  })
+
+  it('prefers envelope.result string over errors[] when both present and exit !=0', async () => {
+    const envelope = JSON.stringify({
+      is_error: true,
+      total_cost_usd: 0.5,
+      num_turns: 3,
+      result: 'prompt rejected by policy',
+      errors: ['secondary noise']
+    })
+    const { runProcess } = await import('./coder')
+    vi.mocked(runProcess).mockResolvedValueOnce({
+      exitCode: 2,
+      stdout: envelope,
+      stderr: ''
+    })
+
+    const spawner = createQueueClaudeSpawner()
+    const result = await spawner({ ...baseInput, prewarm: false })
+
+    expect(result.isError).toBe(true)
+    expect(result.totalCostUsd).toBe(0.5)
+    expect(result.resultText).toContain('claude -p exited 2:')
+    expect(result.resultText).toContain('prompt rejected by policy')
+    expect(result.resultText).not.toContain('secondary noise')
+  })
+
+  it('falls back to stderr message when exit !=0 and stdout is not valid JSON', async () => {
+    const { runProcess } = await import('./coder')
+    vi.mocked(runProcess).mockResolvedValueOnce({
+      exitCode: 1,
+      stdout: 'spawn ENOENT — claude binary missing',
+      stderr: 'claude: command not found'
+    })
+
+    const spawner = createQueueClaudeSpawner()
+    const result = await spawner({ ...baseInput, prewarm: false })
+
+    expect(result.isError).toBe(true)
+    expect(result.totalCostUsd).toBe(0)
+    expect(result.numTurns).toBe(0)
+    expect(result.resultText).toBe('claude -p exited 1: claude: command not found')
+  })
+
+  it('falls back when exit !=0 and stdout is empty', async () => {
+    const { runProcess } = await import('./coder')
+    vi.mocked(runProcess).mockResolvedValueOnce({
+      exitCode: 137,
+      stdout: '',
+      stderr: 'killed by SIGKILL'
+    })
+
+    const spawner = createQueueClaudeSpawner()
+    const result = await spawner({ ...baseInput, prewarm: false })
+
+    expect(result.isError).toBe(true)
+    expect(result.totalCostUsd).toBe(0)
+    expect(result.numTurns).toBe(0)
+    expect(result.resultText).toBe('claude -p exited 137: killed by SIGKILL')
+  })
+
+  it('regression: exit 0 + valid envelope preserves existing happy-path behavior', async () => {
+    const envelope = JSON.stringify({
+      is_error: false,
+      total_cost_usd: 0.25,
+      num_turns: 8,
+      result: 'task complete'
+    })
+    const { runProcess } = await import('./coder')
+    vi.mocked(runProcess).mockResolvedValueOnce({
+      exitCode: 0,
+      stdout: envelope,
+      stderr: ''
+    })
+
+    const spawner = createQueueClaudeSpawner()
+    const result = await spawner({ ...baseInput, prewarm: false })
+
+    expect(result.isError).toBe(false)
+    expect(result.totalCostUsd).toBe(0.25)
+    expect(result.numTurns).toBe(8)
+    expect(result.resultText).toBe('task complete')
+    expect(result.resultText).not.toContain('claude -p exited')
+  })
+})
