@@ -219,6 +219,23 @@ export function createQueueRuntime(opts: {
         throw new Error(`git worktree add failed (${r.exitCode}): ${r.stderr.slice(0, 500)}`)
       }
     },
+    gitWorktreeRemove: async ({ repoCwd, worktreePath, branch }) => {
+      const r1 = await runProcess(
+        'git',
+        ['worktree', 'remove', '--force', worktreePath],
+        { cwd: repoCwd, timeoutMs: 60_000 }
+      )
+      if (r1.exitCode !== 0) {
+        throw new Error(`git worktree remove failed (${r1.exitCode}): ${r1.stderr.slice(0, 500)}`)
+      }
+      const r2 = await runProcess('git', ['branch', '-d', branch], {
+        cwd: repoCwd,
+        timeoutMs: 30_000
+      })
+      if (r2.exitCode !== 0) {
+        throw new Error(`git branch -d failed (${r2.exitCode}): ${r2.stderr.slice(0, 500)}`)
+      }
+    },
     pathExists: async (p) => {
       try {
         await fsp.access(p)
