@@ -1,11 +1,11 @@
 // Task management types — pure types, zero runtime dependencies
 
-export type TaskStatus = 'TODO' | 'READY' | 'IN-PROGRESS' | 'DONE' | 'CANCELLED'
+export type TaskStatus = 'TODO' | 'READY' | 'IN-PROGRESS' | 'REVIEW' | 'DONE' | 'CANCELLED'
 export type TaskPriority = 'critical' | 'high' | 'medium' | 'low'
 export type RelationType = 'DEPENDS_ON' | 'IMPLEMENTS' | 'USES_TECH' | 'DECIDED_BY'
 export type DocumentType = 'adr' | 'guide' | 'spec' | 'note' | 'research'
 
-export const TASK_STATUSES: TaskStatus[] = ['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED']
+export const TASK_STATUSES: TaskStatus[] = ['TODO', 'READY', 'IN-PROGRESS', 'REVIEW', 'DONE', 'CANCELLED']
 
 export interface Project {
   id: string
@@ -154,6 +154,15 @@ export interface SessionCheckpoint {
   lastConversationId?: string
   dirtyFiles?: string[]
   lastCommit?: string
+  /** Queue runner outcome (ADR-024). Set by checkpointSession on queue pass/fail. */
+  outcome?: 'pass' | 'fail'
+  diffPath?: string
+  claudeJsonPath?: string
+  acLogPath?: string
+  costUsd?: number
+  numTurns?: number
+  awaitingReview?: boolean
+  reason?: string
 }
 
 export interface Session {

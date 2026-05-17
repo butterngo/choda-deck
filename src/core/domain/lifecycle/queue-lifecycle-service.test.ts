@@ -290,10 +290,10 @@ describe('runQueue — happy path SUCCESS', () => {
     expect(r.halted).toBe(false)
     expect(state.spawnCalls).toHaveLength(1)
     expect(state.execCalls.map((c) => c.cmd)).toEqual(['pnpm run lint'])
-    expect(svc.getTask(t.id)?.status).toBe('DONE')
-    // No active session left bound to the task
+    expect(svc.getTask(t.id)?.status).toBe('REVIEW')
+    // Session stays active (awaiting human review)
     const sessions = svc.findSessions('proj-q')
-    expect(sessions.every((s) => s.status === 'completed')).toBe(true)
+    expect(sessions.every((s) => s.status === 'active')).toBe(true)
   })
 
   it('passes maxBudgetUsd = maxCostPerTask * 0.95 to the spawn (TASK-705 F1 recalibrate)', async () => {
@@ -355,7 +355,7 @@ describe('runQueue — happy path SUCCESS', () => {
 })
 
 describe('runQueue — FAILURE flow (halt-on-fail)', () => {
-  it('halts on claude is_error: labels task auto-failed, abandons session, resets status to READY (TASK-711 Quirk 3)', async () => {
+  it('halts on claude is_error: labels task auto-failed, checkpoints session (fail), sets status to REVIEW', async () => {
     const t = createReadyAutoSafeTask()
     const { runtime } = buildRuntime({
       // 'tool-use logic error' is non-transient — must not trigger retry, halts immediately.
@@ -375,13 +375,14 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
     expect(r.haltCode).toBe('claude-error')
     expect(r.failed.map((x) => x.id)).toEqual([t.id])
     const after = svc.getTask(t.id)
-    expect(after?.status).toBe('READY')
+    expect(after?.status).toBe('REVIEW')
     expect(after?.labels).toContain('auto-failed')
     expect(after?.labels).toContain('auto-safe')
-    // Session bound to the task is now completed (abandoned)
+    // Session stays active with fail checkpoint
     const sessions = svc.findSessions('proj-q')
-    expect(sessions[0]?.status).toBe('completed')
-    expect(sessions[0]?.handoff?.failureReason).toContain('claude-error')
+    expect(sessions[0]?.status).toBe('active')
+    expect(sessions[0]?.checkpoint?.outcome).toBe('fail')
+    expect(sessions[0]?.checkpoint?.reason).toContain('claude-error')
   })
 
   it('halts on AC command exit non-zero', async () => {
@@ -397,7 +398,7 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
     expect(r.haltReason).toContain('pnpm run lint')
     expect(r.haltCode).toBe('ac-failed')
     expect(r.failed.map((x) => x.id)).toEqual([t.id])
-    expect(svc.getTask(t.id)?.status).toBe('READY')
+    expect(svc.getTask(t.id)?.status).toBe('REVIEW')
     expect(svc.getTask(t.id)?.labels).toContain('auto-failed')
   })
 
@@ -426,7 +427,7 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
     expect(r.halted).toBe(false)
     expect(r.failed).toEqual([])
     expect(r.done.map((x) => x.id)).toEqual([t.id])
-    expect(svc.getTask(t.id)?.status).toBe('DONE')
+    expect(svc.getTask(t.id)?.status).toBe('REVIEW')
     // Verifier still actually ran the command (not skipped)
     expect(state.execCalls.map((c) => c.cmd)).toEqual(['node scripts/exiter.mjs'])
   })
@@ -479,7 +480,7 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
     expect(r.haltReason).toContain('cost-cap-exceeded')
     expect(r.haltCode).toBe('cost-cap')
     expect(r.failed.map((x) => x.id)).toEqual([t.id])
-    expect(svc.getTask(t.id)?.status).toBe('READY')
+    expect(svc.getTask(t.id)?.status).toBe('REVIEW')
     expect(svc.getTask(t.id)?.labels).toContain('auto-failed')
   })
 
@@ -619,7 +620,7 @@ describe('runQueue — retry-1x for transient errors', () => {
     expect(state.spawnCalls).toHaveLength(2)
     expect(r.done.map((x) => x.id)).toEqual([t.id])
     expect(r.failed).toEqual([])
-    expect(svc.getTask(t.id)?.status).toBe('DONE')
+    expect(svc.getTask(t.id)?.status).toBe('REVIEW')
   })
 
   it('retries once when first spawn returns is_error with transient text and succeeds on retry', async () => {
@@ -651,7 +652,7 @@ describe('runQueue — retry-1x for transient errors', () => {
 
     expect(state.spawnCalls).toHaveLength(2)
     expect(r.done.map((x) => x.id)).toEqual([t.id])
-    expect(svc.getTask(t.id)?.status).toBe('DONE')
+    expect(svc.getTask(t.id)?.status).toBe('REVIEW')
   })
 
   it('does NOT retry on non-transient throws (logic / config errors)', async () => {

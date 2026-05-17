@@ -147,7 +147,7 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
         id: z.string().optional().describe('Task ID (auto-generated if omitted)'),
         projectId: z.string().describe('Project ID'),
         title: z.string().describe('Task title'),
-        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED']).optional(),
+        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'REVIEW', 'DONE', 'CANCELLED']).optional(),
         priority: z.enum(['critical', 'high', 'medium', 'low']).optional(),
         parentTaskId: z.string().optional().describe('Parent task for subtasks'),
         labels: z.array(z.string()).optional(),
@@ -178,7 +178,7 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
       inputSchema: {
         id: z.string().describe('Task ID'),
         title: z.string().optional(),
-        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED']).optional(),
+        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'REVIEW', 'DONE', 'CANCELLED']).optional(),
         priority: z.enum(['critical', 'high', 'medium', 'low']).nullable().optional(),
         parentTaskId: z.string().nullable().optional(),
         labels: z.array(z.string()).optional(),
@@ -199,7 +199,7 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
   )
 }
 
-const LOCKED_STATUSES = ['IN-PROGRESS', 'DONE', 'CANCELLED'] as const
+const LOCKED_STATUSES = ['IN-PROGRESS', 'REVIEW', 'DONE', 'CANCELLED'] as const
 
 function enforceBodyTitleLock(svc: TaskToolsDeps, id: string, input: UpdateTaskInput): void {
   const touchingBody = 'body' in input
