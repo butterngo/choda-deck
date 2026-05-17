@@ -22,7 +22,7 @@ export const register = (server: InstrumentedServer, svc: SessionEventOperations
         sessionId: z.string().describe('Active session ID'),
         eventType: z.enum(EVENT_TYPE_ENUM).describe('Type of event'),
         payload: z
-          .record(z.unknown())
+          .record(z.string(), z.unknown())
           .optional()
           .describe('Arbitrary JSON payload (serialised as JSON string)'),
         memoryCandidate: z
