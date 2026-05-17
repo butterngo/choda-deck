@@ -106,12 +106,16 @@ import { ConversationRepository } from './repositories/conversation-repository'
 import { InboxRepository } from './repositories/inbox-repository'
 import { CounterRepository } from './repositories/counter-repository'
 import { ToolInvocationsRepository } from './repositories/tool-invocations-repository'
+import { SessionEventRepository } from './repositories/session-event-repository'
+import { AgentMemoryRepository } from './repositories/agent-memory-repository'
 import type {
   ToolInvocation,
   ToolInvocationAggregate,
   ToolInvocationOperations,
   ToolInvocationWindow
 } from './interfaces/tool-invocations-repository.interface'
+import type { SessionEventOperations } from './interfaces/session-event-operations.interface'
+import type { AgentMemoryOperations, MemoryWriteInput, MemoryRecallInput } from './interfaces/agent-memory-operations.interface'
 
 export class SqliteTaskService
   implements
@@ -126,7 +130,9 @@ export class SqliteTaskService
     ConversationLifecycleOperations,
     SessionLifecycleOperations,
     KnowledgeOperations,
-    ToolInvocationOperations
+    ToolInvocationOperations,
+    SessionEventOperations,
+    AgentMemoryOperations
 {
   private readonly db: Database.Database
   private readonly projects: ProjectRepository
@@ -141,6 +147,8 @@ export class SqliteTaskService
   private readonly inbox: InboxRepository
   private readonly counters: CounterRepository
   private readonly toolInvocations: ToolInvocationsRepository
+  private readonly sessionEvents: SessionEventRepository
+  private readonly agentMemories: AgentMemoryRepository
   private readonly inboxLifecycle: InboxLifecycleService
   private readonly conversationLifecycle: ConversationLifecycleService
   private readonly sessionLifecycle: SessionLifecycleService
@@ -167,6 +175,8 @@ export class SqliteTaskService
     this.relationships = new RelationshipRepository(this.db)
     this.counters = new CounterRepository(this.db)
     this.toolInvocations = new ToolInvocationsRepository(this.db)
+    this.sessionEvents = new SessionEventRepository(this.db)
+    this.agentMemories = new AgentMemoryRepository(this.db)
     this.tasks = new TaskRepository(this.db, this.relationships, this.counters)
     this.documents = new DocumentRepository(this.db)
     this.tagsRepo = new TagRepository(this.db)
@@ -554,6 +564,58 @@ export class SqliteTaskService
   }
   searchKnowledge(query: string, k?: number): Promise<KnowledgeSearchResult> {
     return this.knowledgeService.searchKnowledge(query, k)
+  }
+
+  // ── Session Events ─────────────────────────────────────────────────────────
+  createSessionEvent(input: import('./task-types').CreateSessionEventInput): import('./task-types').SessionEvent {
+    return this.sessionEvents.create(input)
+  }
+
+  listSessionEvents(
+    sessionId: string,
+    eventType?: import('./task-types').SessionEventType,
+    limit?: number
+  ): import('./task-types').SessionEvent[] {
+    const all = this.sessionEvents.listBySession(sessionId, eventType)
+    return limit !== undefined ? all.slice(0, limit) : all
+  }
+
+  // ── Agent Memories ─────────────────────────────────────────────────────────
+  writeMemory(input: MemoryWriteInput): import('./task-types').AgentMemory {
+    return this.agentMemories.create(input)
+  }
+
+  recallMemories(input: MemoryRecallInput): import('./task-types').AgentMemory[] {
+    const { taskId, workspaceId, projectId, userId, tags, limit } = input
+    const seen = new Set<string>()
+    const merged: import('./task-types').AgentMemory[] = []
+
+    const collect = (scopeType: import('./task-types').MemoryScopeType, scopeId: string) => {
+      const rows = this.agentMemories.recall({ scopeType, scopeId, tags, limit })
+      for (const row of rows) {
+        if (!seen.has(row.id)) {
+          seen.add(row.id)
+          merged.push(row)
+        }
+      }
+    }
+
+    if (taskId) collect('task', taskId)
+    if (workspaceId) collect('workspace', workspaceId)
+    if (projectId) collect('project', projectId)
+    if (userId) collect('user', userId)
+
+    merged.sort((a, b) => b.importance - a.importance || b.recallCount - a.recallCount)
+
+    const result = limit !== undefined ? merged.slice(0, limit) : merged
+    for (const m of result) {
+      this.agentMemories.updateRecallStats(m.id)
+    }
+    return result
+  }
+
+  markMemoryPromoted(memoryId: string, adrSlug: string): void {
+    this.agentMemories.promoteMarkPromoted(memoryId, adrSlug)
   }
 }
 
