@@ -16,6 +16,11 @@ import * as knowledgeTools from './mcp-tools/knowledge-tools'
 import * as statsTools from './mcp-tools/stats-tools'
 import * as cleanupTools from './mcp-tools/cleanup-tools'
 import * as cleanupArtifacts from './mcp-tools/cleanup-artifacts'
+import * as sessionEventAddTools from './mcp-tools/session-event-add'
+import * as sessionEventListTools from './mcp-tools/session-event-list'
+import * as memoryWriteTools from './mcp-tools/memory-write'
+import * as memoryRecallTools from './mcp-tools/memory-recall'
+import * as memoryPromoteTools from './mcp-tools/memory-promote-to-knowledge'
 
 export async function startMcpServer(): Promise<void> {
   const { dbPath, dataDir, artifactsDir } = resolveDataPaths()
@@ -40,6 +45,11 @@ export async function startMcpServer(): Promise<void> {
   statsTools.register(instrumented, svc)
   cleanupTools.register(instrumented, svc)
   cleanupArtifacts.register(instrumented, artifactsDir)
+  sessionEventAddTools.register(instrumented, svc)
+  sessionEventListTools.register(instrumented, svc)
+  memoryWriteTools.register(instrumented, svc)
+  memoryRecallTools.register(instrumented, svc)
+  memoryPromoteTools.register(instrumented, svc)
 
   // TASK-681: catch missed migrations to instrumented facade — count must be
   // non-zero, otherwise registration silently bypassed instrumentation.
