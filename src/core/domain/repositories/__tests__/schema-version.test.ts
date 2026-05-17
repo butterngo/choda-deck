@@ -29,7 +29,7 @@ describe('schema_version', () => {
     initSchema(db)
     const rows = getSchemaVersionRows()
     expect(rows).toHaveLength(1)
-    expect(rows[0].version).toBe(1)
+    expect(rows[0].version).toBe(2)
   })
 
   it('legacy DB without schema_version gets the row after initSchema()', () => {
@@ -51,7 +51,7 @@ describe('schema_version', () => {
 
     const rows = getSchemaVersionRows()
     expect(rows).toHaveLength(1)
-    expect(rows[0].version).toBe(1)
+    expect(rows[0].version).toBe(2)
   })
 
   it('running initSchema() twice leaves exactly one row (idempotent)', () => {
