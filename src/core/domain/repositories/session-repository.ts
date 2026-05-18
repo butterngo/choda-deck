@@ -121,6 +121,15 @@ export class SessionRepository {
     return rows.map(rowToSession)
   }
 
+  findActiveByTask(taskId: string): Session[] {
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM sessions WHERE task_id = ? AND status = 'active' ORDER BY started_at DESC, rowid DESC"
+      )
+      .all(taskId) as Array<Record<string, unknown>>
+    return rows.map(rowToSession)
+  }
+
   getActive(projectId: string, workspaceId?: string): Session | null {
     const sql = workspaceId
       ? "SELECT * FROM sessions WHERE project_id = ? AND workspace_id = ? AND status = 'active' ORDER BY started_at DESC, rowid DESC LIMIT 1"
