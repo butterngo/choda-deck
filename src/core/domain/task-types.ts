@@ -142,6 +142,12 @@ export interface SessionHandoff {
    * Set by `abandonSession` (failure path) — distinguishes from `endSession` (success/done path).
    */
   failureReason?: string
+  /**
+   * Set by `TaskReviewLifecycleService.approveTask` / `rejectTask` (ADR-024) to mark the
+   * human review outcome when closing a session that was checkpointed by the queue runner.
+   */
+  reviewOutcome?: 'approved' | 'rejected'
+  reviewReason?: string
   testResults?: {
     passed: string[]
     skipped: string[]

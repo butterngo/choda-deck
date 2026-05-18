@@ -36,6 +36,12 @@ import type {
 import { InboxLifecycleService } from './lifecycle/inbox-lifecycle-service'
 import { ConversationLifecycleService } from './lifecycle/conversation-lifecycle-service'
 import { SessionLifecycleService } from './lifecycle/session-lifecycle-service'
+import { TaskReviewLifecycleService } from './lifecycle/task-review-lifecycle-service'
+import type {
+  ApproveTaskResult,
+  RejectTaskResult,
+  TaskReviewLifecycleOperations
+} from './interfaces/task-review-lifecycle.interface'
 import {
   QueueLifecycleService,
   type QueueRuntime
@@ -129,6 +135,7 @@ export class SqliteTaskService
     InboxLifecycleOperations,
     ConversationLifecycleOperations,
     SessionLifecycleOperations,
+    TaskReviewLifecycleOperations,
     KnowledgeOperations,
     ToolInvocationOperations,
     SessionEventOperations,
@@ -152,6 +159,7 @@ export class SqliteTaskService
   private readonly inboxLifecycle: InboxLifecycleService
   private readonly conversationLifecycle: ConversationLifecycleService
   private readonly sessionLifecycle: SessionLifecycleService
+  private readonly taskReviewLifecycle: TaskReviewLifecycleService
   private readonly knowledgeRepo: KnowledgeRepository
   private readonly knowledgeService: KnowledgeService
   private readonly embeddingStore: EmbeddingStore
@@ -202,6 +210,12 @@ export class SqliteTaskService
       this.contextSources,
       this.conversations,
       this.tasks
+    )
+    this.taskReviewLifecycle = new TaskReviewLifecycleService(
+      this.db,
+      this.tasks,
+      this.sessions,
+      this.sessionLifecycle
     )
     this.knowledgeRepo = new KnowledgeRepository(this.db)
     this.knowledgeService = new KnowledgeService({
@@ -527,6 +541,14 @@ export class SqliteTaskService
   }
   resumeSession(id: string): ResumeSessionResult {
     return this.sessionLifecycle.resumeSession(id)
+  }
+
+  // ── Task review lifecycle (ADR-024) ───────────────────────────────────────
+  approveTask(taskId: string, note?: string): ApproveTaskResult {
+    return this.taskReviewLifecycle.approveTask(taskId, note)
+  }
+  rejectTask(taskId: string, reason: string): RejectTaskResult {
+    return this.taskReviewLifecycle.rejectTask(taskId, reason)
   }
 
   // ── Queue lifecycle (autonomous queue runner per ADR-019) ─────────────────
