@@ -1,4 +1,5 @@
 import type {
+  AgentMemory,
   ContextSource,
   Conversation,
   Session,
@@ -17,6 +18,14 @@ export interface StartSessionResult {
   session: Session
   contextSources: ContextSource[]
   existingActiveSessions: Session[]
+  /**
+   * Memories matching the session scopes (task → workspace → project), ranked by
+   * importance, merged + deduped by `SqliteTaskService.recallMemories`. Empty when
+   * nothing matches. Phase 3 of ADR-023: the agent gets cross-session continuity
+   * surfaced for free without an explicit `memory_recall` call. `user` scope is
+   * intentionally omitted — StartSessionInput has no `userId`.
+   */
+  recalledMemories: AgentMemory[]
 }
 
 export interface EndSessionInput {

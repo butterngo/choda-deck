@@ -210,7 +210,8 @@ export class SqliteTaskService
       this.contextSources,
       this.conversations,
       this.tasks,
-      this.sessionEvents
+      this.sessionEvents,
+      (input) => this.recallMemories(input)
     )
     this.taskReviewLifecycle = new TaskReviewLifecycleService(
       this.db,

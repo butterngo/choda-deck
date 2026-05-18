@@ -64,7 +64,8 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
     'session_start',
     {
       description:
-        'Start a new work session bound to a specific task. Sets the task to IN-PROGRESS and returns last handoff + active context. Call task_list or roadmap first to pick a taskId. Pass cwd to auto-detect workspaceId from registered workspaces. Multiple active sessions per workspace are allowed, but a task can only be linked to one active session at a time.',
+        'Start a new work session bound to a specific task. Sets the task to IN-PROGRESS and returns last handoff + active context. Call task_list or roadmap first to pick a taskId. Pass cwd to auto-detect workspaceId from registered workspaces. Multiple active sessions per workspace are allowed, but a task can only be linked to one active session at a time. ' +
+        'Response also includes `recalledMemories`: prior episodic/procedural memories matching the session scopes (task → workspace → project), ranked by importance. Empty array when nothing matches. When non-empty, echo a 1-line summary to the user so resumed context shows continuity from prior sessions — do NOT silently consume them.',
       inputSchema: {
         projectId: z.string().describe('Project ID'),
         taskId: z
@@ -91,11 +92,12 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
             workspaces: svc.findWorkspaces(projectId)
           }) ?? undefined
 
-        const { session, contextSources, existingActiveSessions } = svc.startSession({
-          projectId,
-          taskId,
-          workspaceId: resolvedWorkspaceId
-        })
+        const { session, contextSources, existingActiveSessions, recalledMemories } =
+          svc.startSession({
+            projectId,
+            taskId,
+            workspaceId: resolvedWorkspaceId
+          })
         const lastSession = loadLastSession(svc, projectId, resolvedWorkspaceId)
         const bundle = buildProjectContext(svc, projectId, 'summary')
         const rules = loadMcpRules()
@@ -110,6 +112,7 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
           projectSummary: buildProjectSummary(bundle),
           activeTasks: bundle?.currentState.activeTasks ?? [],
           openConversations: bundle?.currentState.openConversations ?? [],
+          recalledMemories,
           suggestion: buildSuggestion(lastSession, bundle?.currentState.activeTasks ?? []),
           rules: {
             onSessionStart: rules.sessionStart,
