@@ -5,7 +5,7 @@ projectId: choda-deck
 scope: project
 refs: []
 createdAt: 2026-04-24
-lastVerifiedAt: 2026-04-29
+lastVerifiedAt: 2026-05-18
 ---
 
 # ADR-016: Graphify Integration — Query-Only Phase 1, Manual Refresh

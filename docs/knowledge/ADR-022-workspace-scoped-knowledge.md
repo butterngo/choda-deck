@@ -5,21 +5,21 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/domain/repositories/schema.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/core/domain/repositories/knowledge-repository.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/core/domain/knowledge-service.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/core/domain/knowledge-types.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/core/domain/knowledge-frontmatter.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/adapters/mcp/mcp-tools/knowledge-tools.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/core/domain/interfaces/knowledge-operations.interface.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
 createdAt: 2026-05-04
-lastVerifiedAt: 2026-05-11
+lastVerifiedAt: 2026-05-18
 ---
 
 # ADR-022: Workspace-scoped knowledge — multi-repo project support

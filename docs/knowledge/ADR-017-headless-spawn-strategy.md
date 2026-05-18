@@ -5,7 +5,7 @@ projectId: choda-deck
 scope: project
 refs: []
 createdAt: 2026-04-25
-lastVerifiedAt: 2026-04-29
+lastVerifiedAt: 2026-05-18
 ---
 
 # ADR-017: Headless Spawn Strategy — `claude -p` (default config) over Anthropic SDK Direct

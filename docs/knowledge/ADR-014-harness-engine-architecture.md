@@ -5,7 +5,7 @@ projectId: choda-deck
 scope: project
 refs: []
 createdAt: 2026-04-19
-lastVerifiedAt: 2026-05-08
+lastVerifiedAt: 2026-05-18
 ---
 
 # ADR-014: Staged Pipeline Harness — Planner → Generator → Evaluator with Approval Gates

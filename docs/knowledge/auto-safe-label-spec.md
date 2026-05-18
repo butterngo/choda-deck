@@ -5,12 +5,11 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/domain/auto-safe-validator.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/adapters/mcp/mcp-tools/task-tools.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
 createdAt: 2026-05-05
-lastVerifiedAt: 2026-05-11
-auditRef: docs/knowledge/auto-safe-validator-audit-2026-05-11.md
+lastVerifiedAt: 2026-05-18
 ---
 
 # auto-safe label — task contract for autonomous execution

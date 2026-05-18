@@ -5,7 +5,7 @@ projectId: choda-deck
 scope: project
 refs: []
 createdAt: 2026-04-16
-lastVerifiedAt: 2026-05-08
+lastVerifiedAt: 2026-05-18
 ---
 
 # ADR-010: Conversation Protocol — SQLite-only, no .md export

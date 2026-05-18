@@ -5,19 +5,19 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/domain/embedding/embedding-store.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/core/domain/embedding/local-embedding-provider.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/core/domain/embedding/embedding-provider-factory.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/core/domain/sqlite-task-service.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/core/domain/knowledge-service.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/adapters/mcp/mcp-tools/knowledge-tools.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
 createdAt: 2026-05-04
-lastVerifiedAt: 2026-05-11
+lastVerifiedAt: 2026-05-18
 ---
 
 # ADR-020: Embedding Architecture — local default with provider abstraction for semantic search
@@ -127,9 +127,9 @@ When the deps are missing, `loadProvider('local')` resolves to a `NoopEmbeddingP
 
 `build:mcp` adds `--external:onnxruntime-node --external:onnxruntime-web --external:sharp` so the bundle stays at ~2.4 MB. Native `.node` binaries cannot be bundled by esbuild and stay in `node_modules` at runtime. Combined with the `optionalDependencies` rule, the final shipped artifact is small whether the user opts into search or not.
 
-### 7. Provider switch — startup model-mismatch detection
+### 7. Provider switch — lazy model-mismatch detection
 
-On `SqliteTaskService` startup, after the active provider is resolved, check the most-recent `embedding_provider_id` value in `knowledge_index`. If it differs from the active provider, trigger a re-embed migration:
+On the first embedding use (lazy via `ensureEmbeddingReady()` in `SqliteTaskService`), after the active provider is resolved, check the most-recent `embedding_provider_id` value in `knowledge_index`. If it differs from the active provider, trigger a re-embed migration:
 
 1. `DROP TABLE knowledge_vec;`
 2. `CREATE VIRTUAL TABLE knowledge_vec USING vec0(embedding float[<new dims>]);`
@@ -172,7 +172,7 @@ For 17 entries with a local provider this is sub-second. For 1000 entries agains
   - `package.json` — add `sqlite-vec` to deps, `@huggingface/transformers` + `onnxruntime-node` + `sharp` to `optionalDependencies`
   - `package.json` `build:mcp` script — add `--external:onnxruntime-node --external:onnxruntime-web --external:sharp`
 - **Dependencies affected:** `sqlite-vec` (required, ~14 KB), `@huggingface/transformers` (optional, ~99 MB), `onnxruntime-node` (optional, ~212 MB), `sharp` (optional, ~600 KB)
-- **Migration needed:** yes, automatic — schema migration on startup adds `knowledge_vec` virtual table and the two metadata columns; backfill script populates 17 existing rows on first run
+- **Migration needed:** yes, automatic — the two metadata columns are added by `initSchema()` at `SqliteTaskService` startup; `knowledge_vec` virtual table is created lazily by `EmbeddingStore.ensureSchema()` on first embedding use (so the cold path doesn't pay model-load cost). Backfill script populates existing rows on first run.
 
 ## Revisit when
 

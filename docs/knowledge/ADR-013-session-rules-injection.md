@@ -5,7 +5,7 @@ projectId: choda-deck
 scope: project
 refs: []
 createdAt: 2026-04-18
-lastVerifiedAt: 2026-05-09
+lastVerifiedAt: 2026-05-18
 ---
 
 # ADR-013: Session rules injected via MCP response — compliance through prompt, not validation

@@ -5,30 +5,41 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/domain/repositories/schema.ts
-    commitSha: a55314083e3fbd87a32871fa546383fad78ccb25
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/core/domain/task-types.ts
-    commitSha: a55314083e3fbd87a32871fa546383fad78ccb25
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/adapters/mcp/server.ts
-    commitSha: a55314083e3fbd87a32871fa546383fad78ccb25
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/adapters/mcp/mcp-tools/session-tools.ts
-    commitSha: a55314083e3fbd87a32871fa546383fad78ccb25
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/core/domain/interfaces/session-lifecycle.interface.ts
-    commitSha: a55314083e3fbd87a32871fa546383fad78ccb25
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/core/domain/interfaces/session-repository.interface.ts
-    commitSha: a55314083e3fbd87a32871fa546383fad78ccb25
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: docs/knowledge/ADR-009-session-lifecycle.md
-    commitSha: a55314083e3fbd87a32871fa546383fad78ccb25
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: docs/knowledge/ADR-018-knowledge-layer.md
-    commitSha: a55314083e3fbd87a32871fa546383fad78ccb25
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: docs/knowledge/ADR-020-embedding-architecture.md
-    commitSha: a55314083e3fbd87a32871fa546383fad78ccb25
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
 createdAt: 2026-05-16
-lastVerifiedAt: 2026-05-16
+lastVerifiedAt: 2026-05-18
 ---
 
 # ADR-023: Agent memory layer — 2-tier episodic + procedural với Letta self-edit distillation
 
 > AI-Context: choda-deck thêm 2-tier memory layer (raw session events + distilled cross-session memories) để agent recall được bài học cũ ở session sau. Self-edit tại session_end. Bridge tới ADR knowledge khi memory load-bearing.
+
+## Status (as of 2026-05-18)
+
+| Phase | Scope | Status |
+|---|---|---|
+| Phase 1 | Schema (`session_events`, `agent_memories`) + 5 MCP tools (`session_event_add`, `session_event_list`, `memory_write`, `memory_recall`, `memory_promote_to_knowledge`) | ✅ shipped |
+| Phase 2 | `session_end` self-edit prompt — `endSession` returns `memoryCandidates` (events flagged `memory_candidate=1`) + `selfEditPrompt` instructing the agent to call `memory_write` for 1-3 distilled entries; forwarded through `task_approve` / `task_reject` composites | ✅ shipped (PR #117, TASK-827) |
+| Phase 3 | `session_start` auto-recall (response gains `recalledMemories` populated by scope-match) | ⏳ pending — `session_start` response shape in `session-tools.ts` has no `recalledMemories` field |
+| Phase 4 | Promotion path tool + recall analytics ("which memories get recalled most") | ⏳ partial — `memory_promote_to_knowledge` tool ships, analytics surface not built |
+
+Phases 1 and 2 are complete: the 5 memory tools work standalone and `session_end` now nudges the agent to distill candidates into cross-session memories. Phase 3/4 wire recall into session start so prior memories surface automatically without an explicit `memory_recall` call. Until Phase 3 lands, agents must still invoke `memory_recall` themselves when resuming work.
 
 ## Context
 
