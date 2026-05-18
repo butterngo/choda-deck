@@ -4,7 +4,8 @@ import type { ContextSourceRepository } from '../repositories/context-source-rep
 import type { ConversationRepository } from '../repositories/conversation-repository'
 import type { TaskRepository } from '../repositories/task-repository'
 import type { SessionEventRepository } from '../repositories/session-event-repository'
-import type { SessionEvent } from '../task-types'
+import type { AgentMemory, SessionEvent } from '../task-types'
+import type { MemoryRecallInput } from '../interfaces/agent-memory-operations.interface'
 import type {
   AbandonSessionResult,
   CheckpointSessionInput,
@@ -16,6 +17,8 @@ import type {
   StartSessionInput,
   StartSessionResult
 } from '../interfaces/session-lifecycle.interface'
+
+export type RecallMemoriesFn = (input: MemoryRecallInput) => AgentMemory[]
 import { now } from '../repositories/shared'
 import {
   SessionNotFoundError,
@@ -32,7 +35,8 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
     private readonly contextSources: ContextSourceRepository,
     private readonly conversations: ConversationRepository,
     private readonly tasks: TaskRepository,
-    private readonly sessionEvents: SessionEventRepository
+    private readonly sessionEvents: SessionEventRepository,
+    private readonly recallMemoriesFn: RecallMemoriesFn
   ) {}
 
   startSession(input: StartSessionInput): StartSessionResult {
@@ -67,7 +71,13 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
 
       const contextSources = this.contextSources.findByProject(input.projectId, true)
 
-      return { session, contextSources, existingActiveSessions }
+      const recalledMemories = this.recallMemoriesFn({
+        taskId: input.taskId,
+        workspaceId: input.workspaceId,
+        projectId: input.projectId
+      })
+
+      return { session, contextSources, existingActiveSessions, recalledMemories }
     })
     return tx()
   }

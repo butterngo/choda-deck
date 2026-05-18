@@ -63,6 +63,89 @@ describe('startSession', () => {
   })
 })
 
+describe('startSession auto-recall (Phase 3 — ADR-023)', () => {
+  it('returns empty recalledMemories when no memories exist', () => {
+    const task = svc.createTask({ projectId: 'proj-s', title: 'fresh task' })
+    const r = svc.startSession({ projectId: 'proj-s', taskId: task.id, workspaceId: 'ws-a' })
+    expect(r.recalledMemories).toEqual([])
+  })
+
+  it('surfaces a task-scoped memory when session binds the same taskId', () => {
+    const task = svc.createTask({ projectId: 'proj-s', title: 'task with memory' })
+    const written = svc.writeMemory({
+      scopeType: 'task',
+      scopeId: task.id,
+      memoryType: 'episodic',
+      content: 'remember: option A beat option B',
+      importance: 60
+    })
+
+    const r = svc.startSession({ projectId: 'proj-s', taskId: task.id })
+    expect(r.recalledMemories).toHaveLength(1)
+    expect(r.recalledMemories[0].id).toBe(written.id)
+    expect(r.recalledMemories[0].content).toBe('remember: option A beat option B')
+  })
+
+  it('merges across task/workspace/project scopes ranked by importance', () => {
+    const task = svc.createTask({ projectId: 'proj-s', title: 'cross-scope task' })
+    const mTask = svc.writeMemory({
+      scopeType: 'task',
+      scopeId: task.id,
+      memoryType: 'episodic',
+      content: 'task-level note',
+      importance: 30
+    })
+    const mWs = svc.writeMemory({
+      scopeType: 'workspace',
+      scopeId: 'ws-a',
+      memoryType: 'procedural',
+      content: 'workspace-level pattern',
+      importance: 80
+    })
+    const mProj = svc.writeMemory({
+      scopeType: 'project',
+      scopeId: 'proj-s',
+      memoryType: 'procedural',
+      content: 'project-level convention',
+      importance: 50
+    })
+
+    const r = svc.startSession({ projectId: 'proj-s', taskId: task.id, workspaceId: 'ws-a' })
+    expect(r.recalledMemories.map((m) => m.id)).toEqual([mWs.id, mProj.id, mTask.id])
+  })
+
+  it('does not surface memories from a different task', () => {
+    const taskA = svc.createTask({ projectId: 'proj-s', title: 'task A' })
+    const taskB = svc.createTask({ projectId: 'proj-s', title: 'task B' })
+    svc.writeMemory({
+      scopeType: 'task',
+      scopeId: taskB.id,
+      memoryType: 'episodic',
+      content: 'belongs to task B',
+      importance: 90
+    })
+
+    const r = svc.startSession({ projectId: 'proj-s', taskId: taskA.id })
+    expect(r.recalledMemories).toEqual([])
+  })
+
+  it('bumps recallCount on returned memories', () => {
+    const task = svc.createTask({ projectId: 'proj-s', title: 'recall-stat task' })
+    const written = svc.writeMemory({
+      scopeType: 'task',
+      scopeId: task.id,
+      memoryType: 'episodic',
+      content: 'will be recalled',
+      importance: 50
+    })
+    expect(written.recallCount).toBe(0)
+
+    svc.startSession({ projectId: 'proj-s', taskId: task.id })
+    const recalled = svc.recallMemories({ taskId: task.id })
+    expect(recalled[0].recallCount).toBeGreaterThanOrEqual(1)
+  })
+})
+
 describe('endSession', () => {
   it('happy path: active → completed + handoff persisted, no convs by default', () => {
     const started = svc.startSession({ projectId: 'proj-s' })

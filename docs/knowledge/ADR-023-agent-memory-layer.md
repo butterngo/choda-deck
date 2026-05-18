@@ -36,10 +36,10 @@ lastVerifiedAt: 2026-05-18
 |---|---|---|
 | Phase 1 | Schema (`session_events`, `agent_memories`) + 5 MCP tools (`session_event_add`, `session_event_list`, `memory_write`, `memory_recall`, `memory_promote_to_knowledge`) | ✅ shipped |
 | Phase 2 | `session_end` self-edit prompt — `endSession` returns `memoryCandidates` (events flagged `memory_candidate=1`) + `selfEditPrompt` instructing the agent to call `memory_write` for 1-3 distilled entries; forwarded through `task_approve` / `task_reject` composites | ✅ shipped (PR #117, TASK-827) |
-| Phase 3 | `session_start` auto-recall (response gains `recalledMemories` populated by scope-match) | ⏳ pending — `session_start` response shape in `session-tools.ts` has no `recalledMemories` field |
+| Phase 3 | `session_start` auto-recall — `StartSessionResult` gains `recalledMemories: AgentMemory[]` populated by scope-match (task → workspace → project), ranked by importance; `recallCount` + `lastRecalledAt` bumped automatically | ✅ shipped (TASK-846) |
 | Phase 4 | Promotion path tool + recall analytics ("which memories get recalled most") | ⏳ partial — `memory_promote_to_knowledge` tool ships, analytics surface not built |
 
-Phases 1 and 2 are complete: the 5 memory tools work standalone and `session_end` now nudges the agent to distill candidates into cross-session memories. Phase 3/4 wire recall into session start so prior memories surface automatically without an explicit `memory_recall` call. Until Phase 3 lands, agents must still invoke `memory_recall` themselves when resuming work.
+Phases 1–3 are complete: the memory layer is now "free at the boundaries" — `session_start` surfaces prior memories automatically and `session_end` nudges the agent to distill new ones. Phase 3 omits the `user` scope (StartSessionInput has no `userId`); user-scoped memories must still be reached via explicit `memory_recall`. Phase 4 covers promotion analytics (recall frequency) and an auto-promote path for high-recall memories.
 
 ## Context
 
