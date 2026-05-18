@@ -138,6 +138,94 @@ describe('endSession', () => {
   })
 })
 
+describe('endSession memory candidates (Phase 2 — ADR-023)', () => {
+  it('returns empty array + empty prompt when session has zero candidate events', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    const r = svc.endSession(started.session.id, { handoff: { resumePoint: 'r' } })
+    expect(r.memoryCandidates).toEqual([])
+    expect(r.selfEditPrompt).toBe('')
+  })
+
+  it('ignores non-candidate events even when present', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    svc.createSessionEvent({
+      sessionId: started.session.id,
+      eventType: 'tool_call',
+      memoryCandidate: false
+    })
+    svc.createSessionEvent({
+      sessionId: started.session.id,
+      eventType: 'observation'
+      // memoryCandidate omitted — defaults to false
+    })
+    const r = svc.endSession(started.session.id, { handoff: { resumePoint: 'r' } })
+    expect(r.memoryCandidates).toEqual([])
+    expect(r.selfEditPrompt).toBe('')
+  })
+
+  it('returns single candidate + singular-form prompt mentioning memory_write', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    const evt = svc.createSessionEvent({
+      sessionId: started.session.id,
+      eventType: 'decision',
+      payloadJson: JSON.stringify({ text: 'picked option A' }),
+      memoryCandidate: true
+    })
+
+    const r = svc.endSession(started.session.id, { handoff: { resumePoint: 'r' } })
+    expect(r.memoryCandidates).toHaveLength(1)
+    expect(r.memoryCandidates[0].id).toBe(evt.id)
+    expect(r.memoryCandidates[0].memoryCandidate).toBe(true)
+    expect(r.selfEditPrompt).toMatch(/1 candidate event\b/)
+    expect(r.selfEditPrompt).toContain('memory_write')
+  })
+
+  it('returns 3 candidates sorted oldest-first with plural prompt; excludes non-candidates', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    const e1 = svc.createSessionEvent({
+      sessionId: started.session.id,
+      eventType: 'decision',
+      memoryCandidate: true
+    })
+    svc.createSessionEvent({
+      sessionId: started.session.id,
+      eventType: 'observation',
+      memoryCandidate: false
+    })
+    const e2 = svc.createSessionEvent({
+      sessionId: started.session.id,
+      eventType: 'observation',
+      memoryCandidate: true
+    })
+    const e3 = svc.createSessionEvent({
+      sessionId: started.session.id,
+      eventType: 'tool_call',
+      memoryCandidate: true
+    })
+
+    const r = svc.endSession(started.session.id, { handoff: { resumePoint: 'r' } })
+    expect(r.memoryCandidates.map((c) => c.id)).toEqual([e1.id, e2.id, e3.id])
+    expect(r.selfEditPrompt).toMatch(/3 candidate events\b/)
+    expect(r.selfEditPrompt).toContain('memory_write')
+    expect(r.selfEditPrompt).toContain('episodic')
+    expect(r.selfEditPrompt).toContain('procedural')
+  })
+
+  it('does not surface candidates from other sessions', () => {
+    const a = svc.startSession({ projectId: 'proj-s' })
+    const b = svc.startSession({ projectId: 'proj-s' })
+    svc.createSessionEvent({
+      sessionId: b.session.id,
+      eventType: 'decision',
+      memoryCandidate: true
+    })
+
+    const r = svc.endSession(a.session.id, { handoff: { resumePoint: 'r' } })
+    expect(r.memoryCandidates).toEqual([])
+    expect(r.selfEditPrompt).toBe('')
+  })
+})
+
 describe('abandonSession', () => {
   it('happy path: active → completed with handoff.failureReason; task stays IN-PROGRESS', () => {
     const task = svc.createTask({ projectId: 'proj-s', title: 'Bound task' })

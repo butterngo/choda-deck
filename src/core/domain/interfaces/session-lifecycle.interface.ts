@@ -3,6 +3,7 @@ import type {
   Conversation,
   Session,
   SessionCheckpoint,
+  SessionEvent,
   SessionHandoff
 } from '../task-types'
 
@@ -27,6 +28,18 @@ export interface EndSessionResult {
   session: Session
   closedConversationIds: string[]
   taskUpdated: { id: string; title: string; newStatus: 'DONE' } | null
+  /**
+   * Session events flagged `memory_candidate=1`, oldest-first.
+   * Empty array when the session produced none. Phase 2 of ADR-023:
+   * the agent reviews these post-end and decides which (if any) to persist
+   * via `memory_write` — Claude self-edit, never auto-written.
+   */
+  memoryCandidates: SessionEvent[]
+  /**
+   * Self-edit instruction for the agent, or `''` when `memoryCandidates` is empty.
+   * Tells the agent how many candidates exist and how to distill them.
+   */
+  selfEditPrompt: string
 }
 
 export interface CheckpointSessionInput {

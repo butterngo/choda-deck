@@ -8,7 +8,8 @@ export const register = (server: InstrumentedServer, svc: TaskReviewLifecycleOpe
     'task_approve',
     {
       description:
-        'Approve a task in REVIEW status. Closes its active session with handoff {reviewOutcome:"approved"} and transitions the task to DONE. Wrapped in a single DB transaction — both the session close and status flip succeed atomically or roll back together.',
+        'Approve a task in REVIEW status. Closes its active session with handoff {reviewOutcome:"approved"} and transitions the task to DONE. Wrapped in a single DB transaction — both the session close and status flip succeed atomically or roll back together. ' +
+        'Response includes `memoryCandidates` + `selfEditPrompt` forwarded from session end — when prompt is non-empty, call `memory_write` for 1-3 entries before treating the task as fully closed.',
       inputSchema: {
         taskId: z.string().describe('Task ID (must be in REVIEW status with exactly one active session)'),
         note: z.string().optional().describe('Optional approval note recorded in the session handoff')

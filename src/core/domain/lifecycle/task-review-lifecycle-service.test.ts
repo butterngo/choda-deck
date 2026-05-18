@@ -32,7 +32,13 @@ describe('approveTask', () => {
 
     const r = svc.approveTask(taskId, 'looks good')
 
-    expect(r).toEqual({ taskId, status: 'DONE', sessionId })
+    expect(r).toEqual({
+      taskId,
+      status: 'DONE',
+      sessionId,
+      memoryCandidates: [],
+      selfEditPrompt: ''
+    })
     expect(svc.getTask(taskId)?.status).toBe('DONE')
     const session = svc.getSession(sessionId)
     expect(session?.status).toBe('completed')
@@ -63,7 +69,13 @@ describe('rejectTask', () => {
 
     const r = svc.rejectTask(taskId, 'tests missing')
 
-    expect(r).toEqual({ taskId, status: 'IN-PROGRESS', sessionId })
+    expect(r).toEqual({
+      taskId,
+      status: 'IN-PROGRESS',
+      sessionId,
+      memoryCandidates: [],
+      selfEditPrompt: ''
+    })
     expect(svc.getTask(taskId)?.status).toBe('IN-PROGRESS')
     const session = svc.getSession(sessionId)
     expect(session?.status).toBe('completed')
@@ -121,6 +133,40 @@ describe('transaction rollback (atomicity)', () => {
     const session = svc.getSession(sessionId)
     expect(session?.status).toBe('active')
     expect(session?.endedAt).toBeNull()
+  })
+})
+
+describe('memory candidate forwarding (Phase 2 — ADR-023)', () => {
+  it('approveTask returns empty candidates + empty prompt when session has none', () => {
+    const { taskId } = setupReviewTask()
+    const r = svc.approveTask(taskId)
+    expect(r.memoryCandidates).toEqual([])
+    expect(r.selfEditPrompt).toBe('')
+  })
+
+  it('approveTask forwards memoryCandidates + selfEditPrompt from endSession', () => {
+    const { taskId, sessionId } = setupReviewTask()
+    svc.createSessionEvent({
+      sessionId,
+      eventType: 'decision',
+      memoryCandidate: true
+    })
+
+    const r = svc.approveTask(taskId)
+    expect(r.memoryCandidates).toHaveLength(1)
+    expect(r.memoryCandidates[0].sessionId).toBe(sessionId)
+    expect(r.selfEditPrompt).toContain('memory_write')
+  })
+
+  it('rejectTask forwards multiple candidates with plural prompt', () => {
+    const { taskId, sessionId } = setupReviewTask()
+    svc.createSessionEvent({ sessionId, eventType: 'observation', memoryCandidate: true })
+    svc.createSessionEvent({ sessionId, eventType: 'decision', memoryCandidate: true })
+
+    const r = svc.rejectTask(taskId, 'needs rework')
+    expect(r.memoryCandidates).toHaveLength(2)
+    expect(r.selfEditPrompt).toMatch(/2 candidate events\b/)
+    expect(r.selfEditPrompt).toContain('memory_write')
   })
 })
 

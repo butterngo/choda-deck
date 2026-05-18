@@ -54,4 +54,13 @@ export class SessionEventRepository {
           .all(sessionId) as Array<Record<string, unknown>>)
     return rows.map(rowToSessionEvent)
   }
+
+  listMemoryCandidates(sessionId: string): SessionEvent[] {
+    const rows = this.db
+      .prepare(
+        'SELECT * FROM session_events WHERE session_id = ? AND memory_candidate = 1 ORDER BY created_at ASC'
+      )
+      .all(sessionId) as Array<Record<string, unknown>>
+    return rows.map(rowToSessionEvent)
+  }
 }
