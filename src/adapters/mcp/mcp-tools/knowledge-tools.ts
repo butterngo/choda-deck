@@ -56,6 +56,28 @@ export const register = (server: InstrumentedServer, svc: KnowledgeOperations): 
   )
 
   server.registerTool(
+    'knowledge_register_existing',
+    {
+      description:
+        'Register a pre-existing knowledge MD file into the index (does NOT create or modify the file). The file must already have valid frontmatter — type, title, projectId, scope, createdAt, lastVerifiedAt. Use this to ingest ADRs that live in a repo before choda-deck started indexing it (e.g. backfilling workflow-engine ADRs into an automation-rule workspace). Upserts on slug — re-running with the same file is a no-op.',
+      inputSchema: {
+        filePath: z.string().describe('Absolute path to the existing .md file'),
+        projectId: z
+          .string()
+          .describe('Project ID — must match the frontmatter projectId on the file'),
+        workspaceId: z
+          .string()
+          .optional()
+          .describe(
+            'Workspace ID — required when the file lives under a workspace cwd rather than the project cwd. Workspace must belong to projectId.'
+          )
+      }
+    },
+    async ({ filePath, projectId, workspaceId }) =>
+      textResponse(svc.registerExistingKnowledge({ filePath, projectId, workspaceId }))
+  )
+
+  server.registerTool(
     'knowledge_get',
     {
       description:

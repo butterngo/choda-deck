@@ -5,21 +5,21 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/adapters/mcp/mcp-tools/knowledge-tools.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/core/domain/interfaces/knowledge-operations.interface.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/core/domain/knowledge-frontmatter.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/core/domain/knowledge-git.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/core/domain/knowledge-service.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/core/domain/knowledge-types.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
   - path: src/core/domain/repositories/knowledge-repository.ts
-    commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
+    commitSha: e4ce1f3cc8d274adfbf66fa352f8ab5a443412f4
 createdAt: 2026-04-29
-lastVerifiedAt: 2026-05-11
+lastVerifiedAt: 2026-05-18
 ---
 
 # ADR-018 — Knowledge Layer Foundation
@@ -90,6 +90,27 @@ The index stores discovery metadata only (slug, projectId, scope, type, title, f
 ### 5. INDEX.md auto-generation
 
 `<projectRepo>/docs/knowledge/INDEX.md` is regenerated on every `create` / `update`. Format: list of entries with title, type, 1-line description from body, and a staleness flag (`✱` if any ref has commits since `commitSha`). This gives humans a navigable entry point without depending on the SQL index.
+
+### 6. Tool surface
+
+The knowledge layer exposes seven MCP tools under the `knowledge_*` namespace. The originals (`knowledge_create`, `knowledge_get`, `knowledge_list`) were specified by this ADR; the rest landed as the layer matured and are referenced here so the surface is enumerable in one place.
+
+| Tool | Purpose | Defined by |
+|---|---|---|
+| `knowledge_create` | Create a new entry; writes the MD file + index row + INDEX.md | ADR-018 |
+| `knowledge_register_existing` | Ingest a pre-existing MD file (does NOT create/modify the file) — used for backfilling pre-choda-deck ADRs | ADR-022 §4 |
+| `knowledge_get` | Read entry + per-ref staleness | ADR-018 |
+| `knowledge_list` | List index rows (no body); filter by project/workspace/scope/type | ADR-018 + ADR-022 (workspace filter) |
+| `knowledge_update` | Replace body and/or refs; auto-bumps `lastVerifiedAt` and re-pins refs to HEAD | follow-up |
+| `knowledge_verify` | Re-pin refs to HEAD without body change | follow-up |
+| `knowledge_delete` | Remove MD file + index row | follow-up |
+| `knowledge_search` | Semantic search over indexed entries via `sqlite-vec` | ADR-020 |
+
+The index schema in §4 has also gained columns introduced by downstream ADRs:
+- `workspace_id` — ADR-022 (workspace-scoped knowledge in multi-repo projects)
+- `embedding_provider_id`, `embedding_dims` — ADR-020 (per-row tracking for the model-mismatch migration)
+
+These are additive — entries created before the columns existed simply have `NULL` and behave as ADR-018 originally specified.
 
 ## Alternatives considered
 
