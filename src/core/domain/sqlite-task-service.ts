@@ -209,7 +209,8 @@ export class SqliteTaskService
       this.sessions,
       this.contextSources,
       this.conversations,
-      this.tasks
+      this.tasks,
+      this.sessionEvents
     )
     this.taskReviewLifecycle = new TaskReviewLifecycleService(
       this.db,

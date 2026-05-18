@@ -3,6 +3,8 @@ import type { SessionRepository } from '../repositories/session-repository'
 import type { ContextSourceRepository } from '../repositories/context-source-repository'
 import type { ConversationRepository } from '../repositories/conversation-repository'
 import type { TaskRepository } from '../repositories/task-repository'
+import type { SessionEventRepository } from '../repositories/session-event-repository'
+import type { SessionEvent } from '../task-types'
 import type {
   AbandonSessionResult,
   CheckpointSessionInput,
@@ -29,7 +31,8 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
     private readonly sessions: SessionRepository,
     private readonly contextSources: ContextSourceRepository,
     private readonly conversations: ConversationRepository,
-    private readonly tasks: TaskRepository
+    private readonly tasks: TaskRepository,
+    private readonly sessionEvents: SessionEventRepository
   ) {}
 
   startSession(input: StartSessionInput): StartSessionResult {
@@ -108,7 +111,10 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
         handoff: input.handoff
       })
 
-      return { session: updated, closedConversationIds, taskUpdated }
+      const memoryCandidates = this.sessionEvents.listMemoryCandidates(id)
+      const selfEditPrompt = buildSelfEditPrompt(memoryCandidates)
+
+      return { session: updated, closedConversationIds, taskUpdated, memoryCandidates, selfEditPrompt }
     })
     return tx()
   }
@@ -177,4 +183,17 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
       contextSources
     }
   }
+}
+
+export function buildSelfEditPrompt(candidates: SessionEvent[]): string {
+  if (candidates.length === 0) return ''
+  const n = candidates.length
+  const word = n === 1 ? 'event' : 'events'
+  return (
+    `Review these ${n} candidate ${word} from the session. ` +
+    `Call memory_write for 1-3 entries worth remembering across sessions — ` +
+    `use type='episodic' with scope='task' for task-specific learnings, ` +
+    `or type='procedural' with scope='project' or 'workspace' for reusable patterns. ` +
+    `Skip entirely if nothing here is worth keeping.`
+  )
 }

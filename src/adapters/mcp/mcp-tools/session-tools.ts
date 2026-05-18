@@ -217,7 +217,9 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
     'session_end',
     {
       description:
-        'End a work session. If session has a task, marks it DONE. Persists handoff. Include testResults matching the task ## Test Plan — passed[] for verified items, skipped[] for deferred items with reason. Audit trail for quality review.',
+        'End a work session. If session has a task, marks it DONE. Persists handoff. Include testResults matching the task ## Test Plan — passed[] for verified items, skipped[] for deferred items with reason. ' +
+        'Response also returns `memoryCandidates` (session events flagged memory_candidate=1) and `selfEditPrompt`. ' +
+        'When `selfEditPrompt` is non-empty, treat the session as not fully closed until you have called `memory_write` for 1-3 entries worth keeping across sessions (or none, if nothing applies). Skip without prompting if `memoryCandidates` is empty.',
       inputSchema: handoffInputSchema
     },
     async (input) =>
@@ -244,7 +246,9 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
           closedConversationIds: result.closedConversationIds,
           looseEndInboxIds,
           suggestedKnowledge,
-          notes: input.notes
+          notes: input.notes,
+          memoryCandidates: result.memoryCandidates,
+          selfEditPrompt: result.selfEditPrompt
         }
       })
   )

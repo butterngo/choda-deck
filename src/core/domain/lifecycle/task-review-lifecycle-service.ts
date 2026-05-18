@@ -33,11 +33,17 @@ export class TaskReviewLifecycleService implements TaskReviewLifecycleOperations
         resumePoint: note ? `Approved: ${note}` : 'Approved after review',
         ...(note ? { decisions: [`Approved: ${note}`] } : {})
       }
-      this.sessionLifecycle.endSession(sessionId, { handoff })
+      const endResult = this.sessionLifecycle.endSession(sessionId, { handoff })
       // endSession sets task → DONE when session has taskId; re-apply explicitly so the
       // composite's final state is self-documenting and won't drift if endSession changes.
       this.tasks.update(taskId, { status: 'DONE' })
-      return { taskId, status: 'DONE', sessionId }
+      return {
+        taskId,
+        status: 'DONE',
+        sessionId,
+        memoryCandidates: endResult.memoryCandidates,
+        selfEditPrompt: endResult.selfEditPrompt
+      }
     })
     return tx()
   }
@@ -51,11 +57,17 @@ export class TaskReviewLifecycleService implements TaskReviewLifecycleOperations
         resumePoint: `Rejected: ${reason}`,
         decisions: [`Rejected: ${reason}`]
       }
-      this.sessionLifecycle.endSession(sessionId, { handoff })
+      const endResult = this.sessionLifecycle.endSession(sessionId, { handoff })
       // endSession unconditionally sets task → DONE; override to IN-PROGRESS within
       // the same outer transaction so the task lands back in the work queue.
       this.tasks.update(taskId, { status: 'IN-PROGRESS' })
-      return { taskId, status: 'IN-PROGRESS', sessionId }
+      return {
+        taskId,
+        status: 'IN-PROGRESS',
+        sessionId,
+        memoryCandidates: endResult.memoryCandidates,
+        selfEditPrompt: endResult.selfEditPrompt
+      }
     })
     return tx()
   }

@@ -8,7 +8,8 @@ export const register = (server: InstrumentedServer, svc: TaskReviewLifecycleOpe
     'task_reject',
     {
       description:
-        'Reject a task in REVIEW status. Closes its active session with handoff {reviewOutcome:"rejected", reviewReason} and transitions the task back to IN-PROGRESS for rework. Wrapped in a single DB transaction.',
+        'Reject a task in REVIEW status. Closes its active session with handoff {reviewOutcome:"rejected", reviewReason} and transitions the task back to IN-PROGRESS for rework. Wrapped in a single DB transaction. ' +
+        'Response includes `memoryCandidates` + `selfEditPrompt` forwarded from session end — when prompt is non-empty, call `memory_write` for 1-3 entries before treating the rejection as fully closed.',
       inputSchema: {
         taskId: z.string().describe('Task ID (must be in REVIEW status with exactly one active session)'),
         reason: z.string().min(1).describe('Rejection reason — required, non-empty')
