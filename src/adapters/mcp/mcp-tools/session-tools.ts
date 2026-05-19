@@ -221,6 +221,7 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
     {
       description:
         'End a work session. If session has a task, marks it DONE. Persists handoff. Include testResults matching the task ## Test Plan — passed[] for verified items, skipped[] for deferred items with reason. ' +
+        '`looseEnds` is NOT a catch-all dump — classify each candidate first: action items → `task_create`, dirty-state observations → `notes`, only genuine ideas needing research → `looseEnds`. See the `## On session_end` rule for details. ' +
         'Response also returns `memoryCandidates` (session events flagged memory_candidate=1) and `selfEditPrompt`. ' +
         'When `selfEditPrompt` is non-empty, treat the session as not fully closed until you have called `memory_write` for 1-3 entries worth keeping across sessions (or none, if nothing applies). Skip without prompting if `memoryCandidates` is empty.',
       inputSchema: handoffInputSchema

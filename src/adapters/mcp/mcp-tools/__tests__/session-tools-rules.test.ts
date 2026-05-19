@@ -80,6 +80,19 @@ describe('session-tools — B+ rule injection contract', () => {
     expect(rules.onSessionEnd.length).toBeGreaterThan(0)
   })
 
+  it('session_end rule prescribes classifying loose ends into 3 buckets', async () => {
+    const out = await callTool('session_start', { projectId: 'proj-r', taskId: 'TASK-R1' })
+    const rules = out.rules as Record<string, string>
+    const text = rules.onSessionEnd
+    // The classification rule names all 3 buckets and routes each
+    expect(text).toMatch(/action item/i)
+    expect(text).toMatch(/task_create/)
+    expect(text).toMatch(/dirty-state observation/i)
+    expect(text).toMatch(/genuine idea/i)
+    // Explicit warning that looseEnds is not a dump
+    expect(text).toMatch(/not a catch-all/i)
+  })
+
   it('session_checkpoint response does NOT include rules (B+: rules already in start)', async () => {
     const start = await callTool('session_start', { projectId: 'proj-r', taskId: 'TASK-R1' })
     const sessionId = start.sessionId as string

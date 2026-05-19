@@ -75,12 +75,20 @@ When preparing the session_end payload, always include:
 - **resumePoint** (required) — one sentence describing where you stopped and what the next session should pick up.
 - **tasksUpdated** (required if session had a taskId) — list of task ids and their new status.
 - **decisions** — architectural or implementation decisions made this session. Explicit > implicit.
-- **looseEnds** — anything unfinished, deferred, or noted for later. Include pre-existing issues you touched but did not resolve.
+- **looseEnds** — genuine ideas that need future research. NOT a catch-all dump. See classification rule below.
 - **commits** — commit SHAs + short message if commits were made.
 
-Never end a session with only resumePoint. If the session was trivial (read-only), explicitly note "no changes" in looseEnds.
+Never end a session with only resumePoint. If the session was trivial (read-only), explicitly note "no changes" in resumePoint or notes.
 
-`looseEnds` are auto-converted to inbox entries (status=raw) under the session's project — one entry per item, tagged with the source session/task ID. Butter reviews the inbox in `/daily` and decides which deserve to become TODO tasks via `inbox_convert`. Keep each loose end short (1 line, concrete) — they are capture, not specification.
+### Classify each loose end BEFORE writing it
+
+Every candidate loose end falls into exactly one of 3 buckets. Pick the bucket first, then route accordingly:
+
+1. **Action item** (has clear owner + acceptance criteria) → call `task_create` directly with status=TODO or READY. Do NOT put it in `looseEnds`. Examples: "PR #5 awaiting merge — on merge delete branch", "revert TASK-X to READY before next queue start", "companion repo 2 commits ahead — needs push".
+2. **Dirty-state observation** (untracked file, stale branch, cosmetic shell handle, lingering process) → put it in `notes` field or the commit message. Do NOT put it in `looseEnds`. Examples: "stale worktree at .worktrees/foo", "Windows file handle on dist/", "untracked spike notes in /tmp".
+3. **Genuine idea needing research** (open question, design uncertainty, "should we…?") → `looseEnds` (this is the legitimate use). Each entry: 1 line, concrete, no acceptance criteria yet. Example: "investigate whether prewarm cache can survive worktree switch".
+
+`looseEnds` are auto-converted to inbox entries (status=raw) under the session's project — one entry per item, tagged with the source session/task ID. Butter reviews the inbox in `/daily` and decides which deserve `inbox_convert` → task. If you find yourself dumping action items or observations into `looseEnds`, you skipped step 1 — go back and classify.
 
 ## On conversation_read
 
