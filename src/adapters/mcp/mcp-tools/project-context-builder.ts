@@ -11,17 +11,21 @@ import type { ContextSourceOperations } from '../../../core/domain/interfaces/co
 import type { TaskOperations } from '../../../core/domain/interfaces/task-repository.interface'
 import type { SessionOperations } from '../../../core/domain/interfaces/session-repository.interface'
 import type { ConversationOperations } from '../../../core/domain/interfaces/conversation-repository.interface'
+import type { InboxOperations } from '../../../core/domain/interfaces/inbox-repository.interface'
+import { computeStaleRawWarning, type StaleRawWarning } from '../../../core/domain/inbox-triage-policy'
 
 export type ProjectContextDeps = ProjectOperations &
   ContextSourceOperations &
   TaskOperations &
   SessionOperations &
-  ConversationOperations
+  ConversationOperations &
+  InboxOperations
 
 export type ProjectContextDepth = 'summary' | 'full'
 
 export interface ProjectContextBundle {
   project: { id: string; name: string; cwd: string }
+  staleRawWarning: StaleRawWarning | null
   currentState: {
     activeTasks: Array<Pick<Task, 'id' | 'title' | 'status' | 'priority'>>
     lastSession: { id: string; endedAt: string | null; handoff: Session['handoff'] } | null
@@ -51,9 +55,11 @@ export function buildProjectContext(
   if (!project) return null
 
   const sources = svc.findContextSources(projectId, true)
+  const rawInbox = svc.findInbox({ projectId, status: 'raw' })
 
   return {
     project,
+    staleRawWarning: computeStaleRawWarning(rawInbox),
     currentState: {
       activeTasks: pickActiveTasks(svc, projectId),
       lastSession: pickLastSession(svc, projectId),

@@ -97,4 +97,13 @@ describe('project_context openConversations', () => {
   it('returns null for unknown project', () => {
     expect(buildProjectContext(svc, 'nonexistent')).toBeNull()
   })
+
+  it('exposes staleRawWarning at top level (default null when no stale raw)', () => {
+    svc.ensureProject('proj-clean', 'Clean Inbox', '/tmp/clean')
+    svc.createInbox({ projectId: 'proj-clean', content: 'fresh idea' })
+    const bundle = buildProjectContext(svc, 'proj-clean', 'summary')
+    expect(bundle).not.toBeNull()
+    expect(bundle).toHaveProperty('staleRawWarning')
+    expect(bundle!.staleRawWarning).toBeNull()
+  })
 })
