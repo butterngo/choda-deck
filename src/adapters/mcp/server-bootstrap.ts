@@ -1,11 +1,13 @@
 import * as fs from 'fs'
 import * as path from 'path'
+import Database from 'better-sqlite3'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { SqliteTaskService } from '../../core/domain/sqlite-task-service'
+import { OAuthRepository } from '../../core/domain/repositories/oauth-repository'
 import { resolveDataPaths } from '../../core/paths'
 import { createInstrumentedServer } from './instrumented-server'
-import { startHttpTransport } from './http-transport'
+import { startHttpTransport, type OAuthConfig } from './http-transport'
 import * as taskTools from './mcp-tools/task-tools'
 import * as conversationTools from './mcp-tools/conversation-tools'
 import * as projectTools from './mcp-tools/project-tools'
@@ -71,10 +73,11 @@ export async function startMcpServer(): Promise<void> {
   const mode = (process.env.MCP_TRANSPORT ?? 'stdio').toLowerCase()
 
   if (mode === 'http') {
+    const oauth = buildOAuthConfig(dbPath)
     const token = process.env.MCP_HTTP_TOKEN ?? ''
-    if (token.length === 0) {
+    if (!oauth && token.length === 0) {
       process.stderr.write(
-        '[choda-deck] MCP_TRANSPORT=http requires MCP_HTTP_TOKEN — refusing to expose unauthenticated\n'
+        '[choda-deck] MCP_TRANSPORT=http requires MCP_HTTP_TOKEN (or MCP_OAUTH_MODE=1 + MCP_OAUTH_ISSUER) — refusing to expose unauthenticated\n'
       )
       process.exit(2)
     }
@@ -83,7 +86,7 @@ export async function startMcpServer(): Promise<void> {
     // Log tool count once at startup to keep parity with stdio mode logging.
     const { toolCount } = buildMcpServer(deps)
     console.error(`[choda-deck] registered ${toolCount} MCP tools`)
-    await startHttpTransport(() => buildMcpServer(deps).server, { port, bind, token })
+    await startHttpTransport(() => buildMcpServer(deps).server, { port, bind, token, oauth })
     return
   }
 
@@ -98,4 +101,42 @@ export async function startMcpServer(): Promise<void> {
   console.error(`[choda-deck] registered ${toolCount} MCP tools`)
   const transport = new StdioServerTransport()
   await server.connect(transport)
+}
+
+// ADR-027: when MCP_OAUTH_MODE=1, build an OAuthConfig from env + consent
+// password file. Uses a SECOND better-sqlite3 connection so SqliteTaskService
+// stays untouched — WAL handles concurrency, OAuth writes are rare.
+function buildOAuthConfig(dbPath: string): OAuthConfig | undefined {
+  if (process.env.MCP_OAUTH_MODE !== '1') return undefined
+
+  const issuer = (process.env.MCP_OAUTH_ISSUER ?? '').replace(/\/$/, '')
+  if (issuer.length === 0) {
+    process.stderr.write(
+      '[choda-deck] MCP_OAUTH_MODE=1 requires MCP_OAUTH_ISSUER (e.g. https://mcp.choda.dev)\n'
+    )
+    process.exit(2)
+  }
+
+  const passwordFile =
+    process.env.MCP_OAUTH_CONSENT_PASSWORD_FILE ??
+    path.join(process.cwd(), 'sensitive_information', 'oauth-consent-password.txt')
+  if (!fs.existsSync(passwordFile)) {
+    process.stderr.write(
+      `[choda-deck] MCP_OAUTH_MODE=1 needs consent password file at ${passwordFile}\n`
+    )
+    process.exit(2)
+  }
+  const hash = fs.readFileSync(passwordFile, 'utf8').trim()
+  if (!/^[0-9a-f]{64}$/i.test(hash)) {
+    process.stderr.write(
+      `[choda-deck] consent password file must contain a 64-char hex SHA-256 hash (got ${hash.length} chars)\n`
+    )
+    process.exit(2)
+  }
+
+  const oauthDb = new Database(dbPath)
+  oauthDb.pragma('foreign_keys = ON')
+  const repo = new OAuthRepository(oauthDb)
+
+  return { repo, issuer, consentPasswordHashHex: hash }
 }

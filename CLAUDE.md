@@ -125,7 +125,10 @@ The server supports two transports from a single binary, selected at startup via
 | `MCP_TRANSPORT` | `stdio` | — | `stdio` (local Claude Code) or `http` (remote / k8s) |
 | `MCP_HTTP_PORT` | `7337` | `MCP_TRANSPORT=http` | Listen port |
 | `MCP_HTTP_BIND` | `0.0.0.0` | `MCP_TRANSPORT=http` | Bind address (`127.0.0.1` for local dev) |
-| `MCP_HTTP_TOKEN` | — | `MCP_TRANSPORT=http` (refuses to start without it) | Bearer token — full DB access on match |
+| `MCP_HTTP_TOKEN` | — | `MCP_TRANSPORT=http` without OAuth | Bearer token — full DB access on match. Ignored when `MCP_OAUTH_MODE=1` |
+| `MCP_OAUTH_MODE` | unset | — | Set to `1` to switch `/mcp` from bearer to OAuth (ADR-027) |
+| `MCP_OAUTH_ISSUER` | — | `MCP_OAUTH_MODE=1` | Public origin (e.g. `https://mcp.choda.dev`, no trailing slash) — used in `/.well-known/*` metadata + `WWW-Authenticate` |
+| `MCP_OAUTH_CONSENT_PASSWORD_FILE` | `sensitive_information/oauth-consent-password.txt` | `MCP_OAUTH_MODE=1` | Path to file containing the 64-char hex SHA-256 hash of the consent password |
 
 **Stdio (default)** — unchanged behavior, what `.claude.json` registrations use today.
 
@@ -139,3 +142,17 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 ```
 
 Store the token at `sensitive_information/mcp-http-token.txt` (gitignored) locally, or as a k8s `Secret` in cluster. Do not commit. Rotation = regenerate + restart pod + update client config.
+
+## MCP OAuth Mode (ADR-027)
+
+When `claude.ai`'s connector UI is the target client, static bearer is unsupported — flip on OAuth instead. Adds five endpoints (`/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`, `POST /register`, `GET|POST /authorize`, `POST /token`) and makes `/mcp` validate against the `oauth_tokens` SQLite table instead of `MCP_HTTP_TOKEN`. 401 responses include `WWW-Authenticate: Bearer resource_metadata="<issuer>/.well-known/oauth-protected-resource"`.
+
+Consent password generation:
+```bash
+read -rs PASS && printf '%s' "$PASS" | node -e "process.stdin.on('data',d=>process.stdout.write(require('crypto').createHash('sha256').update(d.toString().trim()).digest('hex')))" > sensitive_information/oauth-consent-password.txt
+```
+
+Operational notes:
+- **CF WAF allowlist `160.79.104.0/21` applies to `/mcp` path ONLY.** `/authorize`, `/token`, `/register`, `/.well-known/*` must stay globally reachable — they're hit by the user's browser, not the broker.
+- **Password rotation:** rewrite the file + restart the pod. Rotating revokes nothing; old `oauth_tokens` rows stay valid until their `access_expires_at` (1h) / `refresh_expires_at` (30d).
+- **Replayed refresh token → entire chain revoked** for that `client_id` (OAuth 2.1 §4.13.2).
