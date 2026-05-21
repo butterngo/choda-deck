@@ -3,13 +3,19 @@
  * choda-deck CLI — MCP server + autonomous queue runner.
  *
  * Subcommands:
- *   mcp serve     Start MCP stdio server
+ *   mcp serve     Start MCP server (stdio by default; HTTP via MCP_TRANSPORT=http)
  *   run-queue     Run autonomous queue of READY auto-safe tasks (ADR-019)
  *
  * Env vars (forwarded to service factory):
  *   CHODA_DATA_DIR     — data root (database/, artifacts/, backups/ derived)
  *   CHODA_DB_PATH      — legacy override (logs warning)
  *   CHODA_CONTENT_ROOT — content root for file reads
+ *
+ * MCP transport env vars (ADR-026):
+ *   MCP_TRANSPORT      — stdio (default) | http
+ *   MCP_HTTP_PORT      — HTTP listen port (default 7337)
+ *   MCP_HTTP_BIND      — HTTP bind address (default 0.0.0.0)
+ *   MCP_HTTP_TOKEN     — bearer token; REQUIRED when MCP_TRANSPORT=http
  */
 
 import { runRunQueueCommand } from './commands/run-queue'
@@ -23,7 +29,7 @@ const ROOT_HELP = `choda-deck v${VERSION}
 Usage: choda-deck <command> [options]
 
 Commands:
-  mcp serve           Start MCP stdio server
+  mcp serve           Start MCP server (set MCP_TRANSPORT=http for Streamable HTTP)
   run-queue           Run autonomous queue (deprecated; superseded by \`queue start\`)
   queue start         Batch trigger READY auto-safe tasks with per-task worktrees
   queue report <id>   Regenerate report.md for an existing artifact directory

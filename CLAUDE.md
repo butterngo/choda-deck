@@ -115,3 +115,27 @@ data/
 ```
 
 Legacy `CHODA_DB_PATH` still accepted as override (logs a warning). Migration: `node scripts/migrate-data-layout.mjs`.
+
+## MCP Transport Modes (ADR-026)
+
+The server supports two transports from a single binary, selected at startup via `MCP_TRANSPORT`.
+
+| Env var | Default | Required when | Purpose |
+|---|---|---|---|
+| `MCP_TRANSPORT` | `stdio` | — | `stdio` (local Claude Code) or `http` (remote / k8s) |
+| `MCP_HTTP_PORT` | `7337` | `MCP_TRANSPORT=http` | Listen port |
+| `MCP_HTTP_BIND` | `0.0.0.0` | `MCP_TRANSPORT=http` | Bind address (`127.0.0.1` for local dev) |
+| `MCP_HTTP_TOKEN` | — | `MCP_TRANSPORT=http` (refuses to start without it) | Bearer token — full DB access on match |
+
+**Stdio (default)** — unchanged behavior, what `.claude.json` registrations use today.
+
+**HTTP** — Streamable HTTP transport in **stateless** mode. Endpoints:
+- `POST /mcp` — bearer-gated (`Authorization: Bearer <token>`), JSON only, 4 MB body cap
+- `GET /healthz` — unauthenticated, returns `{"ok":true}` (k8s liveness/readiness probe)
+
+Token generation:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+```
+
+Store the token at `sensitive_information/mcp-http-token.txt` (gitignored) locally, or as a k8s `Secret` in cluster. Do not commit. Rotation = regenerate + restart pod + update client config.

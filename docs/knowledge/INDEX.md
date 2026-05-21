@@ -2,6 +2,7 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
+| [ADR-026-dual-transport-mcp-server](./ADR-026-dual-transport-mcp-server.md) | decision | ADR-026: Dual-transport MCP server (stdio + Streamable HTTP) with bearer auth for k8s | 2026-05-21 |  |
 | [ADR-025-knowledge-register-existing-keep](./ADR-025-knowledge-register-existing-keep.md) | decision | ADR-025: knowledge_register_existing — keep as-is, error rate is noise | 2026-05-19 |  |
 | [ADR-023-agent-memory-layer](./ADR-023-agent-memory-layer.md) | decision | ADR-023: Agent memory layer — 2-tier episodic + procedural với Letta self-edit distillation | 2026-05-18 | ✱ |
 | [spike-3way-cold-prewarm-warm-2026-05-11](./spike-3way-cold-prewarm-warm-2026-05-11.md) | spike | Spike v2: Cold vs Pre-warm on TASK-704-shape (ADR-019 Phase 2 follow-up) | 2026-05-11 | ✱ |
