@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { startHttpTransport, type HttpTransportHandle } from '../http-transport'
+import { createInstrumentedServer } from '../instrumented-server'
+import { REMOTE_TOOL_ALLOWLIST } from '../server-bootstrap'
 
 const TOKEN = 'test-token-xyz'
 const WRONG_TOKEN = 'test-token-abc'
@@ -187,6 +189,84 @@ describe('startHttpTransport — concurrent requests', () => {
     } finally {
       await handle.close()
     }
+  })
+})
+
+describe('startHttpTransport — remote tool allowlist (TASK-903)', () => {
+  // Mirror the production wiring: instrumented-server gates registration,
+  // bootstrap passes REMOTE_TOOL_ALLOWLIST in http mode. Here we exercise
+  // the same code path end-to-end through real Streamable HTTP transport.
+  function buildAllowlistFactory(): () => McpServer {
+    return (): McpServer => {
+      const server = new McpServer(
+        { name: 'test-mcp', version: '0.0.0' },
+        { capabilities: { tools: {} } }
+      )
+      const sink = { recordToolInvocation: (): void => {}, countToolInvocations: (): number => 0 }
+      const instrumented = createInstrumentedServer(server, sink, REMOTE_TOOL_ALLOWLIST)
+      // Register a mix: allowlisted + blocked names. Blocked names must be
+      // absent from the resulting tools/list response.
+      for (const name of [...REMOTE_TOOL_ALLOWLIST, 'task_create', 'memory_write']) {
+        instrumented.registerTool(
+          name,
+          { description: name, inputSchema: {} },
+          (async () => ({ content: [{ type: 'text', text: name }] })) as never
+        )
+      }
+      return server
+    }
+  }
+
+  let handle: HttpTransportHandle
+  let baseUrl: string
+
+  beforeAll(async () => {
+    handle = await startHttpTransport(buildAllowlistFactory(), {
+      port: 0,
+      bind: '127.0.0.1',
+      token: TOKEN
+    })
+    baseUrl = `http://127.0.0.1:${handle.address.port}`
+  })
+
+  afterAll(async () => {
+    await handle.close()
+  })
+
+  it('tools/list returns exactly the allowlisted tool names', async () => {
+    const res = await jsonRpc(
+      baseUrl,
+      { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      { authorization: `Bearer ${TOKEN}`, 'mcp-protocol-version': '2025-06-18' }
+    )
+    expect(res.status).toBe(200)
+    const payload = (await res.json()) as { result?: { tools?: { name: string }[] } }
+    const names = (payload.result?.tools ?? []).map((t) => t.name).sort()
+    expect(names).toEqual([...REMOTE_TOOL_ALLOWLIST].sort())
+  })
+
+  it('calling a non-allowlisted tool over HTTP returns method-not-found error', async () => {
+    const res = await jsonRpc(
+      baseUrl,
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'task_create', arguments: {} }
+      },
+      { authorization: `Bearer ${TOKEN}`, 'mcp-protocol-version': '2025-06-18' }
+    )
+    expect(res.status).toBe(200)
+    const payload = (await res.json()) as {
+      result?: { isError?: boolean; content?: { type: string; text: string }[] }
+      error?: { code: number; message: string }
+    }
+    // SDK reports unknown tools as a successful JSON-RPC response with
+    // result.isError=true (rather than a top-level JSON-RPC error). Either
+    // shape proves the tool wasn't reachable — assert one of them.
+    const reportedAsResultError = payload.result?.isError === true
+    const reportedAsRpcError = typeof payload.error?.code === 'number'
+    expect(reportedAsResultError || reportedAsRpcError).toBe(true)
   })
 })
 

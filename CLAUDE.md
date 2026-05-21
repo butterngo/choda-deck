@@ -143,6 +143,19 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 
 Store the token at `sensitive_information/mcp-http-token.txt` (gitignored) locally, or as a k8s `Secret` in cluster. Do not commit. Rotation = regenerate + restart pod + update client config.
 
+### Remote tool allowlist
+
+HTTP mode exposes a narrowed surface — the **6-tool read + capture allowlist** (`REMOTE_TOOL_ALLOWLIST` in `src/adapters/mcp/server-bootstrap.ts`):
+
+- `project_list`
+- `task_list`
+- `task_context`
+- `inbox_list`
+- `inbox_get`
+- `inbox_add`
+
+Everything else (`task_create`, `task_update`, `session_*`, `backup_*`, `cleanup_*`, `workspace_*`, `conversation_*`, `memory_*`, `knowledge_*`, `inbox_update|convert|archive|ready|research`, `stats_report`) stays **stdio-only**. Non-allowlisted tools are not registered at all — they never appear in `tools/list` and respond `MCP error -32602: Tool <name> not found` if called by name. Stdio mode keeps every tool (local trust contract, unchanged). See ADR-026 §Per-tool scoping for rationale.
+
 ## MCP OAuth Mode (ADR-027)
 
 When `claude.ai`'s connector UI is the target client, static bearer is unsupported — flip on OAuth instead. Adds five endpoints (`/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`, `POST /register`, `GET|POST /authorize`, `POST /token`) and makes `/mcp` validate against the `oauth_tokens` SQLite table instead of `MCP_HTTP_TOKEN`. 401 responses include `WWW-Authenticate: Bearer resource_metadata="<issuer>/.well-known/oauth-protected-resource"`.

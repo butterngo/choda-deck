@@ -164,3 +164,57 @@ describe('createInstrumentedServer', () => {
     expect(instrumented.registeredToolNames).toEqual(['a', 'b'])
   })
 })
+
+describe('createInstrumentedServer — toolAllowlist (TASK-903)', () => {
+  it('without allowlist: registers every tool (stdio behavior unchanged)', () => {
+    const { server, tools } = makeFakeServer()
+    const { sink } = makeFakeSink()
+    const instrumented = createInstrumentedServer(server, sink)
+
+    instrumented.registerTool('allowed', { description: 'd', inputSchema: {} }, (() => 'x') as never)
+    instrumented.registerTool('blocked', { description: 'd', inputSchema: {} }, (() => 'y') as never)
+
+    expect(tools.map((t) => t.name)).toEqual(['allowed', 'blocked'])
+    expect(instrumented.registeredToolNames).toEqual(['allowed', 'blocked'])
+  })
+
+  it('with allowlist: non-allowlisted names skip server.registerTool entirely', () => {
+    const { server, tools } = makeFakeServer()
+    const { sink } = makeFakeSink()
+    const allowlist = new Set(['allowed'])
+    const instrumented = createInstrumentedServer(server, sink, allowlist)
+
+    instrumented.registerTool('allowed', { description: 'd', inputSchema: {} }, (() => 'x') as never)
+    instrumented.registerTool('blocked', { description: 'd', inputSchema: {} }, (() => 'y') as never)
+
+    expect(tools.map((t) => t.name)).toEqual(['allowed'])
+    expect(instrumented.registeredToolNames).toEqual(['allowed'])
+  })
+
+  it('with empty allowlist: no tools registered', () => {
+    const { server, tools } = makeFakeServer()
+    const { sink } = makeFakeSink()
+    const instrumented = createInstrumentedServer(server, sink, new Set<string>())
+
+    instrumented.registerTool('a', { description: 'd', inputSchema: {} }, (() => 'x') as never)
+    instrumented.registerTool('b', { description: 'd', inputSchema: {} }, (() => 'y') as never)
+
+    expect(tools).toEqual([])
+    expect(instrumented.registeredToolNames).toEqual([])
+  })
+
+  it('blocked tools record no invocation when never registered', async () => {
+    const { server, tools } = makeFakeServer()
+    const { sink, rows } = makeFakeSink()
+    const instrumented = createInstrumentedServer(server, sink, new Set(['allowed']))
+
+    instrumented.registerTool('allowed', { description: 'd', inputSchema: {} }, (() => 'ok') as never)
+    instrumented.registerTool('blocked', { description: 'd', inputSchema: {} }, (() => 'no') as never)
+
+    // Only the allowed tool has a captured callback to invoke.
+    expect(tools).toHaveLength(1)
+    await tools[0].cb({})
+    expect(rows).toHaveLength(1)
+    expect(rows[0].toolName).toBe('allowed')
+  })
+})

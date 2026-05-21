@@ -8,7 +8,11 @@ refs:
     commitSha: b13ef03be1cde91eef90ea4015eb2df98aa50871
   - path: src/adapters/mcp/http-transport.ts
     commitSha: b13ef03be1cde91eef90ea4015eb2df98aa50871
+  - path: src/adapters/mcp/instrumented-server.ts
+    commitSha: b13ef03be1cde91eef90ea4015eb2df98aa50871
   - path: src/adapters/mcp/__tests__/http-transport.test.ts
+    commitSha: b13ef03be1cde91eef90ea4015eb2df98aa50871
+  - path: src/adapters/mcp/__tests__/instrumented-server.test.ts
     commitSha: b13ef03be1cde91eef90ea4015eb2df98aa50871
   - path: src/adapters/cli/index.ts
     commitSha: b13ef03be1cde91eef90ea4015eb2df98aa50871
@@ -127,6 +131,38 @@ src/adapters/mcp/
 ```
 
 `http-transport.ts` exports `startHttpTransport(factory: () => McpServer, opts): Promise<HttpTransportHandle>` returning `{ address, close }` for graceful shutdown.
+
+### Per-tool scoping (TASK-903 amendment, 2026-05-21)
+
+V1 bearer / OAuth gives a hold-token-or-nothing model: any holder can call any registered tool. That's fine for stdio (local trust), but HTTP exposes the same surface to claude.ai connectors, mobile, and any future remote client. Most tools have no business being remote-callable: lifecycle writes (`task_create|update|approve|reject`, `session_*`), maintenance (`backup_*`, `cleanup_*`, `workspace_*`), conversation orchestration, memory promotion, knowledge browsing, and inbox triage transitions.
+
+**Decision**: gate tool registration with an allowlist when `MCP_TRANSPORT=http`. The HTTP surface is **read + capture only** — 6 tools (`REMOTE_TOOL_ALLOWLIST` in [[server-bootstrap.ts]]):
+
+- `project_list`
+- `task_list`
+- `task_context`
+- `inbox_list`
+- `inbox_get`
+- `inbox_add`
+
+**Mechanism**: optional `toolAllowlist?: ReadonlySet<string>` on [[instrumented-server.ts]] `createInstrumentedServer(...)`. When set, `registerTool(name, ...)` skips both the underlying `server.registerTool` call and the `registeredToolNames` push for non-allowlisted names. The blocked names never appear in `tools/list`, and `tools/call` against them returns the SDK's standard `MCP error -32602: Tool <name> not found` — no info leak. Stdio passes `undefined`, behavior is byte-identical to pre-amendment.
+
+**Rejected: filter at call time** (allow registration, reject at dispatch with `-32601 Method not found`). Cleaner to make blocked tools invisible than to advertise + reject — smaller discovery surface, no inventory leak from `tools/list`.
+
+**Excluded tools + rationale**:
+- `inbox_update` — edits to existing rows belong in the local triage flow; remote stale-overwrite risk
+- `inbox_convert|archive|ready` — triage decisions need task/conversation context, which lives locally
+- `inbox_research` — web fetch + writeback; needs rate-limiting + audit before remote exposure
+- `memory_recall|promote_to_knowledge` — memory layer is local-only; remote promotion could pollute knowledge from untrusted sessions
+- `knowledge_list|search|get` — ADRs are local-only; remote clients should not browse architecture decisions
+- Everything else (`task_create|update|approve|reject`, `session_*`, `backup_*`, `cleanup_*`, `workspace_*`, `conversation_*`, `stats_report`) — write / lifecycle / maintenance; stays inside the local trust boundary
+
+**Startup log** (HTTP mode): `[choda-deck] registered <N> MCP tools (remote allowlist: 6 of <total>)`. Total is computed from a separate unfiltered build so a misconfigured allowlist is obvious in boot output.
+
+**Revisit when**:
+- A remote client needs a write tool not on the list → add it explicitly + smoke + update this ADR; don't expand by default
+- OAuth token scopes go live (follow-up to ADR-027) → migrate from a single allowlist to per-scope subsets
+- An audit/rate-limit story lands for `inbox_research` → consider promoting it onto the remote allowlist
 
 ### k8s shape (out of scope for this ADR, captured for context)
 

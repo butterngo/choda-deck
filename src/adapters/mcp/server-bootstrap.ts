@@ -34,12 +34,29 @@ interface BuildDeps {
   dbPath: string
 }
 
-function buildMcpServer(deps: BuildDeps): { server: McpServer; toolCount: number } {
+// TASK-903: tools exposed when MCP_TRANSPORT=http. Stdio keeps all tools
+// (local trust). HTTP is network-exposed, so the surface is narrowed to
+// read + capture: enough for a mobile/remote client to browse state and
+// drop new inbox items, nothing that mutates lifecycle or touches the
+// knowledge / memory / research layers. See ADR-026 §Per-tool scoping.
+export const REMOTE_TOOL_ALLOWLIST: ReadonlySet<string> = new Set([
+  'project_list',
+  'task_list',
+  'task_context',
+  'inbox_list',
+  'inbox_get',
+  'inbox_add'
+])
+
+function buildMcpServer(
+  deps: BuildDeps,
+  toolAllowlist?: ReadonlySet<string>
+): { server: McpServer; toolCount: number } {
   const server = new McpServer(
     { name: 'choda-tasks', version: '0.2.0' },
     { capabilities: { tools: {} } }
   )
-  const instrumented = createInstrumentedServer(server, deps.svc)
+  const instrumented = createInstrumentedServer(server, deps.svc, toolAllowlist)
 
   taskTools.register(instrumented, deps.svc)
   conversationTools.register(instrumented, deps.svc)
@@ -84,9 +101,20 @@ export async function startMcpServer(): Promise<void> {
     const port = Number.parseInt(process.env.MCP_HTTP_PORT ?? '7337', 10)
     const bind = process.env.MCP_HTTP_BIND ?? '0.0.0.0'
     // Log tool count once at startup to keep parity with stdio mode logging.
-    const { toolCount } = buildMcpServer(deps)
-    console.error(`[choda-deck] registered ${toolCount} MCP tools`)
-    await startHttpTransport(() => buildMcpServer(deps).server, { port, bind, token, oauth })
+    // Compute total (unfiltered) for the "X of Y" suffix so a misconfigured
+    // allowlist is obvious in the boot log.
+    const { toolCount: totalToolCount } = buildMcpServer(deps)
+    const { toolCount: allowedToolCount } = buildMcpServer(deps, REMOTE_TOOL_ALLOWLIST)
+    console.error(
+      `[choda-deck] registered ${allowedToolCount} MCP tools ` +
+        `(remote allowlist: ${REMOTE_TOOL_ALLOWLIST.size} of ${totalToolCount})`
+    )
+    await startHttpTransport(() => buildMcpServer(deps, REMOTE_TOOL_ALLOWLIST).server, {
+      port,
+      bind,
+      token,
+      oauth
+    })
     return
   }
 
