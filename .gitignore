@@ -10,6 +10,9 @@ out
 CLAUDE.local.md
 .claude/settings.local.json
 
+# Sensitive data — tokens, secrets, identifiers (see global CLAUDE.md)
+sensitive_information/
+
 # Generated / runtime
 choda-deck.db
 choda-deck.db-shm
