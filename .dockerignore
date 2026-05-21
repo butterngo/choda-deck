@@ -1,0 +1,55 @@
+# Keep the build context small + reproducible.
+# Anything not needed by `pnpm install` / `pnpm build` should be listed here.
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Local installs / build outputs (we install + build INSIDE the image)
+node_modules
+dist
+out
+
+# Host-local data dirs (would shadow the /data volume)
+data
+.data
+
+# Tests + fixtures (build doesn't need them; cuts context size)
+fixtures
+**/__tests__
+**/*.test.ts
+**/*.test.js
+vitest.config.ts
+
+# Lint / format / type cache
+.eslintcache
+tsconfig.web.tsbuildinfo
+tsconfig.node.tsbuildinfo
+
+# Docs (not needed at runtime)
+docs
+README.md
+LICENSE
+CLAUDE.md
+plugins.json
+graphify-out
+vault-graph.json
+projects.json.bak
+excalidraw.log
+
+# Editors / OS junk
+.vscode
+.idea
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs / env / secrets
+*.log
+.env
+.env.*
+
+# Docker artifacts (avoid recursion if someone vendors compose files later)
+Dockerfile
+.dockerignore
