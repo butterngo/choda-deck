@@ -17,7 +17,8 @@ export interface InstrumentedServer {
 
 export function createInstrumentedServer(
   server: McpServer,
-  sink: ToolInvocationOperations
+  sink: ToolInvocationOperations,
+  toolAllowlist?: ReadonlySet<string>
 ): InstrumentedServer {
   const names: string[] = []
 
@@ -26,6 +27,12 @@ export function createInstrumentedServer(
     config: RegisterToolArgs[1],
     cb: RegisterToolArgs[2]
   ): RegisterToolReturn => {
+    // TASK-903: when allowlist is set (HTTP/remote transport), silently skip
+    // tools outside the set — they never appear in tools/list and never reach
+    // the underlying McpServer. Stdio passes undefined => no filtering.
+    if (toolAllowlist !== undefined && !toolAllowlist.has(name)) {
+      return undefined as unknown as RegisterToolReturn
+    }
     names.push(name)
     const wrappedCb = async (...callArgs: unknown[]): Promise<unknown> => {
       const start = Date.now()
