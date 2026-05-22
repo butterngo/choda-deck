@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * ADR-029 channel 1 — Claude Code `PostToolUse` hook that emits a
  * `kind='file_modified'` observation row on `session_events` for every
