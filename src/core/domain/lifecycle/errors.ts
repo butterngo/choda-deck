@@ -88,6 +88,44 @@ export class WorkspaceResolutionError extends LifecycleError {
   }
 }
 
+export class AcIndexOutOfRangeError extends LifecycleError {
+  constructor(taskId: string, index: number, total: number) {
+    super(
+      'AC_INDEX_OUT_OF_RANGE',
+      `Task ${taskId} has ${total} AC items — index ${index} is out of range (valid: 0..${total - 1})`
+    )
+    this.name = 'AcIndexOutOfRangeError'
+  }
+}
+
+export class AcAlreadyCheckedError extends LifecycleError {
+  constructor(taskId: string, index: number) {
+    super('AC_ALREADY_CHECKED', `Task ${taskId} AC[${index}] is already checked`)
+    this.name = 'AcAlreadyCheckedError'
+  }
+}
+
+export class BodyLockViolationError extends LifecycleError {
+  constructor(taskId: string, detail: string) {
+    super(
+      'BODY_LOCK_VIOLATION',
+      `Task ${taskId}: ac_check tried to mutate body outside the single AC checkbox — ${detail}`
+    )
+    this.name = 'BodyLockViolationError'
+  }
+}
+
+export class NoActiveSessionError extends LifecycleError {
+  constructor(projectId: string, workspaceId: string | null) {
+    const scope = workspaceId ? `workspace ${workspaceId}` : `project ${projectId}`
+    super(
+      'NO_ACTIVE_SESSION',
+      `No active session for ${scope} — start one with session_start before calling ac_check`
+    )
+    this.name = 'NoActiveSessionError'
+  }
+}
+
 export class QueueDirtyTreeError extends LifecycleError {
   constructor(cwd: string, porcelain: string) {
     super(

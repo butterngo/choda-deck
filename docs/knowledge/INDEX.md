@@ -2,7 +2,9 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
-| [adr-027-minimal-self-hosted-oauth-2-0-dcr-for-claude-ai-connector-registration](./adr-027-minimal-self-hosted-oauth-2-0-dcr-for-claude-ai-connector-registration.md) | decision | ADR-027: Minimal self-hosted OAuth 2.0 + DCR for claude.ai connector registration | 2026-05-21 |  |
+| [ADR-029-session-activity-visibility](./ADR-029-session-activity-visibility.md) | decision | ADR-029: Session activity visibility — file edits, AC verification, end-of-session summary | 2026-05-21 |  |
+| [ADR-028-session-end-structured-summary](./ADR-028-session-end-structured-summary.md) | decision | ADR-028: Structured session-summary observation at session_end | 2026-05-21 |  |
+| [adr-027-minimal-self-hosted-oauth-2-0-dcr-for-claude-ai-connector-registration](./adr-027-minimal-self-hosted-oauth-2-0-dcr-for-claude-ai-connector-registration.md) | decision | ADR-027: Minimal self-hosted OAuth 2.0 + DCR for claude.ai connector registration | 2026-05-21 | ✱ |
 | [ADR-026-dual-transport-mcp-server](./ADR-026-dual-transport-mcp-server.md) | decision | ADR-026: Dual-transport MCP server (stdio + Streamable HTTP) with bearer auth for k8s | 2026-05-21 | ✱ |
 | [ADR-025-knowledge-register-existing-keep](./ADR-025-knowledge-register-existing-keep.md) | decision | ADR-025: knowledge_register_existing — keep as-is, error rate is noise | 2026-05-19 |  |
 | [ADR-023-agent-memory-layer](./ADR-023-agent-memory-layer.md) | decision | ADR-023: Agent memory layer — 2-tier episodic + procedural với Letta self-edit distillation | 2026-05-18 | ✱ |

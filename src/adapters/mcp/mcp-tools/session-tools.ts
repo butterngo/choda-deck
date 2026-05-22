@@ -32,6 +32,39 @@ export type SessionToolsDeps = ProjectOperations &
   SessionLifecycleOperations &
   ProjectContextDeps
 
+// ADR-028 — structured session-summary payload. FE base fields are required when
+// `summary` is provided; BE extension fields are optional. Server validates server-side;
+// invalid → MCP returns Zod schema error before any DB write (full rollback).
+const sessionSummarySchema = z.object({
+  summary: z.string(),
+  tasksDone: z.array(z.string()),
+  tasksCreated: z.array(z.string()),
+  tasksCancelled: z.array(z.string()),
+  commits: z.array(z.string()).describe('Format: "<hash> <task-id>"'),
+  filesChanged: z.array(z.string()).describe('Format: "<path> (<what changed>)"'),
+  acCoverage: z
+    .record(z.string(), z.string())
+    .describe('Map taskId → "N/M verified (how). K deferred: reason."'),
+  conversations: z.array(z.string()),
+  openItems: z.array(z.string()),
+  tasksShipped: z
+    .array(
+      z.object({
+        id: z.string(),
+        title: z.string(),
+        commits: z.array(z.string()),
+        files: z.array(z.string()),
+        tests: z.number(),
+        confidence: z.number()
+      })
+    )
+    .optional(),
+  tasksNotDone: z.array(z.object({ id: z.string(), reason: z.string() })).optional(),
+  testCoverageSummary: z.string().optional(),
+  outstandingRisks: z.array(z.string()).optional(),
+  branchState: z.string().optional()
+})
+
 const handoffInputSchema = {
   sessionId: z.string(),
   commits: z.array(z.string()).optional(),
@@ -47,6 +80,11 @@ const handoffInputSchema = {
     .optional()
     .describe(
       'Evidence matching task ## Test Plan — passed[] for verified items, skipped[] for deferred items with reason'
+    ),
+  summary: sessionSummarySchema
+    .optional()
+    .describe(
+      'ADR-028 typed session-summary. When provided, persisted as one observation event with payload.kind="session_summary", atomic with session close. Omit for backward compat.'
     )
 }
 
@@ -236,7 +274,7 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
           tasksUpdated: [],
           testResults: input.testResults
         }
-        const result = svc.endSession(input.sessionId, { handoff })
+        const result = svc.endSession(input.sessionId, { handoff, summary: input.summary })
         if (result.taskUpdated) handoff.tasksUpdated = [result.taskUpdated.id]
 
         const looseEndInboxIds = createLooseEndInboxes(svc, input.looseEnds, result.session)
