@@ -36,6 +36,8 @@ import type {
 import { InboxLifecycleService } from './lifecycle/inbox-lifecycle-service'
 import { ConversationLifecycleService } from './lifecycle/conversation-lifecycle-service'
 import { SessionLifecycleService } from './lifecycle/session-lifecycle-service'
+import { flipAcCheckbox, type CheckAcItemInput, type CheckAcItemResult } from './lifecycle/ac-check'
+import { NoActiveSessionError, TaskNotFoundError } from './lifecycle/errors'
 import { TaskReviewLifecycleService } from './lifecycle/task-review-lifecycle-service'
 import type {
   ApproveTaskResult,
@@ -602,6 +604,47 @@ export class SqliteTaskService
   ): import('./task-types').SessionEvent[] {
     const all = this.sessionEvents.listBySession(sessionId, eventType)
     return limit !== undefined ? all.slice(0, limit) : all
+  }
+
+  // ADR-029 channel 2: narrow body-lock bypass — flip one AC checkbox and emit
+  // an `ac_check` observation event in a single transaction. The MCP layer
+  // (ac-check.ts) resolves cwd → workspaceId before calling; this method takes
+  // an already-resolved workspaceId (or undefined to match any active session
+  // in the project).
+  checkAcItem(input: CheckAcItemInput): CheckAcItemResult {
+    const task = this.tasks.get(input.taskId)
+    if (!task) throw new TaskNotFoundError(input.taskId)
+
+    const { newBody, item } = flipAcCheckbox(task.body ?? '', task.id, input.acIndex)
+
+    const session = this.sessions.getActive(task.projectId, input.workspaceId)
+    if (!session) throw new NoActiveSessionError(task.projectId, input.workspaceId ?? null)
+
+    const tx = this.db.transaction((): CheckAcItemResult => {
+      this.tasks.update(task.id, { body: newBody })
+      const event = this.sessionEvents.create({
+        sessionId: session.id,
+        eventType: 'observation',
+        payloadJson: JSON.stringify({
+          kind: 'ac_check',
+          taskId: task.id,
+          acIndex: input.acIndex,
+          text: item.text,
+          evidence: input.evidence,
+          sessionId: session.id
+        }),
+        memoryCandidate: false
+      })
+      return {
+        taskId: task.id,
+        acIndex: input.acIndex,
+        text: item.text,
+        evidence: input.evidence,
+        eventId: event.id,
+        sessionId: session.id
+      }
+    })
+    return tx()
   }
 
   // ── Agent Memories ─────────────────────────────────────────────────────────
