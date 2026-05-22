@@ -2,6 +2,7 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
+| [ADR-030-dual-backend-sync](./ADR-030-dual-backend-sync.md) | decision | ADR-030: Dual-backend storage (SQLite local + Postgres remote) with pending-ops sync | 2026-05-22 |  |
 | [ADR-029-session-activity-visibility](./ADR-029-session-activity-visibility.md) | decision | ADR-029: Session activity visibility — file edits, AC verification, end-of-session summary | 2026-05-21 |  |
 | [ADR-028-session-end-structured-summary](./ADR-028-session-end-structured-summary.md) | decision | ADR-028: Structured session-summary observation at session_end | 2026-05-21 |  |
 | [adr-027-minimal-self-hosted-oauth-2-0-dcr-for-claude-ai-connector-registration](./adr-027-minimal-self-hosted-oauth-2-0-dcr-for-claude-ai-connector-registration.md) | decision | ADR-027: Minimal self-hosted OAuth 2.0 + DCR for claude.ai connector registration | 2026-05-21 | ✱ |
