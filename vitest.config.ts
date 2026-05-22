@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'scripts/**/*.test.ts'],
     globals: true,
     // Linux CI runners hit beforeEach > 10s under parallel test pressure
     // (mkdtempSync + new Database + initSchema runs many DDL + ALTER statements).
