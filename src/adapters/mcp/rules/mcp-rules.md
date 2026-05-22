@@ -103,10 +103,17 @@ Every candidate loose end falls into exactly one of 3 buckets. Pick the bucket f
 | `tasksCreated` | `string[]` | Task IDs created in this session |
 | `tasksCancelled` | `string[]` | Task IDs cancelled in this session |
 | `commits` | `string[]` | Format: `"<short-hash> <task-id> <subject>"` |
-| `filesChanged` | `string[]` | Format: `"<path> (<what changed>)"` |
-| `acCoverage` | `Record<taskId, string>` | e.g. `"TASK-X": "5/5 verified (lint+vitest+build+smoke). 0 deferred."` |
 | `conversations` | `string[]` | Conversation IDs touched / decided |
 | `openItems` | `string[]` | Carry-forward items — distinct from `looseEnds` (action items already filed as tasks) |
+
+**AI-optional — server auto-fills from channels 1+2 (TASK-913):**
+
+| Field | Type | Notes |
+|---|---|---|
+| `filesChanged` | `string[]?` | Format: `"<path> (<what changed>)"`. Omit → server appends `"<path> (+N, -M)"` per unique path from `kind='file_modified'` events (channel 1). AI entries kept verbatim; only unseen paths appended. |
+| `acCoverage` | `Record<taskId, string>?` | e.g. `"TASK-X": "5/5 verified (...). 0 deferred."`. Omit → server emits `"N/M verified (<evidence>)"` derived from `kind='ac_check'` events (channel 2), where `M = findAcItems(task.body).length` at session-end. AI entry kept verbatim + ` + K auto-detected` suffix added when events exist. |
+
+**Merge rule:** AI input wins — your judgment narrative trumps mechanical aggregation. The aggregator only fills gaps; it never overwrites a value you provided.
 
 **Optional (BE extension):**
 
@@ -135,6 +142,22 @@ Every candidate loose end falls into exactly one of 3 buckets. Pick the bucket f
   ]
 }
 ```
+
+**Narrative-only example** (relies on the channels 1+2 aggregator to fill `filesChanged` + `acCoverage` — minimum viable payload for an agent that has been calling `ac_check` and has the file-edit hook installed):
+
+```json
+{
+  "summary": "TASK-913 shipped: session-summary aggregator wires channels 1+2 into session_end. Narrative-only payloads now produce fully populated stored summaries.",
+  "tasksDone": ["TASK-913"],
+  "tasksCreated": [],
+  "tasksCancelled": [],
+  "commits": ["d4d4d4d TASK-913 feat: session-summary aggregator"],
+  "conversations": [],
+  "openItems": []
+}
+```
+
+Stored payload `filesChanged` ends up `["src/core/domain/lifecycle/session-lifecycle-service.ts (+62, -3)", …]` and `acCoverage` `{"TASK-913": "5/5 verified (lint exits 0; vitest 35/35 …)"}` — both server-derived.
 
 **Validation:** invalid payload → 400 from MCP, session is NOT closed. Omitting `summary` entirely is fully backward compatible (no observation row created, no error). Schema lives at `src/adapters/mcp/mcp-tools/session-tools.ts` (`sessionSummarySchema`).
 
