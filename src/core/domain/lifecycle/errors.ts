@@ -43,6 +43,13 @@ export class ConversationStatusError extends LifecycleError {
   }
 }
 
+export class ConversationAddSchemaError extends LifecycleError {
+  constructor(message: string) {
+    super('CONVERSATION_ADD_SCHEMA', message)
+    this.name = 'ConversationAddSchemaError'
+  }
+}
+
 export class SessionNotFoundError extends LifecycleError {
   constructor(id: string) {
     super('SESSION_NOT_FOUND', `Session ${id} not found`)

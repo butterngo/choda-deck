@@ -166,8 +166,8 @@ Stored payload `filesChanged` ends up `["src/core/domain/lifecycle/session-lifec
 Discussion etiquette (advisory, injected only when `conv.status` is `open` or `discussing`; skipped for `decided`/`closed`/`stale`):
 
 - Read the full thread first. Don't restate prior points unless correcting them.
-- State your position in 1 line, then 2-3 concrete reasons (not generic pros/cons).
 - Address the latest unresolved point. If you disagree, challenge it directly — don't add parallel views.
 - When you see convergence, propose a decision and name any remaining risk briefly.
-- Cover business + implementation + test impact when relevant; skip non-applicable angles.
 - Keep it proportional. Small threads stay short.
+
+Reviewer turns (`type='review'`) are gated by the `conversation_add` schema — pass `verdict` + `topConcern` + `asks` (+ optional `notes`) as structured fields; the server composes the canonical content. The schema enforces brevity (topConcern ≤200 chars, ≤5 asks, each ≤120 chars). Non-review types stay free-text.

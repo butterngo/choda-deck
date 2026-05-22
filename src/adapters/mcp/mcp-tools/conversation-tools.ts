@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { textResponse } from './types'
 import { now } from '../../../core/domain/repositories/shared'
 import {
+  ConversationAddSchemaError,
   ConversationNotFoundError,
   ConversationStatusError,
   LifecycleError
@@ -37,6 +38,79 @@ export const conversationAddMessageTypeSchema = messageTypeSchema.refine(
 )
 const conversationStatusSchema = z.enum(['open', 'discussing', 'decided', 'closed', 'stale'])
 const priorityEnum = z.enum(['critical', 'high', 'medium', 'low'])
+
+export const reviewVerdictSchema = z.enum([
+  'approve',
+  'reject',
+  'need-clarification',
+  'defer'
+])
+
+export const reviewerFieldsSchema = z.object({
+  verdict: reviewVerdictSchema,
+  topConcern: z.string().min(20).max(200),
+  asks: z.array(z.string().min(10).max(120)).min(1).max(5),
+  notes: z.string().max(600).optional()
+})
+
+export type ReviewerFields = z.infer<typeof reviewerFieldsSchema>
+
+export function composeReviewerContent(fields: ReviewerFields): string {
+  const lines = [
+    `VERDICT: ${fields.verdict}`,
+    `TOP CONCERN: ${fields.topConcern}`,
+    'SPECIFIC ASKS:',
+    ...fields.asks.map((a) => `- ${a}`)
+  ]
+  if (fields.notes) {
+    lines.push(`NOTES: ${fields.notes}`)
+  }
+  return lines.join('\n')
+}
+
+export interface ConversationAddContentInput {
+  type: z.infer<typeof conversationAddMessageTypeSchema>
+  content?: string
+  verdict?: z.infer<typeof reviewVerdictSchema>
+  topConcern?: string
+  asks?: string[]
+  notes?: string
+}
+
+// When type='review' the structured fields are required and the server composes
+// the canonical content. For all other types, structured fields are rejected and
+// the free-text `content` must be provided. Single source of truth for both rules.
+export function resolveConversationAddContent(input: ConversationAddContentInput): string {
+  const { type, content, verdict, topConcern, asks, notes } = input
+
+  if (type === 'review') {
+    const parsed = reviewerFieldsSchema.safeParse({ verdict, topConcern, asks, notes })
+    if (!parsed.success) {
+      const issues = parsed.error.issues
+        .map((i) => `${i.path.join('.') || '<root>'}: ${i.message}`)
+        .join('; ')
+      throw new ConversationAddSchemaError(
+        `type='review' requires structured fields (verdict, topConcern, asks[1..5], notes?) — ${issues}`
+      )
+    }
+    return composeReviewerContent(parsed.data)
+  }
+
+  if (
+    verdict !== undefined ||
+    topConcern !== undefined ||
+    asks !== undefined ||
+    notes !== undefined
+  ) {
+    throw new ConversationAddSchemaError(
+      `verdict/topConcern/asks/notes only valid for type='review' (got type='${type}')`
+    )
+  }
+  if (content === undefined || content.length === 0) {
+    throw new ConversationAddSchemaError(`content is required for type='${type}'`)
+  }
+  return content
+}
 
 const metadataSchema = z
   .object({
@@ -164,16 +238,41 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
     'conversation_add',
     {
       description:
-        'Add a message to an existing conversation (any type except decision — use conversation_decide for that)',
+        "Add a message to an existing conversation. For type='review', pass the structured fields (verdict, topConcern, asks, notes?) — the server composes the canonical content. Other types (question, answer, proposal, action, comment) use free-text content. type='decision' is rejected — use conversation_decide instead.",
       inputSchema: {
         conversationId: z.string(),
         author: z.string().describe('Participant name'),
-        content: z.string(),
+        content: z
+          .string()
+          .optional()
+          .describe(
+            "Free-text content. Required for type ∈ {question, answer, proposal, action, comment}. Ignored for type='review' — use the structured fields instead."
+          ),
         type: conversationAddMessageTypeSchema,
-        metadata: metadataSchema
+        metadata: metadataSchema,
+        verdict: reviewVerdictSchema
+          .optional()
+          .describe("type='review' only — overall stance"),
+        topConcern: z
+          .string()
+          .min(20)
+          .max(200)
+          .optional()
+          .describe("type='review' only — single blocker, one sentence (20–200 chars)"),
+        asks: z
+          .array(z.string().min(10).max(120))
+          .min(1)
+          .max(5)
+          .optional()
+          .describe("type='review' only — 1–5 actionable items, each 10–120 chars"),
+        notes: z
+          .string()
+          .max(600)
+          .optional()
+          .describe("type='review' only — optional escape hatch for counter-proposals (≤600 chars)")
       }
     },
-    async ({ conversationId, author, content, type }) =>
+    async ({ conversationId, author, content, type, verdict, topConcern, asks, notes }) =>
       tryLifecycle(() => {
         const conv = svc.getConversation(conversationId)
         if (!conv) throw new ConversationNotFoundError(conversationId)
@@ -184,10 +283,18 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
             'cannot add message to a closed conversation. Reopen it first.'
           )
         }
+        const resolvedContent = resolveConversationAddContent({
+          type,
+          content,
+          verdict,
+          topConcern,
+          asks,
+          notes
+        })
         const msg = svc.addConversationMessage({
           conversationId,
           authorName: author,
-          content,
+          content: resolvedContent,
           messageType: type
         })
         if (conv.status === 'open' && type !== 'comment') {
