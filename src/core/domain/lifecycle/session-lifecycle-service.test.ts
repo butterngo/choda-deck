@@ -309,6 +309,92 @@ describe('endSession memory candidates (Phase 2 — ADR-023)', () => {
   })
 })
 
+describe('endSession structured summary (ADR-028 / TASK-904)', () => {
+  const sampleSummary = {
+    summary: 'Shipped X, queued Y.',
+    tasksDone: ['TASK-1'],
+    tasksCreated: ['TASK-2'],
+    tasksCancelled: [],
+    commits: ['abc123 TASK-1 feat(x): impl'],
+    filesChanged: ['src/x.ts (new)'],
+    acCoverage: { 'TASK-1': '3/3 verified (lint+vitest+build). 0 deferred.' },
+    conversations: [],
+    openItems: ['follow-up on Y prefetch']
+  }
+
+  it('persists one session_events observation with kind=session_summary when summary provided', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    const r = svc.endSession(started.session.id, {
+      handoff: { resumePoint: 'shipped' },
+      summary: sampleSummary
+    })
+
+    expect(r.session.status).toBe('completed')
+    const events = svc.listSessionEvents(started.session.id, 'observation')
+    expect(events).toHaveLength(1)
+    const payload = JSON.parse(events[0].payloadJson ?? '{}')
+    expect(payload.kind).toBe('session_summary')
+    expect(payload.summary).toBe('Shipped X, queued Y.')
+    expect(payload.tasksDone).toEqual(['TASK-1'])
+    expect(payload.acCoverage).toEqual({ 'TASK-1': '3/3 verified (lint+vitest+build). 0 deferred.' })
+    expect(events[0].memoryCandidate).toBe(false)
+  })
+
+  it('omits the observation row when summary is not provided (backward compat)', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    svc.endSession(started.session.id, { handoff: { resumePoint: 'r' } })
+    expect(svc.listSessionEvents(started.session.id, 'observation')).toEqual([])
+  })
+
+  it('accepts BE extension fields (tasksShipped, branchState, …) when present', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    svc.endSession(started.session.id, {
+      handoff: { resumePoint: 'r' },
+      summary: {
+        ...sampleSummary,
+        tasksShipped: [
+          {
+            id: 'TASK-1',
+            title: 'Impl X',
+            commits: ['abc123'],
+            files: ['src/x.ts'],
+            tests: 12,
+            confidence: 0.9
+          }
+        ],
+        branchState: 'feat/x merged to main'
+      }
+    })
+    const events = svc.listSessionEvents(started.session.id, 'observation')
+    const payload = JSON.parse(events[0].payloadJson ?? '{}')
+    expect(payload.tasksShipped[0].tests).toBe(12)
+    expect(payload.branchState).toBe('feat/x merged to main')
+  })
+
+  it('rolls back the observation row when the session close fails (atomic)', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lifecycle = (svc as any).sessionLifecycle
+    const orig = lifecycle.sessions.update.bind(lifecycle.sessions)
+    lifecycle.sessions.update = () => {
+      throw new Error('simulated session update failure')
+    }
+
+    expect(() =>
+      svc.endSession(started.session.id, {
+        handoff: { resumePoint: 'will rollback' },
+        summary: sampleSummary
+      })
+    ).toThrow('simulated session update failure')
+
+    lifecycle.sessions.update = orig
+
+    expect(svc.getSession(started.session.id)?.status).toBe('active')
+    expect(svc.listSessionEvents(started.session.id, 'observation')).toEqual([])
+  })
+})
+
 describe('abandonSession', () => {
   it('happy path: active → completed with handoff.failureReason; task stays IN-PROGRESS', () => {
     const task = svc.createTask({ projectId: 'proj-s', title: 'Bound task' })

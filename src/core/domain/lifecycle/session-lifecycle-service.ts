@@ -121,6 +121,15 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
         handoff: input.handoff
       })
 
+      if (input.summary) {
+        this.sessionEvents.create({
+          sessionId: id,
+          eventType: 'observation',
+          payloadJson: JSON.stringify({ kind: 'session_summary', ...input.summary }),
+          memoryCandidate: false
+        })
+      }
+
       const memoryCandidates = this.sessionEvents.listMemoryCandidates(id)
       const selfEditPrompt = buildSelfEditPrompt(memoryCandidates)
 

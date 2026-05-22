@@ -90,6 +90,54 @@ Every candidate loose end falls into exactly one of 3 buckets. Pick the bucket f
 
 `looseEnds` are auto-converted to inbox entries (status=raw) under the session's project — one entry per item, tagged with the source session/task ID. Butter reviews the inbox in `/daily` and decides which deserve `inbox_convert` → task. If you find yourself dumping action items or observations into `looseEnds`, you skipped step 1 — go back and classify.
 
+### Structured summary payload (ADR-028)
+
+`session_end` accepts an optional typed `summary` field. When provided, the server writes one `session_events` row (`event_type='observation'`, `payload.kind='session_summary'`) atomic with the session close. Use it on real implementation sessions — TASK-846 auto-recall and the Dashboard Sessions tab both read this shape.
+
+**Required (FE base):**
+
+| Field | Type | Notes |
+|---|---|---|
+| `summary` | `string` | One paragraph: what shipped, what stalled, what's next |
+| `tasksDone` | `string[]` | Task IDs marked DONE in this session |
+| `tasksCreated` | `string[]` | Task IDs created in this session |
+| `tasksCancelled` | `string[]` | Task IDs cancelled in this session |
+| `commits` | `string[]` | Format: `"<short-hash> <task-id> <subject>"` |
+| `filesChanged` | `string[]` | Format: `"<path> (<what changed>)"` |
+| `acCoverage` | `Record<taskId, string>` | e.g. `"TASK-X": "5/5 verified (lint+vitest+build+smoke). 0 deferred."` |
+| `conversations` | `string[]` | Conversation IDs touched / decided |
+| `openItems` | `string[]` | Carry-forward items — distinct from `looseEnds` (action items already filed as tasks) |
+
+**Optional (BE extension):**
+
+`tasksShipped: Array<{id, title, commits, files, tests, confidence}>`, `tasksNotDone: Array<{id, reason}>`, `testCoverageSummary: string`, `outstandingRisks: string[]`, `branchState: string`.
+
+**Canonical example** (mirrors EVT-1779256867162-5 — SESSION-1779246110272-1, TASK-800 PIM FE):
+
+```json
+{
+  "summary": "TASK-800 shipped: PIM FE list-screen virtualization landed; PR #482 squash-merged. Two follow-ups carried forward (filter chip a11y, prefetch on hover).",
+  "tasksDone": ["TASK-800"],
+  "tasksCreated": ["TASK-805", "TASK-806"],
+  "tasksCancelled": [],
+  "commits": ["a1b2c3d TASK-800 feat(pim-fe): virtualized list with row prefetch"],
+  "filesChanged": [
+    "src/pim/list/VirtualList.tsx (new — react-window wrapper)",
+    "src/pim/list/list-page.tsx (swap table → VirtualList)"
+  ],
+  "acCoverage": {
+    "TASK-800": "6/6 verified (lint+vitest+build+manual smoke @ 10k rows). 0 deferred."
+  },
+  "conversations": ["CONV-1779246111-1"],
+  "openItems": [
+    "Filter chip a11y — screenreader announces stale label after clear (TASK-805)",
+    "Row prefetch on hover — current eager prefetch wastes ~30% requests (TASK-806)"
+  ]
+}
+```
+
+**Validation:** invalid payload → 400 from MCP, session is NOT closed. Omitting `summary` entirely is fully backward compatible (no observation row created, no error). Schema lives at `src/adapters/mcp/mcp-tools/session-tools.ts` (`sessionSummarySchema`).
+
 ## On conversation_read
 
 Discussion etiquette (advisory, injected only when `conv.status` is `open` or `discussing`; skipped for `decided`/`closed`/`stale`):

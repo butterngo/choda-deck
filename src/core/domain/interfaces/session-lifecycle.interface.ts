@@ -28,9 +28,47 @@ export interface StartSessionResult {
   recalledMemories: AgentMemory[]
 }
 
+/**
+ * Structured session-summary payload — ADR-028. When provided to `endSession`,
+ * persisted as a `session_events` row with `event_type='observation'` and
+ * `payload.kind='session_summary'`, atomic with session close. FE base fields
+ * required; BE extension fields optional. Schema enforcement happens at the
+ * MCP boundary (Zod in session-tools.ts) — the service trusts the type.
+ */
+export interface SessionSummaryPayload {
+  summary: string
+  tasksDone: string[]
+  tasksCreated: string[]
+  tasksCancelled: string[]
+  commits: string[]
+  filesChanged: string[]
+  acCoverage: Record<string, string>
+  conversations: string[]
+  openItems: string[]
+  tasksShipped?: Array<{
+    id: string
+    title: string
+    commits: string[]
+    files: string[]
+    tests: number
+    confidence: number
+  }>
+  tasksNotDone?: Array<{ id: string; reason: string }>
+  testCoverageSummary?: string
+  outstandingRisks?: string[]
+  branchState?: string
+}
+
 export interface EndSessionInput {
   handoff: SessionHandoff
   decisionSummary?: string
+  /**
+   * Optional structured session-summary payload (ADR-028). When provided,
+   * `endSession` writes one `session_events` observation row with
+   * `payload.kind='session_summary'`, atomic with session close. Omitting
+   * preserves full backward compat — no event row is created.
+   */
+  summary?: SessionSummaryPayload
 }
 
 export interface EndSessionResult {
