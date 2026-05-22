@@ -395,6 +395,188 @@ describe('endSession structured summary (ADR-028 / TASK-904)', () => {
   })
 })
 
+describe('endSession aggregator (ADR-029 step 4 / TASK-913)', () => {
+  const narrativeOnlySummary = {
+    summary: 'narrative only',
+    tasksDone: [],
+    tasksCreated: [],
+    tasksCancelled: [],
+    commits: [],
+    conversations: [],
+    openItems: []
+  }
+
+  function findSummaryPayload(
+    events: Array<{ payloadJson: string | null }>
+  ): Record<string, unknown> {
+    const evt = events.find((e) => {
+      const p = JSON.parse(e.payloadJson ?? '{}') as Record<string, unknown>
+      return p.kind === 'session_summary'
+    })
+    if (!evt) throw new Error('no session_summary event found')
+    return JSON.parse(evt.payloadJson ?? '{}') as Record<string, unknown>
+  }
+
+  it('auto-fills filesChanged from kind=file_modified events when AI omits', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    svc.createSessionEvent({
+      sessionId: started.session.id,
+      eventType: 'observation',
+      payloadJson: JSON.stringify({
+        kind: 'file_modified',
+        path: 'src/foo.ts',
+        linesAdded: 5,
+        linesRemoved: 2
+      }),
+      memoryCandidate: false
+    })
+
+    svc.endSession(started.session.id, {
+      handoff: { resumePoint: 'r' },
+      summary: narrativeOnlySummary
+    })
+
+    const events = svc.listSessionEvents(started.session.id, 'observation')
+    const payload = findSummaryPayload(events)
+    expect(payload.filesChanged).toEqual(['src/foo.ts (+5, -2)'])
+  })
+
+  it('preserves AI-provided filesChanged verbatim and appends only unseen paths', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    svc.createSessionEvent({
+      sessionId: started.session.id,
+      eventType: 'observation',
+      payloadJson: JSON.stringify({
+        kind: 'file_modified',
+        path: 'src/x.ts',
+        linesAdded: 3,
+        linesRemoved: 1
+      }),
+      memoryCandidate: false
+    })
+    svc.createSessionEvent({
+      sessionId: started.session.id,
+      eventType: 'observation',
+      payloadJson: JSON.stringify({
+        kind: 'file_modified',
+        path: 'src/y.ts',
+        linesAdded: 7,
+        linesRemoved: 0
+      }),
+      memoryCandidate: false
+    })
+
+    svc.endSession(started.session.id, {
+      handoff: { resumePoint: 'r' },
+      summary: { ...narrativeOnlySummary, filesChanged: ['src/x.ts (refactor)'] }
+    })
+
+    const events = svc.listSessionEvents(started.session.id, 'observation')
+    const payload = findSummaryPayload(events)
+    expect(payload.filesChanged).toEqual(['src/x.ts (refactor)', 'src/y.ts (+7, -0)'])
+  })
+
+  it('derives acCoverage from kind=ac_check events with findAcItems denominator when AI omits', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    const task = svc.createTask({
+      projectId: 'proj-s',
+      title: 'AC denominator task',
+      body: '## Context\nfoo\n\n## Acceptance\n- [ ] one\n- [ ] two\n- [ ] three\n'
+    })
+    svc.createSessionEvent({
+      sessionId: started.session.id,
+      eventType: 'observation',
+      payloadJson: JSON.stringify({
+        kind: 'ac_check',
+        taskId: task.id,
+        acIndex: 0,
+        text: 'one',
+        evidence: 'lint exits 0'
+      }),
+      memoryCandidate: false
+    })
+
+    svc.endSession(started.session.id, {
+      handoff: { resumePoint: 'r' },
+      summary: narrativeOnlySummary
+    })
+
+    const events = svc.listSessionEvents(started.session.id, 'observation')
+    const payload = findSummaryPayload(events)
+    expect(payload.acCoverage).toEqual({ [task.id]: '1/3 verified (lint exits 0)' })
+  })
+
+  it('appends " + K auto-detected" to AI-provided acCoverage when events also exist', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+    const task = svc.createTask({
+      projectId: 'proj-s',
+      title: 'AC suffix task',
+      body: '## Acceptance\n- [ ] one\n- [ ] two\n'
+    })
+    svc.createSessionEvent({
+      sessionId: started.session.id,
+      eventType: 'observation',
+      payloadJson: JSON.stringify({
+        kind: 'ac_check',
+        taskId: task.id,
+        acIndex: 0,
+        text: 'one',
+        evidence: 'vitest 1/1'
+      }),
+      memoryCandidate: false
+    })
+    svc.createSessionEvent({
+      sessionId: started.session.id,
+      eventType: 'observation',
+      payloadJson: JSON.stringify({
+        kind: 'ac_check',
+        taskId: task.id,
+        acIndex: 1,
+        text: 'two',
+        evidence: 'build exits 0'
+      }),
+      memoryCandidate: false
+    })
+
+    svc.endSession(started.session.id, {
+      handoff: { resumePoint: 'r' },
+      summary: {
+        ...narrativeOnlySummary,
+        acCoverage: { [task.id]: '2/2 verified (manual). 0 deferred.' }
+      }
+    })
+
+    const events = svc.listSessionEvents(started.session.id, 'observation')
+    const payload = findSummaryPayload(events)
+    expect(payload.acCoverage).toEqual({
+      [task.id]: '2/2 verified (manual). 0 deferred. + 2 auto-detected'
+    })
+  })
+
+  it('rolls back the session_summary row when aggregator SELECT throws mid-tx (atomic)', () => {
+    const started = svc.startSession({ projectId: 'proj-s' })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lifecycle = (svc as any).sessionLifecycle
+    const orig = lifecycle.sessionEvents.listBySession.bind(lifecycle.sessionEvents)
+    lifecycle.sessionEvents.listBySession = () => {
+      throw new Error('simulated aggregator SELECT failure')
+    }
+
+    expect(() =>
+      svc.endSession(started.session.id, {
+        handoff: { resumePoint: 'will rollback' },
+        summary: narrativeOnlySummary
+      })
+    ).toThrow('simulated aggregator SELECT failure')
+
+    lifecycle.sessionEvents.listBySession = orig
+
+    expect(svc.getSession(started.session.id)?.status).toBe('active')
+    expect(svc.listSessionEvents(started.session.id, 'observation')).toEqual([])
+  })
+})
+
 describe('abandonSession', () => {
   it('happy path: active → completed with handoff.failureReason; task stays IN-PROGRESS', () => {
     const task = svc.createTask({ projectId: 'proj-s', title: 'Bound task' })

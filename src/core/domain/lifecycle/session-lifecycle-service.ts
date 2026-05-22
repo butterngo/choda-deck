@@ -14,9 +14,11 @@ import type {
   EndSessionResult,
   ResumeSessionResult,
   SessionLifecycleOperations,
+  SessionSummaryPayload,
   StartSessionInput,
   StartSessionResult
 } from '../interfaces/session-lifecycle.interface'
+import { findAcItems } from './ac-check'
 
 export type RecallMemoriesFn = (input: MemoryRecallInput) => AgentMemory[]
 import { now } from '../repositories/shared'
@@ -122,10 +124,11 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
       })
 
       if (input.summary) {
+        const merged = aggregateSessionSummary(this.sessionEvents, this.tasks, id, input.summary)
         this.sessionEvents.create({
           sessionId: id,
           eventType: 'observation',
-          payloadJson: JSON.stringify({ kind: 'session_summary', ...input.summary }),
+          payloadJson: JSON.stringify({ kind: 'session_summary', ...merged }),
           memoryCandidate: false
         })
       }
@@ -202,6 +205,88 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
       contextSources
     }
   }
+}
+
+/**
+ * ADR-029 step 4 (TASK-913) — auto-fill `filesChanged` + `acCoverage` from the
+ * channels 1+2 observation rows of the current session before persisting the
+ * `kind='session_summary'` row. Merge rule: **AI input wins**. The aggregator
+ * only fills gaps and appends "+ K auto-detected" suffixes when AI provided
+ * an `acCoverage[taskId]` and ac_check events also exist for that taskId.
+ *
+ * Pure with respect to its repository arguments — no side effects. Designed to
+ * run inside the same `db.transaction(...)` as the `session_summary` INSERT so
+ * a SELECT failure mid-aggregate rolls back the entire end-session payload.
+ */
+export function aggregateSessionSummary(
+  sessionEvents: SessionEventRepository,
+  tasks: TaskRepository,
+  sessionId: string,
+  summary: SessionSummaryPayload
+): SessionSummaryPayload {
+  const events = sessionEvents.listBySession(sessionId, 'observation')
+
+  const fileStatsByPath = new Map<string, { added: number; removed: number }>()
+  const acEvidencesByTask = new Map<string, string[]>()
+
+  for (const evt of events) {
+    const payload = parseObservationPayload(evt.payloadJson)
+    if (!payload) continue
+    if (payload.kind === 'file_modified' && typeof payload.path === 'string') {
+      const prev = fileStatsByPath.get(payload.path) ?? { added: 0, removed: 0 }
+      prev.added += typeof payload.linesAdded === 'number' ? payload.linesAdded : 0
+      prev.removed += typeof payload.linesRemoved === 'number' ? payload.linesRemoved : 0
+      fileStatsByPath.set(payload.path, prev)
+    } else if (payload.kind === 'ac_check' && typeof payload.taskId === 'string') {
+      const list = acEvidencesByTask.get(payload.taskId) ?? []
+      list.push(typeof payload.evidence === 'string' ? payload.evidence : '')
+      acEvidencesByTask.set(payload.taskId, list)
+    }
+  }
+
+  const aiFiles = summary.filesChanged ?? []
+  const aiPaths = new Set<string>()
+  for (const entry of aiFiles) {
+    const split = entry.indexOf(' (')
+    aiPaths.add(split >= 0 ? entry.slice(0, split) : entry)
+  }
+  const derivedFiles: string[] = []
+  for (const [p, stats] of fileStatsByPath) {
+    if (aiPaths.has(p)) continue
+    derivedFiles.push(`${p} (+${stats.added}, -${stats.removed})`)
+  }
+  const mergedFilesChanged = [...aiFiles, ...derivedFiles]
+
+  const aiAcCoverage = summary.acCoverage ?? {}
+  const mergedAcCoverage: Record<string, string> = { ...aiAcCoverage }
+  for (const [taskId, evidences] of acEvidencesByTask) {
+    const n = evidences.length
+    const evidenceSummary = evidences.filter((e) => e.length > 0).join('; ')
+    const task = tasks.get(taskId)
+    const m = task ? findAcItems(task.body ?? '').length : n
+    if (aiAcCoverage[taskId]) {
+      mergedAcCoverage[taskId] = `${aiAcCoverage[taskId]} + ${n} auto-detected`
+    } else {
+      mergedAcCoverage[taskId] = `${n}/${m} verified (${evidenceSummary})`
+    }
+  }
+
+  return {
+    ...summary,
+    filesChanged: mergedFilesChanged,
+    acCoverage: mergedAcCoverage
+  }
+}
+
+function parseObservationPayload(json: string | null): Record<string, unknown> | null {
+  if (!json) return null
+  try {
+    const parsed: unknown = JSON.parse(json)
+    if (typeof parsed === 'object' && parsed !== null) return parsed as Record<string, unknown>
+  } catch {
+    /* malformed payload — skip */
+  }
+  return null
 }
 
 export function buildSelfEditPrompt(candidates: SessionEvent[]): string {

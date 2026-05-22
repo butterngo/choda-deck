@@ -29,11 +29,20 @@ export interface StartSessionResult {
 }
 
 /**
- * Structured session-summary payload — ADR-028. When provided to `endSession`,
- * persisted as a `session_events` row with `event_type='observation'` and
- * `payload.kind='session_summary'`, atomic with session close. FE base fields
- * required; BE extension fields optional. Schema enforcement happens at the
- * MCP boundary (Zod in session-tools.ts) — the service trusts the type.
+ * Structured session-summary payload — ADR-028 (TASK-904) + ADR-029 step 4
+ * (TASK-913). When provided to `endSession`, persisted as a `session_events`
+ * row with `event_type='observation'` and `payload.kind='session_summary'`,
+ * atomic with session close.
+ *
+ * FE base fields required; BE extension fields optional. Schema enforcement
+ * happens at the MCP boundary (Zod in session-tools.ts) — the service trusts
+ * the type.
+ *
+ * `filesChanged` + `acCoverage` are AI-optional — when omitted, the server's
+ * aggregator (see `aggregateSessionSummary`) fills them from channel 1
+ * (`kind='file_modified'`) and channel 2 (`kind='ac_check'`) rows of the
+ * current session. AI-provided entries always win; the aggregator only fills
+ * gaps and appends `+ K auto-detected` to AI-provided `acCoverage` values.
  */
 export interface SessionSummaryPayload {
   summary: string
@@ -41,8 +50,8 @@ export interface SessionSummaryPayload {
   tasksCreated: string[]
   tasksCancelled: string[]
   commits: string[]
-  filesChanged: string[]
-  acCoverage: Record<string, string>
+  filesChanged?: string[]
+  acCoverage?: Record<string, string>
   conversations: string[]
   openItems: string[]
   tasksShipped?: Array<{

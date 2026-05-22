@@ -35,16 +35,28 @@ export type SessionToolsDeps = ProjectOperations &
 // ADR-028 — structured session-summary payload. FE base fields are required when
 // `summary` is provided; BE extension fields are optional. Server validates server-side;
 // invalid → MCP returns Zod schema error before any DB write (full rollback).
+//
+// ADR-029 step 4 (TASK-913) — `filesChanged` + `acCoverage` are AI-optional;
+// the server's aggregator fills them from channels 1+2 of the current session.
+// AI-provided values always win; the aggregator only fills gaps.
 const sessionSummarySchema = z.object({
   summary: z.string(),
   tasksDone: z.array(z.string()),
   tasksCreated: z.array(z.string()),
   tasksCancelled: z.array(z.string()),
   commits: z.array(z.string()).describe('Format: "<hash> <task-id>"'),
-  filesChanged: z.array(z.string()).describe('Format: "<path> (<what changed>)"'),
+  filesChanged: z
+    .array(z.string())
+    .describe(
+      'Format: "<path> (<what changed>)". Optional — server appends auto-derived entries from channel 1 (kind=file_modified) events for paths you did not list.'
+    )
+    .optional(),
   acCoverage: z
     .record(z.string(), z.string())
-    .describe('Map taskId → "N/M verified (how). K deferred: reason."'),
+    .describe(
+      'Map taskId → "N/M verified (how). K deferred: reason.". Optional — server derives from channel 2 (kind=ac_check) events when omitted, or appends " + K auto-detected" to AI-provided values when both exist.'
+    )
+    .optional(),
   conversations: z.array(z.string()),
   openItems: z.array(z.string()),
   tasksShipped: z
