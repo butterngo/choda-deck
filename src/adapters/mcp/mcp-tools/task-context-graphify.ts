@@ -116,11 +116,11 @@ const LABEL_EXACT_DROP = new Set<string>([
 
 export type GraphifyDeps = ProjectOperations & WorkspaceOperations
 
-export function buildGraphifyContext(
+export async function buildGraphifyContext(
   task: Task,
   svc: GraphifyDeps
-): GraphifyContext | GraphifyNotAvailable {
-  const graphPath = findGraphPath(task.projectId, svc)
+): Promise<GraphifyContext | GraphifyNotAvailable> {
+  const graphPath = await findGraphPath(task.projectId, svc)
   if (!graphPath) {
     return {
       status: 'no-graph',
@@ -181,13 +181,13 @@ export function buildGraphifyContext(
   }
 }
 
-function findGraphPath(projectId: string, svc: GraphifyDeps): string | null {
-  const workspaces = svc.findWorkspaces(projectId)
+async function findGraphPath(projectId: string, svc: GraphifyDeps): Promise<string | null> {
+  const workspaces = await svc.findWorkspaces(projectId)
   for (const ws of workspaces) {
     const p = path.join(ws.cwd, 'graphify-out', 'graph.json')
     if (fs.existsSync(p)) return p
   }
-  const project = svc.getProject(projectId)
+  const project = await svc.getProject(projectId)
   if (project) {
     const p = path.join(project.cwd, 'graphify-out', 'graph.json')
     if (fs.existsSync(p)) return p

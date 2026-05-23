@@ -52,28 +52,31 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
       inputSchema: { id: z.string().describe('Task ID (e.g. TASK-401)') }
     },
     async ({ id }) => {
-      const task = svc.getTask(id)
+      const task = await svc.getTask(id)
       if (!task) return textResponse(`Task ${id} not found`)
 
-      const deps = svc.getDependencies(id)
-      const subtasks = svc.getSubtasks(id)
-      const tags = svc.getTags(id)
-      const rels = svc.getRelationships(id)
+      const deps = await svc.getDependencies(id)
+      const subtasks = await svc.getSubtasks(id)
+      const tags = await svc.getTags(id)
+      const rels = await svc.getRelationships(id)
 
-      const conversations = svc.findConversationsByLink('task', id).map((c) => ({
-        id: c.id,
-        title: c.title,
-        status: c.status,
-        decisionSummary: c.decisionSummary,
-        actions: svc.getConversationActions(c.id).map((a) => ({
-          assignee: a.assignee,
-          description: a.description,
-          status: a.status,
-          linkedTaskId: a.linkedTaskId
+      const convList = await svc.findConversationsByLink('task', id)
+      const conversations = await Promise.all(
+        convList.map(async (c) => ({
+          id: c.id,
+          title: c.title,
+          status: c.status,
+          decisionSummary: c.decisionSummary,
+          actions: (await svc.getConversationActions(c.id)).map((a) => ({
+            assignee: a.assignee,
+            description: a.description,
+            status: a.status,
+            linkedTaskId: a.linkedTaskId
+          }))
         }))
-      }))
+      )
 
-      const graphify_context = buildGraphifyContext(task, svc)
+      const graphify_context = await buildGraphifyContext(task, svc)
 
       const validation = validateAutoSafeTask(task)
       const auto_safe = {
@@ -124,7 +127,7 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
       }
     },
     async ({ verbose, ...filter }) => {
-      const results = svc.findTasks(filter)
+      const results = await svc.findTasks(filter)
       if (verbose) return textResponse(results)
       return textResponse(
         results.map((t) => ({
@@ -162,9 +165,9 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
       }
     },
     async (input) => {
-      const task = svc.createTask(input)
+      const task = await svc.createTask(input)
       const body = input.body ?? defaultBody(task.id, task.title)
-      const updated = svc.updateTask(task.id, { body })
+      const updated = await svc.updateTask(task.id, { body })
       return textResponse(updated)
     }
   )
@@ -192,20 +195,20 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
       }
     },
     async ({ id, ...input }) => {
-      enforceBodyTitleLock(svc, id, input)
-      enforceAutoSafe(svc, id, input)
-      return textResponse(svc.updateTask(id, input))
+      await enforceBodyTitleLock(svc, id, input)
+      await enforceAutoSafe(svc, id, input)
+      return textResponse(await svc.updateTask(id, input))
     }
   )
 }
 
 const LOCKED_STATUSES = ['IN-PROGRESS', 'REVIEW', 'DONE', 'CANCELLED'] as const
 
-function enforceBodyTitleLock(svc: TaskToolsDeps, id: string, input: UpdateTaskInput): void {
+async function enforceBodyTitleLock(svc: TaskToolsDeps, id: string, input: UpdateTaskInput): Promise<void> {
   const touchingBody = 'body' in input
   const touchingTitle = 'title' in input
   if (!touchingBody && !touchingTitle) return
-  const current = svc.getTask(id)
+  const current = await svc.getTask(id)
   if (!current) return
   if (!LOCKED_STATUSES.includes(current.status as (typeof LOCKED_STATUSES)[number])) return
   const field = touchingBody && touchingTitle ? 'body/title' : touchingBody ? 'body' : 'title'
@@ -217,9 +220,9 @@ function enforceBodyTitleLock(svc: TaskToolsDeps, id: string, input: UpdateTaskI
   )
 }
 
-function enforceAutoSafe(svc: TaskToolsDeps, id: string, input: UpdateTaskInput): void {
+async function enforceAutoSafe(svc: TaskToolsDeps, id: string, input: UpdateTaskInput): Promise<void> {
   if (!input.labels?.includes(AUTO_SAFE_LABEL)) return
-  const current = svc.getTask(id)
+  const current = await svc.getTask(id)
   if (!current) return
   if (current.labels.includes(AUTO_SAFE_LABEL)) return
   const probe: Task = {

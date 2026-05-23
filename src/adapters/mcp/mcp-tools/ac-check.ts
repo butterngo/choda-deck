@@ -15,7 +15,7 @@ import { resolveWorkspaceId } from './workspace-resolver'
 // SQLite transaction (atomic — both land or neither).
 
 export interface AcCheckDeps extends TaskOperations, WorkspaceOperations {
-  checkAcItem(input: CheckAcItemInput): CheckAcItemResult
+  checkAcItem(input: CheckAcItemInput): Promise<CheckAcItemResult>
 }
 
 export const register = (server: InstrumentedServer, svc: AcCheckDeps): void => {
@@ -49,17 +49,17 @@ export const register = (server: InstrumentedServer, svc: AcCheckDeps): void => 
     },
     async ({ taskId, acIndex, evidence, cwd }) => {
       try {
-        const task = svc.getTask(taskId)
+        const task = await svc.getTask(taskId)
         if (!task) {
           return textResponse({
             error: 'TASK_NOT_FOUND',
             message: `Task ${taskId} not found`
           })
         }
-        const workspaces = svc.findWorkspaces(task.projectId)
+        const workspaces = await svc.findWorkspaces(task.projectId)
         const workspaceId =
           resolveWorkspaceId({ cwd, workspaces }) ?? undefined
-        const result = svc.checkAcItem({ taskId, acIndex, evidence, workspaceId })
+        const result = await svc.checkAcItem({ taskId, acIndex, evidence, workspaceId })
         return textResponse(result)
       } catch (e) {
         if (e instanceof LifecycleError) return textResponse({ error: e.code, message: e.message })

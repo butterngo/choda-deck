@@ -19,7 +19,7 @@ export class InboxLifecycleService implements InboxLifecycleOperations {
     private readonly tasks: TaskRepository
   ) {}
 
-  startInboxResearch(id: string, researcher: string): InboxResearchResult {
+  async startInboxResearch(id: string, researcher: string): Promise<InboxResearchResult> {
     const tx = this.db.transaction((): InboxResearchResult => {
       const item = this.inbox.get(id)
       if (!item) throw new InboxNotFoundError(id)
@@ -48,7 +48,7 @@ export class InboxLifecycleService implements InboxLifecycleOperations {
     return tx()
   }
 
-  convertInboxToTask(id: string, input: InboxConvertInput): InboxConvertResult {
+  async convertInboxToTask(id: string, input: InboxConvertInput): Promise<InboxConvertResult> {
     const tx = this.db.transaction((): InboxConvertResult => {
       const item = this.inbox.get(id)
       if (!item) throw new InboxNotFoundError(id)
@@ -75,7 +75,7 @@ export class InboxLifecycleService implements InboxLifecycleOperations {
     return tx()
   }
 
-  archiveInbox(id: string, reason?: string): InboxItem {
+  async archiveInbox(id: string, reason?: string): Promise<InboxItem> {
     const tx = this.db.transaction((): InboxItem => {
       const item = this.inbox.get(id)
       if (!item) throw new InboxNotFoundError(id)

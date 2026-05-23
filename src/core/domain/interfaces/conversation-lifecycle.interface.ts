@@ -41,8 +41,8 @@ export interface DecideConversationResult {
 }
 
 export interface ConversationLifecycleOperations {
-  openConversation(input: OpenConversationInput): Conversation
-  decideConversation(id: string, input: DecideConversationInput): DecideConversationResult
-  closeConversation(id: string): Conversation
-  reopenConversation(id: string): Conversation
+  openConversation(input: OpenConversationInput): Promise<Conversation>
+  decideConversation(id: string, input: DecideConversationInput): Promise<DecideConversationResult>
+  closeConversation(id: string): Promise<Conversation>
+  reopenConversation(id: string): Promise<Conversation>
 }

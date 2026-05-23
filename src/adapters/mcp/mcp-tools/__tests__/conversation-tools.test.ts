@@ -57,11 +57,11 @@ describe('shouldInjectConversationEtiquette', () => {
 describe('readConversation', () => {
   function makeFakeSvc(conv: Conversation | null): ReadConversationDeps {
     return {
-      getConversation: () => conv,
-      getConversationParticipants: () => [],
-      getConversationMessages: () => [],
-      getConversationActions: () => [],
-      getConversationLinks: () => []
+      getConversation: async () => conv,
+      getConversationParticipants: async () => [],
+      getConversationMessages: async () => [],
+      getConversationActions: async () => [],
+      getConversationLinks: async () => []
     }
   }
 
@@ -82,9 +82,9 @@ describe('readConversation', () => {
 
   it.each(['open', 'discussing'] as const)(
     'injects etiquette into payload when status=%s',
-    (status) => {
+    async (status) => {
       const svc = makeFakeSvc(makeConv(status))
-      const result = readConversation(svc, 'CONV-test-1')
+      const result = await readConversation(svc, 'CONV-test-1')
       expect(result).not.toBeNull()
       expect(result?.etiquette).toBeTruthy()
       expect(result?.etiquette).toMatch(/Discussion etiquette/)
@@ -93,23 +93,23 @@ describe('readConversation', () => {
 
   it.each(['decided', 'closed', 'stale'] as const)(
     'returns etiquette: null when status=%s',
-    (status) => {
+    async (status) => {
       const svc = makeFakeSvc(makeConv(status))
-      const result = readConversation(svc, 'CONV-test-1')
+      const result = await readConversation(svc, 'CONV-test-1')
       expect(result).not.toBeNull()
       expect(result?.etiquette).toBeNull()
     }
   )
 
-  it('returns null when conversation not found', () => {
+  it('returns null when conversation not found', async () => {
     const svc = makeFakeSvc(null)
-    const result = readConversation(svc, 'CONV-missing')
+    const result = await readConversation(svc, 'CONV-missing')
     expect(result).toBeNull()
   })
 
-  it('preserves conversation fields and attaches related collections', () => {
+  it('preserves conversation fields and attaches related collections', async () => {
     const svc = makeFakeSvc(makeConv('open', { title: 'preserved' }))
-    const result = readConversation(svc, 'CONV-test-1')
+    const result = await readConversation(svc, 'CONV-test-1')
     expect(result?.id).toBe('CONV-test-1')
     expect(result?.title).toBe('preserved')
     expect(result?.participants).toEqual([])

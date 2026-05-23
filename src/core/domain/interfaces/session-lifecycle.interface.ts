@@ -119,15 +119,15 @@ export interface AbandonSessionResult {
 }
 
 export interface SessionLifecycleOperations {
-  startSession(input: StartSessionInput): StartSessionResult
-  endSession(id: string, input: EndSessionInput): EndSessionResult
+  startSession(input: StartSessionInput): Promise<StartSessionResult>
+  endSession(id: string, input: EndSessionInput): Promise<EndSessionResult>
   /**
    * Failure-path session close — used by autonomous runners (queue) when a task fails AC.
    * Marks session `completed` with `handoff.failureReason`, closes linked conversations,
    * and intentionally **does not** touch the bound task's status (task stays IN-PROGRESS
    * for human review). Distinct from `endSession`, which marks the task DONE.
    */
-  abandonSession(id: string, reason: string): AbandonSessionResult
-  checkpointSession(id: string, input: CheckpointSessionInput): CheckpointSessionResult
-  resumeSession(id: string): ResumeSessionResult
+  abandonSession(id: string, reason: string): Promise<AbandonSessionResult>
+  checkpointSession(id: string, input: CheckpointSessionInput): Promise<CheckpointSessionResult>
+  resumeSession(id: string): Promise<ResumeSessionResult>
 }

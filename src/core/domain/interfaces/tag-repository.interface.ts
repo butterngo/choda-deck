@@ -1,6 +1,6 @@
 export interface TagOperations {
-  addTag(itemId: string, tag: string): void
-  removeTag(itemId: string, tag: string): void
-  getTags(itemId: string): string[]
-  findByTag(tag: string): string[]
+  addTag(itemId: string, tag: string): Promise<void>
+  removeTag(itemId: string, tag: string): Promise<void>
+  getTags(itemId: string): Promise<string[]>
+  findByTag(tag: string): Promise<string[]>
 }

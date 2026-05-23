@@ -1,4 +1,4 @@
 export interface Lifecycle {
-  initialize(): void
-  close(): void
+  initialize(): Promise<void>
+  close(): Promise<void>
 }

@@ -4,17 +4,17 @@ import type { SessionOperations } from '../../../core/domain/interfaces/session-
 import type { ProjectOperations } from '../../../core/domain/interfaces/project-repository.interface'
 import type { Session, SessionHandoff } from '../../../core/domain/task-types'
 
-export function exportHandoffMarkdown(
+export async function exportHandoffMarkdown(
   svc: SessionOperations & ProjectOperations,
   sessionId: string,
   contentRoot = process.env.CHODA_CONTENT_ROOT || ''
-): string | null {
+): Promise<string | null> {
   if (!contentRoot) return null
 
-  const session = svc.getSession(sessionId)
+  const session = await svc.getSession(sessionId)
   if (!session) return null
 
-  const project = svc.getProject(session.projectId)
+  const project = await svc.getProject(session.projectId)
   if (!project) return null
 
   const body = renderHandoff(session, project.name)

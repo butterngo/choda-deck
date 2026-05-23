@@ -24,25 +24,25 @@ function eventLines(): string[] {
   return eventLinesFor(PROJECT_ID)
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   fs.rmSync(TMP_ROOT, { recursive: true, force: true })
   fs.mkdirSync(TMP_ROOT, { recursive: true })
   savedEventDir = process.env.CHODA_EVENT_DIR
   process.env.CHODA_EVENT_DIR = EVENT_DIR
   svc = new SqliteTaskService(TEST_DB)
-  svc.ensureProject(PROJECT_ID, 'Event emit test', '/tmp/evt')
+  await svc.ensureProject(PROJECT_ID, 'Event emit test', '/tmp/evt')
 })
 
-afterEach(() => {
-  svc.close()
+afterEach(async () => {
+  await svc.close()
   if (savedEventDir === undefined) delete process.env.CHODA_EVENT_DIR
   else process.env.CHODA_EVENT_DIR = savedEventDir
   fs.rmSync(TMP_ROOT, { recursive: true, force: true })
 })
 
 describe('conversation event emit — filter logic', () => {
-  it('emits when messageType=question AND a participant has a non-null role', () => {
-    svc.createConversation({
+  it('emits when messageType=question AND a participant has a non-null role', async () => {
+    await svc.createConversation({
       id: 'CONV-Q-ROLE',
       projectId: PROJECT_ID,
       title: 'FE asks BE',
@@ -52,7 +52,7 @@ describe('conversation event emit — filter logic', () => {
         { name: 'BE', type: 'role' as const, role: 'BE' }
       ]
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: 'CONV-Q-ROLE',
       authorName: 'FE',
       content: 'why is node disabled?',
@@ -70,21 +70,21 @@ describe('conversation event emit — filter logic', () => {
     expect(typeof event.timestamp).toBe('string')
   })
 
-  it('does NOT emit for comment / proposal / review / action message types', () => {
-    svc.createConversation({
+  it('does NOT emit for comment / proposal / review / action message types', async () => {
+    await svc.createConversation({
       id: 'CONV-NONROUTING',
       projectId: PROJECT_ID,
       title: 'role convo',
       createdBy: 'BE',
       participants: [{ name: 'BE', type: 'role' as const, role: 'BE' }]
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: 'CONV-NONROUTING',
       authorName: 'BE',
       content: 'just a note',
       messageType: 'comment'
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: 'CONV-NONROUTING',
       authorName: 'BE',
       content: 'a proposal',
@@ -93,8 +93,8 @@ describe('conversation event emit — filter logic', () => {
     expect(eventLines()).toEqual([])
   })
 
-  it('does NOT emit when no participant has a non-null role', () => {
-    svc.createConversation({
+  it('does NOT emit when no participant has a non-null role', async () => {
+    await svc.createConversation({
       id: 'CONV-NO-ROLE',
       projectId: PROJECT_ID,
       title: 'human convo',
@@ -104,7 +104,7 @@ describe('conversation event emit — filter logic', () => {
         { name: 'Claude', type: 'ai' as const }
       ]
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: 'CONV-NO-ROLE',
       authorName: 'Butter',
       content: 'question without a role target',
@@ -113,21 +113,21 @@ describe('conversation event emit — filter logic', () => {
     expect(eventLines()).toEqual([])
   })
 
-  it('appends one line per qualifying question across multiple calls', () => {
-    svc.createConversation({
+  it('appends one line per qualifying question across multiple calls', async () => {
+    await svc.createConversation({
       id: 'CONV-MULTI',
       projectId: PROJECT_ID,
       title: 'multi',
       createdBy: 'FE',
       participants: [{ name: 'BE', type: 'role' as const, role: 'BE' }]
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: 'CONV-MULTI',
       authorName: 'FE',
       content: 'q1',
       messageType: 'question'
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: 'CONV-MULTI',
       authorName: 'FE',
       content: 'q2',
@@ -139,15 +139,15 @@ describe('conversation event emit — filter logic', () => {
     expect(JSON.parse(lines[1]).conversationId).toBe('CONV-MULTI')
   })
 
-  it('Phase 1 question events tagged with type=message.question', () => {
-    svc.createConversation({
+  it('Phase 1 question events tagged with type=message.question', async () => {
+    await svc.createConversation({
       id: 'CONV-Q-TYPE',
       projectId: PROJECT_ID,
       title: 'type tag',
       createdBy: 'FE',
       participants: [{ name: 'BE', type: 'role' as const, role: 'BE' }]
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: 'CONV-Q-TYPE',
       authorName: 'FE',
       content: 'q',
@@ -159,8 +159,8 @@ describe('conversation event emit — filter logic', () => {
 })
 
 describe('conversation event emit — Phase 2: message.answer', () => {
-  it('emits message.answer when role-routed', () => {
-    svc.openConversation({
+  it('emits message.answer when role-routed', async () => {
+    await svc.openConversation({
       projectId: PROJECT_ID,
       title: 'q-and-a',
       createdBy: 'FE',
@@ -170,9 +170,9 @@ describe('conversation event emit — Phase 2: message.answer', () => {
       ],
       initialMessage: { content: 'why?', type: 'question' }
     })
-    const conv = svc.findConversations(PROJECT_ID)[0]
+    const conv = (await svc.findConversations(PROJECT_ID))[0]
     fs.writeFileSync(path.join(EVENT_DIR, `${PROJECT_ID}.jsonl`), '') // reset after open
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: conv.id,
       authorName: 'BE',
       content: 'because flag X',
@@ -184,8 +184,8 @@ describe('conversation event emit — Phase 2: message.answer', () => {
 })
 
 describe('conversation event emit — Phase 2: targetRole filter', () => {
-  it('routes only to targetRole when set', () => {
-    svc.createConversation({
+  it('routes only to targetRole when set', async () => {
+    await svc.createConversation({
       id: 'CONV-TARGET',
       projectId: PROJECT_ID,
       title: 'targeted',
@@ -196,7 +196,7 @@ describe('conversation event emit — Phase 2: targetRole filter', () => {
         { name: 'QA', type: 'role' as const, role: 'QA' }
       ]
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: 'CONV-TARGET',
       authorName: 'FE',
       content: 'BE only',
@@ -207,15 +207,15 @@ describe('conversation event emit — Phase 2: targetRole filter', () => {
     expect(event.roles).toEqual(['BE'])
   })
 
-  it('skips emit when targetRole is not a participant', () => {
-    svc.createConversation({
+  it('skips emit when targetRole is not a participant', async () => {
+    await svc.createConversation({
       id: 'CONV-MISS',
       projectId: PROJECT_ID,
       title: 'missing target',
       createdBy: 'FE',
       participants: [{ name: 'FE', type: 'role' as const, role: 'FE' }]
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: 'CONV-MISS',
       authorName: 'FE',
       content: 'BE only',
@@ -225,8 +225,8 @@ describe('conversation event emit — Phase 2: targetRole filter', () => {
     expect(eventLines()).toEqual([])
   })
 
-  it('falls back to all roles when targetRole is null', () => {
-    svc.createConversation({
+  it('falls back to all roles when targetRole is null', async () => {
+    await svc.createConversation({
       id: 'CONV-ALL',
       projectId: PROJECT_ID,
       title: 'broadcast',
@@ -236,7 +236,7 @@ describe('conversation event emit — Phase 2: targetRole filter', () => {
         { name: 'BE', type: 'role' as const, role: 'BE' }
       ]
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: 'CONV-ALL',
       authorName: 'FE',
       content: 'broadcast',
@@ -248,8 +248,8 @@ describe('conversation event emit — Phase 2: targetRole filter', () => {
 })
 
 describe('conversation event emit — Phase 2: lifecycle events', () => {
-  it('emits conversation.open on openConversation', () => {
-    svc.openConversation({
+  it('emits conversation.open on openConversation', async () => {
+    await svc.openConversation({
       projectId: PROJECT_ID,
       title: 'opener',
       createdBy: 'FE',
@@ -266,8 +266,8 @@ describe('conversation event emit — Phase 2: lifecycle events', () => {
     expect(open.roles.sort()).toEqual(['BE', 'FE'])
   })
 
-  it('emits conversation.open BEFORE the initial message.question event', () => {
-    svc.openConversation({
+  it('emits conversation.open BEFORE the initial message.question event', async () => {
+    await svc.openConversation({
       projectId: PROJECT_ID,
       title: 'order check',
       createdBy: 'FE',
@@ -285,8 +285,8 @@ describe('conversation event emit — Phase 2: lifecycle events', () => {
     expect(openIdx).toBeLessThan(qIdx)
   })
 
-  it('emits conversation.decide on decideConversation', () => {
-    const conv = svc.openConversation({
+  it('emits conversation.decide on decideConversation', async () => {
+    const conv = await svc.openConversation({
       projectId: PROJECT_ID,
       title: 'decide-me',
       createdBy: 'FE',
@@ -297,68 +297,68 @@ describe('conversation event emit — Phase 2: lifecycle events', () => {
       initialMessage: { content: 'pick one', type: 'proposal' }
     })
     fs.writeFileSync(path.join(EVENT_DIR, `${PROJECT_ID}.jsonl`), '')
-    svc.decideConversation(conv.id, { author: 'BE', decision: 'go with A' })
+    await svc.decideConversation(conv.id, { author: 'BE', decision: 'go with A' })
     const events = eventLines().map((l) => JSON.parse(l))
     const decide = events.find((e) => e.type === 'conversation.decide')
     expect(decide).toBeDefined()
     expect(decide.author).toBe('BE')
   })
 
-  it('emits conversation.close on closeConversation', () => {
-    const conv = svc.openConversation({
+  it('emits conversation.close on closeConversation', async () => {
+    const conv = await svc.openConversation({
       projectId: PROJECT_ID,
       title: 'close-me',
       createdBy: 'FE',
       participants: [{ name: 'BE', type: 'role' as const, role: 'BE' }],
       initialMessage: { content: 'q', type: 'question' }
     })
-    svc.decideConversation(conv.id, { author: 'BE', decision: 'done' })
+    await svc.decideConversation(conv.id, { author: 'BE', decision: 'done' })
     fs.writeFileSync(path.join(EVENT_DIR, `${PROJECT_ID}.jsonl`), '')
-    svc.closeConversation(conv.id)
+    await svc.closeConversation(conv.id)
     const events = eventLines().map((l) => JSON.parse(l))
     const close = events.find((e) => e.type === 'conversation.close')
     expect(close).toBeDefined()
     expect(close.author).toBe('system')
   })
 
-  it('emits conversation.reopen on reopenConversation', () => {
-    const conv = svc.openConversation({
+  it('emits conversation.reopen on reopenConversation', async () => {
+    const conv = await svc.openConversation({
       projectId: PROJECT_ID,
       title: 'reopen-me',
       createdBy: 'FE',
       participants: [{ name: 'BE', type: 'role' as const, role: 'BE' }],
       initialMessage: { content: 'q', type: 'question' }
     })
-    svc.decideConversation(conv.id, { author: 'BE', decision: 'done' })
+    await svc.decideConversation(conv.id, { author: 'BE', decision: 'done' })
     fs.writeFileSync(path.join(EVENT_DIR, `${PROJECT_ID}.jsonl`), '')
-    svc.reopenConversation(conv.id)
+    await svc.reopenConversation(conv.id)
     const events = eventLines().map((l) => JSON.parse(l))
     const reopen = events.find((e) => e.type === 'conversation.reopen')
     expect(reopen).toBeDefined()
     expect(reopen.author).toBe('system')
   })
 
-  it('skips lifecycle events when conversation has no role-bearing participants', () => {
-    const conv = svc.openConversation({
+  it('skips lifecycle events when conversation has no role-bearing participants', async () => {
+    const conv = await svc.openConversation({
       projectId: PROJECT_ID,
       title: 'no-roles',
       createdBy: 'Butter',
       participants: [{ name: 'Butter', type: 'human' as const }],
       initialMessage: { content: 'q', type: 'question' }
     })
-    svc.decideConversation(conv.id, { author: 'Butter', decision: 'done' })
-    svc.closeConversation(conv.id)
+    await svc.decideConversation(conv.id, { author: 'Butter', decision: 'done' })
+    await svc.closeConversation(conv.id)
     expect(eventLines()).toEqual([])
   })
 })
 
 describe('conversation event emit — Phase 3: cross-project fan-out (ADR-021)', () => {
-  beforeEach(() => {
-    svc.ensureProject(TARGET_PROJECT_ID, 'Target project', '/tmp/tgt')
+  beforeEach(async () => {
+    await svc.ensureProject(TARGET_PROJECT_ID, 'Target project', '/tmp/tgt')
   })
 
-  it('writes the same JSONL line to owner and target when role is "<targetProjectId>/<workspace>"', () => {
-    svc.createConversation({
+  it('writes the same JSONL line to owner and target when role is "<targetProjectId>/<workspace>"', async () => {
+    await svc.createConversation({
       id: 'CONV-FAN-CROSS',
       projectId: PROJECT_ID,
       title: 'cross-project',
@@ -368,7 +368,7 @@ describe('conversation event emit — Phase 3: cross-project fan-out (ADR-021)',
         { name: 'target-side', type: 'role' as const, role: `${TARGET_PROJECT_ID}/main` }
       ]
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: 'CONV-FAN-CROSS',
       authorName: 'owner-side',
       content: 'cross q',
@@ -381,8 +381,8 @@ describe('conversation event emit — Phase 3: cross-project fan-out (ADR-021)',
     expect(JSON.parse(ownerLines[0])).toEqual(JSON.parse(targetLines[0]))
   })
 
-  it('writes only to owner when all roles are legacy free-form (no slash)', () => {
-    svc.createConversation({
+  it('writes only to owner when all roles are legacy free-form (no slash)', async () => {
+    await svc.createConversation({
       id: 'CONV-FAN-LEGACY',
       projectId: PROJECT_ID,
       title: 'legacy roles',
@@ -392,7 +392,7 @@ describe('conversation event emit — Phase 3: cross-project fan-out (ADR-021)',
         { name: 'BE', type: 'role' as const, role: 'BE' }
       ]
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: 'CONV-FAN-LEGACY',
       authorName: 'FE',
       content: 'legacy q',
@@ -402,8 +402,8 @@ describe('conversation event emit — Phase 3: cross-project fan-out (ADR-021)',
     expect(fs.existsSync(path.join(EVENT_DIR, `${TARGET_PROJECT_ID}.jsonl`))).toBe(false)
   })
 
-  it('mixed roles (legacy + addressed) write to owner + target only', () => {
-    svc.createConversation({
+  it('mixed roles (legacy + addressed) write to owner + target only', async () => {
+    await svc.createConversation({
       id: 'CONV-FAN-MIX',
       projectId: PROJECT_ID,
       title: 'mixed',
@@ -413,7 +413,7 @@ describe('conversation event emit — Phase 3: cross-project fan-out (ADR-021)',
         { name: 'cross', type: 'role' as const, role: `${TARGET_PROJECT_ID}/main` }
       ]
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: 'CONV-FAN-MIX',
       authorName: 'FE',
       content: 'mix q',
@@ -423,9 +423,9 @@ describe('conversation event emit — Phase 3: cross-project fan-out (ADR-021)',
     expect(eventLinesFor(TARGET_PROJECT_ID).length).toBe(1)
   })
 
-  it('warns and skips fan-out when target projectId is unknown; owner still receives event', () => {
+  it('warns and skips fan-out when target projectId is unknown; owner still receives event', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    svc.createConversation({
+    await svc.createConversation({
       id: 'CONV-FAN-UNKNOWN',
       projectId: PROJECT_ID,
       title: 'unknown target',
@@ -435,7 +435,7 @@ describe('conversation event emit — Phase 3: cross-project fan-out (ADR-021)',
         { name: 'ghost', type: 'role' as const, role: 'no-such-project/main' }
       ]
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: 'CONV-FAN-UNKNOWN',
       authorName: 'FE',
       content: 'ghost q',
@@ -447,8 +447,8 @@ describe('conversation event emit — Phase 3: cross-project fan-out (ADR-021)',
     expect(warn.mock.calls.some((c) => String(c[0]).includes('no-such-project'))).toBe(true)
   })
 
-  it('does not duplicate owner event when owner appears in roles as <ownerProjectId>/...', () => {
-    svc.createConversation({
+  it('does not duplicate owner event when owner appears in roles as <ownerProjectId>/...', async () => {
+    await svc.createConversation({
       id: 'CONV-FAN-OWNER-IN-ROLES',
       projectId: PROJECT_ID,
       title: 'owner in roles',
@@ -458,7 +458,7 @@ describe('conversation event emit — Phase 3: cross-project fan-out (ADR-021)',
         { name: 'target', type: 'role' as const, role: `${TARGET_PROJECT_ID}/main` }
       ]
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: 'CONV-FAN-OWNER-IN-ROLES',
       authorName: 'owner',
       content: 'q',

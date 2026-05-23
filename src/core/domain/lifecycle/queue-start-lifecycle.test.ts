@@ -153,36 +153,36 @@ function buildService(runtime: QueueRuntime): QueueLifecycleService {
   )
 }
 
-function createReadyAutoSafeTask(label: string): { id: string; tag: string } {
+async function createReadyAutoSafeTask(label: string): Promise<{ id: string; tag: string }> {
   // Embed `label` in the body so per-task spawn mock can match by it without
   // depending on the auto-generated task id format.
   const tag = `MARKER-${label}`
-  const t = svc.createTask({
+  const t = await svc.createTask({
     projectId: 'proj-q',
     title: `auto-safe ${label}`,
     labels: ['auto-safe'],
     body: `${VALID_BODY}\n${tag}\n`
   })
-  svc.updateTask(t.id, { status: 'READY' })
+  await svc.updateTask(t.id, { status: 'READY' })
   return { id: t.id, tag }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
   svc = new SqliteTaskService(TEST_DB)
-  svc.ensureProject('proj-q', 'Queue Project', '/tmp/q')
-  svc.addWorkspace('proj-q', 'ws-q', 'Q', 'C:/repo')
+  await svc.ensureProject('proj-q', 'Queue Project', '/tmp/q')
+  await svc.addWorkspace('proj-q', 'ws-q', 'Q', 'C:/repo')
 })
 
-afterEach(() => {
-  svc.close()
+afterEach(async () => {
+  await svc.close()
   if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
 })
 
 describe('runQueueStart — happy path', () => {
   it('runs N tasks each in its own worktree, captures baseSha, writes per-task artifacts', async () => {
-    const a = createReadyAutoSafeTask('A')
-    const b = createReadyAutoSafeTask('B')
+    const a = await createReadyAutoSafeTask('A')
+    const b = await createReadyAutoSafeTask('B')
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
 
@@ -223,7 +223,7 @@ describe('runQueueStart — happy path', () => {
   })
 
   it('respects custom branchPrefix', async () => {
-    const a = createReadyAutoSafeTask('A')
+    const a = await createReadyAutoSafeTask('A')
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
 
@@ -241,8 +241,8 @@ describe('runQueueStart — happy path', () => {
 
 describe('runQueueStart — pre-flight abort (default)', () => {
   it('aborts the whole batch when one task has a pre-existing branch', async () => {
-    const a = createReadyAutoSafeTask('A')
-    const b = createReadyAutoSafeTask('B')
+    const a = await createReadyAutoSafeTask('A')
+    const b = await createReadyAutoSafeTask('B')
     const { runtime, state } = buildRuntime({
       preExistingBranches: [`auto/${a.id}`]
     })
@@ -270,7 +270,7 @@ describe('runQueueStart — pre-flight abort (default)', () => {
   })
 
   it('aborts when baseRef is unresolvable (global error)', async () => {
-    createReadyAutoSafeTask('A')
+    await createReadyAutoSafeTask('A')
     const { runtime, state } = buildRuntime({ resolveRefReturns: null })
     const queue = buildService(runtime)
 
@@ -287,7 +287,7 @@ describe('runQueueStart — pre-flight abort (default)', () => {
   })
 
   it('aborts when gh auth is not valid', async () => {
-    createReadyAutoSafeTask('A')
+    await createReadyAutoSafeTask('A')
     const { runtime } = buildRuntime({ ghAuthOk: false })
     const queue = buildService(runtime)
 
@@ -304,8 +304,8 @@ describe('runQueueStart — pre-flight abort (default)', () => {
 
 describe('runQueueStart — --force-continue', () => {
   it('skips per-task preflight failures and runs the rest', async () => {
-    const a = createReadyAutoSafeTask('A')
-    const b = createReadyAutoSafeTask('B')
+    const a = await createReadyAutoSafeTask('A')
+    const b = await createReadyAutoSafeTask('B')
     const { runtime, state } = buildRuntime({
       preExistingBranches: [`auto/${a.id}`]
     })
@@ -331,7 +331,7 @@ describe('runQueueStart — --force-continue', () => {
   })
 
   it('still aborts on global preflight errors regardless of forceContinue', async () => {
-    createReadyAutoSafeTask('A')
+    await createReadyAutoSafeTask('A')
     const { runtime } = buildRuntime({ resolveRefReturns: null })
     const queue = buildService(runtime)
 
@@ -348,9 +348,9 @@ describe('runQueueStart — --force-continue', () => {
 
 describe('runQueueStart — mid-run continue (KEY divergence from runQueue)', () => {
   it('continues to next task when one task fails mid-run', async () => {
-    const a = createReadyAutoSafeTask('A')
-    const b = createReadyAutoSafeTask('B')
-    const c = createReadyAutoSafeTask('C')
+    const a = await createReadyAutoSafeTask('A')
+    const b = await createReadyAutoSafeTask('B')
+    const c = await createReadyAutoSafeTask('C')
     const failures = new Map<string, SpawnClaudeOutput>([
       [
         b.tag,
@@ -388,8 +388,8 @@ describe('runQueueStart — mid-run continue (KEY divergence from runQueue)', ()
   })
 
   it('continues when gitWorktreeAdd itself fails for one task', async () => {
-    const a = createReadyAutoSafeTask('A')
-    const b = createReadyAutoSafeTask('B')
+    const a = await createReadyAutoSafeTask('A')
+    const b = await createReadyAutoSafeTask('B')
     const { runtime, state } = buildRuntime({
       worktreeShouldFail: new Map([[`auto/${a.id}`, 'git worktree add failed: simulated']])
     })
@@ -412,8 +412,8 @@ describe('runQueueStart — mid-run continue (KEY divergence from runQueue)', ()
   })
 
   it('continues when an AC command fails for one task', async () => {
-    const a = createReadyAutoSafeTask('A')
-    createReadyAutoSafeTask('B')
+    const a = await createReadyAutoSafeTask('A')
+    await createReadyAutoSafeTask('B')
     const { runtime, state } = buildRuntime({
       exec: async (_cmd, cwd) => {
         if (cwd.endsWith(a.id)) return { exitCode: 1, stdout: '', stderr: 'boom' }
@@ -436,7 +436,7 @@ describe('runQueueStart — mid-run continue (KEY divergence from runQueue)', ()
 
 describe('runQueueStart — dry-run', () => {
   it('runs preflight and reports without spawning', async () => {
-    createReadyAutoSafeTask('A')
+    await createReadyAutoSafeTask('A')
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
 
@@ -479,8 +479,8 @@ describe('runQueueStart — queue.jsonl event stream (TASK-741, ADR-019)', () =>
   }
 
   it('all-DONE: 2 tasks → 2 × task.started + 2 × task.finished(DONE) + 1 × run.finished', async () => {
-    const a = createReadyAutoSafeTask('A')
-    const b = createReadyAutoSafeTask('B')
+    const a = await createReadyAutoSafeTask('A')
+    const b = await createReadyAutoSafeTask('B')
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
 
@@ -515,8 +515,8 @@ describe('runQueueStart — queue.jsonl event stream (TASK-741, ADR-019)', () =>
   })
 
   it('continue-on-fail: failing task emits task.finished(FAILED), next task still runs, run.finished (NOT run.failed) at end', async () => {
-    const a = createReadyAutoSafeTask('A')
-    const b = createReadyAutoSafeTask('B')
+    const a = await createReadyAutoSafeTask('A')
+    const b = await createReadyAutoSafeTask('B')
     const failures = new Map<string, SpawnClaudeOutput>([
       [
         a.tag,
@@ -552,8 +552,8 @@ describe('runQueueStart — queue.jsonl event stream (TASK-741, ADR-019)', () =>
   })
 
   it('preflight-skipped tasks emit no events (only executed tasks appear in stream)', async () => {
-    const a = createReadyAutoSafeTask('A')
-    const b = createReadyAutoSafeTask('B')
+    const a = await createReadyAutoSafeTask('A')
+    const b = await createReadyAutoSafeTask('B')
     const { runtime, state } = buildRuntime({
       preExistingBranches: [`auto/${a.id}`]
     })
@@ -574,8 +574,8 @@ describe('runQueueStart — queue.jsonl event stream (TASK-741, ADR-019)', () =>
   })
 
   it('preflight abort (default policy, no forceContinue): emits no queue.jsonl', async () => {
-    const a = createReadyAutoSafeTask('A')
-    createReadyAutoSafeTask('B')
+    const a = await createReadyAutoSafeTask('A')
+    await createReadyAutoSafeTask('B')
     const { runtime, state } = buildRuntime({
       preExistingBranches: [`auto/${a.id}`]
     })
@@ -592,7 +592,7 @@ describe('runQueueStart — queue.jsonl event stream (TASK-741, ADR-019)', () =>
   })
 
   it('dry-run: emits no queue.jsonl', async () => {
-    createReadyAutoSafeTask('A')
+    await createReadyAutoSafeTask('A')
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
 
@@ -609,19 +609,19 @@ describe('runQueueStart — queue.jsonl event stream (TASK-741, ADR-019)', () =>
 
 describe('runQueueStart — preflight rollback (TASK-755)', () => {
   it('rolls back worktree when session-start fails after worktree was added', async () => {
-    const a = createReadyAutoSafeTask('A')
-    const b = createReadyAutoSafeTask('B')
+    const a = await createReadyAutoSafeTask('A')
+    const b = await createReadyAutoSafeTask('B')
 
     // Pre-create an orphan active session for task A (simulates a crashed previous run).
     // Then revert task to READY so collectEligibleTasks still picks it up —
     // but startSession will throw TaskLockedBySessionError when the runner tries.
     const internals = svc as unknown as { sessionLifecycle: { startSession: (i: unknown) => unknown } }
-    internals.sessionLifecycle.startSession({
+    await internals.sessionLifecycle.startSession({
       projectId: 'proj-q',
       workspaceId: 'ws-q',
       taskId: a.id
     })
-    svc.updateTask(a.id, { status: 'READY' })
+    await svc.updateTask(a.id, { status: 'READY' })
 
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
@@ -654,7 +654,7 @@ describe('runQueueStart — preflight rollback (TASK-755)', () => {
   })
 
   it('no rollback when worktree-add itself fails (nothing was created)', async () => {
-    const a = createReadyAutoSafeTask('A')
+    const a = await createReadyAutoSafeTask('A')
     const { runtime, state } = buildRuntime({
       worktreeShouldFail: new Map([[`auto/${a.id}`, 'disk full']])
     })
@@ -672,20 +672,20 @@ describe('runQueueStart — preflight rollback (TASK-755)', () => {
     expect(outcomeA.outcome).toBe('FAILED')
     expect(outcomeA.reason).toMatch(/worktree-add-failed/)
     // Task gets auto-failed label from markTaskFailed
-    expect(svc.getTask(a.id)?.labels).toContain('auto-failed')
+    expect((await svc.getTask(a.id))?.labels).toContain('auto-failed')
   })
 
   it('rollback failure is logged but does not mask the original setup error', async () => {
-    const a = createReadyAutoSafeTask('A')
+    const a = await createReadyAutoSafeTask('A')
 
     // Pre-create orphan session so startSession throws
     const internals = svc as unknown as { sessionLifecycle: { startSession: (i: unknown) => unknown } }
-    internals.sessionLifecycle.startSession({
+    await internals.sessionLifecycle.startSession({
       projectId: 'proj-q',
       workspaceId: 'ws-q',
       taskId: a.id
     })
-    svc.updateTask(a.id, { status: 'READY' })
+    await svc.updateTask(a.id, { status: 'READY' })
 
     // Simulate gitWorktreeRemove throwing during rollback
     const { runtime, state } = buildRuntime()

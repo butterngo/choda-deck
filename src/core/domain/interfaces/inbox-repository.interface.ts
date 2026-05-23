@@ -6,9 +6,9 @@ import type {
 } from '../task-types'
 
 export interface InboxOperations {
-  createInbox(input: CreateInboxInput): InboxItem
-  updateInbox(id: string, input: UpdateInboxInput): InboxItem
-  getInbox(id: string): InboxItem | null
-  findInbox(filter: InboxFilter): InboxItem[]
-  deleteInbox(id: string): void
+  createInbox(input: CreateInboxInput): Promise<InboxItem>
+  updateInbox(id: string, input: UpdateInboxInput): Promise<InboxItem>
+  getInbox(id: string): Promise<InboxItem | null>
+  findInbox(filter: InboxFilter): Promise<InboxItem[]>
+  deleteInbox(id: string): Promise<void>
 }

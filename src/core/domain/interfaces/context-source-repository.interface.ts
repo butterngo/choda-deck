@@ -5,9 +5,9 @@ import type {
 } from '../task-types'
 
 export interface ContextSourceOperations {
-  createContextSource(input: CreateContextSourceInput): ContextSource
-  updateContextSource(id: string, input: UpdateContextSourceInput): ContextSource
-  getContextSource(id: string): ContextSource | null
-  findContextSources(projectId: string, activeOnly?: boolean): ContextSource[]
-  deleteContextSource(id: string): void
+  createContextSource(input: CreateContextSourceInput): Promise<ContextSource>
+  updateContextSource(id: string, input: UpdateContextSourceInput): Promise<ContextSource>
+  getContextSource(id: string): Promise<ContextSource | null>
+  findContextSources(projectId: string, activeOnly?: boolean): Promise<ContextSource[]>
+  deleteContextSource(id: string): Promise<void>
 }

@@ -195,7 +195,7 @@ export async function executeWithServices(
   runtime: QueueRuntime
 ): Promise<QueueStartResultPayload> {
   const notes: string[] = []
-  const ws = services.svc.getWorkspace(input.workspaceId)
+  const ws = await services.svc.getWorkspace(input.workspaceId)
   if (!ws) {
     return {
       exitCode: 3,

@@ -21,7 +21,7 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
     private readonly sessions: SessionRepository
   ) {}
 
-  openConversation(input: OpenConversationInput): Conversation {
+  async openConversation(input: OpenConversationInput): Promise<Conversation> {
     const tx = this.db.transaction((): Conversation => {
       const resolvedSessionId = this.resolveSessionId(input.projectId, input.sessionId)
 
@@ -86,7 +86,7 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
     return null
   }
 
-  decideConversation(id: string, input: DecideConversationInput): DecideConversationResult {
+  async decideConversation(id: string, input: DecideConversationInput): Promise<DecideConversationResult> {
     const tx = this.db.transaction((): DecideConversationResult => {
       const conv = this.conversations.get(id)
       if (!conv) throw new ConversationNotFoundError(id)
@@ -115,7 +115,7 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
     return tx()
   }
 
-  closeConversation(id: string): Conversation {
+  async closeConversation(id: string): Promise<Conversation> {
     const tx = this.db.transaction((): Conversation => {
       const conv = this.conversations.get(id)
       if (!conv) throw new ConversationNotFoundError(id)
@@ -130,7 +130,7 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
     return tx()
   }
 
-  reopenConversation(id: string): Conversation {
+  async reopenConversation(id: string): Promise<Conversation> {
     const tx = this.db.transaction((): Conversation => {
       const conv = this.conversations.get(id)
       if (!conv) throw new ConversationNotFoundError(id)

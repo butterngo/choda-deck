@@ -83,7 +83,7 @@ export class KnowledgeService implements KnowledgeOperations {
     this.embeddingProvider = deps.embeddingProvider ?? null
   }
 
-  createKnowledge(input: CreateKnowledgeInput): KnowledgeEntry {
+  async createKnowledge(input: CreateKnowledgeInput): Promise<KnowledgeEntry> {
     this.validateInput(input)
     const project = this.projects.get(input.projectId)
     if (!project) throw new KnowledgeValidationError(`unknown projectId: ${input.projectId}`)
@@ -158,7 +158,7 @@ export class KnowledgeService implements KnowledgeOperations {
     }
   }
 
-  registerExistingKnowledge(input: RegisterExistingKnowledgeInput): KnowledgeEntry {
+  async registerExistingKnowledge(input: RegisterExistingKnowledgeInput): Promise<KnowledgeEntry> {
     if (!fs.existsSync(input.filePath)) {
       throw new KnowledgeValidationError(`file not found: ${input.filePath}`)
     }
@@ -235,7 +235,7 @@ export class KnowledgeService implements KnowledgeOperations {
     return ws.cwd
   }
 
-  getKnowledge(slug: string): KnowledgeEntry | null {
+  async getKnowledge(slug: string): Promise<KnowledgeEntry | null> {
     const row = this.knowledge.get(slug)
     if (!row) return null
     if (!fs.existsSync(row.filePath)) return null
@@ -256,7 +256,7 @@ export class KnowledgeService implements KnowledgeOperations {
     }
   }
 
-  listKnowledge(filter: KnowledgeListFilter = {}): KnowledgeListItem[] {
+  async listKnowledge(filter: KnowledgeListFilter = {}): Promise<KnowledgeListItem[]> {
     return this.knowledge.list(filter).map((r) => ({
       slug: r.slug,
       projectId: r.projectId,
@@ -278,7 +278,7 @@ export class KnowledgeService implements KnowledgeOperations {
     return this.projects.get(projectId)?.cwd ?? ''
   }
 
-  deleteKnowledge(slug: string): { slug: string; deletedFile: boolean } {
+  async deleteKnowledge(slug: string): Promise<{ slug: string; deletedFile: boolean }> {
     const row = this.knowledge.get(slug)
     if (!row) throw new KnowledgeNotFoundError(slug)
 
@@ -312,12 +312,12 @@ export class KnowledgeService implements KnowledgeOperations {
     if (project) this.regenerateIndexMd(row.projectId, project.cwd)
   }
 
-  updateKnowledge(input: UpdateKnowledgeInput): KnowledgeEntry {
+  async updateKnowledge(input: UpdateKnowledgeInput): Promise<KnowledgeEntry> {
     if (input.body === undefined && input.refs === undefined) {
       throw new KnowledgeValidationError('updateKnowledge requires body or refs')
     }
 
-    const existing = this.getKnowledge(input.slug)
+    const existing = await this.getKnowledge(input.slug)
     if (!existing) throw new KnowledgeNotFoundError(input.slug)
 
     const row = this.knowledge.get(input.slug)
@@ -364,8 +364,8 @@ export class KnowledgeService implements KnowledgeOperations {
     }
   }
 
-  verifyKnowledge(slug: string): KnowledgeVerifyResult {
-    const entry = this.getKnowledge(slug)
+  async verifyKnowledge(slug: string): Promise<KnowledgeVerifyResult> {
+    const entry = await this.getKnowledge(slug)
     if (!entry) throw new KnowledgeNotFoundError(slug)
     const row = this.knowledge.get(slug)
     if (!row) throw new KnowledgeNotFoundError(slug)

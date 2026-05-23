@@ -1,9 +1,9 @@
 import type { WorkspaceRow } from '../repositories/workspace-repository'
 
 export interface WorkspaceOperations {
-  addWorkspace(projectId: string, id: string, label: string, cwd: string): WorkspaceRow
-  getWorkspace(id: string): WorkspaceRow | null
-  findWorkspaces(projectId: string, includeArchived?: boolean): WorkspaceRow[]
-  archiveWorkspace(id: string): WorkspaceRow | null
-  unarchiveWorkspace(id: string): WorkspaceRow | null
+  addWorkspace(projectId: string, id: string, label: string, cwd: string): Promise<WorkspaceRow>
+  getWorkspace(id: string): Promise<WorkspaceRow | null>
+  findWorkspaces(projectId: string, includeArchived?: boolean): Promise<WorkspaceRow[]>
+  archiveWorkspace(id: string): Promise<WorkspaceRow | null>
+  unarchiveWorkspace(id: string): Promise<WorkspaceRow | null>
 }

@@ -17,6 +17,6 @@ export interface RejectTaskResult {
 }
 
 export interface TaskReviewLifecycleOperations {
-  approveTask(taskId: string, note?: string): ApproveTaskResult
-  rejectTask(taskId: string, reason: string): RejectTaskResult
+  approveTask(taskId: string, note?: string): Promise<ApproveTaskResult>
+  rejectTask(taskId: string, reason: string): Promise<RejectTaskResult>
 }

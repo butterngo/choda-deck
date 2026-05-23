@@ -59,19 +59,19 @@ export const register = (server: InstrumentedServer, svc: CleanupToolsDeps): voi
       }
     },
     async ({ projectId, dryRun, knowledgeAction }) => {
-      const project = svc.getProject(projectId)
+      const project = await svc.getProject(projectId)
       if (!project) return textResponse(`Project ${projectId} not found`)
 
       const isDryRun = dryRun ?? true
       const action: KnowledgeAction = knowledgeAction ?? 'leave'
 
-      const orphanWorkspaces: OrphanWorkspace[] = svc
-        .findWorkspaces(projectId, false)
+      const allWorkspaces = await svc.findWorkspaces(projectId, false)
+      const orphanWorkspaces: OrphanWorkspace[] = allWorkspaces
         .filter((ws) => isLikelyWorktreePath(ws.cwd) && !fs.existsSync(ws.cwd))
         .map((ws) => ({ id: ws.id, label: ws.label, cwd: ws.cwd }))
 
-      const orphanKnowledge: OrphanKnowledge[] = svc
-        .listKnowledge({ projectId })
+      const allKnowledge = await svc.listKnowledge({ projectId })
+      const orphanKnowledge: OrphanKnowledge[] = allKnowledge
         .filter((k) => isLikelyWorktreePath(k.filePath) && !fs.existsSync(k.filePath))
         .map((k) => ({ slug: k.slug, filePath: k.filePath, workspaceId: k.workspaceId }))
 
@@ -91,7 +91,7 @@ export const register = (server: InstrumentedServer, svc: CleanupToolsDeps): voi
 
       const archivedWorkspaces: OrphanWorkspace[] = []
       for (const ws of orphanWorkspaces) {
-        const archived = svc.archiveWorkspace(ws.id)
+        const archived = await svc.archiveWorkspace(ws.id)
         if (archived) archivedWorkspaces.push(ws)
       }
 
@@ -99,7 +99,7 @@ export const register = (server: InstrumentedServer, svc: CleanupToolsDeps): voi
       const leftKnowledge: OrphanKnowledge[] = []
       if (action === 'delete') {
         for (const k of orphanKnowledge) {
-          svc.deleteKnowledge(k.slug)
+          await svc.deleteKnowledge(k.slug)
           deletedKnowledge.push(k)
         }
       } else {

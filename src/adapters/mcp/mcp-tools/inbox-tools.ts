@@ -8,9 +8,11 @@ import type { InboxLifecycleOperations } from '../../../core/domain/interfaces/i
 
 export type InboxToolsDeps = InboxOperations & ConversationOperations & InboxLifecycleOperations
 
-function tryLifecycle<T>(fn: () => T): ReturnType<typeof textResponse> {
+async function tryLifecycle<T>(
+  fn: () => T | Promise<T>
+): Promise<ReturnType<typeof textResponse>> {
   try {
-    return textResponse(fn())
+    return textResponse(await fn())
   } catch (e) {
     if (e instanceof LifecycleError) return textResponse(e.message)
     throw e
@@ -27,7 +29,7 @@ export const register = (server: InstrumentedServer, svc: InboxToolsDeps): void 
         content: z.string().describe('Raw idea content')
       }
     },
-    async ({ projectId, content }) => textResponse(svc.createInbox({ projectId, content }))
+    async ({ projectId, content }) => textResponse(await svc.createInbox({ projectId, content }))
   )
 
   server.registerTool(
@@ -41,14 +43,14 @@ export const register = (server: InstrumentedServer, svc: InboxToolsDeps): void 
       }
     },
     async ({ id, content }) => {
-      const item = svc.getInbox(id)
+      const item = await svc.getInbox(id)
       if (!item) return textResponse(`Inbox ${id} not found`)
       if (item.status === 'converted' || item.status === 'archived') {
         return textResponse(
           `Inbox ${id} is ${item.status} — content locked to preserve trace history`
         )
       }
-      return textResponse(svc.updateInbox(id, { content }))
+      return textResponse(await svc.updateInbox(id, { content }))
     }
   )
 
@@ -72,7 +74,7 @@ export const register = (server: InstrumentedServer, svc: InboxToolsDeps): void 
       if (projectId === 'global') filter.projectId = null
       else if (projectId) filter.projectId = projectId
       if (status) filter.status = status
-      return textResponse(svc.findInbox(filter))
+      return textResponse(await svc.findInbox(filter))
     }
   )
 
@@ -83,21 +85,24 @@ export const register = (server: InstrumentedServer, svc: InboxToolsDeps): void 
       inputSchema: { id: z.string().describe('Inbox item ID (e.g. INBOX-001)') }
     },
     async ({ id }) => {
-      const item = svc.getInbox(id)
+      const item = await svc.getInbox(id)
       if (!item) return textResponse(`Inbox ${id} not found`)
-      const conversations = svc.findConversationsByLink('inbox', id).map((c) => ({
-        id: c.id,
-        title: c.title,
-        status: c.status,
-        decisionSummary: c.decisionSummary,
-        messages: svc.getConversationMessages(c.id).map((m) => ({
-          id: m.id,
-          authorName: m.authorName,
-          content: m.content,
-          messageType: m.messageType,
-          createdAt: m.createdAt
+      const convList = await svc.findConversationsByLink('inbox', id)
+      const conversations = await Promise.all(
+        convList.map(async (c) => ({
+          id: c.id,
+          title: c.title,
+          status: c.status,
+          decisionSummary: c.decisionSummary,
+          messages: (await svc.getConversationMessages(c.id)).map((m) => ({
+            id: m.id,
+            authorName: m.authorName,
+            content: m.content,
+            messageType: m.messageType,
+            createdAt: m.createdAt
+          }))
         }))
-      }))
+      )
       return textResponse({ item, conversations })
     }
   )
@@ -113,8 +118,8 @@ export const register = (server: InstrumentedServer, svc: InboxToolsDeps): void 
       }
     },
     async ({ id, researcher }) =>
-      tryLifecycle(() => ({
-        ...svc.startInboxResearch(id, researcher),
+      tryLifecycle(async () => ({
+        ...(await svc.startInboxResearch(id, researcher)),
         hint: 'Add research findings via conversation_add. Call inbox_ready when done.'
       }))
   )
@@ -126,12 +131,12 @@ export const register = (server: InstrumentedServer, svc: InboxToolsDeps): void 
       inputSchema: { id: z.string().describe('Inbox item ID') }
     },
     async ({ id }) => {
-      const item = svc.getInbox(id)
+      const item = await svc.getInbox(id)
       if (!item) return textResponse(`Inbox ${id} not found`)
       if (item.status !== 'researching') {
         return textResponse(`Inbox ${id} is ${item.status}, not researching`)
       }
-      return textResponse(svc.updateInbox(id, { status: 'ready' }))
+      return textResponse(await svc.updateInbox(id, { status: 'ready' }))
     }
   )
 

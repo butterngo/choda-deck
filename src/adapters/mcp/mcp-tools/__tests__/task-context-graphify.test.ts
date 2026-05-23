@@ -26,13 +26,13 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 
 function makeDeps(workspaceCwds: string[] = [], projectCwd: string | null = null): GraphifyDeps {
   return {
-    ensureProject: () => {},
-    getProject: () =>
+    ensureProject: async () => {},
+    getProject: async () =>
       projectCwd ? { id: 'proj-test', name: 'test', cwd: projectCwd } : null,
-    listProjects: () => [],
-    addWorkspace: () => ({ id: '', projectId: '', label: '', cwd: '', archivedAt: null }),
-    getWorkspace: () => null,
-    findWorkspaces: () =>
+    listProjects: async () => [],
+    addWorkspace: async () => ({ id: '', projectId: '', label: '', cwd: '', archivedAt: null }),
+    getWorkspace: async () => null,
+    findWorkspaces: async () =>
       workspaceCwds.map((cwd, i) => ({
         id: `ws-${i}`,
         projectId: 'proj-test',
@@ -40,8 +40,8 @@ function makeDeps(workspaceCwds: string[] = [], projectCwd: string | null = null
         cwd,
         archivedAt: null
       })),
-    archiveWorkspace: () => null,
-    unarchiveWorkspace: () => null
+    archiveWorkspace: async () => null,
+    unarchiveWorkspace: async () => null
   }
 }
 
@@ -64,20 +64,20 @@ describe('buildGraphifyContext', () => {
     fs.rmSync(tmp, { recursive: true, force: true })
   })
 
-  it('returns no-graph when graphify-out is absent', () => {
+  it('returns no-graph when graphify-out is absent', async () => {
     const task = makeTask({ title: 'anything' })
-    const result = buildGraphifyContext(task, makeDeps([tmp]))
+    const result = await buildGraphifyContext(task, makeDeps([tmp]))
     expect(result).toHaveProperty('status', 'no-graph')
   })
 
-  it('returns no-matches when keywords are empty', () => {
+  it('returns no-matches when keywords are empty', async () => {
     writeFixtureGraph(tmp, [], [])
     const task = makeTask({ title: 'a b' }) // all tokens too short
-    const result = buildGraphifyContext(task, makeDeps([tmp]))
+    const result = await buildGraphifyContext(task, makeDeps([tmp]))
     expect(result).toHaveProperty('status', 'no-matches')
   })
 
-  it('returns affected_files + god_nodes + staleness when a match exists', () => {
+  it('returns affected_files + god_nodes + staleness when a match exists', async () => {
     writeFixtureGraph(
       tmp,
       [
@@ -98,7 +98,7 @@ describe('buildGraphifyContext', () => {
       ]
     )
     const task = makeTask({ title: 'refactor authservice login flow' })
-    const result = buildGraphifyContext(task, makeDeps([tmp]))
+    const result = await buildGraphifyContext(task, makeDeps([tmp]))
     expect(result).not.toHaveProperty('status')
     if ('affected_files' in result) {
       expect(result.affected_files.length).toBeGreaterThan(0)
@@ -112,7 +112,7 @@ describe('buildGraphifyContext', () => {
     }
   })
 
-  it('filters out edges below confidence threshold', () => {
+  it('filters out edges below confidence threshold', async () => {
     writeFixtureGraph(
       tmp,
       [
@@ -122,7 +122,7 @@ describe('buildGraphifyContext', () => {
       [{ source: 'a', target: 'b', relation: 'calls', confidence_score: 0.5 }]
     )
     const task = makeTask({ title: 'work on taskalpha' })
-    const result = buildGraphifyContext(task, makeDeps([tmp]))
+    const result = await buildGraphifyContext(task, makeDeps([tmp]))
     if ('affected_files' in result) {
       const paths = result.affected_files.map((f) => f.path)
       expect(paths).not.toContain('b.ts')
@@ -131,7 +131,7 @@ describe('buildGraphifyContext', () => {
     }
   })
 
-  it('filters out edges with non-allowed relations', () => {
+  it('filters out edges with non-allowed relations', async () => {
     writeFixtureGraph(
       tmp,
       [
@@ -141,7 +141,7 @@ describe('buildGraphifyContext', () => {
       [{ source: 'a', target: 'b', relation: 'semantically_similar_to', confidence_score: 1.0 }]
     )
     const task = makeTask({ title: 'work on taskalpha' })
-    const result = buildGraphifyContext(task, makeDeps([tmp]))
+    const result = await buildGraphifyContext(task, makeDeps([tmp]))
     if ('affected_files' in result) {
       const paths = result.affected_files.map((f) => f.path)
       expect(paths).not.toContain('b.ts')
@@ -150,27 +150,27 @@ describe('buildGraphifyContext', () => {
     }
   })
 
-  it('boosts keywords from labels', () => {
+  it('boosts keywords from labels', async () => {
     writeFixtureGraph(
       tmp,
       [{ id: 'foo', label: 'RendererStuff', source_file: 'x.ts' }],
       []
     )
     const task = makeTask({ title: 'abc', labels: ['rendererstuff'] })
-    const result = buildGraphifyContext(task, makeDeps([tmp]))
+    const result = await buildGraphifyContext(task, makeDeps([tmp]))
     if ('affected_files' in result) {
       expect(result.keywords_used).toContain('rendererstuff')
     }
   })
 
-  it('falls back to project cwd if workspaces have no graph', () => {
+  it('falls back to project cwd if workspaces have no graph', async () => {
     writeFixtureGraph(tmp, [{ id: 'n', label: 'TaskAlpha', source_file: 'x.ts' }], [])
     const task = makeTask({ title: 'taskalpha matter' })
-    const result = buildGraphifyContext(task, makeDeps([], tmp))
+    const result = await buildGraphifyContext(task, makeDeps([], tmp))
     expect(result).not.toHaveProperty('status')
   })
 
-  it('uses ## File Pointers paths to find start nodes (trust body author over keyword match)', () => {
+  it('uses ## File Pointers paths to find start nodes (trust body author over keyword match)', async () => {
     writeFixtureGraph(
       tmp,
       [
@@ -184,7 +184,7 @@ describe('buildGraphifyContext', () => {
       title: 'refactor',
       body: '## File Pointers\n\n- `src/target.ts` — actual edit target\n- `src/new-file.ts` (NEW) — should be skipped\n\n## Acceptance\n- [ ] do thing\n'
     })
-    const result = buildGraphifyContext(task, makeDeps([tmp]))
+    const result = await buildGraphifyContext(task, makeDeps([tmp]))
     if ('affected_files' in result) {
       expect(result.affected_files[0]?.path).toBe('src/target.ts')
       const paths = result.affected_files.map((f) => f.path)
@@ -194,7 +194,7 @@ describe('buildGraphifyContext', () => {
     }
   })
 
-  it('extractAcceptanceSection ignores `## Acceptance` mentions inside prose (only matches real heading)', () => {
+  it('extractAcceptanceSection ignores `## Acceptance` mentions inside prose (only matches real heading)', async () => {
     writeFixtureGraph(
       tmp,
       [
@@ -211,7 +211,7 @@ describe('buildGraphifyContext', () => {
         '## Acceptance\n\n' +
         '- [ ] verify realtarget behavior\n'
     })
-    const result = buildGraphifyContext(task, makeDeps([tmp]))
+    const result = await buildGraphifyContext(task, makeDeps([tmp]))
     if ('affected_files' in result) {
       expect(result.keywords_used).toContain('realtarget')
       expect(result.keywords_used).not.toContain('noise')
@@ -220,7 +220,7 @@ describe('buildGraphifyContext', () => {
     }
   })
 
-  it('extractFilePointers ignores `## File Pointers` mentions inside prose (only matches real heading)', () => {
+  it('extractFilePointers ignores `## File Pointers` mentions inside prose (only matches real heading)', async () => {
     writeFixtureGraph(
       tmp,
       [
@@ -238,7 +238,7 @@ describe('buildGraphifyContext', () => {
         '- `src/real.ts` — actual target\n\n' +
         '## Acceptance\n- [ ] do thing\n'
     })
-    const result = buildGraphifyContext(task, makeDeps([tmp]))
+    const result = await buildGraphifyContext(task, makeDeps([tmp]))
     if ('affected_files' in result) {
       expect(result.affected_files[0]?.path).toBe('src/real.ts')
       expect(result.affected_files.map((f) => f.path)).not.toContain('src/noisy.ts')
@@ -247,7 +247,7 @@ describe('buildGraphifyContext', () => {
     }
   })
 
-  it('drops label keys (assignee:, adr-, phase-) and exact label drops (auto-safe, bug, ...) from keywords', () => {
+  it('drops label keys (assignee:, adr-, phase-) and exact label drops (auto-safe, bug, ...) from keywords', async () => {
     writeFixtureGraph(
       tmp,
       [{ id: 'graphify_node', label: 'GraphifyHelper', source_file: 'g.ts' }],
@@ -257,7 +257,7 @@ describe('buildGraphifyContext', () => {
       title: 'graphify pipeline',
       labels: ['assignee:butter', 'adr-019', 'phase-2', 'auto-safe', 'bug', 'graphify']
     })
-    const result = buildGraphifyContext(task, makeDeps([tmp]))
+    const result = await buildGraphifyContext(task, makeDeps([tmp]))
     if ('affected_files' in result) {
       expect(result.keywords_used).not.toContain('assignee:butter')
       expect(result.keywords_used).not.toContain('adr-019')
@@ -270,7 +270,7 @@ describe('buildGraphifyContext', () => {
     }
   })
 
-  it('filters Vietnamese stopwords (>3 chars) from keywords', () => {
+  it('filters Vietnamese stopwords (>3 chars) from keywords', async () => {
     writeFixtureGraph(
       tmp,
       [{ id: 'graph_helper', label: 'GraphHelper', source_file: 'g.ts' }],
@@ -279,7 +279,7 @@ describe('buildGraphifyContext', () => {
     const task = makeTask({
       title: 'graph trong không chứa theo'
     })
-    const result = buildGraphifyContext(task, makeDeps([tmp]))
+    const result = await buildGraphifyContext(task, makeDeps([tmp]))
     if ('affected_files' in result) {
       expect(result.keywords_used).toContain('graph')
       expect(result.keywords_used).not.toContain('trong')
@@ -291,7 +291,7 @@ describe('buildGraphifyContext', () => {
     }
   })
 
-  it('marks stale when file is older than 7 days', () => {
+  it('marks stale when file is older than 7 days', async () => {
     const graphPath = writeFixtureGraph(
       tmp,
       [{ id: 'n', label: 'TaskAlpha', source_file: 'x.ts' }],
@@ -300,7 +300,7 @@ describe('buildGraphifyContext', () => {
     const eightDaysAgo = Date.now() - 8 * 24 * 60 * 60 * 1000
     fs.utimesSync(graphPath, new Date(eightDaysAgo), new Date(eightDaysAgo))
     const task = makeTask({ title: 'taskalpha matter' })
-    const result = buildGraphifyContext(task, makeDeps([tmp]))
+    const result = await buildGraphifyContext(task, makeDeps([tmp]))
     if ('affected_files' in result) {
       expect(result.graph_is_stale).toBe(true)
       expect(result.graph_age_days).toBeGreaterThan(7)

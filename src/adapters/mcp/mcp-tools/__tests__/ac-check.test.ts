@@ -53,7 +53,7 @@ Implementation note.
 `
 
 describe('findAcItems (pure)', () => {
-  it('returns AC items in order with checked flag and trimmed text', () => {
+  it('returns AC items in order with checked flag and trimmed text', async () => {
     const items = findAcItems(SAMPLE_BODY)
     expect(items).toHaveLength(4)
     expect(items[0].checked).toBe(false)
@@ -62,16 +62,16 @@ describe('findAcItems (pure)', () => {
     expect(items[2].text).toBe('Already checked')
   })
 
-  it('returns [] when body has no Acceptance section', () => {
+  it('returns [] when body has no Acceptance section', async () => {
     expect(findAcItems('## Context only\n\nNo acceptance here.')).toEqual([])
   })
 
-  it('stops at the next `## ` heading — does not pick up Test Plan items', () => {
+  it('stops at the next `## ` heading — does not pick up Test Plan items', async () => {
     const items = findAcItems(SAMPLE_BODY)
     expect(items.every((i) => !i.text.includes('Test Plan'))).toBe(true)
   })
 
-  it('skips checkbox-like lines inside fenced code blocks', () => {
+  it('skips checkbox-like lines inside fenced code blocks', async () => {
     const body = `## Acceptance
 
 - [ ] real item
@@ -88,7 +88,7 @@ describe('findAcItems (pure)', () => {
 })
 
 describe('flipAcCheckbox (pure)', () => {
-  it('flips the unchecked target only — body length unchanged', () => {
+  it('flips the unchecked target only — body length unchanged', async () => {
     const { newBody, item } = flipAcCheckbox(SAMPLE_BODY, 'TASK-T', 1)
     expect(item.text).toBe('Second criterion')
     expect(newBody.length).toBe(SAMPLE_BODY.length)
@@ -99,36 +99,36 @@ describe('flipAcCheckbox (pure)', () => {
     expect(items[2].checked).toBe(true)
   })
 
-  it('throws AcIndexOutOfRangeError when index < 0 or >= count', () => {
+  it('throws AcIndexOutOfRangeError when index < 0 or >= count', async () => {
     expect(() => flipAcCheckbox(SAMPLE_BODY, 'TASK-T', 99)).toThrowError(AcIndexOutOfRangeError)
     expect(() => flipAcCheckbox(SAMPLE_BODY, 'TASK-T', -1)).toThrowError(AcIndexOutOfRangeError)
   })
 
-  it('throws AcAlreadyCheckedError on a checked item', () => {
+  it('throws AcAlreadyCheckedError on a checked item', async () => {
     expect(() => flipAcCheckbox(SAMPLE_BODY, 'TASK-T', 2)).toThrowError(AcAlreadyCheckedError)
   })
 })
 
 describe('assertNarrowDiff (safety net)', () => {
-  it('passes when the only change is ` ` → `x` at the expected offset', () => {
+  it('passes when the only change is ` ` → `x` at the expected offset', async () => {
     const a = 'foo [ ] bar'
     const b = 'foo [x] bar'
     expect(() => assertNarrowDiff(a, b, 4, 'TASK-T')).not.toThrow()
   })
 
-  it('rejects length changes', () => {
+  it('rejects length changes', async () => {
     expect(() => assertNarrowDiff('foo [ ] bar', 'foo [x] barz', 4, 'TASK-T')).toThrowError(
       BodyLockViolationError
     )
   })
 
-  it('rejects edits outside the target bracket', () => {
+  it('rejects edits outside the target bracket', async () => {
     const a = 'foo [ ] bar'
     const b = 'FOO [x] bar' // mutates leading "foo"
     expect(() => assertNarrowDiff(a, b, 4, 'TASK-T')).toThrowError(BodyLockViolationError)
   })
 
-  it('rejects ` ` → non-x replacements at the right offset', () => {
+  it('rejects ` ` → non-x replacements at the right offset', async () => {
     const a = 'foo [ ] bar'
     const b = 'foo [Y] bar'
     expect(() => assertNarrowDiff(a, b, 4, 'TASK-T')).toThrowError(BodyLockViolationError)
@@ -139,12 +139,12 @@ describe('ac_check MCP tool — integration via SqliteTaskService', () => {
   let svc: SqliteTaskService
   let server: ReturnType<typeof makeServerStub>
 
-  beforeEach(() => {
+  beforeEach(async () => {
     if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
     svc = new SqliteTaskService(TEST_DB)
-    svc.ensureProject('proj-ac', 'AC Project', 'C:/tmp/proj-ac')
-    svc.addWorkspace('proj-ac', 'ws-main', 'Main', 'C:/tmp/proj-ac')
-    svc.createTask({
+    await svc.ensureProject('proj-ac', 'AC Project', 'C:/tmp/proj-ac')
+    await svc.addWorkspace('proj-ac', 'ws-main', 'Main', 'C:/tmp/proj-ac')
+    await svc.createTask({
       id: 'TASK-AC',
       projectId: 'proj-ac',
       title: 'AC test task',
@@ -155,8 +155,8 @@ describe('ac_check MCP tool — integration via SqliteTaskService', () => {
     register(server as unknown as Parameters<typeof register>[0], svc as unknown as AcCheckDeps)
   })
 
-  afterEach(() => {
-    svc.close()
+  afterEach(async () => {
+    await svc.close()
     if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
   })
 
@@ -170,7 +170,7 @@ describe('ac_check MCP tool — integration via SqliteTaskService', () => {
   }
 
   it('happy path: flips AC + emits observation atomically when session is active', async () => {
-    const session = svc.startSession({ projectId: 'proj-ac', taskId: 'TASK-AC', workspaceId: 'ws-main' })
+    const session = await svc.startSession({ projectId: 'proj-ac', taskId: 'TASK-AC', workspaceId: 'ws-main' })
 
     const out = await callAcCheck({
       taskId: 'TASK-AC',
@@ -183,13 +183,13 @@ describe('ac_check MCP tool — integration via SqliteTaskService', () => {
     expect(out.eventId).toMatch(/^EVT-/)
 
     // Body flipped exactly at index 0
-    const after = svc.getTask('TASK-AC')!
+    const after = await svc.getTask('TASK-AC')!
     const items = findAcItems(after.body ?? '')
     expect(items[0].checked).toBe(true)
     expect(items[1].checked).toBe(false)
 
     // One ac_check observation event landed
-    const events = svc.listSessionEvents(session.session.id, 'observation')
+    const events = await svc.listSessionEvents(session.session.id, 'observation')
     expect(events).toHaveLength(1)
     const payload = JSON.parse(events[0].payloadJson ?? '{}')
     expect(payload.kind).toBe('ac_check')
@@ -208,12 +208,12 @@ describe('ac_check MCP tool — integration via SqliteTaskService', () => {
     })
     expect(out.error).toBe('NO_ACTIVE_SESSION')
     // Body NOT updated
-    const items = findAcItems(svc.getTask('TASK-AC')!.body ?? '')
+    const items = findAcItems((await svc.getTask('TASK-AC'))!.body ?? '')
     expect(items[0].checked).toBe(false)
   })
 
   it('returns AC_INDEX_OUT_OF_RANGE when index too large', async () => {
-    svc.startSession({ projectId: 'proj-ac', taskId: 'TASK-AC', workspaceId: 'ws-main' })
+    await svc.startSession({ projectId: 'proj-ac', taskId: 'TASK-AC', workspaceId: 'ws-main' })
     const out = await callAcCheck({
       taskId: 'TASK-AC',
       acIndex: 99,
@@ -224,7 +224,7 @@ describe('ac_check MCP tool — integration via SqliteTaskService', () => {
   })
 
   it('returns AC_ALREADY_CHECKED on double-check', async () => {
-    svc.startSession({ projectId: 'proj-ac', taskId: 'TASK-AC', workspaceId: 'ws-main' })
+    await svc.startSession({ projectId: 'proj-ac', taskId: 'TASK-AC', workspaceId: 'ws-main' })
     const out = await callAcCheck({
       taskId: 'TASK-AC',
       acIndex: 2,
@@ -235,7 +235,7 @@ describe('ac_check MCP tool — integration via SqliteTaskService', () => {
   })
 
   it('rolls back the body write when the event INSERT fails (atomic)', async () => {
-    const session = svc.startSession({ projectId: 'proj-ac', taskId: 'TASK-AC', workspaceId: 'ws-main' })
+    const session = await svc.startSession({ projectId: 'proj-ac', taskId: 'TASK-AC', workspaceId: 'ws-main' })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const internalEvents = (svc as any).sessionEvents
@@ -255,13 +255,13 @@ describe('ac_check MCP tool — integration via SqliteTaskService', () => {
 
     internalEvents.create = origCreate
 
-    const items = findAcItems(svc.getTask('TASK-AC')!.body ?? '')
+    const items = findAcItems((await svc.getTask('TASK-AC'))!.body ?? '')
     expect(items[1].checked).toBe(false)
-    expect(svc.listSessionEvents(session.session.id, 'observation')).toEqual([])
+    expect(await svc.listSessionEvents(session.session.id, 'observation')).toEqual([])
   })
 
   it('returns TASK_NOT_FOUND when task does not exist', async () => {
-    svc.startSession({ projectId: 'proj-ac', taskId: 'TASK-AC', workspaceId: 'ws-main' })
+    await svc.startSession({ projectId: 'proj-ac', taskId: 'TASK-AC', workspaceId: 'ws-main' })
     const out = await callAcCheck({
       taskId: 'TASK-NOPE',
       acIndex: 0,

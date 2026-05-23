@@ -20,7 +20,7 @@ export interface InboxConvertResult {
 }
 
 export interface InboxLifecycleOperations {
-  startInboxResearch(id: string, researcher: string): InboxResearchResult
-  convertInboxToTask(id: string, input: InboxConvertInput): InboxConvertResult
-  archiveInbox(id: string, reason?: string): InboxItem
+  startInboxResearch(id: string, researcher: string): Promise<InboxResearchResult>
+  convertInboxToTask(id: string, input: InboxConvertInput): Promise<InboxConvertResult>
+  archiveInbox(id: string, reason?: string): Promise<InboxItem>
 }

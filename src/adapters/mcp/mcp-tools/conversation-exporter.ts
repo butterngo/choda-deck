@@ -4,22 +4,22 @@ import { splitLines } from '../../../core/utils/lines'
 import type { ConversationOperations } from '../../../core/domain/interfaces/conversation-repository.interface'
 import type { Conversation, ConversationMessage, ConversationAction } from '../../../core/domain/task-types'
 
-export function exportConversationMarkdown(
+export async function exportConversationMarkdown(
   svc: ConversationOperations,
   conversationId: string,
   contentRoot = process.env.CHODA_CONTENT_ROOT || ''
-): string | null {
+): Promise<string | null> {
   if (!contentRoot) return null
 
-  const conv = svc.getConversation(conversationId)
+  const conv = await svc.getConversation(conversationId)
   if (!conv) return null
 
-  const allForProject = svc.findConversations(conv.projectId)
+  const allForProject = await svc.findConversations(conv.projectId)
   const index = allForProject.findIndex((c) => c.id === conversationId)
   const humanNumber = index >= 0 ? allForProject.length - index : 1
 
-  const messages = svc.getConversationMessages(conversationId)
-  const actions = svc.getConversationActions(conversationId)
+  const messages = await svc.getConversationMessages(conversationId)
+  const actions = await svc.getConversationActions(conversationId)
 
   const body = renderConversationSection(conv, humanNumber, messages, actions)
   const filePath = conversationsMarkdownPath(contentRoot, conv.projectId)

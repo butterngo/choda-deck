@@ -21,7 +21,7 @@ export interface MemoryRecallInput {
 }
 
 export interface AgentMemoryOperations {
-  writeMemory(input: MemoryWriteInput): AgentMemory
-  recallMemories(input: MemoryRecallInput): AgentMemory[]
-  markMemoryPromoted(memoryId: string, adrSlug: string): void
+  writeMemory(input: MemoryWriteInput): Promise<AgentMemory>
+  recallMemories(input: MemoryRecallInput): Promise<AgentMemory[]>
+  markMemoryPromoted(memoryId: string, adrSlug: string): Promise<void>
 }

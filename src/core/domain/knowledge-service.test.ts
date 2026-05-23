@@ -74,9 +74,9 @@ afterEach(() => {
 })
 
 describe('createKnowledge', () => {
-  it('writes file + index + INDEX.md for project scope', () => {
+  it('writes file + index + INDEX.md for project scope', async () => {
     git.headSha = 'sha-aaa'
-    const entry = svc.createKnowledge({
+    const entry = await svc.createKnowledge({
       projectId: 'proj-k',
       type: 'decision',
       scope: 'project',
@@ -103,8 +103,8 @@ describe('createKnowledge', () => {
     expect(indexMd).toContain('Test Decision')
   })
 
-  it('rejects duplicate slug', () => {
-    svc.createKnowledge({
+  it('rejects duplicate slug', async () => {
+    await svc.createKnowledge({
       projectId: 'proj-k',
       type: 'decision',
       scope: 'project',
@@ -112,34 +112,30 @@ describe('createKnowledge', () => {
       body: 'a',
       refs: []
     })
-    expect(() =>
-      svc.createKnowledge({
+    await expect(svc.createKnowledge({
         projectId: 'proj-k',
         type: 'decision',
         scope: 'project',
         title: 'Same Title',
         body: 'b',
         refs: []
-      })
-    ).toThrow(KnowledgeConflictError)
+      })).rejects.toThrow(KnowledgeConflictError)
   })
 
-  it('rejects unknown projectId', () => {
-    expect(() =>
-      svc.createKnowledge({
+  it('rejects unknown projectId', async () => {
+    await expect(svc.createKnowledge({
         projectId: 'no-such',
         type: 'decision',
         scope: 'project',
         title: 'X',
         body: 'b',
         refs: []
-      })
-    ).toThrow(KnowledgeValidationError)
+      })).rejects.toThrow(KnowledgeValidationError)
   })
 })
 
 describe('createKnowledge — worktree guard', () => {
-  it('rejects workspace whose cwd is a git worktree', () => {
+  it('rejects workspace whose cwd is a git worktree', async () => {
     const workspaces = new WorkspaceRepository(db)
     const worktreeCwd = path.join(tmpDir, 'repo.worktrees', 'task-1')
     fs.mkdirSync(worktreeCwd, { recursive: true })
@@ -155,8 +151,7 @@ describe('createKnowledge — worktree guard', () => {
       now: () => new Date('2026-04-29T00:00:00Z')
     })
 
-    expect(() =>
-      svcWithWs.createKnowledge({
+    await expect(svcWithWs.createKnowledge({
         projectId: 'proj-k',
         workspaceId: 'ws-wt',
         type: 'spike',
@@ -164,8 +159,7 @@ describe('createKnowledge — worktree guard', () => {
         title: 'Worktree Spike',
         body: 'b',
         refs: []
-      })
-    ).toThrow(KnowledgeValidationError)
+      })).rejects.toThrow(KnowledgeValidationError)
 
     const expectedPath = path.join(worktreeCwd, 'docs', 'knowledge', 'worktree-spike.md')
     expect(fs.existsSync(expectedPath)).toBe(false)
@@ -174,9 +168,9 @@ describe('createKnowledge — worktree guard', () => {
 })
 
 describe('getKnowledge — staleness', () => {
-  it('returns isStale=true with per-ref commitsSince', () => {
+  it('returns isStale=true with per-ref commitsSince', async () => {
     git.headSha = 'sha-aaa'
-    svc.createKnowledge({
+    await svc.createKnowledge({
       projectId: 'proj-k',
       type: 'spike',
       scope: 'project',
@@ -188,7 +182,7 @@ describe('getKnowledge — staleness', () => {
     git.commitsSinceMap.set('sha-aaa::src/a.ts', 3)
     git.commitsSinceMap.set('sha-aaa::src/b.ts', 0)
 
-    const entry = svc.getKnowledge('spike-one')
+    const entry = await svc.getKnowledge('spike-one')
     expect(entry).not.toBeNull()
     expect(entry?.staleness).toEqual([
       { path: 'src/a.ts', commitSha: 'sha-aaa', commitsSince: 3 },
@@ -197,14 +191,14 @@ describe('getKnowledge — staleness', () => {
     expect(entry?.isStale).toBe(true)
   })
 
-  it('returns null for missing slug', () => {
-    expect(svc.getKnowledge('nope')).toBeNull()
+  it('returns null for missing slug', async () => {
+    expect(await svc.getKnowledge('nope')).toBeNull()
   })
 })
 
 describe('listKnowledge', () => {
-  it('filters by type', () => {
-    svc.createKnowledge({
+  it('filters by type', async () => {
+    await svc.createKnowledge({
       projectId: 'proj-k',
       type: 'decision',
       scope: 'project',
@@ -212,7 +206,7 @@ describe('listKnowledge', () => {
       body: 'a',
       refs: []
     })
-    svc.createKnowledge({
+    await svc.createKnowledge({
       projectId: 'proj-k',
       type: 'spike',
       scope: 'project',
@@ -221,18 +215,18 @@ describe('listKnowledge', () => {
       refs: []
     })
 
-    const decisions = svc.listKnowledge({ type: 'decision' })
+    const decisions = await svc.listKnowledge({ type: 'decision' })
     expect(decisions).toHaveLength(1)
     expect(decisions[0].slug).toBe('d1')
 
-    const all = svc.listKnowledge()
+    const all = await svc.listKnowledge()
     expect(all).toHaveLength(2)
   })
 })
 
 describe('deleteKnowledge', () => {
-  it('removes file + DB row + regenerates INDEX.md', () => {
-    svc.createKnowledge({
+  it('removes file + DB row + regenerates INDEX.md', async () => {
+    await svc.createKnowledge({
       projectId: 'proj-k',
       type: 'spike',
       scope: 'project',
@@ -244,7 +238,7 @@ describe('deleteKnowledge', () => {
     const indexMdPath = path.join(projectCwd, 'docs', 'knowledge', 'INDEX.md')
     expect(fs.existsSync(filePath)).toBe(true)
 
-    const result = svc.deleteKnowledge('disposable')
+    const result = await svc.deleteKnowledge('disposable')
     expect(result.slug).toBe('disposable')
     expect(result.deletedFile).toBe(true)
     expect(fs.existsSync(filePath)).toBe(false)
@@ -254,15 +248,15 @@ describe('deleteKnowledge', () => {
     expect(indexMd).toContain('No entries yet')
   })
 
-  it('throws KnowledgeNotFoundError on missing slug', () => {
-    expect(() => svc.deleteKnowledge('nope')).toThrow(KnowledgeNotFoundError)
+  it('throws KnowledgeNotFoundError on missing slug', async () => {
+    await expect(svc.deleteKnowledge('nope')).rejects.toThrow(KnowledgeNotFoundError)
   })
 })
 
 describe('updateKnowledge', () => {
-  it('updates body, re-pins refs to HEAD, bumps lastVerifiedAt', () => {
+  it('updates body, re-pins refs to HEAD, bumps lastVerifiedAt', async () => {
     git.headSha = 'sha-old'
-    svc.createKnowledge({
+    await svc.createKnowledge({
       projectId: 'proj-k',
       type: 'decision',
       scope: 'project',
@@ -271,27 +265,27 @@ describe('updateKnowledge', () => {
       refs: [{ path: 'src/y.ts' }]
     })
     git.commitsSinceMap.set('sha-old::src/y.ts', 4)
-    expect(svc.getKnowledge('edit-me')?.isStale).toBe(true)
+    expect((await svc.getKnowledge('edit-me'))?.isStale).toBe(true)
 
     git.headSha = 'sha-new'
     git.commitsSinceMap.set('sha-new::src/y.ts', 0)
-    const result = svc.updateKnowledge({ slug: 'edit-me', body: 'new body\n' })
+    const result = await svc.updateKnowledge({ slug: 'edit-me', body: 'new body\n' })
 
     expect(result.body).toBe('new body\n')
     expect(result.frontmatter.refs[0].commitSha).toBe('sha-new')
     expect(result.frontmatter.lastVerifiedAt).toBe('2026-04-29')
     expect(result.isStale).toBe(false)
 
-    const after = svc.getKnowledge('edit-me')
+    const after = await svc.getKnowledge('edit-me')
     expect(after?.body).toContain('new body')
     expect(after?.body).not.toContain('old body')
     expect(after?.frontmatter.refs[0].commitSha).toBe('sha-new')
     expect(after?.isStale).toBe(false)
   })
 
-  it('replaces refs when provided, body unchanged', () => {
+  it('replaces refs when provided, body unchanged', async () => {
     git.headSha = 'sha-aaa'
-    svc.createKnowledge({
+    await svc.createKnowledge({
       projectId: 'proj-k',
       type: 'spike',
       scope: 'project',
@@ -301,7 +295,7 @@ describe('updateKnowledge', () => {
     })
 
     git.headSha = 'sha-bbb'
-    const result = svc.updateKnowledge({
+    const result = await svc.updateKnowledge({
       slug: 'refs-only',
       refs: [{ path: 'src/new1.ts' }, { path: 'src/new2.ts' }]
     })
@@ -313,12 +307,12 @@ describe('updateKnowledge', () => {
     ])
   })
 
-  it('throws KnowledgeNotFoundError on missing slug', () => {
-    expect(() => svc.updateKnowledge({ slug: 'nope', body: 'x' })).toThrow(KnowledgeNotFoundError)
+  it('throws KnowledgeNotFoundError on missing slug', async () => {
+    await expect(svc.updateKnowledge({ slug: 'nope', body: 'x' })).rejects.toThrow(KnowledgeNotFoundError)
   })
 
-  it('throws KnowledgeValidationError when neither body nor refs provided', () => {
-    svc.createKnowledge({
+  it('throws KnowledgeValidationError when neither body nor refs provided', async () => {
+    await svc.createKnowledge({
       projectId: 'proj-k',
       type: 'spike',
       scope: 'project',
@@ -326,11 +320,11 @@ describe('updateKnowledge', () => {
       body: 'b',
       refs: []
     })
-    expect(() => svc.updateKnowledge({ slug: 'no-op' })).toThrow(KnowledgeValidationError)
+    await expect(svc.updateKnowledge({ slug: 'no-op' })).rejects.toThrow(KnowledgeValidationError)
   })
 
-  it('regenerates INDEX.md after update', () => {
-    svc.createKnowledge({
+  it('regenerates INDEX.md after update', async () => {
+    await svc.createKnowledge({
       projectId: 'proj-k',
       type: 'decision',
       scope: 'project',
@@ -342,7 +336,7 @@ describe('updateKnowledge', () => {
     fs.unlinkSync(indexMdPath)
     expect(fs.existsSync(indexMdPath)).toBe(false)
 
-    svc.updateKnowledge({ slug: 'reindex', body: 'new body\n' })
+    await svc.updateKnowledge({ slug: 'reindex', body: 'new body\n' })
 
     const after = fs.readFileSync(indexMdPath, 'utf8')
     expect(after).toContain('reindex')
@@ -350,9 +344,9 @@ describe('updateKnowledge', () => {
 })
 
 describe('verifyKnowledge', () => {
-  it('re-pins refs to new HEAD and resets staleness', () => {
+  it('re-pins refs to new HEAD and resets staleness', async () => {
     git.headSha = 'sha-old'
-    svc.createKnowledge({
+    await svc.createKnowledge({
       projectId: 'proj-k',
       type: 'learning',
       scope: 'project',
@@ -362,17 +356,17 @@ describe('verifyKnowledge', () => {
     })
     git.commitsSinceMap.set('sha-old::src/x.ts', 5)
 
-    const before = svc.getKnowledge('learn-one')
+    const before = await svc.getKnowledge('learn-one')
     expect(before?.isStale).toBe(true)
 
     git.headSha = 'sha-new'
     git.commitsSinceMap.set('sha-new::src/x.ts', 0)
-    const result = svc.verifyKnowledge('learn-one')
+    const result = await svc.verifyKnowledge('learn-one')
 
     expect(result.isStale).toBe(false)
     expect(result.refs[0].commitSha).toBe('sha-new')
 
-    const after = svc.getKnowledge('learn-one')
+    const after = await svc.getKnowledge('learn-one')
     expect(after?.frontmatter.refs[0].commitSha).toBe('sha-new')
     expect(after?.isStale).toBe(false)
   })
@@ -403,8 +397,8 @@ describe('workspace-scoped knowledge', () => {
     })
   })
 
-  it('createKnowledge with workspaceId writes file under workspaceCwd', () => {
-    const entry = wsSvc.createKnowledge({
+  it('createKnowledge with workspaceId writes file under workspaceCwd', async () => {
+    const entry = await wsSvc.createKnowledge({
       projectId: 'proj-k',
       workspaceId: 'ws-1',
       type: 'decision',
@@ -433,9 +427,8 @@ describe('workspace-scoped knowledge', () => {
     }
   })
 
-  it('createKnowledge rejects workspaceId from a different project', () => {
-    expect(() =>
-      wsSvc.createKnowledge({
+  it('createKnowledge rejects workspaceId from a different project', async () => {
+    await expect(wsSvc.createKnowledge({
         projectId: 'proj-k',
         workspaceId: 'ws-other',
         type: 'decision',
@@ -443,13 +436,11 @@ describe('workspace-scoped knowledge', () => {
         title: 'Cross Project',
         body: 'b',
         refs: []
-      })
-    ).toThrow(KnowledgeValidationError)
+      })).rejects.toThrow(KnowledgeValidationError)
   })
 
-  it('createKnowledge rejects unknown workspaceId', () => {
-    expect(() =>
-      wsSvc.createKnowledge({
+  it('createKnowledge rejects unknown workspaceId', async () => {
+    await expect(wsSvc.createKnowledge({
         projectId: 'proj-k',
         workspaceId: 'no-such-ws',
         type: 'decision',
@@ -457,12 +448,11 @@ describe('workspace-scoped knowledge', () => {
         title: 'Bad',
         body: 'b',
         refs: []
-      })
-    ).toThrow(KnowledgeValidationError)
+      })).rejects.toThrow(KnowledgeValidationError)
   })
 
-  it('listKnowledge filters by workspaceId', () => {
-    wsSvc.createKnowledge({
+  it('listKnowledge filters by workspaceId', async () => {
+    await wsSvc.createKnowledge({
       projectId: 'proj-k',
       workspaceId: 'ws-1',
       type: 'decision',
@@ -471,7 +461,7 @@ describe('workspace-scoped knowledge', () => {
       body: 'b',
       refs: []
     })
-    wsSvc.createKnowledge({
+    await wsSvc.createKnowledge({
       projectId: 'proj-k',
       type: 'decision',
       scope: 'project',
@@ -480,15 +470,15 @@ describe('workspace-scoped knowledge', () => {
       refs: []
     })
 
-    expect(wsSvc.listKnowledge({ workspaceId: 'ws-1' })).toHaveLength(1)
-    expect(wsSvc.listKnowledge({ workspaceId: 'ws-1' })[0].slug).toBe('ws-entry')
-    expect(wsSvc.listKnowledge({ workspaceId: null })).toHaveLength(1)
-    expect(wsSvc.listKnowledge({ workspaceId: null })[0].slug).toBe('project-entry')
-    expect(wsSvc.listKnowledge({ projectId: 'proj-k' })).toHaveLength(2)
+    expect(await wsSvc.listKnowledge({ workspaceId: 'ws-1' })).toHaveLength(1)
+    expect((await wsSvc.listKnowledge({ workspaceId: 'ws-1' }))[0].slug).toBe('ws-entry')
+    expect(await wsSvc.listKnowledge({ workspaceId: null })).toHaveLength(1)
+    expect((await wsSvc.listKnowledge({ workspaceId: null }))[0].slug).toBe('project-entry')
+    expect(await wsSvc.listKnowledge({ projectId: 'proj-k' })).toHaveLength(2)
   })
 
-  it('frontmatter round-trip preserves workspaceId', () => {
-    wsSvc.createKnowledge({
+  it('frontmatter round-trip preserves workspaceId', async () => {
+    await wsSvc.createKnowledge({
       projectId: 'proj-k',
       workspaceId: 'ws-1',
       type: 'decision',
@@ -525,11 +515,11 @@ describe('workspace-scoped knowledge', () => {
       return fp
     }
 
-    it('indexes an existing workspace-scoped file without rewriting it', () => {
+    it('indexes an existing workspace-scoped file without rewriting it', async () => {
       const fp = writePreExisting(workspaceCwd, 'pre-existing', 'ws-1')
       const before = fs.readFileSync(fp, 'utf8')
 
-      const entry = wsSvc.registerExistingKnowledge({
+      const entry = await wsSvc.registerExistingKnowledge({
         filePath: fp,
         projectId: 'proj-k',
         workspaceId: 'ws-1'
@@ -546,14 +536,14 @@ describe('workspace-scoped knowledge', () => {
       expect(row?.title).toBe('Title pre-existing')
     })
 
-    it('is idempotent on re-run', () => {
+    it('is idempotent on re-run', async () => {
       const fp = writePreExisting(workspaceCwd, 'idem', 'ws-1')
-      wsSvc.registerExistingKnowledge({
+      await wsSvc.registerExistingKnowledge({
         filePath: fp,
         projectId: 'proj-k',
         workspaceId: 'ws-1'
       })
-      wsSvc.registerExistingKnowledge({
+      await wsSvc.registerExistingKnowledge({
         filePath: fp,
         projectId: 'proj-k',
         workspaceId: 'ws-1'
@@ -561,35 +551,29 @@ describe('workspace-scoped knowledge', () => {
       expect(repo.list({ projectId: 'proj-k', workspaceId: 'ws-1' })).toHaveLength(1)
     })
 
-    it('rejects projectId mismatch with frontmatter', () => {
+    it('rejects projectId mismatch with frontmatter', async () => {
       const fp = writePreExisting(workspaceCwd, 'mismatch', 'ws-1')
-      expect(() =>
-        wsSvc.registerExistingKnowledge({
+      await expect(wsSvc.registerExistingKnowledge({
           filePath: fp,
           projectId: 'proj-other',
           workspaceId: 'ws-1'
-        })
-      ).toThrow(KnowledgeValidationError)
+        })).rejects.toThrow(KnowledgeValidationError)
     })
 
-    it('rejects workspaceId mismatch with frontmatter', () => {
+    it('rejects workspaceId mismatch with frontmatter', async () => {
       const fp = writePreExisting(workspaceCwd, 'wsmismatch', 'ws-1')
-      expect(() =>
-        wsSvc.registerExistingKnowledge({
+      await expect(wsSvc.registerExistingKnowledge({
           filePath: fp,
           projectId: 'proj-k',
           workspaceId: undefined
-        })
-      ).toThrow(KnowledgeValidationError)
+        })).rejects.toThrow(KnowledgeValidationError)
     })
 
-    it('rejects file that does not exist', () => {
-      expect(() =>
-        wsSvc.registerExistingKnowledge({
+    it('rejects file that does not exist', async () => {
+      await expect(wsSvc.registerExistingKnowledge({
           filePath: path.join(tmpDir, 'nope.md'),
           projectId: 'proj-k'
-        })
-      ).toThrow(KnowledgeValidationError)
+        })).rejects.toThrow(KnowledgeValidationError)
     })
   })
 

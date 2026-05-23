@@ -15,34 +15,34 @@ import type {
 } from '../task-types'
 
 export interface ConversationOperations {
-  createConversation(input: CreateConversationInput): Conversation
-  updateConversation(id: string, input: UpdateConversationInput): Conversation
-  getConversation(id: string): Conversation | null
-  findConversations(projectId: string, status?: ConversationStatus): Conversation[]
-  deleteConversation(id: string): void
+  createConversation(input: CreateConversationInput): Promise<Conversation>
+  updateConversation(id: string, input: UpdateConversationInput): Promise<Conversation>
+  getConversation(id: string): Promise<Conversation | null>
+  findConversations(projectId: string, status?: ConversationStatus): Promise<Conversation[]>
+  deleteConversation(id: string): Promise<void>
 
   addConversationParticipant(
     conversationId: string,
     name: string,
     type: ConversationParticipantType,
     role?: string | null
-  ): void
-  removeConversationParticipant(conversationId: string, name: string): void
-  getConversationParticipants(conversationId: string): ConversationParticipant[]
+  ): Promise<void>
+  removeConversationParticipant(conversationId: string, name: string): Promise<void>
+  getConversationParticipants(conversationId: string): Promise<ConversationParticipant[]>
 
-  addConversationMessage(input: CreateConversationMessageInput): ConversationMessage
-  getConversationMessages(conversationId: string): ConversationMessage[]
+  addConversationMessage(input: CreateConversationMessageInput): Promise<ConversationMessage>
+  getConversationMessages(conversationId: string): Promise<ConversationMessage[]>
 
-  addConversationAction(input: CreateConversationActionInput): ConversationAction
-  updateConversationAction(id: string, input: UpdateConversationActionInput): ConversationAction
-  getConversationActions(conversationId: string): ConversationAction[]
+  addConversationAction(input: CreateConversationActionInput): Promise<ConversationAction>
+  updateConversationAction(id: string, input: UpdateConversationActionInput): Promise<ConversationAction>
+  getConversationActions(conversationId: string): Promise<ConversationAction[]>
 
-  linkConversation(conversationId: string, linkedType: ConversationLinkType, linkedId: string): void
+  linkConversation(conversationId: string, linkedType: ConversationLinkType, linkedId: string): Promise<void>
   unlinkConversation(
     conversationId: string,
     linkedType: ConversationLinkType,
     linkedId: string
-  ): void
-  getConversationLinks(conversationId: string): ConversationLink[]
-  findConversationsByLink(linkedType: ConversationLinkType, linkedId: string): Conversation[]
+  ): Promise<void>
+  getConversationLinks(conversationId: string): Promise<ConversationLink[]>
+  findConversationsByLink(linkedType: ConversationLinkType, linkedId: string): Promise<Conversation[]>
 }

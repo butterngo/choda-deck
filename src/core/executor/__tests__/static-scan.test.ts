@@ -51,7 +51,7 @@ describe('scanSpec', () => {
     expect(r.violations[0].rule).toBe('expect.soft without // justify: comment')
   })
 
-  it('allows expect.soft with adjacent justify comment', () => {
+  it('allows expect.soft with adjacent justify comment', async () => {
     const spec = CLEAN_SPEC.replace(
       'await expect(',
       '// justify: animation delay tolerated\n  await expect.soft('

@@ -70,15 +70,15 @@ function buildRuntime(
   }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
   svc = new SqliteTaskService(TEST_DB)
-  svc.ensureProject('proj-q', 'Queue Project', '/tmp/q')
-  svc.addWorkspace('proj-q', 'ws-q', 'Q', '/tmp/q')
+  await svc.ensureProject('proj-q', 'Queue Project', '/tmp/q')
+  await svc.addWorkspace('proj-q', 'ws-q', 'Q', '/tmp/q')
 })
 
-afterEach(() => {
-  svc.close()
+afterEach(async () => {
+  await svc.close()
   if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
 })
 
@@ -190,13 +190,13 @@ describe('run-queue CLI — workspace + dry-run', () => {
 
 describe('run-queue CLI — happy path + halt', () => {
   it('all-DONE returns exit 0 with done ids populated', async () => {
-    const t = svc.createTask({
+    const t = await svc.createTask({
       projectId: 'proj-q',
       title: 'A',
       labels: ['auto-safe'],
       body: VALID_BODY
     })
-    svc.updateTask(t.id, { status: 'READY' })
+    await svc.updateTask(t.id, { status: 'READY' })
 
     const result = await executeWithServices(
       {
@@ -217,13 +217,13 @@ describe('run-queue CLI — happy path + halt', () => {
   })
 
   it('AC-fail halts and returns exit 1', async () => {
-    const t = svc.createTask({
+    const t = await svc.createTask({
       projectId: 'proj-q',
       title: 'B',
       labels: ['auto-safe'],
       body: VALID_BODY
     })
-    svc.updateTask(t.id, { status: 'READY' })
+    await svc.updateTask(t.id, { status: 'READY' })
 
     const result = await executeWithServices(
       {
@@ -247,13 +247,13 @@ describe('run-queue CLI — happy path + halt', () => {
   })
 
   it('cost-cap-exceeded halts and returns exit 5', async () => {
-    const t = svc.createTask({
+    const t = await svc.createTask({
       projectId: 'proj-q',
       title: 'C',
       labels: ['auto-safe'],
       body: VALID_BODY
     })
-    svc.updateTask(t.id, { status: 'READY' })
+    await svc.updateTask(t.id, { status: 'READY' })
 
     const result = await executeWithServices(
       {
@@ -285,13 +285,13 @@ describe('run-queue CLI — happy path + halt', () => {
 
 describe('run-queue CLI — --account flag plumbing', () => {
   it('--account alt passes account name through SpawnClaudeInput when accounts.json resolves it', async () => {
-    const t = svc.createTask({
+    const t = await svc.createTask({
       projectId: 'proj-q',
       title: 'Account test task',
       labels: ['auto-safe'],
       body: VALID_BODY
     })
-    svc.updateTask(t.id, { status: 'READY' })
+    await svc.updateTask(t.id, { status: 'READY' })
 
     const altConfigDir = path.join(os.tmpdir(), '.claude-alt-test')
     const dataDir = path.dirname(TEST_DB)
@@ -339,11 +339,11 @@ describe('computeExitCode — typed haltCode mapping (regression guard for TASK-
   }
   const failed = [{ id: 'TASK-X' } as QueueRunResult['failed'][number]]
 
-  it('all DONE → exit 0 regardless of haltCode', () => {
+  it('all DONE → exit 0 regardless of haltCode', async () => {
     expect(computeExitCode({ ...baseResult, failed: [], haltCode: null, haltReason: null })).toBe(0)
   })
 
-  it('cost-cap haltCode → exit 5 even when haltReason text has no legacy substring', () => {
+  it('cost-cap haltCode → exit 5 even when haltReason text has no legacy substring', async () => {
     expect(
       computeExitCode({
         ...baseResult,
@@ -354,7 +354,7 @@ describe('computeExitCode — typed haltCode mapping (regression guard for TASK-
     ).toBe(5)
   })
 
-  it('queue-cost-cap haltCode → exit 5', () => {
+  it('queue-cost-cap haltCode → exit 5', async () => {
     expect(
       computeExitCode({
         ...baseResult,
@@ -365,7 +365,7 @@ describe('computeExitCode — typed haltCode mapping (regression guard for TASK-
     ).toBe(5)
   })
 
-  it('non-cost halt codes → exit 1', () => {
+  it('non-cost halt codes → exit 1', async () => {
     for (const code of ['spawn-error', 'claude-error', 'ac-failed'] as const) {
       expect(
         computeExitCode({

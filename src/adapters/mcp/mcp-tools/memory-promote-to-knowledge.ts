@@ -31,7 +31,7 @@ export const register = (server: InstrumentedServer, svc: MemoryPromoteDeps): vo
       }
     },
     async ({ memoryId, projectId, workspaceId, title, body, slug, refs }) => {
-      const entry = svc.createKnowledge({
+      const entry = await svc.createKnowledge({
         projectId,
         workspaceId,
         type: 'decision',
@@ -41,7 +41,7 @@ export const register = (server: InstrumentedServer, svc: MemoryPromoteDeps): vo
         refs: refs ?? [],
         slug
       })
-      svc.markMemoryPromoted(memoryId, entry.slug)
+      await svc.markMemoryPromoted(memoryId, entry.slug)
       return textResponse({ slug: entry.slug, filePath: entry.filePath })
     }
   )
