@@ -7,20 +7,20 @@ import * as path from 'path'
 const TEST_DB = path.join(__dirname, '__test-ctx__.db')
 let svc: SqliteTaskService
 
-beforeAll(() => {
+beforeAll(async () => {
   if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
   svc = new SqliteTaskService(TEST_DB)
-  svc.ensureProject('proj-ctx', 'Context Project', '/tmp/ctx')
+  await svc.ensureProject('proj-ctx', 'Context Project', '/tmp/ctx')
 })
 
-afterAll(() => {
-  svc.close()
+afterAll(async () => {
+  await svc.close()
   if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
 })
 
 describe('project_context openConversations', () => {
-  it('includes recentMessages for open conversations', () => {
-    const conv = svc.createConversation({
+  it('includes recentMessages for open conversations', async () => {
+    const conv = await svc.createConversation({
       id: 'CONV-CTX-1',
       projectId: 'proj-ctx',
       title: 'Open thread with messages',
@@ -28,20 +28,20 @@ describe('project_context openConversations', () => {
       participants: [{ name: 'Butter', type: 'human' as const }]
     })
 
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: conv.id,
       authorName: 'Butter',
       content: 'first message',
       messageType: 'question'
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: conv.id,
       authorName: 'Claude',
       content: 'second message',
       messageType: 'answer'
     })
 
-    const bundle = buildProjectContext(svc, 'proj-ctx', 'summary')
+    const bundle = await buildProjectContext(svc, 'proj-ctx', 'summary')
     expect(bundle).not.toBeNull()
 
     const open = bundle!.currentState.openConversations
@@ -52,9 +52,9 @@ describe('project_context openConversations', () => {
     expect(open[0].recentMessages[1].author).toBe('Claude')
   })
 
-  it('recentMessages capped at last 3', () => {
+  it('recentMessages capped at last 3', async () => {
     for (let i = 0; i < 5; i++) {
-      svc.addConversationMessage({
+      await svc.addConversationMessage({
         conversationId: 'CONV-CTX-1',
         authorName: `User${i}`,
         content: `msg ${i}`,
@@ -62,13 +62,13 @@ describe('project_context openConversations', () => {
       })
     }
 
-    const bundle = buildProjectContext(svc, 'proj-ctx', 'summary')
+    const bundle = await buildProjectContext(svc, 'proj-ctx', 'summary')
     const open = bundle!.currentState.openConversations
     expect(open[0].recentMessages.length).toBe(3)
   })
 
-  it('content truncated to 200 chars', () => {
-    svc.createConversation({
+  it('content truncated to 200 chars', async () => {
+    await svc.createConversation({
       id: 'CONV-CTX-2',
       projectId: 'proj-ctx',
       title: 'Long message test',
@@ -77,31 +77,31 @@ describe('project_context openConversations', () => {
     })
 
     // close first conv so we can open new one
-    svc.updateConversation('CONV-CTX-1', { status: 'decided', decisionSummary: 'done' })
-    svc.updateConversation('CONV-CTX-1', { status: 'closed', closedAt: new Date().toISOString() })
+    await svc.updateConversation('CONV-CTX-1', { status: 'decided', decisionSummary: 'done' })
+    await svc.updateConversation('CONV-CTX-1', { status: 'closed', closedAt: new Date().toISOString() })
 
     const longContent = 'A'.repeat(500)
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: 'CONV-CTX-2',
       authorName: 'Butter',
       content: longContent,
       messageType: 'question'
     })
 
-    const bundle = buildProjectContext(svc, 'proj-ctx', 'summary')
+    const bundle = await buildProjectContext(svc, 'proj-ctx', 'summary')
     const open = bundle!.currentState.openConversations
     const msg = open.find((c) => c.id === 'CONV-CTX-2')
     expect(msg!.recentMessages[0].content.length).toBe(200)
   })
 
-  it('returns null for unknown project', () => {
-    expect(buildProjectContext(svc, 'nonexistent')).toBeNull()
+  it('returns null for unknown project', async () => {
+    expect(await buildProjectContext(svc, 'nonexistent')).toBeNull()
   })
 
-  it('exposes staleRawWarning at top level (default null when no stale raw)', () => {
-    svc.ensureProject('proj-clean', 'Clean Inbox', '/tmp/clean')
-    svc.createInbox({ projectId: 'proj-clean', content: 'fresh idea' })
-    const bundle = buildProjectContext(svc, 'proj-clean', 'summary')
+  it('exposes staleRawWarning at top level (default null when no stale raw)', async () => {
+    await svc.ensureProject('proj-clean', 'Clean Inbox', '/tmp/clean')
+    await svc.createInbox({ projectId: 'proj-clean', content: 'fresh idea' })
+    const bundle = await buildProjectContext(svc, 'proj-clean', 'summary')
     expect(bundle).not.toBeNull()
     expect(bundle).toHaveProperty('staleRawWarning')
     expect(bundle!.staleRawWarning).toBeNull()

@@ -6,9 +6,9 @@ import type {
 } from '../task-types'
 
 export interface DocumentOperations {
-  createDocument(input: CreateDocumentInput): Document
-  updateDocument(id: string, input: UpdateDocumentInput): Document
-  deleteDocument(id: string): void
-  getDocument(id: string): Document | null
-  findDocuments(projectId: string, type?: DocumentType): Document[]
+  createDocument(input: CreateDocumentInput): Promise<Document>
+  updateDocument(id: string, input: UpdateDocumentInput): Promise<Document>
+  deleteDocument(id: string): Promise<void>
+  getDocument(id: string): Promise<Document | null>
+  findDocuments(projectId: string, type?: DocumentType): Promise<Document[]>
 }

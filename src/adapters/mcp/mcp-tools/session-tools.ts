@@ -100,9 +100,11 @@ const handoffInputSchema = {
     )
 }
 
-function tryLifecycle<T>(fn: () => T): ReturnType<typeof textResponse> {
+async function tryLifecycle<T>(
+  fn: () => T | Promise<T>
+): Promise<ReturnType<typeof textResponse>> {
   try {
-    return textResponse(fn())
+    return textResponse(await fn())
   } catch (e) {
     if (e instanceof LifecycleError) return textResponse(e.message)
     throw e
@@ -131,25 +133,25 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
       }
     },
     async ({ projectId, taskId, workspaceId, cwd }) =>
-      tryLifecycle(() => {
-        const project = svc.getProject(projectId)
+      tryLifecycle(async () => {
+        const project = await svc.getProject(projectId)
         if (!project) throw new Error(`Project ${projectId} not found`)
 
         const resolvedWorkspaceId =
           resolveWorkspaceId({
             explicitWorkspaceId: workspaceId,
             cwd,
-            workspaces: svc.findWorkspaces(projectId)
+            workspaces: await svc.findWorkspaces(projectId)
           }) ?? undefined
 
         const { session, contextSources, existingActiveSessions, recalledMemories } =
-          svc.startSession({
+          await svc.startSession({
             projectId,
             taskId,
             workspaceId: resolvedWorkspaceId
           })
-        const lastSession = loadLastSession(svc, projectId, resolvedWorkspaceId)
-        const bundle = buildProjectContext(svc, projectId, 'summary')
+        const lastSession = await loadLastSession(svc, projectId, resolvedWorkspaceId)
+        const bundle = await buildProjectContext(svc, projectId, 'summary')
         const rules = loadMcpRules()
 
         return {
@@ -188,7 +190,7 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
       }
     },
     async ({ projectId, status, workspaceId, limit, includeHandoff }) => {
-      const all = svc.findSessions(projectId, status)
+      const all = await svc.findSessions(projectId, status)
       const filtered = workspaceId ? all.filter((s) => s.workspaceId === workspaceId) : all
       const sliced = filtered.slice(0, limit ?? 50)
       const out = sliced.map((s) => {
@@ -225,7 +227,7 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
       }
     },
     async ({ sessionId, resumePoint, notes, lastConversationId, dirtyFiles, lastCommit }) =>
-      tryLifecycle(() => {
+      tryLifecycle(async () => {
         const checkpoint: SessionCheckpoint = {
           resumePoint,
           notes,
@@ -233,7 +235,7 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
           dirtyFiles,
           lastCommit
         }
-        const result = svc.checkpointSession(sessionId, { checkpoint })
+        const result = await svc.checkpointSession(sessionId, { checkpoint })
         return {
           sessionId: result.session.id,
           status: result.session.status,
@@ -253,8 +255,8 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
       }
     },
     async ({ sessionId }) =>
-      tryLifecycle(() => {
-        const result = svc.resumeSession(sessionId)
+      tryLifecycle(async () => {
+        const result = await svc.resumeSession(sessionId)
         const rules = loadMcpRules()
         return {
           session: result.session,
@@ -277,7 +279,7 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
       inputSchema: handoffInputSchema
     },
     async (input) =>
-      tryLifecycle(() => {
+      tryLifecycle(async () => {
         const handoff: SessionHandoff = {
           commits: input.commits,
           decisions: input.decisions,
@@ -286,11 +288,11 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
           tasksUpdated: [],
           testResults: input.testResults
         }
-        const result = svc.endSession(input.sessionId, { handoff, summary: input.summary })
+        const result = await svc.endSession(input.sessionId, { handoff, summary: input.summary })
         if (result.taskUpdated) handoff.tasksUpdated = [result.taskUpdated.id]
 
-        const looseEndInboxIds = createLooseEndInboxes(svc, input.looseEnds, result.session)
-        const suggestedKnowledge = buildSuggestedKnowledge(svc, git, result.session.projectId, handoff)
+        const looseEndInboxIds = await createLooseEndInboxes(svc, input.looseEnds, result.session)
+        const suggestedKnowledge = await buildSuggestedKnowledge(svc, git, result.session.projectId, handoff)
 
         return {
           sessionId: result.session.id,
@@ -308,13 +310,13 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
   )
 }
 
-export function buildSuggestedKnowledge(
+export async function buildSuggestedKnowledge(
   svc: ProjectOperations,
   git: GitOps,
   projectId: string,
   handoff: SessionHandoff
-): SuggestedKnowledge[] {
-  const project = svc.getProject(projectId)
+): Promise<SuggestedKnowledge[]> {
+  const project = await svc.getProject(projectId)
   const cwd = project?.cwd ?? ''
   const filesByCommit = collectFilesByCommit(cwd, handoff.commits ?? [], git)
   return suggestKnowledge(handoff, { filesByCommit })
@@ -331,12 +333,12 @@ export interface LastSessionSummary {
   testResults: { passed: string[]; skipped: string[] } | null
 }
 
-export function loadLastSession(
+export async function loadLastSession(
   svc: SessionOperations,
   projectId: string,
   workspaceId?: string
-): LastSessionSummary | null {
-  const completed = svc.findSessions(projectId, 'completed')
+): Promise<LastSessionSummary | null> {
+  const completed = await svc.findSessions(projectId, 'completed')
   const match = workspaceId ? completed.find((s) => s.workspaceId === workspaceId) : completed[0]
   if (!match) return null
   const h: SessionHandoff = match.handoff ?? {}
@@ -352,7 +354,7 @@ export function loadLastSession(
   }
 }
 
-function buildProjectSummary(bundle: ReturnType<typeof buildProjectContext>): string | null {
+function buildProjectSummary(bundle: Awaited<ReturnType<typeof buildProjectContext>>): string | null {
   if (!bundle) return null
   const pieces: string[] = []
   if (bundle.architecture) {
@@ -399,32 +401,34 @@ function buildSuggestion(
   return 'No obvious resume point — review roadmap or pick a TODO'
 }
 
-export function createLooseEndInboxes(
+export async function createLooseEndInboxes(
   svc: InboxOperations,
   looseEnds: string[] | undefined,
   session: Session
-): string[] {
+): Promise<string[]> {
   if (!looseEnds || looseEnds.length === 0) return []
   const tag = session.taskId ? `${session.id} (${session.taskId})` : session.id
-  return looseEnds.map((content) => {
-    const item = svc.createInbox({
+  const ids: string[] = []
+  for (const content of looseEnds) {
+    const item = await svc.createInbox({
       projectId: session.projectId,
       content: `${content}\n\n— from session ${tag}`
     })
-    return item.id
-  })
+    ids.push(item.id)
+  }
+  return ids
 }
 
-export function applyTaskUpdates(
+export async function applyTaskUpdates(
   svc: TaskOperations,
   updates?: Array<{ id: string; status: TaskStatus }>
-): Array<{ id: string; title: string; oldStatus: TaskStatus; newStatus: TaskStatus }> {
+): Promise<Array<{ id: string; title: string; oldStatus: TaskStatus; newStatus: TaskStatus }>> {
   if (!updates || updates.length === 0) return []
   const out: Array<{ id: string; title: string; oldStatus: TaskStatus; newStatus: TaskStatus }> = []
   for (const u of updates) {
-    const before = svc.getTask(u.id)
+    const before = await svc.getTask(u.id)
     if (!before) continue
-    const after = svc.updateTask(u.id, { status: u.status })
+    const after = await svc.updateTask(u.id, { status: u.status })
     out.push({
       id: after.id,
       title: after.title,

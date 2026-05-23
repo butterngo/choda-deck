@@ -22,9 +22,9 @@ export const register = (server: InstrumentedServer, svc: WorkspaceToolsDeps): v
       }
     },
     async ({ projectId, includeArchived }) => {
-      const project = svc.getProject(projectId)
+      const project = await svc.getProject(projectId)
       if (!project) return textResponse(`Project ${projectId} not found`)
-      return textResponse(svc.findWorkspaces(projectId, includeArchived ?? false))
+      return textResponse(await svc.findWorkspaces(projectId, includeArchived ?? false))
     }
   )
 
@@ -41,15 +41,15 @@ export const register = (server: InstrumentedServer, svc: WorkspaceToolsDeps): v
       }
     },
     async ({ projectId, id, label, cwd }) => {
-      const project = svc.getProject(projectId)
+      const project = await svc.getProject(projectId)
       if (!project) return textResponse(`Project ${projectId} not found`)
-      const existing = svc.getWorkspace(id)
+      const existing = await svc.getWorkspace(id)
       if (existing) {
         return textResponse(
           `Workspace ${id} already exists (project ${existing.projectId}) — use workspace_archive or pick a different id`
         )
       }
-      const ws = svc.addWorkspace(projectId, id, label, cwd)
+      const ws = await svc.addWorkspace(projectId, id, label, cwd)
       const cwdExists = fs.existsSync(cwd)
       return textResponse({ workspace: ws, warning: cwdExists ? null : `cwd ${cwd} not found on disk` })
     }
@@ -66,19 +66,19 @@ export const register = (server: InstrumentedServer, svc: WorkspaceToolsDeps): v
       }
     },
     async ({ projectId, workspaceId }) => {
-      const result = archiveOrError(svc, projectId, workspaceId)
+      const result = await archiveOrError(svc, projectId, workspaceId)
       return textResponse(result)
     }
   )
 
 }
 
-function archiveOrError(
+async function archiveOrError(
   svc: WorkspaceToolsDeps,
   projectId: string,
   workspaceId: string
-): { ok: true; archivedAt: string } | { ok: false; error: string } {
-  const ws = svc.getWorkspace(workspaceId)
+): Promise<{ ok: true; archivedAt: string } | { ok: false; error: string }> {
+  const ws = await svc.getWorkspace(workspaceId)
   if (!ws) return { ok: false, error: `Workspace ${workspaceId} not found` }
   if (ws.projectId !== projectId) {
     return {
@@ -86,7 +86,7 @@ function archiveOrError(
       error: `Workspace ${workspaceId} belongs to project ${ws.projectId}, not ${projectId}`
     }
   }
-  const archived = svc.archiveWorkspace(workspaceId)
+  const archived = await svc.archiveWorkspace(workspaceId)
   if (!archived || !archived.archivedAt) {
     return { ok: false, error: `Failed to archive workspace ${workspaceId}` }
   }

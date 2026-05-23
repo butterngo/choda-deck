@@ -119,7 +119,6 @@ import { AgentMemoryRepository } from './repositories/agent-memory-repository'
 import type {
   ToolInvocation,
   ToolInvocationAggregate,
-  ToolInvocationOperations,
   ToolInvocationWindow
 } from './interfaces/tool-invocations-repository.interface'
 import type { SessionEventOperations } from './interfaces/session-event-operations.interface'
@@ -139,7 +138,6 @@ export class SqliteTaskService
     SessionLifecycleOperations,
     TaskReviewLifecycleOperations,
     KnowledgeOperations,
-    ToolInvocationOperations,
     SessionEventOperations,
     AgentMemoryOperations
 {
@@ -213,7 +211,7 @@ export class SqliteTaskService
       this.conversations,
       this.tasks,
       this.sessionEvents,
-      (input) => this.recallMemories(input)
+      (input) => this.recallMemoriesSync(input)
     )
     this.taskReviewLifecycle = new TaskReviewLifecycleService(
       this.db,
@@ -233,7 +231,7 @@ export class SqliteTaskService
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
-  initialize(): void {
+  async initialize(): Promise<void> {
     /* schema bootstrapped in constructor */
   }
   async initializeAsync(): Promise<void> {
@@ -254,304 +252,304 @@ export class SqliteTaskService
     })()
     return this.embeddingReadyPromise
   }
-  close(): void {
+  async close(): Promise<void> {
     this.db.close()
   }
 
-  backup(absolutePath: string): void {
+  async backup(absolutePath: string): Promise<void> {
     const escaped = absolutePath.replace(/'/g, "''")
     this.db.exec(`VACUUM INTO '${escaped}'`)
   }
 
   // ── Tool invocations (TASK-681) ────────────────────────────────────────────
-  recordToolInvocation(invocation: ToolInvocation): void {
+  async recordToolInvocation(invocation: ToolInvocation): Promise<void> {
     this.toolInvocations.recordToolInvocation(invocation)
   }
-  countToolInvocations(): number {
+  async countToolInvocations(): Promise<number> {
     return this.toolInvocations.countToolInvocations()
   }
-  queryToolInvocations(window: ToolInvocationWindow): ToolInvocationAggregate[] {
+  async queryToolInvocations(window: ToolInvocationWindow): Promise<ToolInvocationAggregate[]> {
     return this.toolInvocations.queryToolInvocations(window)
   }
 
-  ensureProject(id: string, name: string, cwd: string): void {
+  async ensureProject(id: string, name: string, cwd: string): Promise<void> {
     this.projects.ensure(id, name, cwd)
   }
 
-  getProject(id: string): ProjectRow | null {
+  async getProject(id: string): Promise<ProjectRow | null> {
     return this.projects.get(id)
   }
 
-  listProjects(): ProjectRow[] {
+  async listProjects(): Promise<ProjectRow[]> {
     return this.projects.list()
   }
-  addWorkspace(projectId: string, id: string, label: string, cwd: string): WorkspaceRow {
+  async addWorkspace(projectId: string, id: string, label: string, cwd: string): Promise<WorkspaceRow> {
     return this.workspaces.add(projectId, id, label, cwd)
   }
-  getWorkspace(id: string): WorkspaceRow | null {
+  async getWorkspace(id: string): Promise<WorkspaceRow | null> {
     return this.workspaces.get(id)
   }
-  findWorkspaces(projectId: string, includeArchived = false): WorkspaceRow[] {
+  async findWorkspaces(projectId: string, includeArchived = false): Promise<WorkspaceRow[]> {
     return this.workspaces.findByProject(projectId, includeArchived)
   }
-  archiveWorkspace(id: string): WorkspaceRow | null {
+  async archiveWorkspace(id: string): Promise<WorkspaceRow | null> {
     return this.workspaces.archive(id)
   }
-  unarchiveWorkspace(id: string): WorkspaceRow | null {
+  async unarchiveWorkspace(id: string): Promise<WorkspaceRow | null> {
     return this.workspaces.unarchive(id)
   }
 
   // ── Task operations ────────────────────────────────────────────────────────
-  createTask(input: CreateTaskInput): Task {
+  async createTask(input: CreateTaskInput): Promise<Task> {
     return this.tasks.create(input)
   }
-  updateTask(id: string, input: UpdateTaskInput): Task {
+  async updateTask(id: string, input: UpdateTaskInput): Promise<Task> {
     return this.tasks.update(id, input)
   }
-  deleteTask(id: string): void {
+  async deleteTask(id: string): Promise<void> {
     this.tasks.delete(id)
   }
-  getTask(id: string): Task | null {
+  async getTask(id: string): Promise<Task | null> {
     return this.tasks.get(id)
   }
-  findTasks(filter: TaskFilter): Task[] {
+  async findTasks(filter: TaskFilter): Promise<Task[]> {
     return this.tasks.find(filter)
   }
-  getSubtasks(parentId: string): Task[] {
+  async getSubtasks(parentId: string): Promise<Task[]> {
     return this.tasks.getSubtasks(parentId)
   }
-  getPinnedTasks(): Task[] {
+  async getPinnedTasks(): Promise<Task[]> {
     return this.tasks.getPinned()
   }
-  getDueTasks(date: string): Task[] {
+  async getDueTasks(date: string): Promise<Task[]> {
     return this.tasks.getDue(date)
   }
-  addDependency(sourceId: string, targetId: string): void {
+  async addDependency(sourceId: string, targetId: string): Promise<void> {
     this.tasks.addDependency(sourceId, targetId)
   }
-  removeDependency(sourceId: string, targetId: string): void {
+  async removeDependency(sourceId: string, targetId: string): Promise<void> {
     this.tasks.removeDependency(sourceId, targetId)
   }
-  getDependencies(taskId: string): TaskDependency[] {
+  async getDependencies(taskId: string): Promise<TaskDependency[]> {
     return this.tasks.getDependencies(taskId)
   }
 
   // ── Document operations ────────────────────────────────────────────────────
-  createDocument(input: CreateDocumentInput): Document {
+  async createDocument(input: CreateDocumentInput): Promise<Document> {
     return this.documents.create(input)
   }
-  updateDocument(id: string, input: UpdateDocumentInput): Document {
+  async updateDocument(id: string, input: UpdateDocumentInput): Promise<Document> {
     return this.documents.update(id, input)
   }
-  deleteDocument(id: string): void {
+  async deleteDocument(id: string): Promise<void> {
     this.documents.delete(id)
   }
-  getDocument(id: string): Document | null {
+  async getDocument(id: string): Promise<Document | null> {
     return this.documents.get(id)
   }
-  findDocuments(projectId: string, type?: DocumentType): Document[] {
+  async findDocuments(projectId: string, type?: DocumentType): Promise<Document[]> {
     return this.documents.findByProject(projectId, type)
   }
 
   // ── Tags ───────────────────────────────────────────────────────────────────
-  addTag(itemId: string, tag: string): void {
+  async addTag(itemId: string, tag: string): Promise<void> {
     this.tagsRepo.add(itemId, tag)
   }
-  removeTag(itemId: string, tag: string): void {
+  async removeTag(itemId: string, tag: string): Promise<void> {
     this.tagsRepo.remove(itemId, tag)
   }
-  getTags(itemId: string): string[] {
+  async getTags(itemId: string): Promise<string[]> {
     return this.tagsRepo.getForItem(itemId)
   }
-  findByTag(tag: string): string[] {
+  async findByTag(tag: string): Promise<string[]> {
     return this.tagsRepo.findItemsByTag(tag)
   }
 
   // ── Relationships ──────────────────────────────────────────────────────────
-  addRelationship(fromId: string, toId: string, type: RelationType): void {
+  async addRelationship(fromId: string, toId: string, type: RelationType): Promise<void> {
     this.relationships.add(fromId, toId, type)
   }
-  removeRelationship(fromId: string, toId: string, type: RelationType): void {
+  async removeRelationship(fromId: string, toId: string, type: RelationType): Promise<void> {
     this.relationships.remove(fromId, toId, type)
   }
-  getRelationships(itemId: string): Relationship[] {
+  async getRelationships(itemId: string): Promise<Relationship[]> {
     return this.relationships.getForItem(itemId)
   }
-  getRelationshipsFrom(itemId: string, type?: RelationType): Relationship[] {
+  async getRelationshipsFrom(itemId: string, type?: RelationType): Promise<Relationship[]> {
     return this.relationships.getFrom(itemId, type)
   }
 
   // ── Session operations (M1) ────────────────────────────────────────────────
-  createSession(input: CreateSessionInput): Session {
+  async createSession(input: CreateSessionInput): Promise<Session> {
     return this.sessions.create(input)
   }
-  updateSession(id: string, input: UpdateSessionInput): Session {
+  async updateSession(id: string, input: UpdateSessionInput): Promise<Session> {
     return this.sessions.update(id, input)
   }
-  getSession(id: string): Session | null {
+  async getSession(id: string): Promise<Session | null> {
     return this.sessions.get(id)
   }
-  findSessions(projectId: string, status?: SessionStatus): Session[] {
+  async findSessions(projectId: string, status?: SessionStatus): Promise<Session[]> {
     return this.sessions.findByProject(projectId, status)
   }
-  getActiveSession(projectId: string, workspaceId?: string): Session | null {
+  async getActiveSession(projectId: string, workspaceId?: string): Promise<Session | null> {
     return this.sessions.getActive(projectId, workspaceId)
   }
-  deleteSession(id: string): void {
+  async deleteSession(id: string): Promise<void> {
     this.sessions.delete(id)
   }
 
   // ── Context source operations (M1) ─────────────────────────────────────────
-  createContextSource(input: CreateContextSourceInput): ContextSource {
+  async createContextSource(input: CreateContextSourceInput): Promise<ContextSource> {
     return this.contextSources.create(input)
   }
-  updateContextSource(id: string, input: UpdateContextSourceInput): ContextSource {
+  async updateContextSource(id: string, input: UpdateContextSourceInput): Promise<ContextSource> {
     return this.contextSources.update(id, input)
   }
-  getContextSource(id: string): ContextSource | null {
+  async getContextSource(id: string): Promise<ContextSource | null> {
     return this.contextSources.get(id)
   }
-  findContextSources(projectId: string, activeOnly = false): ContextSource[] {
+  async findContextSources(projectId: string, activeOnly = false): Promise<ContextSource[]> {
     return this.contextSources.findByProject(projectId, activeOnly)
   }
-  deleteContextSource(id: string): void {
+  async deleteContextSource(id: string): Promise<void> {
     this.contextSources.delete(id)
   }
 
   // ── Conversation operations (M1) ───────────────────────────────────────────
-  createConversation(input: CreateConversationInput): Conversation {
+  async createConversation(input: CreateConversationInput): Promise<Conversation> {
     return this.conversations.create(input)
   }
-  updateConversation(id: string, input: UpdateConversationInput): Conversation {
+  async updateConversation(id: string, input: UpdateConversationInput): Promise<Conversation> {
     return this.conversations.update(id, input)
   }
-  getConversation(id: string): Conversation | null {
+  async getConversation(id: string): Promise<Conversation | null> {
     return this.conversations.get(id)
   }
-  findConversations(projectId: string, status?: ConversationStatus): Conversation[] {
+  async findConversations(projectId: string, status?: ConversationStatus): Promise<Conversation[]> {
     return this.conversations.findByProject(projectId, status)
   }
-  deleteConversation(id: string): void {
+  async deleteConversation(id: string): Promise<void> {
     this.conversations.delete(id)
   }
 
-  addConversationParticipant(
+  async addConversationParticipant(
     conversationId: string,
     name: string,
     type: ConversationParticipantType,
     role?: string | null
-  ): void {
+  ): Promise<void> {
     this.conversations.addParticipant(conversationId, name, type, role)
   }
-  removeConversationParticipant(conversationId: string, name: string): void {
+  async removeConversationParticipant(conversationId: string, name: string): Promise<void> {
     this.conversations.removeParticipant(conversationId, name)
   }
-  getConversationParticipants(conversationId: string): ConversationParticipant[] {
+  async getConversationParticipants(conversationId: string): Promise<ConversationParticipant[]> {
     return this.conversations.getParticipants(conversationId)
   }
 
-  addConversationMessage(input: CreateConversationMessageInput): ConversationMessage {
+  async addConversationMessage(input: CreateConversationMessageInput): Promise<ConversationMessage> {
     return this.conversations.addMessage(input)
   }
-  getConversationMessages(conversationId: string): ConversationMessage[] {
+  async getConversationMessages(conversationId: string): Promise<ConversationMessage[]> {
     return this.conversations.getMessages(conversationId)
   }
 
-  addConversationAction(input: CreateConversationActionInput): ConversationAction {
+  async addConversationAction(input: CreateConversationActionInput): Promise<ConversationAction> {
     return this.conversations.addAction(input)
   }
-  updateConversationAction(id: string, input: UpdateConversationActionInput): ConversationAction {
+  async updateConversationAction(id: string, input: UpdateConversationActionInput): Promise<ConversationAction> {
     return this.conversations.updateAction(id, input)
   }
-  getConversationActions(conversationId: string): ConversationAction[] {
+  async getConversationActions(conversationId: string): Promise<ConversationAction[]> {
     return this.conversations.getActions(conversationId)
   }
 
-  linkConversation(
+  async linkConversation(
     conversationId: string,
     linkedType: ConversationLinkType,
     linkedId: string
-  ): void {
+  ): Promise<void> {
     this.conversations.link(conversationId, linkedType, linkedId)
   }
-  unlinkConversation(
+  async unlinkConversation(
     conversationId: string,
     linkedType: ConversationLinkType,
     linkedId: string
-  ): void {
+  ): Promise<void> {
     this.conversations.unlink(conversationId, linkedType, linkedId)
   }
-  getConversationLinks(conversationId: string): ConversationLink[] {
+  async getConversationLinks(conversationId: string): Promise<ConversationLink[]> {
     return this.conversations.getLinks(conversationId)
   }
-  findConversationsByLink(linkedType: ConversationLinkType, linkedId: string): Conversation[] {
+  async findConversationsByLink(linkedType: ConversationLinkType, linkedId: string): Promise<Conversation[]> {
     return this.conversations.findByLink(linkedType, linkedId)
   }
 
   // ── Inbox ──────────────────────────────────────────────────────────────────
-  createInbox(input: CreateInboxInput): InboxItem {
+  async createInbox(input: CreateInboxInput): Promise<InboxItem> {
     return this.inbox.create(input)
   }
-  updateInbox(id: string, input: UpdateInboxInput): InboxItem {
+  async updateInbox(id: string, input: UpdateInboxInput): Promise<InboxItem> {
     return this.inbox.update(id, input)
   }
-  getInbox(id: string): InboxItem | null {
+  async getInbox(id: string): Promise<InboxItem | null> {
     return this.inbox.get(id)
   }
-  findInbox(filter: InboxFilter): InboxItem[] {
+  async findInbox(filter: InboxFilter): Promise<InboxItem[]> {
     return this.inbox.find(filter)
   }
-  deleteInbox(id: string): void {
+  async deleteInbox(id: string): Promise<void> {
     this.inbox.delete(id)
   }
 
   // ── Inbox lifecycle (composite, transactional) ─────────────────────────────
-  startInboxResearch(id: string, researcher: string): InboxResearchResult {
+  async startInboxResearch(id: string, researcher: string): Promise<InboxResearchResult> {
     return this.inboxLifecycle.startInboxResearch(id, researcher)
   }
-  convertInboxToTask(id: string, input: InboxConvertInput): InboxConvertResult {
+  async convertInboxToTask(id: string, input: InboxConvertInput): Promise<InboxConvertResult> {
     return this.inboxLifecycle.convertInboxToTask(id, input)
   }
-  archiveInbox(id: string, reason?: string): InboxItem {
+  async archiveInbox(id: string, reason?: string): Promise<InboxItem> {
     return this.inboxLifecycle.archiveInbox(id, reason)
   }
 
   // ── Conversation lifecycle (composite, transactional) ──────────────────────
-  openConversation(input: OpenConversationInput): Conversation {
+  async openConversation(input: OpenConversationInput): Promise<Conversation> {
     return this.conversationLifecycle.openConversation(input)
   }
-  decideConversation(id: string, input: DecideConversationInput): DecideConversationResult {
+  async decideConversation(id: string, input: DecideConversationInput): Promise<DecideConversationResult> {
     return this.conversationLifecycle.decideConversation(id, input)
   }
-  closeConversation(id: string): Conversation {
+  async closeConversation(id: string): Promise<Conversation> {
     return this.conversationLifecycle.closeConversation(id)
   }
-  reopenConversation(id: string): Conversation {
+  async reopenConversation(id: string): Promise<Conversation> {
     return this.conversationLifecycle.reopenConversation(id)
   }
 
   // ── Session lifecycle (composite, transactional) ──────────────────────────
-  startSession(input: StartSessionInput): StartSessionResult {
+  async startSession(input: StartSessionInput): Promise<StartSessionResult> {
     return this.sessionLifecycle.startSession(input)
   }
-  endSession(id: string, input: EndSessionInput): EndSessionResult {
+  async endSession(id: string, input: EndSessionInput): Promise<EndSessionResult> {
     return this.sessionLifecycle.endSession(id, input)
   }
-  abandonSession(id: string, reason: string): AbandonSessionResult {
+  async abandonSession(id: string, reason: string): Promise<AbandonSessionResult> {
     return this.sessionLifecycle.abandonSession(id, reason)
   }
-  checkpointSession(id: string, input: CheckpointSessionInput): CheckpointSessionResult {
+  async checkpointSession(id: string, input: CheckpointSessionInput): Promise<CheckpointSessionResult> {
     return this.sessionLifecycle.checkpointSession(id, input)
   }
-  resumeSession(id: string): ResumeSessionResult {
+  async resumeSession(id: string): Promise<ResumeSessionResult> {
     return this.sessionLifecycle.resumeSession(id)
   }
 
   // ── Task review lifecycle (ADR-024) ───────────────────────────────────────
-  approveTask(taskId: string, note?: string): ApproveTaskResult {
+  async approveTask(taskId: string, note?: string): Promise<ApproveTaskResult> {
     return this.taskReviewLifecycle.approveTask(taskId, note)
   }
-  rejectTask(taskId: string, reason: string): RejectTaskResult {
+  async rejectTask(taskId: string, reason: string): Promise<RejectTaskResult> {
     return this.taskReviewLifecycle.rejectTask(taskId, reason)
   }
 
@@ -567,25 +565,25 @@ export class SqliteTaskService
   }
 
   // ── Knowledge ─────────────────────────────────────────────────────────────
-  createKnowledge(input: CreateKnowledgeInput): KnowledgeEntry {
+  async createKnowledge(input: CreateKnowledgeInput): Promise<KnowledgeEntry> {
     return this.knowledgeService.createKnowledge(input)
   }
-  registerExistingKnowledge(input: RegisterExistingKnowledgeInput): KnowledgeEntry {
+  async registerExistingKnowledge(input: RegisterExistingKnowledgeInput): Promise<KnowledgeEntry> {
     return this.knowledgeService.registerExistingKnowledge(input)
   }
-  getKnowledge(slug: string): KnowledgeEntry | null {
+  async getKnowledge(slug: string): Promise<KnowledgeEntry | null> {
     return this.knowledgeService.getKnowledge(slug)
   }
-  listKnowledge(filter?: KnowledgeListFilter): KnowledgeListItem[] {
+  async listKnowledge(filter?: KnowledgeListFilter): Promise<KnowledgeListItem[]> {
     return this.knowledgeService.listKnowledge(filter)
   }
-  updateKnowledge(input: UpdateKnowledgeInput): KnowledgeEntry {
+  async updateKnowledge(input: UpdateKnowledgeInput): Promise<KnowledgeEntry> {
     return this.knowledgeService.updateKnowledge(input)
   }
-  verifyKnowledge(slug: string): KnowledgeVerifyResult {
+  async verifyKnowledge(slug: string): Promise<KnowledgeVerifyResult> {
     return this.knowledgeService.verifyKnowledge(slug)
   }
-  deleteKnowledge(slug: string): { slug: string; deletedFile: boolean } {
+  async deleteKnowledge(slug: string): Promise<{ slug: string; deletedFile: boolean }> {
     return this.knowledgeService.deleteKnowledge(slug)
   }
   searchKnowledge(query: string, k?: number): Promise<KnowledgeSearchResult> {
@@ -593,15 +591,15 @@ export class SqliteTaskService
   }
 
   // ── Session Events ─────────────────────────────────────────────────────────
-  createSessionEvent(input: import('./task-types').CreateSessionEventInput): import('./task-types').SessionEvent {
+  async createSessionEvent(input: import('./task-types').CreateSessionEventInput): Promise<import('./task-types').SessionEvent> {
     return this.sessionEvents.create(input)
   }
 
-  listSessionEvents(
+  async listSessionEvents(
     sessionId: string,
     eventType?: import('./task-types').SessionEventType,
     limit?: number
-  ): import('./task-types').SessionEvent[] {
+  ): Promise<import('./task-types').SessionEvent[]> {
     const all = this.sessionEvents.listBySession(sessionId, eventType)
     return limit !== undefined ? all.slice(0, limit) : all
   }
@@ -611,7 +609,7 @@ export class SqliteTaskService
   // (ac-check.ts) resolves cwd → workspaceId before calling; this method takes
   // an already-resolved workspaceId (or undefined to match any active session
   // in the project).
-  checkAcItem(input: CheckAcItemInput): CheckAcItemResult {
+  async checkAcItem(input: CheckAcItemInput): Promise<CheckAcItemResult> {
     const task = this.tasks.get(input.taskId)
     if (!task) throw new TaskNotFoundError(input.taskId)
 
@@ -648,16 +646,20 @@ export class SqliteTaskService
   }
 
   // ── Agent Memories ─────────────────────────────────────────────────────────
-  writeMemory(input: MemoryWriteInput): import('./task-types').AgentMemory {
+  async writeMemory(input: MemoryWriteInput): Promise<import('./task-types').AgentMemory> {
     return this.agentMemories.create(input)
   }
 
-  recallMemories(input: MemoryRecallInput): import('./task-types').AgentMemory[] {
+  async recallMemories(input: MemoryRecallInput): Promise<import('./task-types').AgentMemory[]> {
+    return this.recallMemoriesSync(input)
+  }
+
+  private recallMemoriesSync(input: MemoryRecallInput): import('./task-types').AgentMemory[] {
     const { taskId, workspaceId, projectId, userId, tags, limit } = input
     const seen = new Set<string>()
     const merged: import('./task-types').AgentMemory[] = []
 
-    const collect = (scopeType: import('./task-types').MemoryScopeType, scopeId: string) => {
+    const collect = (scopeType: import('./task-types').MemoryScopeType, scopeId: string): void => {
       const rows = this.agentMemories.recall({ scopeType, scopeId, tags, limit })
       for (const row of rows) {
         if (!seen.has(row.id)) {
@@ -681,7 +683,7 @@ export class SqliteTaskService
     return result
   }
 
-  markMemoryPromoted(memoryId: string, adrSlug: string): void {
+  async markMemoryPromoted(memoryId: string, adrSlug: string): Promise<void> {
     this.agentMemories.promoteMarkPromoted(memoryId, adrSlug)
   }
 }

@@ -2,9 +2,16 @@ import { z } from 'zod'
 import type { InstrumentedServer } from '../instrumented-server'
 import { textResponse } from './types'
 import { computeStatsReport } from '../../../core/domain/stats-service'
-import type { ToolInvocationOperations } from '../../../core/domain/interfaces/tool-invocations-repository.interface'
+import type {
+  ToolInvocationAggregate,
+  ToolInvocationWindow
+} from '../../../core/domain/interfaces/tool-invocations-repository.interface'
 
-export const register = (server: InstrumentedServer, svc: ToolInvocationOperations): void => {
+export interface StatsToolsSvc {
+  queryToolInvocations(window: ToolInvocationWindow): Promise<ToolInvocationAggregate[]>
+}
+
+export const register = (server: InstrumentedServer, svc: StatsToolsSvc): void => {
   server.registerTool(
     'stats_report',
     {
@@ -23,7 +30,7 @@ export const register = (server: InstrumentedServer, svc: ToolInvocationOperatio
     },
     async ({ since, until }) => {
       const period = { since: since ?? null, until: until ?? null }
-      const rows = svc.queryToolInvocations(period)
+      const rows = await svc.queryToolInvocations(period)
       const report = computeStatsReport({
         rows,
         canonical: server.registeredToolNames,

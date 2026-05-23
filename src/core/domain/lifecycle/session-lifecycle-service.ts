@@ -41,7 +41,7 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
     private readonly recallMemoriesFn: RecallMemoriesFn
   ) {}
 
-  startSession(input: StartSessionInput): StartSessionResult {
+  async startSession(input: StartSessionInput): Promise<StartSessionResult> {
     const tx = this.db.transaction((): StartSessionResult => {
       const existingActiveSessions = this.sessions.findByProject(input.projectId, 'active')
 
@@ -84,7 +84,17 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
     return tx()
   }
 
-  endSession(id: string, input: EndSessionInput): EndSessionResult {
+  async endSession(id: string, input: EndSessionInput): Promise<EndSessionResult> {
+    return this.endSessionSync(id, input)
+  }
+
+  /**
+   * Synchronous variant of `endSession`. Used by other lifecycle services that
+   * compose this call inside their own `db.transaction()` callback — `better-sqlite3`
+   * transactions must stay synchronous, so the public async wrapper would not be
+   * callable from there.
+   */
+  endSessionSync(id: string, input: EndSessionInput): EndSessionResult {
     const tx = this.db.transaction((): EndSessionResult => {
       const session = this.sessions.get(id)
       if (!session) throw new SessionNotFoundError(id)
@@ -141,7 +151,7 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
     return tx()
   }
 
-  abandonSession(id: string, reason: string): AbandonSessionResult {
+  async abandonSession(id: string, reason: string): Promise<AbandonSessionResult> {
     const tx = this.db.transaction((): AbandonSessionResult => {
       const session = this.sessions.get(id)
       if (!session) throw new SessionNotFoundError(id)
@@ -177,7 +187,7 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
     return tx()
   }
 
-  checkpointSession(id: string, input: CheckpointSessionInput): CheckpointSessionResult {
+  async checkpointSession(id: string, input: CheckpointSessionInput): Promise<CheckpointSessionResult> {
     const session = this.sessions.get(id)
     if (!session) throw new SessionNotFoundError(id)
     if (session.status !== 'active') {
@@ -191,7 +201,7 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
     return { session: updated }
   }
 
-  resumeSession(id: string): ResumeSessionResult {
+  async resumeSession(id: string): Promise<ResumeSessionResult> {
     const session = this.sessions.get(id)
     if (!session) throw new SessionNotFoundError(id)
 

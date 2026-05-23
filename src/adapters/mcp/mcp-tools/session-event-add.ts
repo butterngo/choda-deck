@@ -32,7 +32,7 @@ export const register = (server: InstrumentedServer, svc: SessionEventOperations
       }
     },
     async ({ sessionId, eventType, payload, memoryCandidate }) => {
-      const event = svc.createSessionEvent({
+      const event = await svc.createSessionEvent({
         sessionId,
         eventType,
         payloadJson: payload ? JSON.stringify(payload) : undefined,

@@ -67,7 +67,7 @@ describe('cleanup-tools.cleanup_worktree_orphans', () => {
   let validWorkspaceCwd: string
   let orphanWorkspaceCwd: string
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-tools-'))
     dbPath = path.join(tmpDir, 'test.db')
     projectCwd = path.join(tmpDir, 'main-checkout')
@@ -80,15 +80,15 @@ describe('cleanup-tools.cleanup_worktree_orphans', () => {
     orphanWorkspaceCwd = path.join(tmpDir, 'main-checkout.worktrees', 'task-gone')
 
     svc = new SqliteTaskService(dbPath)
-    svc.ensureProject('proj-c', 'Cleanup Test', projectCwd)
-    svc.addWorkspace('proj-c', 'live', 'Live', validWorkspaceCwd)
-    svc.addWorkspace('proj-c', 'gone', 'Gone', orphanWorkspaceCwd)
+    await svc.ensureProject('proj-c', 'Cleanup Test', projectCwd)
+    await svc.addWorkspace('proj-c', 'live', 'Live', validWorkspaceCwd)
+    await svc.addWorkspace('proj-c', 'gone', 'Gone', orphanWorkspaceCwd)
 
     // Seed valid project-level knowledge (durable path).
     const validKnowledgeFile = path.join(projectCwd, 'docs', 'knowledge', 'valid-entry.md')
     fs.mkdirSync(path.dirname(validKnowledgeFile), { recursive: true })
     fs.writeFileSync(validKnowledgeFile, frontmatterDoc('Valid', 'proj-c'))
-    svc.registerExistingKnowledge({
+    await svc.registerExistingKnowledge({
       filePath: validKnowledgeFile,
       projectId: 'proj-c'
     })
@@ -100,15 +100,15 @@ describe('cleanup-tools.cleanup_worktree_orphans', () => {
     const orphanKnowledgeFile = path.join(orphanWorkspaceCwd, 'docs', 'knowledge', 'orphan-entry.md')
     fs.mkdirSync(path.dirname(orphanKnowledgeFile), { recursive: true })
     fs.writeFileSync(orphanKnowledgeFile, frontmatterDoc('Orphan', 'proj-c'))
-    svc.registerExistingKnowledge({
+    await svc.registerExistingKnowledge({
       filePath: orphanKnowledgeFile,
       projectId: 'proj-c'
     })
     fs.rmSync(orphanWorkspaceCwd, { recursive: true, force: true })
   })
 
-  afterEach(() => {
-    svc.close()
+  afterEach(async () => {
+    await svc.close()
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
@@ -142,9 +142,9 @@ describe('cleanup-tools.cleanup_worktree_orphans', () => {
     expect(result.leftKnowledge).toEqual([])
 
     // No mutation
-    const live = svc.findWorkspaces('proj-c', false)
+    const live = await svc.findWorkspaces('proj-c', false)
     expect(live.map((w) => w.id).sort()).toEqual(['gone', 'live'])
-    expect(svc.listKnowledge({ projectId: 'proj-c' }).some((k) => k.slug === 'orphan-entry')).toBe(true)
+    expect((await svc.listKnowledge({ projectId: 'proj-c' })).some((k) => k.slug === 'orphan-entry')).toBe(true)
   })
 
   it('apply with knowledgeAction=leave archives workspaces and reports knowledge', async () => {
@@ -161,11 +161,11 @@ describe('cleanup-tools.cleanup_worktree_orphans', () => {
     expect(result.leftKnowledge.map((k) => k.slug)).toEqual(['orphan-entry'])
 
     // Workspace archived (no longer in active list)
-    const active = svc.findWorkspaces('proj-c', false).map((w) => w.id)
+    const active = (await svc.findWorkspaces('proj-c', false)).map((w) => w.id)
     expect(active).toEqual(['live'])
 
     // Knowledge row preserved
-    expect(svc.listKnowledge({ projectId: 'proj-c' }).some((k) => k.slug === 'orphan-entry')).toBe(true)
+    expect((await svc.listKnowledge({ projectId: 'proj-c' })).some((k) => k.slug === 'orphan-entry')).toBe(true)
   })
 
   it('apply with knowledgeAction=delete removes orphan knowledge from index', async () => {
@@ -180,7 +180,7 @@ describe('cleanup-tools.cleanup_worktree_orphans', () => {
     expect(result.deletedKnowledge.map((k) => k.slug)).toEqual(['orphan-entry'])
     expect(result.leftKnowledge).toEqual([])
 
-    const slugs = svc.listKnowledge({ projectId: 'proj-c' }).map((k) => k.slug)
+    const slugs = (await svc.listKnowledge({ projectId: 'proj-c' })).map((k) => k.slug)
     expect(slugs).not.toContain('orphan-entry')
     expect(slugs).toContain('valid-entry')
     // Orphan workspace folder NOT resurrected by INDEX.md regen

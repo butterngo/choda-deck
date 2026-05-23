@@ -10,12 +10,12 @@ import type {
 } from '../knowledge-types'
 
 export interface KnowledgeOperations {
-  createKnowledge(input: CreateKnowledgeInput): KnowledgeEntry
-  registerExistingKnowledge(input: RegisterExistingKnowledgeInput): KnowledgeEntry
-  getKnowledge(slug: string): KnowledgeEntry | null
-  listKnowledge(filter?: KnowledgeListFilter): KnowledgeListItem[]
-  updateKnowledge(input: UpdateKnowledgeInput): KnowledgeEntry
-  verifyKnowledge(slug: string): KnowledgeVerifyResult
-  deleteKnowledge(slug: string): { slug: string; deletedFile: boolean }
+  createKnowledge(input: CreateKnowledgeInput): Promise<KnowledgeEntry>
+  registerExistingKnowledge(input: RegisterExistingKnowledgeInput): Promise<KnowledgeEntry>
+  getKnowledge(slug: string): Promise<KnowledgeEntry | null>
+  listKnowledge(filter?: KnowledgeListFilter): Promise<KnowledgeListItem[]>
+  updateKnowledge(input: UpdateKnowledgeInput): Promise<KnowledgeEntry>
+  verifyKnowledge(slug: string): Promise<KnowledgeVerifyResult>
+  deleteKnowledge(slug: string): Promise<{ slug: string; deletedFile: boolean }>
   searchKnowledge(query: string, k?: number): Promise<KnowledgeSearchResult>
 }

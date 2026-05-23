@@ -139,9 +139,11 @@ const actionInputSchema = z.object({
     .optional()
 })
 
-function tryLifecycle<T>(fn: () => T): ReturnType<typeof textResponse> {
+async function tryLifecycle<T>(
+  fn: () => T | Promise<T>
+): Promise<ReturnType<typeof textResponse>> {
   try {
-    return textResponse(fn())
+    return textResponse(await fn())
   } catch (e) {
     if (e instanceof LifecycleError) return textResponse(e.message)
     throw e
@@ -169,18 +171,18 @@ export interface ConversationReadResponse extends Conversation {
   etiquette: string | null
 }
 
-export function readConversation(
+export async function readConversation(
   svc: ReadConversationDeps,
   conversationId: string
-): ConversationReadResponse | null {
-  const conv = svc.getConversation(conversationId)
+): Promise<ConversationReadResponse | null> {
+  const conv = await svc.getConversation(conversationId)
   if (!conv) return null
   return {
     ...conv,
-    participants: svc.getConversationParticipants(conversationId),
-    messages: svc.getConversationMessages(conversationId),
-    actions: svc.getConversationActions(conversationId),
-    links: svc.getConversationLinks(conversationId),
+    participants: await svc.getConversationParticipants(conversationId),
+    messages: await svc.getConversationMessages(conversationId),
+    actions: await svc.getConversationActions(conversationId),
+    links: await svc.getConversationLinks(conversationId),
     etiquette: shouldInjectConversationEtiquette(conv.status)
       ? loadMcpRules().conversationRead
       : null
@@ -223,8 +225,8 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
       }
     },
     async (input) =>
-      tryLifecycle(() => {
-        const conv = svc.openConversation(input)
+      tryLifecycle(async () => {
+        const conv = await svc.openConversation(input)
         return {
           conversationId: conv.id,
           title: conv.title,
@@ -273,8 +275,8 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
       }
     },
     async ({ conversationId, author, content, type, verdict, topConcern, asks, notes }) =>
-      tryLifecycle(() => {
-        const conv = svc.getConversation(conversationId)
+      tryLifecycle(async () => {
+        const conv = await svc.getConversation(conversationId)
         if (!conv) throw new ConversationNotFoundError(conversationId)
         if (conv.status === 'closed') {
           throw new ConversationStatusError(
@@ -291,14 +293,14 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
           asks,
           notes
         })
-        const msg = svc.addConversationMessage({
+        const msg = await svc.addConversationMessage({
           conversationId,
           authorName: author,
           content: resolvedContent,
           messageType: type
         })
         if (conv.status === 'open' && type !== 'comment') {
-          svc.updateConversation(conversationId, { status: 'discussing' })
+          await svc.updateConversation(conversationId, { status: 'discussing' })
         }
         return msg
       })
@@ -317,8 +319,8 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
       }
     },
     async ({ conversationId, author, decision, actions }) =>
-      tryLifecycle(() => {
-        const r = svc.decideConversation(conversationId, { author, decision, actions })
+      tryLifecycle(async () => {
+        const r = await svc.decideConversation(conversationId, { author, decision, actions })
         return {
           conversationId,
           status: r.conversation.status,
@@ -336,8 +338,8 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
       inputSchema: { conversationId: z.string() }
     },
     async ({ conversationId }) =>
-      tryLifecycle(() => {
-        const conv = svc.closeConversation(conversationId)
+      tryLifecycle(async () => {
+        const conv = await svc.closeConversation(conversationId)
         return { conversationId, status: conv.status }
       })
   )
@@ -349,8 +351,8 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
       inputSchema: { conversationId: z.string() }
     },
     async ({ conversationId }) =>
-      tryLifecycle(() => {
-        const conv = svc.reopenConversation(conversationId)
+      tryLifecycle(async () => {
+        const conv = await svc.reopenConversation(conversationId)
         return { conversationId, status: conv.status }
       })
   )
@@ -370,13 +372,18 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
     },
     async ({ projectId, status, participant }) => {
       const rawStatus = status === 'all' ? undefined : status
-      const conversations = svc.findConversations(projectId, rawStatus)
+      const conversations = await svc.findConversations(projectId, rawStatus)
 
-      const filtered = participant
-        ? conversations.filter((c) =>
-            svc.getConversationParticipants(c.id).some((p) => p.name === participant)
-          )
-        : conversations
+      let filtered: Conversation[]
+      if (participant) {
+        filtered = []
+        for (const c of conversations) {
+          const parts = await svc.getConversationParticipants(c.id)
+          if (parts.some((p) => p.name === participant)) filtered.push(c)
+        }
+      } else {
+        filtered = conversations
+      }
 
       return textResponse(filtered)
     }
@@ -399,19 +406,30 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
     },
     async ({ projectId, since }) => {
       const open = [
-        ...svc.findConversations(projectId, 'open'),
-        ...svc.findConversations(projectId, 'discussing')
+        ...(await svc.findConversations(projectId, 'open')),
+        ...(await svc.findConversations(projectId, 'discussing'))
       ]
-      const results = open
-        .map((c) => {
-          const messages = svc.getConversationMessages(c.id)
-          const sinceNorm = since ? since.replace('T', ' ').replace('Z', '') : ''
-          const filtered = sinceNorm
-            ? messages.filter((m) => m.createdAt > sinceNorm)
-            : messages.slice(-1)
-          return { conversationId: c.id, title: c.title, status: c.status, newMessages: filtered }
-        })
-        .filter((r) => r.newMessages.length > 0)
+      const sinceNorm = since ? since.replace('T', ' ').replace('Z', '') : ''
+      const results: Array<{
+        conversationId: string
+        title: string
+        status: Conversation['status']
+        newMessages: ConversationMessage[]
+      }> = []
+      for (const c of open) {
+        const messages = await svc.getConversationMessages(c.id)
+        const filtered = sinceNorm
+          ? messages.filter((m) => m.createdAt > sinceNorm)
+          : messages.slice(-1)
+        if (filtered.length > 0) {
+          results.push({
+            conversationId: c.id,
+            title: c.title,
+            status: c.status,
+            newMessages: filtered
+          })
+        }
+      }
 
       return textResponse({ checkedAt: now(), conversations: results })
     }
@@ -425,7 +443,7 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
       inputSchema: { conversationId: z.string() }
     },
     async ({ conversationId }) => {
-      const result = readConversation(svc, conversationId)
+      const result = await readConversation(svc, conversationId)
       if (!result) return textResponse(`Conversation ${conversationId} not found`)
       return textResponse(result)
     }

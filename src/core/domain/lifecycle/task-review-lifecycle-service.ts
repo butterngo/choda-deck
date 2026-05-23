@@ -25,7 +25,7 @@ export class TaskReviewLifecycleService implements TaskReviewLifecycleOperations
     private readonly sessionLifecycle: SessionLifecycleService
   ) {}
 
-  approveTask(taskId: string, note?: string): ApproveTaskResult {
+  async approveTask(taskId: string, note?: string): Promise<ApproveTaskResult> {
     const tx = this.db.transaction((): ApproveTaskResult => {
       const sessionId = this.guardAndResolveSession(taskId, 'approve')
       const handoff: SessionHandoff = {
@@ -33,7 +33,7 @@ export class TaskReviewLifecycleService implements TaskReviewLifecycleOperations
         resumePoint: note ? `Approved: ${note}` : 'Approved after review',
         ...(note ? { decisions: [`Approved: ${note}`] } : {})
       }
-      const endResult = this.sessionLifecycle.endSession(sessionId, { handoff })
+      const endResult = this.sessionLifecycle.endSessionSync(sessionId, { handoff })
       // endSession sets task → DONE when session has taskId; re-apply explicitly so the
       // composite's final state is self-documenting and won't drift if endSession changes.
       this.tasks.update(taskId, { status: 'DONE' })
@@ -48,7 +48,7 @@ export class TaskReviewLifecycleService implements TaskReviewLifecycleOperations
     return tx()
   }
 
-  rejectTask(taskId: string, reason: string): RejectTaskResult {
+  async rejectTask(taskId: string, reason: string): Promise<RejectTaskResult> {
     const tx = this.db.transaction((): RejectTaskResult => {
       const sessionId = this.guardAndResolveSession(taskId, 'reject')
       const handoff: SessionHandoff = {
@@ -57,7 +57,7 @@ export class TaskReviewLifecycleService implements TaskReviewLifecycleOperations
         resumePoint: `Rejected: ${reason}`,
         decisions: [`Rejected: ${reason}`]
       }
-      const endResult = this.sessionLifecycle.endSession(sessionId, { handoff })
+      const endResult = this.sessionLifecycle.endSessionSync(sessionId, { handoff })
       // endSession unconditionally sets task → DONE; override to IN-PROGRESS within
       // the same outer transaction so the task lands back in the work queue.
       this.tasks.update(taskId, { status: 'IN-PROGRESS' })

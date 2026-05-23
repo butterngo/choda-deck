@@ -8,105 +8,105 @@ import * as path from 'path'
 const TEST_DB = path.join(__dirname, '__test-session-ws__.db')
 let svc: SqliteTaskService
 
-beforeAll(() => {
+beforeAll(async () => {
   if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
   svc = new SqliteTaskService(TEST_DB)
-  svc.ensureProject('ar', 'Automation Rule', '/tmp/ar')
+  await svc.ensureProject('ar', 'Automation Rule', '/tmp/ar')
 })
 
-afterAll(() => {
-  svc.close()
+afterAll(async () => {
+  await svc.close()
   if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
 })
 
 describe('session per workspace', () => {
-  it('creates session with workspaceId', () => {
-    const s = svc.createSession({ projectId: 'ar', workspaceId: 'workflow-engine' })
+  it('creates session with workspaceId', async () => {
+    const s = await svc.createSession({ projectId: 'ar', workspaceId: 'workflow-engine' })
     expect(s.workspaceId).toBe('workflow-engine')
     expect(s.taskId).toBeNull()
     expect(s.status).toBe('active')
   })
 
-  it('parallel sessions on different workspaces', () => {
-    const fe = svc.createSession({ projectId: 'ar', workspaceId: 'remote-workflow' })
+  it('parallel sessions on different workspaces', async () => {
+    const fe = await svc.createSession({ projectId: 'ar', workspaceId: 'remote-workflow' })
     expect(fe.workspaceId).toBe('remote-workflow')
 
-    const beSess = svc.getActiveSession('ar', 'workflow-engine')
-    const feSess = svc.getActiveSession('ar', 'remote-workflow')
+    const beSess = await svc.getActiveSession('ar', 'workflow-engine')
+    const feSess = await svc.getActiveSession('ar', 'remote-workflow')
     expect(beSess).not.toBeNull()
     expect(feSess).not.toBeNull()
     expect(beSess!.id).not.toBe(feSess!.id)
   })
 
-  it('N parallel active sessions per workspace (TASK-526)', () => {
+  it('N parallel active sessions per workspace (TASK-526)', async () => {
     // Add 2 more on workflow-engine (already has 1 from test #1)
-    svc.createSession({ projectId: 'ar', workspaceId: 'workflow-engine' })
-    svc.createSession({ projectId: 'ar', workspaceId: 'workflow-engine' })
+    await svc.createSession({ projectId: 'ar', workspaceId: 'workflow-engine' })
+    await svc.createSession({ projectId: 'ar', workspaceId: 'workflow-engine' })
 
-    const all = svc.findSessions('ar', 'active').filter((s) => s.workspaceId === 'workflow-engine')
+    const all = (await svc.findSessions('ar', 'active')).filter((s) => s.workspaceId === 'workflow-engine')
     expect(all.length).toBe(3)
     expect(all.every((s) => s.status === 'active')).toBe(true)
 
     // cleanup so later tests start clean
-    for (const s of all) svc.updateSession(s.id, { status: 'completed', endedAt: '2026-04-19' })
-    const fe = svc.getActiveSession('ar', 'remote-workflow')
-    if (fe) svc.updateSession(fe.id, { status: 'completed', endedAt: '2026-04-19' })
+    for (const s of all) await svc.updateSession(s.id, { status: 'completed', endedAt: '2026-04-19' })
+    const fe = await svc.getActiveSession('ar', 'remote-workflow')
+    if (fe) await svc.updateSession(fe.id, { status: 'completed', endedAt: '2026-04-19' })
   })
 
-  it('loadLastSession scoped to workspace', () => {
-    const be = svc.createSession({ projectId: 'ar', workspaceId: 'workflow-engine' })
-    svc.updateSession(be.id, {
+  it('loadLastSession scoped to workspace', async () => {
+    const be = await svc.createSession({ projectId: 'ar', workspaceId: 'workflow-engine' })
+    await svc.updateSession(be.id, {
       status: 'completed',
       endedAt: '2026-04-16',
       handoff: { resumePoint: 'BE resume' }
     })
 
-    const fe = svc.createSession({ projectId: 'ar', workspaceId: 'remote-workflow' })
-    svc.updateSession(fe.id, {
+    const fe = await svc.createSession({ projectId: 'ar', workspaceId: 'remote-workflow' })
+    await svc.updateSession(fe.id, {
       status: 'completed',
       endedAt: '2026-04-16',
       handoff: { resumePoint: 'FE resume' }
     })
 
-    const beLast = loadLastSession(svc, 'ar', 'workflow-engine')
-    const feLast = loadLastSession(svc, 'ar', 'remote-workflow')
+    const beLast = await loadLastSession(svc, 'ar', 'workflow-engine')
+    const feLast = await loadLastSession(svc, 'ar', 'remote-workflow')
     expect(beLast!.resumePoint).toBe('BE resume')
     expect(feLast!.resumePoint).toBe('FE resume')
   })
 
-  it('loadLastSession deterministic when started_at ties (TASK-729)', () => {
+  it('loadLastSession deterministic when started_at ties (TASK-729)', async () => {
     // Force tied startedAt on two completed sessions for the same workspace.
     // Pre-fix: SQLite ORDER BY started_at DESC with no tiebreaker returned an
     // arbitrary row, so the .find() in loadLastSession could pick the older
     // session (with no handoff) → resumePoint=null. Repo now adds `rowid DESC`.
     const tied = '2026-04-20T00:00:00.000Z'
-    const older = svc.createSession({
+    const older = await svc.createSession({
       projectId: 'ar',
       workspaceId: 'tied-ws',
       startedAt: tied
     })
-    svc.updateSession(older.id, {
+    await svc.updateSession(older.id, {
       status: 'completed',
       endedAt: '2026-04-20',
       handoff: { resumePoint: 'older' }
     })
-    const newer = svc.createSession({
+    const newer = await svc.createSession({
       projectId: 'ar',
       workspaceId: 'tied-ws',
       startedAt: tied
     })
-    svc.updateSession(newer.id, {
+    await svc.updateSession(newer.id, {
       status: 'completed',
       endedAt: '2026-04-20',
       handoff: { resumePoint: 'newer' }
     })
 
-    const last = loadLastSession(svc, 'ar', 'tied-ws')
+    const last = await loadLastSession(svc, 'ar', 'tied-ws')
     expect(last!.id).toBe(newer.id)
     expect(last!.resumePoint).toBe('newer')
   })
 
-  it('migration: legacy abandoned rows collapse to completed', () => {
+  it('migration: legacy abandoned rows collapse to completed', async () => {
     // Use a separate fresh service to simulate a pre-migration DB
     const legacyDb = path.join(__dirname, '__test-legacy-sessions__.db')
     if (fs.existsSync(legacyDb)) fs.unlinkSync(legacyDb)
@@ -134,50 +134,50 @@ describe('session per workspace', () => {
     raw.close()
 
     const migrated = new SqliteTaskService(legacyDb)
-    const s = migrated.getSession('S-OLD')
+    const s = await migrated.getSession('S-OLD')
     expect(s?.status).toBe('completed')
-    migrated.close()
+    await migrated.close()
     fs.unlinkSync(legacyDb)
   })
 })
 
 describe('task binding (repository-level)', () => {
-  it('binds task to session via updateSession', () => {
-    const task = svc.createTask({ projectId: 'ar', title: 'TASK-105 test' })
-    const s = svc.createSession({ projectId: 'ar', workspaceId: 'workflow-engine' })
+  it('binds task to session via updateSession', async () => {
+    const task = await svc.createTask({ projectId: 'ar', title: 'TASK-105 test' })
+    const s = await svc.createSession({ projectId: 'ar', workspaceId: 'workflow-engine' })
 
-    svc.updateSession(s.id, { taskId: task.id })
-    const updated = svc.getSession(s.id)!
+    await svc.updateSession(s.id, { taskId: task.id })
+    const updated = await svc.getSession(s.id)!
     expect(updated.taskId).toBe(task.id)
   })
 
-  it('session_end with task marks task DONE', () => {
-    const task = svc.createTask({ projectId: 'ar', title: 'TASK-106 test' })
-    const s = svc.createSession({ projectId: 'ar', workspaceId: 'remote-workflow' })
-    svc.updateSession(s.id, { taskId: task.id })
-    svc.updateTask(task.id, { status: 'IN-PROGRESS' })
+  it('session_end with task marks task DONE', async () => {
+    const task = await svc.createTask({ projectId: 'ar', title: 'TASK-106 test' })
+    const s = await svc.createSession({ projectId: 'ar', workspaceId: 'remote-workflow' })
+    await svc.updateSession(s.id, { taskId: task.id })
+    await svc.updateTask(task.id, { status: 'IN-PROGRESS' })
 
     // simulate session_end
-    svc.updateTask(task.id, { status: 'DONE' })
-    svc.updateSession(s.id, {
+    await svc.updateTask(task.id, { status: 'DONE' })
+    await svc.updateSession(s.id, {
       status: 'completed',
       endedAt: '2026-04-16',
       handoff: { resumePoint: 'done', tasksUpdated: [task.id] }
     })
 
-    const finalTask = svc.getTask(task.id)!
-    const finalSession = svc.getSession(s.id)!
+    const finalTask = await svc.getTask(task.id)!
+    const finalSession = await svc.getSession(s.id)!
     expect(finalTask.status).toBe('DONE')
     expect(finalSession.status).toBe('completed')
     expect(finalSession.handoff!.tasksUpdated).toContain(task.id)
   })
 
-  it('WIP=1: session can only have 1 task', () => {
-    const s = svc.createSession({ projectId: 'ar', workspaceId: 'workflow-engine' })
-    const t1 = svc.createTask({ projectId: 'ar', title: 'first' })
-    svc.updateSession(s.id, { taskId: t1.id })
+  it('WIP=1: session can only have 1 task', async () => {
+    const s = await svc.createSession({ projectId: 'ar', workspaceId: 'workflow-engine' })
+    const t1 = await svc.createTask({ projectId: 'ar', title: 'first' })
+    await svc.updateSession(s.id, { taskId: t1.id })
 
-    const session = svc.getSession(s.id)!
+    const session = await svc.getSession(s.id)!
     expect(session.taskId).toBe(t1.id)
     // Guard is in MCP tool layer, not repository — verify taskId is set
   })

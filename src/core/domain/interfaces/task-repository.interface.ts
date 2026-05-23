@@ -7,15 +7,15 @@ import type {
 } from '../task-types'
 
 export interface TaskOperations {
-  createTask(input: CreateTaskInput): Task
-  updateTask(id: string, input: UpdateTaskInput): Task
-  deleteTask(id: string): void
-  getTask(id: string): Task | null
-  findTasks(filter: TaskFilter): Task[]
-  getSubtasks(parentId: string): Task[]
-  getPinnedTasks(): Task[]
-  getDueTasks(date: string): Task[]
-  addDependency(sourceId: string, targetId: string): void
-  removeDependency(sourceId: string, targetId: string): void
-  getDependencies(taskId: string): TaskDependency[]
+  createTask(input: CreateTaskInput): Promise<Task>
+  updateTask(id: string, input: UpdateTaskInput): Promise<Task>
+  deleteTask(id: string): Promise<void>
+  getTask(id: string): Promise<Task | null>
+  findTasks(filter: TaskFilter): Promise<Task[]>
+  getSubtasks(parentId: string): Promise<Task[]>
+  getPinnedTasks(): Promise<Task[]>
+  getDueTasks(date: string): Promise<Task[]>
+  addDependency(sourceId: string, targetId: string): Promise<void>
+  removeDependency(sourceId: string, targetId: string): Promise<void>
+  getDependencies(taskId: string): Promise<TaskDependency[]>
 }

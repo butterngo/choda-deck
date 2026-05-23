@@ -45,25 +45,25 @@ export interface ProjectContextBundle {
 
 const SUMMARY_MAX_CHARS = 600
 
-export function buildProjectContext(
+export async function buildProjectContext(
   svc: ProjectContextDeps,
   projectId: string,
   depth: ProjectContextDepth = 'full',
   contentRoot = process.env.CHODA_CONTENT_ROOT || ''
-): ProjectContextBundle | null {
-  const project = fetchProject(svc, projectId)
+): Promise<ProjectContextBundle | null> {
+  const project = await fetchProject(svc, projectId)
   if (!project) return null
 
-  const sources = svc.findContextSources(projectId, true)
-  const rawInbox = svc.findInbox({ projectId, status: 'raw' })
+  const sources = await svc.findContextSources(projectId, true)
+  const rawInbox = await svc.findInbox({ projectId, status: 'raw' })
 
   return {
     project,
     staleRawWarning: computeStaleRawWarning(rawInbox),
     currentState: {
-      activeTasks: pickActiveTasks(svc, projectId),
-      lastSession: pickLastSession(svc, projectId),
-      openConversations: pickOpenConversations(svc, projectId)
+      activeTasks: await pickActiveTasks(svc, projectId),
+      lastSession: await pickLastSession(svc, projectId),
+      openConversations: await pickOpenConversations(svc, projectId)
     },
     architecture: loadFileSource(sources, 'how', /architecture/i, contentRoot, depth),
     conventions: loadConventions(sources, contentRoot, depth),
@@ -76,58 +76,61 @@ export function buildProjectContext(
   }
 }
 
-function fetchProject(
+async function fetchProject(
   svc: ProjectContextDeps,
   projectId: string
-): ProjectContextBundle['project'] | null {
+): Promise<ProjectContextBundle['project'] | null> {
   return svc.getProject(projectId)
 }
 
-function pickActiveTasks(
+async function pickActiveTasks(
   svc: ProjectContextDeps,
   projectId: string
-): Array<Pick<Task, 'id' | 'title' | 'status' | 'priority'>> {
-  const inProgress = svc.findTasks({ projectId, status: 'IN-PROGRESS' })
-  const ready = svc.findTasks({ projectId, status: 'READY' })
+): Promise<Array<Pick<Task, 'id' | 'title' | 'status' | 'priority'>>> {
+  const inProgress = await svc.findTasks({ projectId, status: 'IN-PROGRESS' })
+  const ready = await svc.findTasks({ projectId, status: 'READY' })
   return [...inProgress, ...ready]
     .slice(0, 20)
     .map((t) => ({ id: t.id, title: t.title, status: t.status, priority: t.priority }))
 }
 
-function pickLastSession(
+async function pickLastSession(
   svc: ProjectContextDeps,
   projectId: string
-): ProjectContextBundle['currentState']['lastSession'] {
-  const completed = svc.findSessions(projectId, 'completed')
+): Promise<ProjectContextBundle['currentState']['lastSession']> {
+  const completed = await svc.findSessions(projectId, 'completed')
   const latest = completed[0]
   if (!latest) return null
   return { id: latest.id, endedAt: latest.endedAt, handoff: latest.handoff }
 }
 
-function pickOpenConversations(
+async function pickOpenConversations(
   svc: ProjectContextDeps,
   projectId: string
-): ProjectContextBundle['currentState']['openConversations'] {
+): Promise<ProjectContextBundle['currentState']['openConversations']> {
   const open = [
-    ...svc.findConversations(projectId, 'open'),
-    ...svc.findConversations(projectId, 'discussing')
+    ...(await svc.findConversations(projectId, 'open')),
+    ...(await svc.findConversations(projectId, 'discussing'))
   ]
-  return open.map((c) => {
-    const messages = svc.getConversationMessages(c.id)
-    const recentMessages = messages.slice(-3).map((m) => ({
-      author: m.authorName,
-      content: m.content.slice(0, 200),
-      type: m.messageType,
-      at: m.createdAt
-    }))
-    return {
-      id: c.id,
-      title: c.title,
-      status: c.status,
-      participants: svc.getConversationParticipants(c.id).map((p) => p.name),
-      recentMessages
-    }
-  })
+  return Promise.all(
+    open.map(async (c) => {
+      const messages = await svc.getConversationMessages(c.id)
+      const recentMessages = messages.slice(-3).map((m) => ({
+        author: m.authorName,
+        content: m.content.slice(0, 200),
+        type: m.messageType,
+        at: m.createdAt
+      }))
+      const participants = await svc.getConversationParticipants(c.id)
+      return {
+        id: c.id,
+        title: c.title,
+        status: c.status,
+        participants: participants.map((p) => p.name),
+        recentMessages
+      }
+    })
+  )
 }
 
 function loadFileSource(

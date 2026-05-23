@@ -22,7 +22,7 @@ export const register = (server: InstrumentedServer, svc: AgentMemoryOperations)
       if (!taskId && !workspaceId && !projectId && !userId) {
         return textResponse({ error: 'At least one scope ID (taskId, workspaceId, projectId, userId) is required' })
       }
-      const memories = svc.recallMemories({ taskId, workspaceId, projectId, userId, tags, limit })
+      const memories = await svc.recallMemories({ taskId, workspaceId, projectId, userId, tags, limit })
       return textResponse(memories)
     }
   )

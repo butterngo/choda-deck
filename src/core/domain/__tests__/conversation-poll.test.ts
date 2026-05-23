@@ -6,20 +6,20 @@ import * as path from 'path'
 const TEST_DB = path.join(__dirname, '__test-conversation-poll__.db')
 let svc: SqliteTaskService
 
-beforeAll(() => {
+beforeAll(async () => {
   if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
   svc = new SqliteTaskService(TEST_DB)
-  svc.ensureProject('proj-poll', 'Poll Project', '/tmp/poll')
+  await svc.ensureProject('proj-poll', 'Poll Project', '/tmp/poll')
 })
 
-afterAll(() => {
-  svc.close()
+afterAll(async () => {
+  await svc.close()
   if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
 })
 
 describe('conversation_poll timestamp normalization', () => {
-  it('finds messages regardless of ISO T vs space format', () => {
-    svc.createConversation({
+  it('finds messages regardless of ISO T vs space format', async () => {
+    await svc.createConversation({
       id: 'CONV-POLL',
       projectId: 'proj-poll',
       title: 'Poll test',
@@ -27,14 +27,14 @@ describe('conversation_poll timestamp normalization', () => {
       participants: [{ name: 'Butter', type: 'human' as const }]
     })
 
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: 'CONV-POLL',
       authorName: 'Butter',
       content: 'message 1',
       messageType: 'question'
     })
 
-    const messages = svc.getConversationMessages('CONV-POLL')
+    const messages = await svc.getConversationMessages('CONV-POLL')
     expect(messages.length).toBeGreaterThan(0)
 
     const createdAt = messages[0].createdAt

@@ -13,21 +13,21 @@ const TEST_DB = path.join(__dirname, '__test-tasks__.db')
 describe('SqliteTaskService', () => {
   let svc: SqliteTaskService
 
-  beforeAll(() => {
+  beforeAll(async () => {
     if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
     svc = new SqliteTaskService(TEST_DB)
-    svc.ensureProject('test-proj', 'Test Project', '/tmp/test')
+    await svc.ensureProject('test-proj', 'Test Project', '/tmp/test')
   })
 
-  afterAll(() => {
-    svc.close()
+  afterAll(async () => {
+    await svc.close()
     if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
   })
 
   // ── Task CRUD ──────────────────────────────────────────────────────────
 
-  it('createTask + getTask', () => {
-    const task = svc.createTask({
+  it('createTask + getTask', async () => {
+    const task = await svc.createTask({
       id: 'TASK-001',
       projectId: 'test-proj',
       title: 'First task',
@@ -37,17 +37,17 @@ describe('SqliteTaskService', () => {
     expect(task.status).toBe('TODO')
     expect(task.priority).toBe('high')
 
-    const fetched = svc.getTask('TASK-001')
+    const fetched = await svc.getTask('TASK-001')
     expect(fetched).not.toBeNull()
     expect(fetched!.title).toBe('First task')
   })
 
-  it('getTask returns null for missing', () => {
-    expect(svc.getTask('TASK-999')).toBeNull()
+  it('getTask returns null for missing', async () => {
+    expect(await svc.getTask('TASK-999')).toBeNull()
   })
 
-  it('updateTask changes fields', () => {
-    const updated = svc.updateTask('TASK-001', {
+  it('updateTask changes fields', async () => {
+    const updated = await svc.updateTask('TASK-001', {
       status: 'IN-PROGRESS',
       priority: 'critical',
       labels: ['urgent', 'bug']
@@ -58,31 +58,31 @@ describe('SqliteTaskService', () => {
     expect(updated.title).toBe('First task')
   })
 
-  it('updateTask throws for missing', () => {
-    expect(() => svc.updateTask('TASK-999', { title: 'x' })).toThrow('not found')
+  it('updateTask throws for missing', async () => {
+    await expect(svc.updateTask('TASK-999', { title: 'x' })).rejects.toThrow('not found')
   })
 
-  it('findTasks filters correctly', () => {
-    svc.createTask({ id: 'TASK-002', projectId: 'test-proj', title: 'Second task', status: 'TODO' })
-    svc.createTask({ id: 'TASK-003', projectId: 'test-proj', title: 'Third task', status: 'DONE' })
+  it('findTasks filters correctly', async () => {
+    await svc.createTask({ id: 'TASK-002', projectId: 'test-proj', title: 'Second task', status: 'TODO' })
+    await svc.createTask({ id: 'TASK-003', projectId: 'test-proj', title: 'Third task', status: 'DONE' })
 
-    const inProgress = svc.findTasks({ projectId: 'test-proj', status: 'IN-PROGRESS' })
+    const inProgress = await svc.findTasks({ projectId: 'test-proj', status: 'IN-PROGRESS' })
     expect(inProgress.length).toBe(1)
     expect(inProgress[0].id).toBe('TASK-001')
 
-    const all = svc.findTasks({ projectId: 'test-proj' })
+    const all = await svc.findTasks({ projectId: 'test-proj' })
     expect(all.length).toBe(3)
 
-    const search = svc.findTasks({ query: 'Second' })
+    const search = await svc.findTasks({ query: 'Second' })
     expect(search.length).toBe(1)
     expect(search[0].id).toBe('TASK-002')
 
-    const limited = svc.findTasks({ projectId: 'test-proj', limit: 2 })
+    const limited = await svc.findTasks({ projectId: 'test-proj', limit: 2 })
     expect(limited.length).toBe(2)
   })
 
-  it('CANCELLED status round-trips through SQLite', () => {
-    const created = svc.createTask({
+  it('CANCELLED status round-trips through SQLite', async () => {
+    const created = await svc.createTask({
       id: 'TASK-CANCELLED-1',
       projectId: 'test-proj',
       title: 'Cancelled task',
@@ -90,146 +90,146 @@ describe('SqliteTaskService', () => {
     })
     expect(created.status).toBe('CANCELLED')
 
-    const fetched = svc.getTask('TASK-CANCELLED-1')
+    const fetched = await svc.getTask('TASK-CANCELLED-1')
     expect(fetched!.status).toBe('CANCELLED')
 
-    const filtered = svc.findTasks({ projectId: 'test-proj', status: 'CANCELLED' })
+    const filtered = await svc.findTasks({ projectId: 'test-proj', status: 'CANCELLED' })
     expect(filtered.map((t) => t.id)).toContain('TASK-CANCELLED-1')
 
-    const updated = svc.updateTask('TASK-CANCELLED-1', { status: 'TODO' })
+    const updated = await svc.updateTask('TASK-CANCELLED-1', { status: 'TODO' })
     expect(updated.status).toBe('TODO')
   })
 
-  it('getDueTasks excludes CANCELLED tasks', () => {
-    svc.createTask({
+  it('getDueTasks excludes CANCELLED tasks', async () => {
+    await svc.createTask({
       id: 'TASK-DUE-CANCELLED',
       projectId: 'test-proj',
       title: 'Overdue but cancelled',
       status: 'CANCELLED',
       dueDate: '2020-01-01'
     })
-    const due = svc.getDueTasks('2030-01-01')
+    const due = await svc.getDueTasks('2030-01-01')
     expect(due.find((t) => t.id === 'TASK-DUE-CANCELLED')).toBeUndefined()
   })
 
-  it('findTasks filters by labels (OR semantics)', () => {
-    svc.createTask({
+  it('findTasks filters by labels (OR semantics)', async () => {
+    await svc.createTask({
       id: 'TASK-LBL-A',
       projectId: 'test-proj',
       title: 'Labeled A',
       labels: ['mcp', 'dx']
     })
-    svc.createTask({
+    await svc.createTask({
       id: 'TASK-LBL-B',
       projectId: 'test-proj',
       title: 'Labeled B',
       labels: ['ui']
     })
-    svc.createTask({
+    await svc.createTask({
       id: 'TASK-LBL-C',
       projectId: 'test-proj',
       title: 'Labeled C',
       labels: ['mcp']
     })
 
-    const mcp = svc.findTasks({ projectId: 'test-proj', labels: ['mcp'] })
+    const mcp = await svc.findTasks({ projectId: 'test-proj', labels: ['mcp'] })
     expect(mcp.map((t) => t.id).sort()).toEqual(['TASK-LBL-A', 'TASK-LBL-C'])
 
-    const mcpOrUi = svc.findTasks({ projectId: 'test-proj', labels: ['mcp', 'ui'] })
+    const mcpOrUi = await svc.findTasks({ projectId: 'test-proj', labels: ['mcp', 'ui'] })
     expect(mcpOrUi.map((t) => t.id).sort()).toEqual(['TASK-LBL-A', 'TASK-LBL-B', 'TASK-LBL-C'])
 
-    const none = svc.findTasks({ projectId: 'test-proj', labels: ['no-such-label'] })
+    const none = await svc.findTasks({ projectId: 'test-proj', labels: ['no-such-label'] })
     expect(none.length).toBe(0)
 
-    const empty = svc.findTasks({ projectId: 'test-proj', labels: [] })
+    const empty = await svc.findTasks({ projectId: 'test-proj', labels: [] })
     expect(empty.length).toBeGreaterThanOrEqual(3)
 
-    const mcpDone = svc.findTasks({ projectId: 'test-proj', labels: ['mcp'], status: 'DONE' })
+    const mcpDone = await svc.findTasks({ projectId: 'test-proj', labels: ['mcp'], status: 'DONE' })
     expect(mcpDone.length).toBe(0)
 
     // substring boundary: "mcp" label should not match "mcp-extra"
-    svc.createTask({
+    await svc.createTask({
       id: 'TASK-LBL-D',
       projectId: 'test-proj',
       title: 'Labeled D',
       labels: ['mcp-extra']
     })
-    const exact = svc.findTasks({ projectId: 'test-proj', labels: ['mcp'] })
+    const exact = await svc.findTasks({ projectId: 'test-proj', labels: ['mcp'] })
     expect(exact.map((t) => t.id).sort()).toEqual(['TASK-LBL-A', 'TASK-LBL-C'])
   })
 
-  it('deleteTask removes task + cascades deps', () => {
-    svc.createTask({ id: 'TASK-DEL', projectId: 'test-proj', title: 'To delete' })
-    svc.addDependency('TASK-001', 'TASK-DEL')
+  it('deleteTask removes task + cascades deps', async () => {
+    await svc.createTask({ id: 'TASK-DEL', projectId: 'test-proj', title: 'To delete' })
+    await svc.addDependency('TASK-001', 'TASK-DEL')
 
-    svc.deleteTask('TASK-DEL')
-    expect(svc.getTask('TASK-DEL')).toBeNull()
-    expect(svc.getDependencies('TASK-001').length).toBe(0)
+    await svc.deleteTask('TASK-DEL')
+    expect(await svc.getTask('TASK-DEL')).toBeNull()
+    expect((await svc.getDependencies('TASK-001')).length).toBe(0)
   })
 
   // ── Subtasks ───────────────────────────────────────────────────────────
 
-  it('subtasks via parentTaskId', () => {
-    svc.createTask({
+  it('subtasks via parentTaskId', async () => {
+    await svc.createTask({
       id: 'TASK-SUB1',
       projectId: 'test-proj',
       title: 'Sub 1',
       parentTaskId: 'TASK-001'
     })
-    svc.createTask({
+    await svc.createTask({
       id: 'TASK-SUB2',
       projectId: 'test-proj',
       title: 'Sub 2',
       parentTaskId: 'TASK-001'
     })
 
-    const subs = svc.getSubtasks('TASK-001')
+    const subs = await svc.getSubtasks('TASK-001')
     expect(subs.length).toBe(2)
     expect(subs.map((s) => s.id).sort()).toEqual(['TASK-SUB1', 'TASK-SUB2'])
   })
 
   // ── Dependencies ───────────────────────────────────────────────────────
 
-  it('addDependency + getDependencies', () => {
-    svc.addDependency('TASK-001', 'TASK-002')
-    svc.addDependency('TASK-001', 'TASK-003')
+  it('addDependency + getDependencies', async () => {
+    await svc.addDependency('TASK-001', 'TASK-002')
+    await svc.addDependency('TASK-001', 'TASK-003')
 
-    const deps = svc.getDependencies('TASK-001')
+    const deps = await svc.getDependencies('TASK-001')
     expect(deps.length).toBe(2)
   })
 
-  it('addDependency is idempotent', () => {
-    svc.addDependency('TASK-001', 'TASK-002')
-    const deps = svc.getDependencies('TASK-001')
+  it('addDependency is idempotent', async () => {
+    await svc.addDependency('TASK-001', 'TASK-002')
+    const deps = await svc.getDependencies('TASK-001')
     expect(deps.length).toBe(2)
   })
 
-  it('removeDependency', () => {
-    svc.removeDependency('TASK-001', 'TASK-002')
-    const deps = svc.getDependencies('TASK-001')
+  it('removeDependency', async () => {
+    await svc.removeDependency('TASK-001', 'TASK-002')
+    const deps = await svc.getDependencies('TASK-001')
     expect(deps.length).toBe(1)
   })
 
   // ── Daily focus ────────────────────────────────────────────────────────
 
-  it('pinned tasks', () => {
-    svc.updateTask('TASK-001', { pinned: true })
-    const pinned = svc.getPinnedTasks()
+  it('pinned tasks', async () => {
+    await svc.updateTask('TASK-001', { pinned: true })
+    const pinned = await svc.getPinnedTasks()
     expect(pinned.length).toBe(1)
     expect(pinned[0].id).toBe('TASK-001')
   })
 
-  it('due tasks', () => {
-    svc.updateTask('TASK-002', { dueDate: '2026-04-13' })
-    const due = svc.getDueTasks('2026-04-13')
+  it('due tasks', async () => {
+    await svc.updateTask('TASK-002', { dueDate: '2026-04-13' })
+    const due = await svc.getDueTasks('2026-04-13')
     expect(due.length).toBe(1)
     expect(due[0].id).toBe('TASK-002')
   })
 
   // ── Documents ──────────────────────────────────────────────────────────
 
-  it('createDocument + getDocument', () => {
-    const doc = svc.createDocument({
+  it('createDocument + getDocument', async () => {
+    const doc = await svc.createDocument({
       id: 'ADR-001',
       projectId: 'test-proj',
       type: 'adr',
@@ -239,78 +239,78 @@ describe('SqliteTaskService', () => {
     expect(doc.type).toBe('adr')
   })
 
-  it('findDocuments by type', () => {
-    svc.createDocument({ id: 'SPEC-001', projectId: 'test-proj', type: 'spec', title: 'API spec' })
-    const adrs = svc.findDocuments('test-proj', 'adr')
+  it('findDocuments by type', async () => {
+    await svc.createDocument({ id: 'SPEC-001', projectId: 'test-proj', type: 'spec', title: 'API spec' })
+    const adrs = await svc.findDocuments('test-proj', 'adr')
     expect(adrs.length).toBe(1)
-    const all = svc.findDocuments('test-proj')
+    const all = await svc.findDocuments('test-proj')
     expect(all.length).toBe(2)
   })
 
-  it('deleteDocument removes tags', () => {
-    svc.addTag('ADR-001', 'sqlite')
-    svc.deleteDocument('ADR-001')
-    expect(svc.getDocument('ADR-001')).toBeNull()
-    expect(svc.getTags('ADR-001')).toEqual([])
+  it('deleteDocument removes tags', async () => {
+    await svc.addTag('ADR-001', 'sqlite')
+    await svc.deleteDocument('ADR-001')
+    expect(await svc.getDocument('ADR-001')).toBeNull()
+    expect(await svc.getTags('ADR-001')).toEqual([])
   })
 
   // ── Tags ──────────────────────────────────────────────────────────────
 
-  it('addTag + getTags', () => {
-    svc.addTag('TASK-001', 'electron')
-    svc.addTag('TASK-001', 'react')
-    const tags = svc.getTags('TASK-001')
+  it('addTag + getTags', async () => {
+    await svc.addTag('TASK-001', 'electron')
+    await svc.addTag('TASK-001', 'react')
+    const tags = await svc.getTags('TASK-001')
     expect(tags).toEqual(['electron', 'react'])
   })
 
-  it('addTag is idempotent', () => {
-    svc.addTag('TASK-001', 'electron')
-    expect(svc.getTags('TASK-001').length).toBe(2)
+  it('addTag is idempotent', async () => {
+    await svc.addTag('TASK-001', 'electron')
+    expect((await svc.getTags('TASK-001')).length).toBe(2)
   })
 
-  it('removeTag', () => {
-    svc.removeTag('TASK-001', 'react')
-    expect(svc.getTags('TASK-001')).toEqual(['electron'])
+  it('removeTag', async () => {
+    await svc.removeTag('TASK-001', 'react')
+    expect(await svc.getTags('TASK-001')).toEqual(['electron'])
   })
 
-  it('findByTag', () => {
-    svc.addTag('TASK-002', 'electron')
-    const items = svc.findByTag('electron')
+  it('findByTag', async () => {
+    await svc.addTag('TASK-002', 'electron')
+    const items = await svc.findByTag('electron')
     expect(items).toContain('TASK-001')
     expect(items).toContain('TASK-002')
   })
 
   // ── Relationships ─────────────────────────────────────────────────────
 
-  it('addRelationship + getRelationships', () => {
-    svc.addRelationship('TASK-001', 'FEAT-001', 'IMPLEMENTS')
-    svc.addRelationship('TASK-001', 'TASK-002', 'DEPENDS_ON')
-    const rels = svc.getRelationships('TASK-001')
+  it('addRelationship + getRelationships', async () => {
+    await svc.addRelationship('TASK-001', 'FEAT-001', 'IMPLEMENTS')
+    await svc.addRelationship('TASK-001', 'TASK-002', 'DEPENDS_ON')
+    const rels = await svc.getRelationships('TASK-001')
     // TASK-001 has: DEPENDS_ON TASK-003 (from earlier dep tests) + IMPLEMENTS FEAT-001 + DEPENDS_ON TASK-002
     expect(rels.length).toBe(3)
   })
 
-  it('addRelationship is idempotent', () => {
-    svc.addRelationship('TASK-001', 'FEAT-001', 'IMPLEMENTS')
-    expect(svc.getRelationships('TASK-001').length).toBe(3)
+  it('addRelationship is idempotent', async () => {
+    await svc.addRelationship('TASK-001', 'FEAT-001', 'IMPLEMENTS')
+    expect((await svc.getRelationships('TASK-001')).length).toBe(3)
   })
 
-  it('getRelationshipsFrom with type filter', () => {
-    const deps = svc.getRelationshipsFrom('TASK-001', 'DEPENDS_ON')
+  it('getRelationshipsFrom with type filter', async () => {
+    const deps = await svc.getRelationshipsFrom('TASK-001', 'DEPENDS_ON')
     expect(deps.length).toBe(2) // TASK-002 + TASK-003
   })
 
-  it('removeRelationship', () => {
-    svc.removeRelationship('TASK-001', 'TASK-002', 'DEPENDS_ON')
-    svc.removeRelationship('TASK-001', 'TASK-003', 'DEPENDS_ON')
-    const rels = svc.getRelationshipsFrom('TASK-001', 'DEPENDS_ON')
+  it('removeRelationship', async () => {
+    await svc.removeRelationship('TASK-001', 'TASK-002', 'DEPENDS_ON')
+    await svc.removeRelationship('TASK-001', 'TASK-003', 'DEPENDS_ON')
+    const rels = await svc.getRelationshipsFrom('TASK-001', 'DEPENDS_ON')
     expect(rels.length).toBe(0)
   })
 
   // ── Sessions (M1) ──────────────────────────────────────────────────────
 
-  it('createSession + getSession', () => {
-    const s = svc.createSession({
+  it('createSession + getSession', async () => {
+    const s = await svc.createSession({
       id: 'SESSION-001',
       projectId: 'test-proj',
       handoff: { commits: ['abc123'], resumePoint: 'TASK-501' }
@@ -319,19 +319,19 @@ describe('SqliteTaskService', () => {
     expect(s.status).toBe('active')
     expect(s.handoff?.resumePoint).toBe('TASK-501')
 
-    const fetched = svc.getSession('SESSION-001')
+    const fetched = await svc.getSession('SESSION-001')
     expect(fetched?.handoff?.commits).toEqual(['abc123'])
   })
 
-  it('getActiveSession returns latest active', () => {
-    svc.createSession({ id: 'SESSION-002', projectId: 'test-proj' })
-    const active = svc.getActiveSession('test-proj')
+  it('getActiveSession returns latest active', async () => {
+    await svc.createSession({ id: 'SESSION-002', projectId: 'test-proj' })
+    const active = await svc.getActiveSession('test-proj')
     expect(active).not.toBeNull()
     expect(['SESSION-001', 'SESSION-002']).toContain(active!.id)
   })
 
-  it('updateSession marks completed', () => {
-    const updated = svc.updateSession('SESSION-001', {
+  it('updateSession marks completed', async () => {
+    const updated = await svc.updateSession('SESSION-001', {
       status: 'completed',
       endedAt: new Date().toISOString(),
       handoff: { decisions: ['chose better-sqlite3'] }
@@ -341,21 +341,21 @@ describe('SqliteTaskService', () => {
     expect(updated.handoff?.decisions).toEqual(['chose better-sqlite3'])
   })
 
-  it('findSessions filters by status', () => {
-    const active = svc.findSessions('test-proj', 'active')
+  it('findSessions filters by status', async () => {
+    const active = await svc.findSessions('test-proj', 'active')
     expect(active.every((s) => s.status === 'active')).toBe(true)
-    const all = svc.findSessions('test-proj')
+    const all = await svc.findSessions('test-proj')
     expect(all.length).toBeGreaterThanOrEqual(active.length)
   })
 
-  it('sessions FK rejects unknown project', () => {
-    expect(() => svc.createSession({ projectId: 'nonexistent-proj' })).toThrow()
+  it('sessions FK rejects unknown project', async () => {
+    await expect(svc.createSession({ projectId: 'nonexistent-proj' })).rejects.toThrow()
   })
 
   // ── ContextSources (M1) ────────────────────────────────────────────────
 
-  it('createContextSource + getContextSource', () => {
-    const src = svc.createContextSource({
+  it('createContextSource + getContextSource', async () => {
+    const src = await svc.createContextSource({
       id: 'CTXSRC-001',
       projectId: 'test-proj',
       sourceType: 'file',
@@ -366,11 +366,11 @@ describe('SqliteTaskService', () => {
     })
     expect(src.priority).toBe(10)
     expect(src.isActive).toBe(true)
-    expect(svc.getContextSource('CTXSRC-001')?.label).toBe('System Architecture')
+    expect((await svc.getContextSource('CTXSRC-001'))?.label).toBe('System Architecture')
   })
 
-  it('findContextSources orders by priority', () => {
-    svc.createContextSource({
+  it('findContextSources orders by priority', async () => {
+    await svc.createContextSource({
       id: 'CTXSRC-002',
       projectId: 'test-proj',
       sourceType: 'file',
@@ -379,34 +379,32 @@ describe('SqliteTaskService', () => {
       category: 'how',
       priority: 5
     })
-    const sources = svc.findContextSources('test-proj')
+    const sources = await svc.findContextSources('test-proj')
     expect(sources[0].id).toBe('CTXSRC-002')
     expect(sources[1].id).toBe('CTXSRC-001')
   })
 
-  it('updateContextSource toggles is_active', () => {
-    const updated = svc.updateContextSource('CTXSRC-001', { isActive: false })
+  it('updateContextSource toggles is_active', async () => {
+    const updated = await svc.updateContextSource('CTXSRC-001', { isActive: false })
     expect(updated.isActive).toBe(false)
-    const active = svc.findContextSources('test-proj', true)
+    const active = await svc.findContextSources('test-proj', true)
     expect(active.find((s) => s.id === 'CTXSRC-001')).toBeUndefined()
   })
 
-  it('context_sources FK rejects unknown project', () => {
-    expect(() =>
-      svc.createContextSource({
+  it('context_sources FK rejects unknown project', async () => {
+    await expect(svc.createContextSource({
         projectId: 'nonexistent-proj',
         sourceType: 'file',
         sourcePath: 'x.md',
         label: 'x',
         category: 'what'
-      })
-    ).toThrow()
+      })).rejects.toThrow()
   })
 
   // ── Conversations (M1 / TASK-504) ──────────────────────────────────────
 
-  it('createConversation + getConversation + participants', () => {
-    const c = svc.createConversation({
+  it('createConversation + getConversation + participants', async () => {
+    const c = await svc.createConversation({
       id: 'CONV-001',
       projectId: 'test-proj',
       title: 'Pick DB engine',
@@ -419,36 +417,36 @@ describe('SqliteTaskService', () => {
     expect(c.status).toBe('open')
     expect(c.createdBy).toBe('ARCH')
 
-    const parts = svc.getConversationParticipants('CONV-001')
+    const parts = await svc.getConversationParticipants('CONV-001')
     expect(parts.length).toBe(2)
     expect(parts.find((p) => p.name === 'ARCH')?.role).toBe('requester')
     expect(parts.find((p) => p.name === 'DEV')?.type).toBe('role')
   })
 
-  it('addConversationMessage + getConversationMessages ordered', () => {
-    svc.addConversationMessage({
+  it('addConversationMessage + getConversationMessages ordered', async () => {
+    await svc.addConversationMessage({
       id: 'MSG-001',
       conversationId: 'CONV-001',
       authorName: 'ARCH',
       content: 'Should we use sql.js or better-sqlite3?',
       messageType: 'question'
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       id: 'MSG-002',
       conversationId: 'CONV-001',
       authorName: 'DEV',
       content: 'better-sqlite3 — sync API, no WASM',
       messageType: 'answer'
     })
-    const msgs = svc.getConversationMessages('CONV-001')
+    const msgs = await svc.getConversationMessages('CONV-001')
     expect(msgs.length).toBe(2)
     expect(msgs[0].id).toBe('MSG-001')
     expect(msgs[0].authorName).toBe('ARCH')
     expect(msgs[1].messageType).toBe('answer')
   })
 
-  it('addConversationMessage with metadata persists JSON', () => {
-    svc.addConversationMessage({
+  it('addConversationMessage with metadata persists JSON', async () => {
+    await svc.addConversationMessage({
       id: 'MSG-003',
       conversationId: 'CONV-001',
       authorName: 'DEV',
@@ -461,14 +459,14 @@ describe('SqliteTaskService', () => {
         ]
       }
     })
-    const msg = svc.getConversationMessages('CONV-001').find((m) => m.id === 'MSG-003')!
+    const msg = (await svc.getConversationMessages('CONV-001')).find((m) => m.id === 'MSG-003')!
     expect(msg.metadata?.options?.length).toBe(2)
     expect(msg.metadata?.options?.[0].id).toBe('A')
   })
 
-  it('updateConversation records decision', () => {
+  it('updateConversation records decision', async () => {
     const decidedAt = new Date().toISOString()
-    const updated = svc.updateConversation('CONV-001', {
+    const updated = await svc.updateConversation('CONV-001', {
       status: 'decided',
       decisionSummary: 'Use better-sqlite3',
       decidedAt
@@ -478,29 +476,29 @@ describe('SqliteTaskService', () => {
     expect(updated.decidedAt).toBe(decidedAt)
   })
 
-  it('linkConversation + findConversationsByLink', () => {
-    svc.linkConversation('CONV-001', 'task', 'TASK-501')
-    const links = svc.getConversationLinks('CONV-001')
+  it('linkConversation + findConversationsByLink', async () => {
+    await svc.linkConversation('CONV-001', 'task', 'TASK-501')
+    const links = await svc.getConversationLinks('CONV-001')
     expect(links.length).toBe(1)
     expect(links[0].linkedId).toBe('TASK-501')
 
-    const convs = svc.findConversationsByLink('task', 'TASK-501')
+    const convs = await svc.findConversationsByLink('task', 'TASK-501')
     expect(convs.length).toBe(1)
     expect(convs[0].id).toBe('CONV-001')
   })
 
-  it('linkConversation is idempotent', () => {
-    svc.linkConversation('CONV-001', 'task', 'TASK-501')
-    expect(svc.getConversationLinks('CONV-001').length).toBe(1)
+  it('linkConversation is idempotent', async () => {
+    await svc.linkConversation('CONV-001', 'task', 'TASK-501')
+    expect((await svc.getConversationLinks('CONV-001')).length).toBe(1)
   })
 
-  it('unlinkConversation removes link', () => {
-    svc.unlinkConversation('CONV-001', 'task', 'TASK-501')
-    expect(svc.getConversationLinks('CONV-001').length).toBe(0)
+  it('unlinkConversation removes link', async () => {
+    await svc.unlinkConversation('CONV-001', 'task', 'TASK-501')
+    expect((await svc.getConversationLinks('CONV-001')).length).toBe(0)
   })
 
-  it('addConversationAction + update to done', () => {
-    const action = svc.addConversationAction({
+  it('addConversationAction + update to done', async () => {
+    const action = await svc.addConversationAction({
       id: 'ACT-001',
       conversationId: 'CONV-001',
       assignee: 'DEV',
@@ -508,48 +506,44 @@ describe('SqliteTaskService', () => {
     })
     expect(action.status).toBe('pending')
 
-    const updated = svc.updateConversationAction('ACT-001', { status: 'done' })
+    const updated = await svc.updateConversationAction('ACT-001', { status: 'done' })
     expect(updated.status).toBe('done')
 
-    const all = svc.getConversationActions('CONV-001')
+    const all = await svc.getConversationActions('CONV-001')
     expect(all.length).toBe(1)
     expect(all[0].assignee).toBe('DEV')
   })
 
-  it('addConversationAction with linkedTaskId', () => {
-    svc.addConversationAction({
+  it('addConversationAction with linkedTaskId', async () => {
+    await svc.addConversationAction({
       id: 'ACT-002',
       conversationId: 'CONV-001',
       assignee: 'DEV',
       description: 'Spawned task',
       linkedTaskId: 'TASK-501'
     })
-    const action = svc.getConversationActions('CONV-001').find((a) => a.id === 'ACT-002')!
+    const action = (await svc.getConversationActions('CONV-001')).find((a) => a.id === 'ACT-002')!
     expect(action.linkedTaskId).toBe('TASK-501')
   })
 
-  it('conversation_messages FK rejects unknown conversation', () => {
-    expect(() =>
-      svc.addConversationMessage({
+  it('conversation_messages FK rejects unknown conversation', async () => {
+    await expect(svc.addConversationMessage({
         conversationId: 'nonexistent-conv',
         authorName: 'X',
         content: 'orphan'
-      })
-    ).toThrow()
+      })).rejects.toThrow()
   })
 
-  it('conversation_actions FK rejects unknown conversation', () => {
-    expect(() =>
-      svc.addConversationAction({
+  it('conversation_actions FK rejects unknown conversation', async () => {
+    await expect(svc.addConversationAction({
         conversationId: 'nonexistent-conv',
         assignee: 'X',
         description: 'orphan'
-      })
-    ).toThrow()
+      })).rejects.toThrow()
   })
 
-  it('full conversation lifecycle: open → 3 msgs → decide with spawned task', () => {
-    const conv = svc.createConversation({
+  it('full conversation lifecycle: open → 3 msgs → decide with spawned task', async () => {
+    const conv = await svc.createConversation({
       id: 'CONV-LC',
       projectId: 'test-proj',
       title: 'Remove outputData from execution response',
@@ -559,9 +553,9 @@ describe('SqliteTaskService', () => {
         { name: 'FE', type: 'role', role: 'reviewer' }
       ]
     })
-    svc.linkConversation(conv.id, 'task', 'TASK-501')
+    await svc.linkConversation(conv.id, 'task', 'TASK-501')
 
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: conv.id,
       authorName: 'BE',
       content: '3 options: A/B/C',
@@ -574,86 +568,86 @@ describe('SqliteTaskService', () => {
         ]
       }
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: conv.id,
       authorName: 'FE',
       content: 'Pick A — lazy-load detail',
       messageType: 'review',
       metadata: { selectedOption: 'A' }
     })
-    svc.addConversationMessage({
+    await svc.addConversationMessage({
       conversationId: conv.id,
       authorName: 'BE',
       content: 'Acked, will implement',
       messageType: 'answer'
     })
 
-    svc.updateConversation(conv.id, {
+    await svc.updateConversation(conv.id, {
       status: 'decided',
       decisionSummary: 'Option A — FE lazy-load, BE set outputData NULL',
       decidedAt: new Date().toISOString()
     })
 
-    const spawned = svc.createTask({
+    const spawned = await svc.createTask({
       id: 'TASK-SPAWN',
       projectId: 'test-proj',
       title: 'FE: remove Logs tab, lazy-load node detail',
       priority: 'high',
       labels: ['assignee:FE']
     })
-    svc.addConversationAction({
+    await svc.addConversationAction({
       conversationId: conv.id,
       assignee: 'FE',
       description: 'Remove Logs tab, lazy-load node detail',
       linkedTaskId: spawned.id
     })
-    svc.linkConversation(conv.id, 'task', spawned.id)
+    await svc.linkConversation(conv.id, 'task', spawned.id)
 
-    const finalConv = svc.getConversation(conv.id)!
+    const finalConv = await svc.getConversation(conv.id)!
     expect(finalConv.status).toBe('decided')
     expect(finalConv.decisionSummary).toContain('Option A')
 
-    const msgs = svc.getConversationMessages(conv.id)
+    const msgs = await svc.getConversationMessages(conv.id)
     expect(msgs.length).toBe(3)
     expect(msgs[0].metadata?.options?.length).toBe(3)
     expect(msgs[1].metadata?.selectedOption).toBe('A')
 
-    const actions = svc.getConversationActions(conv.id)
+    const actions = await svc.getConversationActions(conv.id)
     expect(actions.length).toBe(1)
     expect(actions[0].linkedTaskId).toBe(spawned.id)
 
-    const reverse = svc.findConversationsByLink('task', spawned.id)
+    const reverse = await svc.findConversationsByLink('task', spawned.id)
     expect(reverse.map((c) => c.id)).toContain(conv.id)
   })
 
-  it('exportConversationMarkdown writes conversation.md with decision + actions', () => {
+  it('exportConversationMarkdown writes conversation.md with decision + actions', async () => {
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'choda-export-'))
     try {
-      const conv = svc.createConversation({
+      const conv = await svc.createConversation({
         id: 'CONV-EXP',
         projectId: 'test-proj',
         title: 'Export smoke test',
         createdBy: 'ARCH',
         participants: [{ name: 'ARCH', type: 'role' }]
       })
-      svc.addConversationMessage({
+      await svc.addConversationMessage({
         conversationId: conv.id,
         authorName: 'ARCH',
         content: 'Proposing option A',
         messageType: 'proposal'
       })
-      svc.updateConversation(conv.id, {
+      await svc.updateConversation(conv.id, {
         status: 'decided',
         decisionSummary: 'Use option A',
         decidedAt: new Date().toISOString()
       })
-      svc.addConversationAction({
+      await svc.addConversationAction({
         conversationId: conv.id,
         assignee: 'ARCH',
         description: 'Ship option A'
       })
 
-      const filePath = exportConversationMarkdown(svc, conv.id, tmpRoot)
+      const filePath = await exportConversationMarkdown(svc, conv.id, tmpRoot)
       expect(filePath).not.toBeNull()
       expect(fs.existsSync(filePath!)).toBe(true)
 
@@ -667,50 +661,50 @@ describe('SqliteTaskService', () => {
     }
   })
 
-  it('exportConversationMarkdown returns null when contentRoot is empty', () => {
-    const conv = svc.createConversation({
+  it('exportConversationMarkdown returns null when contentRoot is empty', async () => {
+    const conv = await svc.createConversation({
       id: 'CONV-NOROOT',
       projectId: 'test-proj',
       title: 'No root',
       createdBy: 'ARCH'
     })
-    expect(exportConversationMarkdown(svc, conv.id, '')).toBeNull()
+    expect(await exportConversationMarkdown(svc, conv.id, '')).toBeNull()
   })
 
-  it('task_context-style query surfaces linked conversations + actions', () => {
-    const task = svc.createTask({
+  it('task_context-style query surfaces linked conversations + actions', async () => {
+    const task = await svc.createTask({
       id: 'TASK-CTX',
       projectId: 'test-proj',
       title: 'Needs context'
     })
-    const conv = svc.createConversation({
+    const conv = await svc.createConversation({
       id: 'CONV-CTX',
       projectId: 'test-proj',
       title: 'Decide approach for TASK-CTX',
       createdBy: 'ARCH',
       participants: [{ name: 'ARCH', type: 'role' }]
     })
-    svc.linkConversation(conv.id, 'task', task.id)
-    svc.updateConversation(conv.id, {
+    await svc.linkConversation(conv.id, 'task', task.id)
+    await svc.updateConversation(conv.id, {
       status: 'decided',
       decisionSummary: 'Go with approach X'
     })
-    svc.addConversationAction({
+    await svc.addConversationAction({
       conversationId: conv.id,
       assignee: 'ARCH',
       description: 'Implement X',
       linkedTaskId: task.id
     })
 
-    const found = svc.findConversationsByLink('task', task.id)
+    const found = await svc.findConversationsByLink('task', task.id)
     expect(found.map((c) => c.id)).toContain(conv.id)
 
-    const actions = svc.getConversationActions(conv.id)
+    const actions = await svc.getConversationActions(conv.id)
     expect(actions[0].linkedTaskId).toBe(task.id)
     expect(actions[0].description).toBe('Implement X')
   })
 
-  it('project_context builder compiles WHO + WHAT + HOW + META', () => {
+  it('project_context builder compiles WHO + WHAT + HOW + META', async () => {
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'choda-ctx-'))
     try {
       const projectId = 'ctx-proj'
@@ -723,9 +717,9 @@ describe('SqliteTaskService', () => {
         '# ADR-001\n\nChose SQLite.\n'
       )
 
-      svc.ensureProject(projectId, projectId, cwd)
+      await svc.ensureProject(projectId, projectId, cwd)
 
-      svc.createContextSource({
+      await svc.createContextSource({
         projectId,
         sourceType: 'file',
         sourcePath: `10-Projects/${projectId}/context.md`,
@@ -733,7 +727,7 @@ describe('SqliteTaskService', () => {
         category: 'what',
         priority: 10
       })
-      svc.createContextSource({
+      await svc.createContextSource({
         projectId,
         sourceType: 'file',
         sourcePath: `10-Projects/${projectId}/docs/architecture.md`,
@@ -741,7 +735,7 @@ describe('SqliteTaskService', () => {
         category: 'how',
         priority: 20
       })
-      svc.createContextSource({
+      await svc.createContextSource({
         projectId,
         sourceType: 'file',
         sourcePath: `10-Projects/${projectId}/docs/decisions/ADR-001.md`,
@@ -750,14 +744,14 @@ describe('SqliteTaskService', () => {
         priority: 30
       })
 
-      svc.createTask({ id: 'TASK-CTX-1', projectId, title: 'in flight', status: 'IN-PROGRESS' })
-      svc.createSession({
+      await svc.createTask({ id: 'TASK-CTX-1', projectId, title: 'in flight', status: 'IN-PROGRESS' })
+      await svc.createSession({
         id: 'SESSION-CTX',
         projectId,
         status: 'completed',
         handoff: { resumePoint: 'TASK-CTX-1' }
       })
-      svc.createConversation({
+      await svc.createConversation({
         id: 'CONV-CTX-OPEN',
         projectId,
         title: 'pending decision',
@@ -765,7 +759,7 @@ describe('SqliteTaskService', () => {
         participants: [{ name: 'ARCH', type: 'role' }]
       })
 
-      const bundle = buildProjectContext(svc, projectId, 'full', tmpRoot)
+      const bundle = await buildProjectContext(svc, projectId, 'full', tmpRoot)
       expect(bundle).not.toBeNull()
       expect(bundle!.project.id).toBe(projectId)
       expect(bundle!.currentState.activeTasks.map((t) => t.id)).toContain('TASK-CTX-1')
@@ -775,21 +769,21 @@ describe('SqliteTaskService', () => {
       expect(bundle!.recentDecisions.length).toBe(1)
       expect(bundle!.contextSources.length).toBe(3)
 
-      const summary = buildProjectContext(svc, projectId, 'summary', tmpRoot)
+      const summary = await buildProjectContext(svc, projectId, 'summary', tmpRoot)
       expect(summary!.architecture!.length).toBeLessThanOrEqual(bundle!.architecture!.length)
     } finally {
       fs.rmSync(tmpRoot, { recursive: true, force: true })
     }
   })
 
-  it('project_context returns null for unknown project', () => {
-    expect(buildProjectContext(svc, 'nonexistent-proj', 'full', '/tmp')).toBeNull()
+  it('project_context returns null for unknown project', async () => {
+    expect(await buildProjectContext(svc, 'nonexistent-proj', 'full', '/tmp')).toBeNull()
   })
 
-  it('session lifecycle: start → end with tasks → round-trip sees handoff', () => {
+  it('session lifecycle: start → end with tasks → round-trip sees handoff', async () => {
     const projectId = 'sess-proj'
-    svc.ensureProject(projectId, projectId, '/tmp/sess')
-    const task = svc.createTask({
+    await svc.ensureProject(projectId, projectId, '/tmp/sess')
+    const task = await svc.createTask({
       id: 'TASK-SESS-1',
       projectId,
       title: 'work',
@@ -797,11 +791,11 @@ describe('SqliteTaskService', () => {
     })
 
     // session_start
-    const first = svc.createSession({ projectId, status: 'active' })
-    expect(loadLastSession(svc, projectId)).toBeNull() // no prior completed
+    const first = await svc.createSession({ projectId, status: 'active' })
+    expect(await loadLastSession(svc, projectId)).toBeNull() // no prior completed
 
     // session_end: tasks updated + handoff
-    const updates = applyTaskUpdates(svc, [{ id: task.id, status: 'DONE' }])
+    const updates = await applyTaskUpdates(svc, [{ id: task.id, status: 'DONE' }])
     expect(updates).toEqual([
       {
         id: task.id,
@@ -810,7 +804,7 @@ describe('SqliteTaskService', () => {
         newStatus: 'DONE'
       }
     ])
-    svc.updateSession(first.id, {
+    await svc.updateSession(first.id, {
       status: 'completed',
       endedAt: new Date().toISOString(),
       handoff: {
@@ -819,42 +813,40 @@ describe('SqliteTaskService', () => {
         tasksUpdated: updates.map((u) => u.id)
       }
     })
-    expect(svc.getTask(task.id)?.status).toBe('DONE')
+    expect((await svc.getTask(task.id))?.status).toBe('DONE')
 
     // next session_start sees previous handoff
-    const last = loadLastSession(svc, projectId)
+    const last = await loadLastSession(svc, projectId)
     expect(last?.id).toBe(first.id)
     expect(last?.resumePoint).toBe('Write more tests')
   })
 
-  it('N parallel active sessions per workspace (TASK-526)', () => {
+  it('N parallel active sessions per workspace (TASK-526)', async () => {
     const projectId = 'parallel-proj'
-    svc.ensureProject(projectId, projectId, '/tmp/parallel')
+    await svc.ensureProject(projectId, projectId, '/tmp/parallel')
     const ws = 'workflow-engine'
 
-    const s1 = svc.createSession({ projectId, workspaceId: ws, status: 'active' })
-    const s2 = svc.createSession({ projectId, workspaceId: ws, status: 'active' })
-    const s3 = svc.createSession({ projectId, workspaceId: ws, status: 'active' })
+    const s1 = await svc.createSession({ projectId, workspaceId: ws, status: 'active' })
+    const s2 = await svc.createSession({ projectId, workspaceId: ws, status: 'active' })
+    const s3 = await svc.createSession({ projectId, workspaceId: ws, status: 'active' })
 
-    expect(svc.getSession(s1.id)?.status).toBe('active')
-    expect(svc.getSession(s2.id)?.status).toBe('active')
-    expect(svc.getSession(s3.id)?.status).toBe('active')
+    expect((await svc.getSession(s1.id))?.status).toBe('active')
+    expect((await svc.getSession(s2.id))?.status).toBe('active')
+    expect((await svc.getSession(s3.id))?.status).toBe('active')
   })
 
-  it("rejects status='abandoned' (CHECK constraint)", () => {
+  it("rejects status='abandoned' (CHECK constraint)", async () => {
     const projectId = 'check-proj'
-    svc.ensureProject(projectId, projectId, '/tmp/check')
-    expect(() =>
-      svc.createSession({ projectId, status: 'abandoned' as never })
-    ).toThrow(/CHECK constraint failed/i)
+    await svc.ensureProject(projectId, projectId, '/tmp/check')
+    await expect(svc.createSession({ projectId, status: 'abandoned' as never })).rejects.toThrow(/CHECK constraint failed/i)
   })
 
-  it('exportHandoffMarkdown writes formatted handoff.md', () => {
+  it('exportHandoffMarkdown writes formatted handoff.md', async () => {
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'choda-handoff-'))
     try {
       const projectId = 'handoff-proj'
-      svc.ensureProject(projectId, projectId, '/tmp/handoff')
-      const session = svc.createSession({
+      await svc.ensureProject(projectId, projectId, '/tmp/handoff')
+      const session = await svc.createSession({
         projectId,
         status: 'completed',
         handoff: {
@@ -865,9 +857,9 @@ describe('SqliteTaskService', () => {
           tasksUpdated: ['TASK-158']
         }
       })
-      svc.updateSession(session.id, { endedAt: new Date().toISOString() })
+      await svc.updateSession(session.id, { endedAt: new Date().toISOString() })
 
-      const filePath = exportHandoffMarkdown(svc, session.id, tmpRoot)
+      const filePath = await exportHandoffMarkdown(svc, session.id, tmpRoot)
       expect(filePath).not.toBeNull()
       const body = fs.readFileSync(filePath!, 'utf-8')
       expect(body).toContain(`session: ${session.id}`)
@@ -884,17 +876,17 @@ describe('SqliteTaskService', () => {
     }
   })
 
-  it('exportHandoffMarkdown returns null without contentRoot or unknown session', () => {
-    expect(exportHandoffMarkdown(svc, 'SESSION-000', '')).toBeNull()
-    expect(exportHandoffMarkdown(svc, 'nonexistent', '/tmp')).toBeNull()
+  it('exportHandoffMarkdown returns null without contentRoot or unknown session', async () => {
+    expect(await exportHandoffMarkdown(svc, 'SESSION-000', '')).toBeNull()
+    expect(await exportHandoffMarkdown(svc, 'nonexistent', '/tmp')).toBeNull()
   })
 
-  it('exportHandoffMarkdown renders Test results section with passed + skipped', () => {
+  it('exportHandoffMarkdown renders Test results section with passed + skipped', async () => {
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'choda-handoff-tr-'))
     try {
       const projectId = 'tr-proj'
-      svc.ensureProject(projectId, projectId, '/tmp/tr')
-      const session = svc.createSession({
+      await svc.ensureProject(projectId, projectId, '/tmp/tr')
+      const session = await svc.createSession({
         projectId,
         status: 'completed',
         handoff: {
@@ -905,9 +897,9 @@ describe('SqliteTaskService', () => {
           }
         }
       })
-      svc.updateSession(session.id, { endedAt: new Date().toISOString() })
+      await svc.updateSession(session.id, { endedAt: new Date().toISOString() })
 
-      const filePath = exportHandoffMarkdown(svc, session.id, tmpRoot)
+      const filePath = await exportHandoffMarkdown(svc, session.id, tmpRoot)
       const body = fs.readFileSync(filePath!, 'utf-8')
       expect(body).toContain('## Test results')
       expect(body).toContain('### Passed')
@@ -919,19 +911,19 @@ describe('SqliteTaskService', () => {
     }
   })
 
-  it('exportHandoffMarkdown shows _none_ when no testResults', () => {
+  it('exportHandoffMarkdown shows _none_ when no testResults', async () => {
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'choda-handoff-tr-none-'))
     try {
       const projectId = 'tr-none-proj'
-      svc.ensureProject(projectId, projectId, '/tmp/tr-none')
-      const session = svc.createSession({
+      await svc.ensureProject(projectId, projectId, '/tmp/tr-none')
+      const session = await svc.createSession({
         projectId,
         status: 'completed',
         handoff: { resumePoint: 'no test meta' }
       })
-      svc.updateSession(session.id, { endedAt: new Date().toISOString() })
+      await svc.updateSession(session.id, { endedAt: new Date().toISOString() })
 
-      const filePath = exportHandoffMarkdown(svc, session.id, tmpRoot)
+      const filePath = await exportHandoffMarkdown(svc, session.id, tmpRoot)
       const body = fs.readFileSync(filePath!, 'utf-8')
       expect(body).toContain('## Test results\n\n_none_')
     } finally {
@@ -939,27 +931,27 @@ describe('SqliteTaskService', () => {
     }
   })
 
-  it('deleteConversation cascades all related rows', () => {
-    svc.createConversation({
+  it('deleteConversation cascades all related rows', async () => {
+    await svc.createConversation({
       id: 'CONV-002',
       projectId: 'test-proj',
       title: 'throwaway',
       createdBy: 'X',
       participants: [{ name: 'X', type: 'human' }]
     })
-    svc.addConversationMessage({ conversationId: 'CONV-002', authorName: 'X', content: 'hi' })
-    svc.linkConversation('CONV-002', 'task', 'TASK-501')
-    svc.addConversationAction({
+    await svc.addConversationMessage({ conversationId: 'CONV-002', authorName: 'X', content: 'hi' })
+    await svc.linkConversation('CONV-002', 'task', 'TASK-501')
+    await svc.addConversationAction({
       conversationId: 'CONV-002',
       assignee: 'X',
       description: 'do thing'
     })
 
-    svc.deleteConversation('CONV-002')
-    expect(svc.getConversation('CONV-002')).toBeNull()
-    expect(svc.getConversationMessages('CONV-002').length).toBe(0)
-    expect(svc.getConversationLinks('CONV-002').length).toBe(0)
-    expect(svc.getConversationActions('CONV-002').length).toBe(0)
-    expect(svc.getConversationParticipants('CONV-002').length).toBe(0)
+    await svc.deleteConversation('CONV-002')
+    expect(await svc.getConversation('CONV-002')).toBeNull()
+    expect((await svc.getConversationMessages('CONV-002')).length).toBe(0)
+    expect((await svc.getConversationLinks('CONV-002')).length).toBe(0)
+    expect((await svc.getConversationActions('CONV-002')).length).toBe(0)
+    expect((await svc.getConversationParticipants('CONV-002')).length).toBe(0)
   })
 })

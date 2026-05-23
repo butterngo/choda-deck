@@ -34,7 +34,7 @@ export const register = (server: InstrumentedServer, svc: AgentMemoryOperations)
       }
     },
     async ({ scopeType, scopeId, memoryType, content, tags, importance, sourceSessionId, sourceEventIds }) => {
-      const memory = svc.writeMemory({
+      const memory = await svc.writeMemory({
         scopeType: scopeType as MemoryScopeType,
         scopeId,
         memoryType: memoryType as MemoryType,

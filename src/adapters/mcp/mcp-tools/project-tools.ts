@@ -20,7 +20,7 @@ export const register = (server: InstrumentedServer, svc: ProjectToolsDeps): voi
       }
     },
     async ({ id, name, cwd }) => {
-      svc.ensureProject(id, name, cwd)
+      await svc.ensureProject(id, name, cwd)
       return textResponse({ id, name, cwd })
     }
   )
@@ -32,11 +32,13 @@ export const register = (server: InstrumentedServer, svc: ProjectToolsDeps): voi
       inputSchema: {}
     },
     async () => {
-      const projects = svc.listProjects()
-      const result = projects.map((p) => ({
-        ...p,
-        workspaces: svc.findWorkspaces(p.id)
-      }))
+      const projects = await svc.listProjects()
+      const result = await Promise.all(
+        projects.map(async (p) => ({
+          ...p,
+          workspaces: await svc.findWorkspaces(p.id)
+        }))
+      )
       return textResponse(result)
     }
   )
@@ -55,7 +57,7 @@ export const register = (server: InstrumentedServer, svc: ProjectToolsDeps): voi
       }
     },
     async ({ projectId, depth }) => {
-      const bundle = buildProjectContext(svc, projectId, depth ?? 'full')
+      const bundle = await buildProjectContext(svc, projectId, depth ?? 'full')
       if (!bundle) return textResponse(`Project ${projectId} not found`)
       return textResponse(bundle)
     }

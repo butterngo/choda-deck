@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { ToolInvocationOperations } from '../../core/domain/interfaces/tool-invocations-repository.interface'
+import type { ToolInvocation } from '../../core/domain/interfaces/tool-invocations-repository.interface'
 
 type RegisterToolFn = McpServer['registerTool']
 type RegisterToolArgs = Parameters<RegisterToolFn>
@@ -15,9 +15,19 @@ export interface InstrumentedServer {
   readonly registeredToolNames: ReadonlyArray<string>
 }
 
+/**
+ * Narrow sink type — accepts both the sync repository (`ToolInvocationsRepository`)
+ * and the async service facade (`SqliteTaskService.recordToolInvocation`). The
+ * return is fire-and-forget either way, so the void/Promise<void> distinction
+ * doesn't matter at this call site.
+ */
+export interface ToolInvocationSink {
+  recordToolInvocation(invocation: ToolInvocation): void | Promise<void>
+}
+
 export function createInstrumentedServer(
   server: McpServer,
-  sink: ToolInvocationOperations,
+  sink: ToolInvocationSink,
   toolAllowlist?: ReadonlySet<string>
 ): InstrumentedServer {
   const names: string[] = []

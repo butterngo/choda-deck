@@ -376,7 +376,7 @@ export class QueueLifecycleService {
           taskIndex
         })
 
-        const startResult = this.sessions.startSession({
+        const startResult = await this.sessions.startSession({
           projectId: ws.projectId,
           workspaceId: ws.id,
           taskId: task.id
@@ -502,7 +502,7 @@ export class QueueLifecycleService {
         }
 
         this.tasks.update(task.id, { status: 'REVIEW' })
-        this.sessions.checkpointSession(sessionId, {
+        await this.sessions.checkpointSession(sessionId, {
           checkpoint: {
             outcome: 'pass',
             diffPath: path.join(taskDir, 'diff.patch'),
@@ -760,7 +760,7 @@ export class QueueLifecycleService {
         })
         effects.push({ kind: 'worktree', repoCwd: ws.cwd, worktreePath, branch })
 
-        const startResult = this.sessions.startSession({
+        const startResult = await this.sessions.startSession({
           projectId: ws.projectId,
           workspaceId: ws.id,
           taskId: task.id
@@ -920,7 +920,7 @@ export class QueueLifecycleService {
       }
 
       this.tasks.update(task.id, { status: 'REVIEW' })
-      this.sessions.checkpointSession(sessionId, {
+      await this.sessions.checkpointSession(sessionId, {
         checkpoint: {
           outcome: 'pass',
           diffPath: path.join(taskDir, 'diff.patch'),
@@ -1143,7 +1143,7 @@ export class QueueLifecycleService {
             branch: effect.branch
           })
         } else {
-          this.sessions.checkpointSession(effect.id, {
+          await this.sessions.checkpointSession(effect.id, {
             checkpoint: { outcome: 'fail', reason: `preflight-rollback: ${reason}` }
           })
           this.tasks.update(effect.taskId, { status: 'REVIEW' })
@@ -1184,7 +1184,7 @@ export class QueueLifecycleService {
     taskDir: string
   ): Promise<void> {
     this.markTaskFailed(task, reason, taskDir)
-    this.sessions.checkpointSession(sessionId, {
+    await this.sessions.checkpointSession(sessionId, {
       checkpoint: {
         outcome: 'fail',
         reason,

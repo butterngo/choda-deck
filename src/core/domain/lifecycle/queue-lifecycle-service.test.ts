@@ -132,11 +132,11 @@ function buildService(runtime: QueueRuntime): QueueLifecycleService {
   )
 }
 
-function createReadyAutoSafeTask(opts: { id?: string; title?: string; body?: string } = {}): {
+async function createReadyAutoSafeTask(opts: { id?: string; title?: string; body?: string } = {}): Promise<{
   id: string
   title: string
-} {
-  const t = svc.createTask({
+}> {
+  const t = await svc.createTask({
     projectId: 'proj-q',
     title: opts.title ?? 'Auto-safe task',
     labels: ['auto-safe'],
@@ -145,19 +145,19 @@ function createReadyAutoSafeTask(opts: { id?: string; title?: string; body?: str
   if (opts.id) {
     // No id override path — use generated id and update status. (Tests filter on status only.)
   }
-  svc.updateTask(t.id, { status: 'READY' })
+  await svc.updateTask(t.id, { status: 'READY' })
   return { id: t.id, title: t.title }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
   svc = new SqliteTaskService(TEST_DB)
-  svc.ensureProject('proj-q', 'Queue Project', '/tmp/q')
-  svc.addWorkspace('proj-q', 'ws-q', 'Q', '/tmp/q')
+  await svc.ensureProject('proj-q', 'Queue Project', '/tmp/q')
+  await svc.addWorkspace('proj-q', 'ws-q', 'Q', '/tmp/q')
 })
 
-afterEach(() => {
-  svc.close()
+afterEach(async () => {
+  await svc.close()
   if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB)
 })
 
@@ -171,7 +171,7 @@ describe('runQueue — pre-flight', () => {
   })
 
   it('throws QueueDirtyTreeError when working tree is dirty', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const { runtime } = buildRuntime({ porcelain: ' M src/foo.ts\n' })
     const queue = buildService(runtime)
     await expect(queue.runQueue({ workspaceId: 'ws-q' })).rejects.toBeInstanceOf(
@@ -180,7 +180,7 @@ describe('runQueue — pre-flight', () => {
   })
 
   it('does not spawn anything on dryRun, returns eligible list as skipped', async () => {
-    const t = createReadyAutoSafeTask()
+    const t = await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
     const r = await queue.runQueue({ workspaceId: 'ws-q', dryRun: true })
@@ -193,9 +193,9 @@ describe('runQueue — pre-flight', () => {
 
 describe('runQueue — task filtering', () => {
   it('skips tasks without auto-safe label', async () => {
-    const safe = createReadyAutoSafeTask({ title: 'safe' })
-    const unsafe = svc.createTask({ projectId: 'proj-q', title: 'unsafe', body: VALID_BODY })
-    svc.updateTask(unsafe.id, { status: 'READY' })
+    const safe = await createReadyAutoSafeTask({ title: 'safe' })
+    const unsafe = await svc.createTask({ projectId: 'proj-q', title: 'unsafe', body: VALID_BODY })
+    await svc.updateTask(unsafe.id, { status: 'READY' })
 
     const { runtime } = buildRuntime()
     const queue = buildService(runtime)
@@ -204,14 +204,14 @@ describe('runQueue — task filtering', () => {
   })
 
   it('skips tasks where validateAutoSafeTask is invalid (missing AC)', async () => {
-    const goodId = createReadyAutoSafeTask({ title: 'good' }).id
-    const bad = svc.createTask({
+    const goodId = (await createReadyAutoSafeTask({ title: 'good' })).id
+    const bad = await svc.createTask({
       projectId: 'proj-q',
       title: 'bad',
       labels: ['auto-safe'],
       body: '## Goal\nNo AC here\n## File Pointers\n- src/x.ts\n## Scope\n~1h'
     })
-    svc.updateTask(bad.id, { status: 'READY' })
+    await svc.updateTask(bad.id, { status: 'READY' })
 
     const { runtime } = buildRuntime()
     const queue = buildService(runtime)
@@ -220,15 +220,15 @@ describe('runQueue — task filtering', () => {
   })
 
   it('filters by projectId — excludes tasks from other projects', async () => {
-    svc.ensureProject('proj-other', 'Other', '/tmp/o')
-    const good = createReadyAutoSafeTask({ title: 'good' })
-    const other = svc.createTask({
+    await svc.ensureProject('proj-other', 'Other', '/tmp/o')
+    const good = await createReadyAutoSafeTask({ title: 'good' })
+    const other = await svc.createTask({
       projectId: 'proj-other',
       title: 'other',
       labels: ['auto-safe'],
       body: VALID_BODY
     })
-    svc.updateTask(other.id, { status: 'READY' })
+    await svc.updateTask(other.id, { status: 'READY' })
 
     const { runtime } = buildRuntime()
     const queue = buildService(runtime)
@@ -237,9 +237,9 @@ describe('runQueue — task filtering', () => {
   })
 
   it('respects maxTasks cap', async () => {
-    const a = createReadyAutoSafeTask({ title: 'A' })
-    const b = createReadyAutoSafeTask({ title: 'B' })
-    const c = createReadyAutoSafeTask({ title: 'C' })
+    const a = await createReadyAutoSafeTask({ title: 'A' })
+    const b = await createReadyAutoSafeTask({ title: 'B' })
+    const c = await createReadyAutoSafeTask({ title: 'C' })
 
     const { runtime } = buildRuntime()
     const queue = buildService(runtime)
@@ -248,13 +248,13 @@ describe('runQueue — task filtering', () => {
     // Service sorts eligible tasks by id ascending → [a, b, c]; cap 2 → [a, b]
     expect(r.done.map((x) => x.id)).toEqual([a.id, b.id])
     // Newest (c) remained eligible but never admitted; runQueue ignores it (not in `tasks` slice).
-    expect(svc.getTask(c.id)?.status).toBe('READY')
+    expect((await svc.getTask(c.id))?.status).toBe('READY')
   })
 
   it('skips tasks with auto-failed label even when status=READY (TASK-711 Quirk 3)', async () => {
-    const good = createReadyAutoSafeTask({ title: 'good' })
-    const failedAgain = createReadyAutoSafeTask({ title: 'failedAgain' })
-    svc.updateTask(failedAgain.id, {
+    const good = await createReadyAutoSafeTask({ title: 'good' })
+    const failedAgain = await createReadyAutoSafeTask({ title: 'failedAgain' })
+    await svc.updateTask(failedAgain.id, {
       labels: ['auto-safe', 'auto-failed']
     })
 
@@ -265,14 +265,14 @@ describe('runQueue — task filtering', () => {
   })
 
   it('re-admits task after auto-failed label is removed', async () => {
-    const t = createReadyAutoSafeTask()
-    svc.updateTask(t.id, { labels: ['auto-safe', 'auto-failed'] })
+    const t = await createReadyAutoSafeTask()
+    await svc.updateTask(t.id, { labels: ['auto-safe', 'auto-failed'] })
     const { runtime } = buildRuntime()
     const queue = buildService(runtime)
     const first = await queue.runQueue({ workspaceId: 'ws-q' })
     expect(first.done).toHaveLength(0)
 
-    svc.updateTask(t.id, { labels: ['auto-safe'] })
+    await svc.updateTask(t.id, { labels: ['auto-safe'] })
     const second = await queue.runQueue({ workspaceId: 'ws-q' })
     expect(second.done.map((x) => x.id)).toEqual([t.id])
   })
@@ -280,7 +280,7 @@ describe('runQueue — task filtering', () => {
 
 describe('runQueue — happy path SUCCESS', () => {
   it('spawns claude, runs AC, ends session, marks task DONE', async () => {
-    const t = createReadyAutoSafeTask()
+    const t = await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
     const r = await queue.runQueue({ workspaceId: 'ws-q' })
@@ -290,14 +290,14 @@ describe('runQueue — happy path SUCCESS', () => {
     expect(r.halted).toBe(false)
     expect(state.spawnCalls).toHaveLength(1)
     expect(state.execCalls.map((c) => c.cmd)).toEqual(['pnpm run lint'])
-    expect(svc.getTask(t.id)?.status).toBe('REVIEW')
+    expect((await svc.getTask(t.id))?.status).toBe('REVIEW')
     // Session stays active (awaiting human review)
-    const sessions = svc.findSessions('proj-q')
+    const sessions = await svc.findSessions('proj-q')
     expect(sessions.every((s) => s.status === 'active')).toBe(true)
   })
 
   it('passes maxBudgetUsd = maxCostPerTask * 0.95 to the spawn (TASK-705 F1 recalibrate)', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
     await queue.runQueue({ workspaceId: 'ws-q', maxCostPerTask: 1.0 })
@@ -305,7 +305,7 @@ describe('runQueue — happy path SUCCESS', () => {
   })
 
   it('uses default maxCostPerTask = 1.5 (TASK-705 F3 cold-cache safety)', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
     await queue.runQueue({ workspaceId: 'ws-q' })
@@ -314,7 +314,7 @@ describe('runQueue — happy path SUCCESS', () => {
   })
 
   it('uses default model claude-sonnet-4-6 when not overridden', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
     await queue.runQueue({ workspaceId: 'ws-q' })
@@ -322,7 +322,7 @@ describe('runQueue — happy path SUCCESS', () => {
   })
 
   it('writes prompt.md, claude.json, ac-0.log, diff.patch per task', async () => {
-    const t = createReadyAutoSafeTask()
+    const t = await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
     const r = await queue.runQueue({ workspaceId: 'ws-q' })
@@ -336,8 +336,8 @@ describe('runQueue — happy path SUCCESS', () => {
   })
 
   it('accumulates totalCostUsd across multiple successful tasks', async () => {
-    createReadyAutoSafeTask({ title: 'A' })
-    createReadyAutoSafeTask({ title: 'B' })
+    await createReadyAutoSafeTask({ title: 'A' })
+    await createReadyAutoSafeTask({ title: 'B' })
     const { runtime } = buildRuntime({
       spawn: async () => ({
         isError: false,
@@ -356,7 +356,7 @@ describe('runQueue — happy path SUCCESS', () => {
 
 describe('runQueue — FAILURE flow (halt-on-fail)', () => {
   it('halts on claude is_error: labels task auto-failed, checkpoints session (fail), sets status to REVIEW', async () => {
-    const t = createReadyAutoSafeTask()
+    const t = await createReadyAutoSafeTask()
     const { runtime } = buildRuntime({
       // 'tool-use logic error' is non-transient — must not trigger retry, halts immediately.
       spawn: async () => ({
@@ -374,19 +374,19 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
     expect(r.haltReason).toContain('claude-error')
     expect(r.haltCode).toBe('claude-error')
     expect(r.failed.map((x) => x.id)).toEqual([t.id])
-    const after = svc.getTask(t.id)
+    const after = await svc.getTask(t.id)
     expect(after?.status).toBe('REVIEW')
     expect(after?.labels).toContain('auto-failed')
     expect(after?.labels).toContain('auto-safe')
     // Session stays active with fail checkpoint
-    const sessions = svc.findSessions('proj-q')
+    const sessions = await svc.findSessions('proj-q')
     expect(sessions[0]?.status).toBe('active')
     expect(sessions[0]?.checkpoint?.outcome).toBe('fail')
     expect(sessions[0]?.checkpoint?.reason).toContain('claude-error')
   })
 
   it('halts on AC command exit non-zero', async () => {
-    const t = createReadyAutoSafeTask()
+    const t = await createReadyAutoSafeTask()
     const { runtime } = buildRuntime({
       exec: async () => ({ exitCode: 1, stdout: 'x', stderr: 'lint failed' })
     })
@@ -398,12 +398,12 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
     expect(r.haltReason).toContain('pnpm run lint')
     expect(r.haltCode).toBe('ac-failed')
     expect(r.failed.map((x) => x.id)).toEqual([t.id])
-    expect(svc.getTask(t.id)?.status).toBe('REVIEW')
-    expect(svc.getTask(t.id)?.labels).toContain('auto-failed')
+    expect((await svc.getTask(t.id))?.status).toBe('REVIEW')
+    expect((await svc.getTask(t.id))?.labels).toContain('auto-failed')
   })
 
   it('passes when AC command exits with the expected non-zero code (TASK-740)', async () => {
-    const t = createReadyAutoSafeTask({
+    const t = await createReadyAutoSafeTask({
       body: [
         '## Goal',
         'Negative-path smoke',
@@ -427,13 +427,13 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
     expect(r.halted).toBe(false)
     expect(r.failed).toEqual([])
     expect(r.done.map((x) => x.id)).toEqual([t.id])
-    expect(svc.getTask(t.id)?.status).toBe('REVIEW')
+    expect((await svc.getTask(t.id))?.status).toBe('REVIEW')
     // Verifier still actually ran the command (not skipped)
     expect(state.execCalls.map((c) => c.cmd)).toEqual(['node scripts/exiter.mjs'])
   })
 
   it('halts when AC neg-exit hint does not match actual exit (TASK-740)', async () => {
-    const t = createReadyAutoSafeTask({
+    const t = await createReadyAutoSafeTask({
       body: [
         '## Goal',
         'Negative-path smoke',
@@ -463,7 +463,7 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
   })
 
   it('halts on cost-cap-exceeded (post-hoc)', async () => {
-    const t = createReadyAutoSafeTask()
+    const t = await createReadyAutoSafeTask()
     const { runtime } = buildRuntime({
       spawn: async () => ({
         isError: false,
@@ -480,12 +480,12 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
     expect(r.haltReason).toContain('cost-cap-exceeded')
     expect(r.haltCode).toBe('cost-cap')
     expect(r.failed.map((x) => x.id)).toEqual([t.id])
-    expect(svc.getTask(t.id)?.status).toBe('REVIEW')
-    expect(svc.getTask(t.id)?.labels).toContain('auto-failed')
+    expect((await svc.getTask(t.id))?.status).toBe('REVIEW')
+    expect((await svc.getTask(t.id))?.labels).toContain('auto-failed')
   })
 
   it('halts on spawn throw — captures spawn-error reason', async () => {
-    const t = createReadyAutoSafeTask()
+    const t = await createReadyAutoSafeTask()
     const { runtime } = buildRuntime({
       spawn: async () => {
         throw new Error('claude binary missing')
@@ -499,13 +499,13 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
     expect(r.haltReason).toContain('claude binary missing')
     expect(r.haltCode).toBe('spawn-error')
     expect(r.failed.map((x) => x.id)).toEqual([t.id])
-    expect(svc.getTask(t.id)?.labels).toContain('auto-failed')
+    expect((await svc.getTask(t.id))?.labels).toContain('auto-failed')
   })
 
   it('preserves later eligible tasks as skipped when queue halts mid-run', async () => {
-    const a = createReadyAutoSafeTask({ title: 'A' })
-    const b = createReadyAutoSafeTask({ title: 'B' })
-    const c = createReadyAutoSafeTask({ title: 'C' })
+    const a = await createReadyAutoSafeTask({ title: 'A' })
+    const b = await createReadyAutoSafeTask({ title: 'B' })
+    const c = await createReadyAutoSafeTask({ title: 'C' })
 
     let n = 0
     const { runtime } = buildRuntime({
@@ -527,12 +527,12 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
     expect(r.done.map((x) => x.id)).toEqual([a.id])
     expect(r.failed.map((x) => x.id)).toEqual([b.id])
     expect(r.skipped.map((x) => x.id)).toEqual([c.id])
-    expect(svc.getTask(c.id)?.status).toBe('READY')
+    expect((await svc.getTask(c.id))?.status).toBe('READY')
   })
 
   it('halts before next-task admission when cumulative cost would exceed queue cap', async () => {
-    const a = createReadyAutoSafeTask({ title: 'A' })
-    const b = createReadyAutoSafeTask({ title: 'B' })
+    const a = await createReadyAutoSafeTask({ title: 'A' })
+    const b = await createReadyAutoSafeTask({ title: 'B' })
     const { runtime } = buildRuntime({
       spawn: async () => ({
         isError: false,
@@ -556,11 +556,11 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
     expect(r.halted).toBe(true)
     expect(r.haltReason).toContain('queue-cost-cap-exceeded')
     expect(r.haltCode).toBe('queue-cost-cap')
-    expect(svc.getTask(b.id)?.status).toBe('READY')
+    expect((await svc.getTask(b.id))?.status).toBe('READY')
   })
 
   it('writes diff.patch even when task fails (always-write contract)', async () => {
-    const t = createReadyAutoSafeTask()
+    const t = await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime({
       exec: async () => ({ exitCode: 1, stdout: '', stderr: 'fail' })
     })
@@ -571,8 +571,8 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
   })
 
   it('appends comment to task-linked open conversation on failure', async () => {
-    const t = createReadyAutoSafeTask()
-    const conv = svc.openConversation({
+    const t = await createReadyAutoSafeTask()
+    const conv = await svc.openConversation({
       projectId: 'proj-q',
       title: 'Discussing the task',
       createdBy: 'Butter',
@@ -589,7 +589,7 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
     const queue = buildService(runtime)
     await queue.runQueue({ workspaceId: 'ws-q' })
 
-    const messages = svc.getConversationMessages(conv.id)
+    const messages = await svc.getConversationMessages(conv.id)
     const fromQueue = messages.find((m) => m.authorName === 'queue-runner')
     expect(fromQueue).toBeDefined()
     expect(fromQueue?.content).toContain('Auto-failed')
@@ -599,7 +599,7 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
 
 describe('runQueue — retry-1x for transient errors', () => {
   it('retries once when first spawn throws a transient error and succeeds on retry', async () => {
-    const t = createReadyAutoSafeTask()
+    const t = await createReadyAutoSafeTask()
     let attempts = 0
     const { runtime, state } = buildRuntime({
       spawn: async () => {
@@ -620,11 +620,11 @@ describe('runQueue — retry-1x for transient errors', () => {
     expect(state.spawnCalls).toHaveLength(2)
     expect(r.done.map((x) => x.id)).toEqual([t.id])
     expect(r.failed).toEqual([])
-    expect(svc.getTask(t.id)?.status).toBe('REVIEW')
+    expect((await svc.getTask(t.id))?.status).toBe('REVIEW')
   })
 
   it('retries once when first spawn returns is_error with transient text and succeeds on retry', async () => {
-    const t = createReadyAutoSafeTask()
+    const t = await createReadyAutoSafeTask()
     let attempts = 0
     const { runtime, state } = buildRuntime({
       spawn: async () => {
@@ -652,11 +652,11 @@ describe('runQueue — retry-1x for transient errors', () => {
 
     expect(state.spawnCalls).toHaveLength(2)
     expect(r.done.map((x) => x.id)).toEqual([t.id])
-    expect(svc.getTask(t.id)?.status).toBe('REVIEW')
+    expect((await svc.getTask(t.id))?.status).toBe('REVIEW')
   })
 
   it('does NOT retry on non-transient throws (logic / config errors)', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime({
       spawn: async () => {
         throw new Error('claude binary not found at /opt/bin/claude')
@@ -672,7 +672,7 @@ describe('runQueue — retry-1x for transient errors', () => {
   })
 
   it('halts after 2 failed attempts when both are transient', async () => {
-    const t = createReadyAutoSafeTask()
+    const t = await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime({
       spawn: async () => {
         throw new Error('upstream overloaded — retry later')
@@ -686,11 +686,11 @@ describe('runQueue — retry-1x for transient errors', () => {
     expect(r.haltReason).toContain('overloaded')
     expect(r.haltCode).toBe('spawn-error')
     expect(r.failed.map((x) => x.id)).toEqual([t.id])
-    expect(svc.getTask(t.id)?.labels).toContain('auto-failed')
+    expect((await svc.getTask(t.id))?.labels).toContain('auto-failed')
   })
 
   it('does NOT retry on AC command failure (logic fail per ADR-019)', async () => {
-    const t = createReadyAutoSafeTask()
+    const t = await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime({
       exec: async () => ({
         exitCode: 1,
@@ -706,13 +706,13 @@ describe('runQueue — retry-1x for transient errors', () => {
     expect(r.halted).toBe(true)
     expect(r.haltReason).toContain('ac-failed')
     expect(r.haltCode).toBe('ac-failed')
-    expect(svc.getTask(t.id)?.labels).toContain('auto-failed')
+    expect((await svc.getTask(t.id))?.labels).toContain('auto-failed')
   })
 })
 
 describe('runQueue — ADR-019 Phase-2 metrics (7 fields in queue-run.json)', () => {
   it('writes all 7 metrics fields with correct shape', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime({
       spawn: async () => ({
         isError: false,
@@ -741,8 +741,8 @@ describe('runQueue — ADR-019 Phase-2 metrics (7 fields in queue-run.json)', ()
   })
 
   it('aggregates cache tokens across all spawns and computes cache_hit_estimate', async () => {
-    createReadyAutoSafeTask({ title: 'A' })
-    createReadyAutoSafeTask({ title: 'B' })
+    await createReadyAutoSafeTask({ title: 'A' })
+    await createReadyAutoSafeTask({ title: 'B' })
     const { runtime, state } = buildRuntime({
       spawn: async () => ({
         isError: false,
@@ -765,7 +765,7 @@ describe('runQueue — ADR-019 Phase-2 metrics (7 fields in queue-run.json)', ()
   })
 
   it('cache_hit_estimate is null when spawn JSON has no total_input_tokens', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
     const r = await queue.runQueue({ workspaceId: 'ws-q' })
@@ -775,8 +775,8 @@ describe('runQueue — ADR-019 Phase-2 metrics (7 fields in queue-run.json)', ()
   })
 
   it('task_outcome_per_mcp_profile aggregates success+failed per profile', async () => {
-    createReadyAutoSafeTask({ title: 'A' })
-    createReadyAutoSafeTask({ title: 'B' })
+    await createReadyAutoSafeTask({ title: 'A' })
+    await createReadyAutoSafeTask({ title: 'B' })
     let n = 0
     const { runtime, state } = buildRuntime({
       spawn: async () => {
@@ -798,7 +798,7 @@ describe('runQueue — ADR-019 Phase-2 metrics (7 fields in queue-run.json)', ()
   })
 
   it('mcp_profile_used=empty and spawn_mode=zero-mcp for canonical empty profile', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
     const r = await queue.runQueue({ workspaceId: 'ws-q' })
@@ -809,7 +809,7 @@ describe('runQueue — ADR-019 Phase-2 metrics (7 fields in queue-run.json)', ()
   })
 
   it('mcp_profile_used and spawn_mode=selective when mcpProfile is not "empty"', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime({ mcpProfile: 'playwright' })
     const queue = buildService(runtime)
     const r = await queue.runQueue({ workspaceId: 'ws-q' })
@@ -821,7 +821,7 @@ describe('runQueue — ADR-019 Phase-2 metrics (7 fields in queue-run.json)', ()
   })
 
   it('spawn-error counts as failed in task_outcome_per_mcp_profile', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime({
       spawn: async () => {
         throw new Error('claude binary missing')
@@ -835,7 +835,7 @@ describe('runQueue — ADR-019 Phase-2 metrics (7 fields in queue-run.json)', ()
   })
 
   it('mcp_tokens_per_spawn measured from empty profile config file', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     // Empty profile: {"mcpServers":{}}\n = 18 chars → ceil(18/3.5) = 6 tokens
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
@@ -846,8 +846,8 @@ describe('runQueue — ADR-019 Phase-2 metrics (7 fields in queue-run.json)', ()
   })
 
   it('mcp_tokens_per_spawn scales with MCP config file size', async () => {
-    createReadyAutoSafeTask({ title: 'small' })
-    createReadyAutoSafeTask({ title: 'large' })
+    await createReadyAutoSafeTask({ title: 'small' })
+    await createReadyAutoSafeTask({ title: 'large' })
 
     // Test 1: small config (5 chars → 2 tokens)
     const { runtime: runtime1, state: state1 } = buildRuntime({ mcpConfigContent: '12345' })
@@ -893,7 +893,7 @@ describe('runQueue — TASK-707 diff metrics (files_touched + new_files)', () =>
   ].join('\n')
 
   it('writes files_touched_count + new_files_created_count parsed from diff.patch', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime({ diff: TWO_MOD_ONE_NEW_DIFF })
     const queue = buildService(runtime)
     const r = await queue.runQueue({ workspaceId: 'ws-q' })
@@ -904,8 +904,8 @@ describe('runQueue — TASK-707 diff metrics (files_touched + new_files)', () =>
   })
 
   it('aggregates counts across multiple spawns', async () => {
-    createReadyAutoSafeTask({ title: 'A' })
-    createReadyAutoSafeTask({ title: 'B' })
+    await createReadyAutoSafeTask({ title: 'A' })
+    await createReadyAutoSafeTask({ title: 'B' })
     const { runtime, state } = buildRuntime({ diff: TWO_MOD_ONE_NEW_DIFF })
     const queue = buildService(runtime)
     const r = await queue.runQueue({ workspaceId: 'ws-q' })
@@ -917,7 +917,7 @@ describe('runQueue — TASK-707 diff metrics (files_touched + new_files)', () =>
   })
 
   it('empty diff → both counts = 0', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime({ diff: '' })
     const queue = buildService(runtime)
     const r = await queue.runQueue({ workspaceId: 'ws-q' })
@@ -928,7 +928,7 @@ describe('runQueue — TASK-707 diff metrics (files_touched + new_files)', () =>
   })
 
   it('counts diff even when spawn fails (spawn-error path still writes diff.patch)', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime({
       diff: TWO_MOD_ONE_NEW_DIFF,
       spawn: async () => {
@@ -944,7 +944,7 @@ describe('runQueue — TASK-707 diff metrics (files_touched + new_files)', () =>
   })
 
   it('untracked-only: gitDiff empty, gitUntrackedFiles returns 2 → newFiles=2, filesTouched=0', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime({
       diff: '',
       untracked: ['src/a.ts', 'src/b.ts']
@@ -958,7 +958,7 @@ describe('runQueue — TASK-707 diff metrics (files_touched + new_files)', () =>
   })
 
   it('mixed: 1 modified + 1 staged-new in diff, 1 untracked → newFiles=2, filesTouched=1', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const ONE_MOD_ONE_STAGED_NEW = [
       'diff --git a/src/a.ts b/src/a.ts',
       'index 1111111..2222222 100644',
@@ -992,15 +992,15 @@ describe('runQueue — TASK-707 diff metrics (files_touched + new_files)', () =>
 describe('resolveModelForTask — unit', () => {
   const base = { id: 't1', projectId: 'p1', title: 'T', status: 'READY' as const, priority: 'medium' as const, body: null, createdAt: '', updatedAt: '' }
 
-  it('returns defaultModel when no model: label present', () => {
+  it('returns defaultModel when no model: label present', async () => {
     expect(resolveModelForTask({ ...base, labels: ['auto-safe'] }, 'claude-sonnet-4-6')).toBe('claude-sonnet-4-6')
   })
 
-  it('returns overridden model when model: label present', () => {
+  it('returns overridden model when model: label present', async () => {
     expect(resolveModelForTask({ ...base, labels: ['auto-safe', 'model:claude-haiku-4-5-20251001'] }, 'claude-sonnet-4-6')).toBe('claude-haiku-4-5-20251001')
   })
 
-  it('first model: label wins when multiple present', () => {
+  it('first model: label wins when multiple present', async () => {
     expect(resolveModelForTask({ ...base, labels: ['model:claude-haiku-4-5-20251001', 'model:claude-opus-4-7'] }, 'claude-sonnet-4-6')).toBe('claude-haiku-4-5-20251001')
   })
 
@@ -1011,13 +1011,13 @@ describe('resolveModelForTask — unit', () => {
 
 describe('runQueue — per-task model label override', () => {
   it('passes model:haiku label value to spawnClaude instead of default', async () => {
-    const t = svc.createTask({
+    const t = await svc.createTask({
       projectId: 'proj-q',
       title: 'Haiku task',
       labels: ['auto-safe', 'model:claude-haiku-4-5-20251001'],
       body: VALID_BODY
     })
-    svc.updateTask(t.id, { status: 'READY' })
+    await svc.updateTask(t.id, { status: 'READY' })
 
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
@@ -1027,10 +1027,10 @@ describe('runQueue — per-task model label override', () => {
   })
 
   it('uses runOptions.model (or default) for tasks without model: label', async () => {
-    const a = svc.createTask({ projectId: 'proj-q', title: 'A', labels: ['auto-safe'], body: VALID_BODY })
-    svc.updateTask(a.id, { status: 'READY' })
-    const b = svc.createTask({ projectId: 'proj-q', title: 'B', labels: ['auto-safe', 'model:claude-haiku-4-5-20251001'], body: VALID_BODY })
-    svc.updateTask(b.id, { status: 'READY' })
+    const a = await svc.createTask({ projectId: 'proj-q', title: 'A', labels: ['auto-safe'], body: VALID_BODY })
+    await svc.updateTask(a.id, { status: 'READY' })
+    const b = await svc.createTask({ projectId: 'proj-q', title: 'B', labels: ['auto-safe', 'model:claude-haiku-4-5-20251001'], body: VALID_BODY })
+    await svc.updateTask(b.id, { status: 'READY' })
 
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
@@ -1043,13 +1043,13 @@ describe('runQueue — per-task model label override', () => {
   })
 
   it('unknown model value passes through as-is (no whitelist)', async () => {
-    const t = svc.createTask({
+    const t = await svc.createTask({
       projectId: 'proj-q',
       title: 'Unknown model',
       labels: ['auto-safe', 'model:some-future-model'],
       body: VALID_BODY
     })
-    svc.updateTask(t.id, { status: 'READY' })
+    await svc.updateTask(t.id, { status: 'READY' })
 
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
@@ -1061,9 +1061,9 @@ describe('runQueue — per-task model label override', () => {
 
 describe('runQueue — admission order is deterministic', () => {
   it('advances totalCostUsd across all successful tasks before halting', async () => {
-    const a = createReadyAutoSafeTask({ title: 'A' })
-    const b = createReadyAutoSafeTask({ title: 'B' })
-    const c = createReadyAutoSafeTask({ title: 'C' })
+    const a = await createReadyAutoSafeTask({ title: 'A' })
+    const b = await createReadyAutoSafeTask({ title: 'B' })
+    const c = await createReadyAutoSafeTask({ title: 'C' })
 
     let n = 0
     const { runtime } = buildRuntime({
@@ -1091,8 +1091,8 @@ describe('runQueue — admission order is deterministic', () => {
 
 describe('runQueue — queue-run.json artifact', () => {
   it('all-DONE: 2 tasks → halted: false and 2 DONE entries with cost + numTurns', async () => {
-    const a = createReadyAutoSafeTask({ title: 'A' })
-    const b = createReadyAutoSafeTask({ title: 'B' })
+    const a = await createReadyAutoSafeTask({ title: 'A' })
+    const b = await createReadyAutoSafeTask({ title: 'B' })
     const { runtime, state } = buildRuntime({
       spawn: async () => ({
         isError: false,
@@ -1117,8 +1117,8 @@ describe('runQueue — queue-run.json artifact', () => {
   })
 
   it('first-fail halt: task 1 FAILED (ac-failed), task 2 SKIPPED', async () => {
-    const a = createReadyAutoSafeTask({ title: 'A' })
-    const b = createReadyAutoSafeTask({ title: 'B' })
+    const a = await createReadyAutoSafeTask({ title: 'A' })
+    const b = await createReadyAutoSafeTask({ title: 'B' })
     const { runtime, state } = buildRuntime({
       exec: async () => ({ exitCode: 1, stdout: '', stderr: 'lint failed' })
     })
@@ -1135,7 +1135,7 @@ describe('runQueue — queue-run.json artifact', () => {
   })
 
   it('cost-cap halt: expensive task → FAILED with cost-cap-exceeded reason', async () => {
-    const t = createReadyAutoSafeTask()
+    const t = await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime({
       spawn: async () => ({
         isError: false,
@@ -1159,8 +1159,8 @@ describe('runQueue — queue-run.json artifact', () => {
   })
 
   it('spawn-error halt: 1 FAILED (spawn-error) + remaining SKIPPED', async () => {
-    const a = createReadyAutoSafeTask({ title: 'A' })
-    const b = createReadyAutoSafeTask({ title: 'B' })
+    const a = await createReadyAutoSafeTask({ title: 'A' })
+    const b = await createReadyAutoSafeTask({ title: 'B' })
     const { runtime, state } = buildRuntime({
       spawn: async () => {
         throw new Error('claude binary missing')
@@ -1176,7 +1176,7 @@ describe('runQueue — queue-run.json artifact', () => {
   })
 
   it('dry-run: does not write queue-run.json', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
     await queue.runQueue({ workspaceId: 'ws-q', dryRun: true })
@@ -1186,7 +1186,7 @@ describe('runQueue — queue-run.json artifact', () => {
   })
 
   it('branch capture: gitCurrentBranch result appears in queue-run.json', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime({ branch: 'feature/x' })
     const queue = buildService(runtime)
     const r = await queue.runQueue({ workspaceId: 'ws-q' })
@@ -1196,7 +1196,7 @@ describe('runQueue — queue-run.json artifact', () => {
   })
 
   it('commit-sha capture: gitHeadSha result appears in queue-run.json', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const sha = 'deadbeef1234567890abcdef1234567890abcdef'
     const { runtime, state } = buildRuntime({ commitSha: sha })
     const queue = buildService(runtime)
@@ -1218,8 +1218,8 @@ describe('runQueue — queue.jsonl event stream (TASK-741, ADR-019)', () => {
   }
 
   it('all-DONE: N tasks → N × task.started + N × task.finished(DONE) + 1 × run.finished', async () => {
-    const a = createReadyAutoSafeTask({ title: 'A' })
-    const b = createReadyAutoSafeTask({ title: 'B' })
+    const a = await createReadyAutoSafeTask({ title: 'A' })
+    const b = await createReadyAutoSafeTask({ title: 'B' })
     const { runtime, state } = buildRuntime({
       spawn: async () => ({
         isError: false,
@@ -1269,8 +1269,8 @@ describe('runQueue — queue.jsonl event stream (TASK-741, ADR-019)', () => {
   })
 
   it('ac-failed halt: task 1 fails → task.started + task.finished(FAILED) + run.failed with failedTaskIndex=1, no events for skipped task', async () => {
-    const a = createReadyAutoSafeTask({ title: 'A' })
-    createReadyAutoSafeTask({ title: 'B' })
+    const a = await createReadyAutoSafeTask({ title: 'A' })
+    await createReadyAutoSafeTask({ title: 'B' })
     const { runtime, state } = buildRuntime({
       exec: async () => ({ exitCode: 1, stdout: '', stderr: 'lint failed' })
     })
@@ -1296,8 +1296,8 @@ describe('runQueue — queue.jsonl event stream (TASK-741, ADR-019)', () => {
   })
 
   it('cost-cap halt: failedTaskIndex matches halting task position (1-based)', async () => {
-    const a = createReadyAutoSafeTask({ title: 'A' })
-    createReadyAutoSafeTask({ title: 'B' })
+    const a = await createReadyAutoSafeTask({ title: 'A' })
+    await createReadyAutoSafeTask({ title: 'B' })
     let n = 0
     const { runtime, state } = buildRuntime({
       spawn: async () => {
@@ -1329,7 +1329,7 @@ describe('runQueue — queue.jsonl event stream (TASK-741, ADR-019)', () => {
   })
 
   it('each line of queue.jsonl is independently JSON-parseable (no pretty-print, newline-delimited)', async () => {
-    createReadyAutoSafeTask({ title: 'A' })
+    await createReadyAutoSafeTask({ title: 'A' })
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
     const r = await queue.runQueue({ workspaceId: 'ws-q' })
@@ -1344,7 +1344,7 @@ describe('runQueue — queue.jsonl event stream (TASK-741, ADR-019)', () => {
   })
 
   it('dry-run: does not write queue.jsonl', async () => {
-    createReadyAutoSafeTask()
+    await createReadyAutoSafeTask()
     const { runtime, state } = buildRuntime()
     const queue = buildService(runtime)
     const r = await queue.runQueue({ workspaceId: 'ws-q', dryRun: true })
@@ -1354,7 +1354,7 @@ describe('runQueue — queue.jsonl event stream (TASK-741, ADR-019)', () => {
 })
 
 describe('computeToolSchemaTokens', () => {
-  it('measures canonical spawn tool strings > 0 tokens', () => {
+  it('measures canonical spawn tool strings > 0 tokens', async () => {
     const tokens = computeToolSchemaTokens()
     expect(tokens).toBeGreaterThan(0)
     expect(tokens).toBeLessThan(50)
