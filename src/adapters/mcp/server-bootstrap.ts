@@ -3,9 +3,10 @@ import * as path from 'path'
 import Database from 'better-sqlite3'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { SqliteTaskService } from '../../core/domain/sqlite-task-service'
+import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
+import { createTaskService } from '../../core/domain/task-service-factory'
 import { OAuthRepository } from '../../core/domain/repositories/oauth-repository'
-import { resolveDataPaths } from '../../core/paths'
+import { resolveBackendConfig, resolveDataPaths } from '../../core/paths'
 import { createInstrumentedServer } from './instrumented-server'
 import { startHttpTransport, type OAuthConfig } from './http-transport'
 import * as taskTools from './mcp-tools/task-tools'
@@ -29,7 +30,7 @@ import * as taskRejectTools from './mcp-tools/task-reject'
 import * as acCheckTools from './mcp-tools/ac-check'
 
 interface BuildDeps {
-  svc: SqliteTaskService
+  svc: BackendTaskService
   dataDir: string
   artifactsDir: string
   dbPath: string
@@ -83,16 +84,21 @@ function buildMcpServer(
 }
 
 export async function startMcpServer(): Promise<void> {
-  const { dbPath, dataDir, artifactsDir } = resolveDataPaths()
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true })
-  const svc = new SqliteTaskService(dbPath)
+  const dataPaths = resolveDataPaths()
+  const backend = resolveBackendConfig(dataPaths)
+  const svc = createTaskService(backend)
   await svc.initializeAsync()
-  const deps: BuildDeps = { svc, dataDir, artifactsDir, dbPath }
+  const deps: BuildDeps = {
+    svc,
+    dataDir: dataPaths.dataDir,
+    artifactsDir: dataPaths.artifactsDir,
+    dbPath: dataPaths.dbPath
+  }
 
   const mode = (process.env.MCP_TRANSPORT ?? 'stdio').toLowerCase()
 
   if (mode === 'http') {
-    const oauth = buildOAuthConfig(dbPath)
+    const oauth = buildOAuthConfig(dataPaths.dbPath)
     const token = process.env.MCP_HTTP_TOKEN ?? ''
     if (!oauth && token.length === 0) {
       process.stderr.write(

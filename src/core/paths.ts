@@ -1,5 +1,6 @@
 import * as os from 'os'
 import * as path from 'path'
+import type { BackendConfig } from './backend-config'
 
 export interface DataPaths {
   dataDir: string
@@ -51,6 +52,34 @@ export function resolveDataPaths(electronDataDir?: string): DataPaths {
     artifactsDir: path.join(dataDir, 'artifacts'),
     backupsDir: path.join(dataDir, 'backups')
   }
+}
+
+/**
+ * Resolve which storage backend to use at startup (ADR-030).
+ *
+ * Env contract:
+ *   CHODA_BACKEND  — 'sqlite' (default) | 'postgres'
+ *   CHODA_PG_URL   — required when CHODA_BACKEND=postgres
+ *
+ * SQLite reuses the dbPath from `resolveDataPaths`. Postgres is wired but
+ * not yet implemented — the factory throws BackendNotImplementedError until
+ * TASK-934 lands the adapter.
+ */
+export function resolveBackendConfig(dataPaths: DataPaths): BackendConfig {
+  const kind = (process.env.CHODA_BACKEND ?? 'sqlite').toLowerCase()
+  if (kind === 'postgres') {
+    const connectionString = process.env.CHODA_PG_URL ?? ''
+    if (connectionString.length === 0) {
+      throw new Error(
+        '[paths] CHODA_BACKEND=postgres requires CHODA_PG_URL (postgres connection string)'
+      )
+    }
+    return { kind: 'postgres', connectionString }
+  }
+  if (kind !== 'sqlite') {
+    throw new Error(`[paths] unknown CHODA_BACKEND="${kind}" — expected sqlite|postgres`)
+  }
+  return { kind: 'sqlite', dbPath: dataPaths.dbPath }
 }
 
 /**
