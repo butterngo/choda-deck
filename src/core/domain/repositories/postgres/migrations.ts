@@ -130,6 +130,26 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX IF NOT EXISTS sessions_workspace_idx ON sessions (workspace_id);
       CREATE INDEX IF NOT EXISTS sessions_task_active_idx ON sessions (task_id, status);
     `
+  },
+  {
+    // `is_active` is BOOLEAN (SQLite stored INTEGER 0/1); priority is a small int.
+    // No CHECK on source_type/category — kept open to mirror the SQLite side,
+    // which validates at the TypeScript boundary via the typed unions.
+    name: '005_context_sources',
+    sql: `
+      CREATE TABLE IF NOT EXISTS context_sources (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        source_type TEXT NOT NULL,
+        source_path TEXT NOT NULL,
+        label TEXT NOT NULL,
+        category TEXT NOT NULL,
+        priority INTEGER NOT NULL DEFAULT 100,
+        is_active BOOLEAN NOT NULL DEFAULT TRUE
+      );
+
+      CREATE INDEX IF NOT EXISTS context_sources_project_idx ON context_sources (project_id);
+    `
   }
 ]
 
