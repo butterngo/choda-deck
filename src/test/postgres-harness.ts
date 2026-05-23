@@ -40,10 +40,21 @@ export async function stopPostgresTestEnv(env: PgTestEnv): Promise<void> {
   await env.container.stop()
 }
 
-function detectDockerSync(): boolean {
+// Detect Docker AND verify it can run Linux containers (postgres:16-alpine).
+// GitHub's windows-latest runner ships Docker in *Windows-container mode*, where
+// `docker ps` succeeds but testcontainers fails at the volume-mount step with
+// "invalid volume specification: '//var/run/docker.sock:/var/run/docker.sock:rw'".
+// Filtering on OSType=linux self-skips that case while still running locally on
+// Docker Desktop (Linux mode) and on Linux CI.
+function detectLinuxDockerSync(): boolean {
   try {
-    execFileSync('docker', ['ps'], { timeout: 5000, stdio: 'ignore' })
-    return true
+    const out = execFileSync('docker', ['info', '--format', '{{.OSType}}'], {
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'ignore']
+    })
+      .toString()
+      .trim()
+    return out === 'linux'
   } catch {
     return false
   }
@@ -52,5 +63,5 @@ function detectDockerSync(): boolean {
 // Resolved synchronously at module load so test files can pick describe vs
 // describe.skip without top-level await — which can destabilize Vitest's
 // worker pool when a child fork crashes during teardown.
-export const dockerAvailable = detectDockerSync()
+export const dockerAvailable = detectLinuxDockerSync()
 export const describeIfDocker = dockerAvailable ? describe : describe.skip
