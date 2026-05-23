@@ -23,6 +23,26 @@ export const MIGRATIONS: readonly Migration[] = [
         last_number BIGINT NOT NULL DEFAULT 0
       );
     `
+  },
+  {
+    name: '002_core',
+    sql: `
+      CREATE TABLE IF NOT EXISTS projects (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        cwd TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS workspaces (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        label TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        archived_at TIMESTAMPTZ
+      );
+
+      CREATE INDEX IF NOT EXISTS workspaces_project_id_idx ON workspaces (project_id);
+    `
   }
 ]
 
