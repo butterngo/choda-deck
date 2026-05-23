@@ -150,6 +150,76 @@ export const MIGRATIONS: readonly Migration[] = [
 
       CREATE INDEX IF NOT EXISTS context_sources_project_idx ON context_sources (project_id);
     `
+  },
+  {
+    // M1 conversation cluster — 5 tables. created_at uses DEFAULT NOW() because
+    // the repo never sets it explicitly (matches SQLite `DEFAULT datetime('now')`).
+    // metadata_json on messages is JSONB so node-pg auto-parses round-trip.
+    // No CHECK constraints on status/messageType/linkedType/etc — typed at the TS
+    // boundary, same as SQLite.
+    name: '006_conversations',
+    sql: `
+      CREATE TABLE IF NOT EXISTS conversations (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        created_by TEXT NOT NULL,
+        decision_summary TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        decided_at TEXT,
+        closed_at TEXT,
+        owner_session_id TEXT,
+        owner_type TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS conversations_project_idx ON conversations (project_id);
+      CREATE INDEX IF NOT EXISTS conversations_owner_session_idx ON conversations (owner_session_id);
+
+      CREATE TABLE IF NOT EXISTS conversation_participants (
+        conversation_id TEXT NOT NULL REFERENCES conversations(id),
+        participant_name TEXT NOT NULL,
+        participant_type TEXT NOT NULL,
+        participant_role TEXT,
+        PRIMARY KEY (conversation_id, participant_name)
+      );
+
+      CREATE INDEX IF NOT EXISTS conv_participants_conv_idx ON conversation_participants (conversation_id);
+
+      CREATE TABLE IF NOT EXISTS conversation_messages (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL REFERENCES conversations(id),
+        author_name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        message_type TEXT NOT NULL DEFAULT 'comment',
+        metadata_json JSONB,
+        target_role TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS conv_messages_conv_idx ON conversation_messages (conversation_id);
+
+      CREATE TABLE IF NOT EXISTS conversation_links (
+        conversation_id TEXT NOT NULL REFERENCES conversations(id),
+        linked_type TEXT NOT NULL,
+        linked_id TEXT NOT NULL,
+        PRIMARY KEY (conversation_id, linked_type, linked_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS conv_links_conv_idx ON conversation_links (conversation_id);
+
+      CREATE TABLE IF NOT EXISTS conversation_actions (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL REFERENCES conversations(id),
+        assignee TEXT NOT NULL,
+        description TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        linked_task_id TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS conv_actions_conv_idx ON conversation_actions (conversation_id);
+    `
   }
 ]
 
