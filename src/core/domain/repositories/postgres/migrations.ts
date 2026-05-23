@@ -103,6 +103,33 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX IF NOT EXISTS relationships_from_idx ON relationships (from_id);
       CREATE INDEX IF NOT EXISTS relationships_to_idx ON relationships (to_id);
     `
+  },
+  {
+    // Timestamps stay TEXT so caller-supplied strings round-trip verbatim
+    // (sessions test their startedAt/endedAt by exact string in places).
+    // handoff/checkpoint are JSONB so node-pg auto-parses on read — saves
+    // the SQLite-side JSON.parse dance.
+    name: '004_sessions',
+    sql: `
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        workspace_id TEXT,
+        task_id TEXT,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed')),
+        handoff_json JSONB,
+        checkpoint JSONB,
+        checkpoint_at TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS sessions_project_idx ON sessions (project_id);
+      CREATE INDEX IF NOT EXISTS sessions_status_idx ON sessions (project_id, status);
+      CREATE INDEX IF NOT EXISTS sessions_workspace_idx ON sessions (workspace_id);
+      CREATE INDEX IF NOT EXISTS sessions_task_active_idx ON sessions (task_id, status);
+    `
   }
 ]
 
