@@ -103,8 +103,8 @@ describeIfDocker('PostgresProjectRepository + PostgresWorkspaceRepository', () =
     expect(after).toBeNull()
   })
 
-  it('countReferences throws clearly until slice 3 ships sessions table', async () => {
+  it('countReferences returns 0 when no sessions reference the workspace', async () => {
     const workspaces = new PostgresWorkspaceRepository(env.conn)
-    await expect(workspaces.countReferences('anything')).rejects.toThrow(/slice 3/)
+    expect(await workspaces.countReferences('no-such-workspace')).toEqual({ sessions: 0 })
   })
 })

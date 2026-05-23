@@ -3,10 +3,6 @@
 // `archived_at` is stored as TIMESTAMPTZ (Postgres-native) and rehydrated to
 // an ISO-8601 string at the repository boundary so consumers see the same
 // shape as the SQLite repo (which stores `new Date().toISOString()` directly).
-//
-// `countReferences` reads the `sessions` table which doesn't ship until slice 3 —
-// throws explicitly until that table exists. SqliteWorkspaceRepository.countReferences
-// is the SQLite contract this needs to match once unblocked.
 
 import type { PgConnection } from './connection'
 import type {
@@ -90,8 +86,10 @@ export class PostgresWorkspaceRepository {
   }
 
   async countReferences(id: string): Promise<WorkspaceReferenceCounts> {
-    throw new Error(
-      `PostgresWorkspaceRepository.countReferences(${id}) requires the sessions table — lands with TASK-934 slice 3`
+    const result = await this.conn.query<{ n: string }>(
+      'SELECT COUNT(*) AS n FROM sessions WHERE workspace_id = $1',
+      [id]
     )
+    return { sessions: Number(result.rows[0].n) }
   }
 }
