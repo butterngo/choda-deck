@@ -43,6 +43,66 @@ export const MIGRATIONS: readonly Migration[] = [
 
       CREATE INDEX IF NOT EXISTS workspaces_project_id_idx ON workspaces (project_id);
     `
+  },
+  {
+    // labels → jsonb (string[]); pinned → boolean; created/updated → timestamptz.
+    // due_date stays TEXT so caller-supplied strings (e.g. "2026-05-23") round-trip
+    // unchanged — TIMESTAMPTZ would canonicalize them to a different shape than
+    // the SQLite side. parent_task_id self-FK is intentionally absent —
+    // TaskRepository.delete NULLs children explicitly, and the SQLite side
+    // never declared the FK either; adding one here would diverge behaviour.
+    name: '003_tasks',
+    sql: `
+      CREATE TABLE IF NOT EXISTS tasks (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        parent_task_id TEXT,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'TODO',
+        priority TEXT,
+        labels JSONB,
+        due_date TEXT,
+        pinned BOOLEAN NOT NULL DEFAULT FALSE,
+        file_path TEXT,
+        body TEXT,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS tasks_project_idx ON tasks (project_id);
+      CREATE INDEX IF NOT EXISTS tasks_status_idx ON tasks (project_id, status);
+      CREATE INDEX IF NOT EXISTS tasks_parent_idx ON tasks (parent_task_id);
+
+      CREATE TABLE IF NOT EXISTS documents (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        file_path TEXT,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS documents_project_idx ON documents (project_id);
+
+      CREATE TABLE IF NOT EXISTS tags (
+        item_id TEXT NOT NULL,
+        tag TEXT NOT NULL,
+        PRIMARY KEY (item_id, tag)
+      );
+
+      CREATE INDEX IF NOT EXISTS tags_item_idx ON tags (item_id);
+
+      CREATE TABLE IF NOT EXISTS relationships (
+        from_id TEXT NOT NULL,
+        to_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        PRIMARY KEY (from_id, to_id, type)
+      );
+
+      CREATE INDEX IF NOT EXISTS relationships_from_idx ON relationships (from_id);
+      CREATE INDEX IF NOT EXISTS relationships_to_idx ON relationships (to_id);
+    `
   }
 ]
 
