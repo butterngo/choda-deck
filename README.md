@@ -202,6 +202,8 @@ Claude : (knowledge_verify) → flags ADR-020 as potentially stale (refs SHA mis
 |---|---|---|
 | `CHODA_DATA_DIR` | _required_ | SQLite DB, artifacts, and backups directory. Created on first run. |
 | `CHODA_CONTENT_ROOT` | _optional_ | Root for knowledge / vault content lookup. |
+| `CHODA_BACKEND` | `sqlite` | Storage backend (ADR-030). `sqlite` is the only implemented kind today; `postgres` is wired through the factory but throws until TASK-934 lands the adapter. |
+| `CHODA_PG_URL` | _required when `CHODA_BACKEND=postgres`_ | Postgres connection string. Unused for SQLite. |
 
 ### Data layout
 
