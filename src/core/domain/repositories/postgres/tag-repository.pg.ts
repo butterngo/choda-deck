@@ -1,10 +1,10 @@
-// ADR-030 — Postgres sibling of TagRepository. Same contract; ON CONFLICT
+﻿// ADR-030 — Postgres sibling of TagRepository. Same contract; ON CONFLICT
 // DO NOTHING replaces SQLite's INSERT OR IGNORE.
 
-import type { PgConnection } from './connection'
+import type { Queryable } from './connection'
 
 export class PostgresTagRepository {
-  constructor(private readonly conn: PgConnection) {}
+  constructor(private readonly conn: Queryable) {}
 
   async add(itemId: string, tag: string): Promise<void> {
     await this.conn.query(

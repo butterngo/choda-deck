@@ -1,11 +1,11 @@
-// ADR-030 — Postgres sibling of ProjectRepository. Same contract; ON CONFLICT
+﻿// ADR-030 — Postgres sibling of ProjectRepository. Same contract; ON CONFLICT
 // DO NOTHING replaces SQLite's INSERT OR IGNORE for the upsert-skip idiom.
 
-import type { PgConnection } from './connection'
+import type { Queryable } from './connection'
 import type { ProjectRow } from '../project-repository'
 
 export class PostgresProjectRepository {
-  constructor(private readonly conn: PgConnection) {}
+  constructor(private readonly conn: Queryable) {}
 
   async ensure(id: string, name: string, cwd: string): Promise<void> {
     await this.conn.query(

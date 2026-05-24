@@ -1,4 +1,4 @@
-// ADR-030 — Postgres sibling of TaskRepository. Largest of the slice-3 repos
+﻿// ADR-030 — Postgres sibling of TaskRepository. Largest of the slice-3 repos
 // because tasks own the blockedBy/dependency graph (via the relationships
 // table) and the DONE-blocker guard logic.
 //
@@ -12,7 +12,7 @@
 // IN-list filters use `= ANY($n::text[])` instead of `IN (?, ?, ...)`-with-spread
 // because pg parameter arrays are cleaner than dynamic placeholder generation.
 
-import type { PgConnection, SqlValue, TxClient } from './connection'
+import { runInTx, type Queryable, type SqlValue, type TxClient } from './connection'
 import type {
   CreateTaskInput,
   Task,
@@ -67,7 +67,7 @@ const SELECT_COLS =
 
 export class PostgresTaskRepository {
   constructor(
-    private readonly conn: PgConnection,
+    private readonly conn: Queryable,
     private readonly relationships: PostgresRelationshipRepository,
     private readonly counters: PostgresCounterRepository
   ) {}
@@ -189,7 +189,7 @@ export class PostgresTaskRepository {
   }
 
   async delete(id: string): Promise<void> {
-    await this.conn.transaction(async (tx) => {
+    await runInTx(this.conn, async (tx) => {
       await tx.query('DELETE FROM relationships WHERE from_id = $1 OR to_id = $1', [id])
       await tx.query('DELETE FROM tags WHERE item_id = $1', [id])
       await tx.query('UPDATE tasks SET parent_task_id = NULL WHERE parent_task_id = $1', [id])
@@ -273,7 +273,7 @@ export class PostgresTaskRepository {
   }
 
   private async replaceBlockedBy(taskId: string, blockerIds: string[]): Promise<void> {
-    await this.conn.transaction(async (tx: TxClient) => {
+    await runInTx(this.conn, async (tx: TxClient) => {
       await tx.query(
         "DELETE FROM relationships WHERE from_id = $1 AND type = 'DEPENDS_ON'",
         [taskId]

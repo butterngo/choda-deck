@@ -1,8 +1,8 @@
-// ADR-030 — Postgres sibling of ContextSourceRepository.
+﻿// ADR-030 — Postgres sibling of ContextSourceRepository.
 // `is_active` is BOOLEAN (SQLite stored INTEGER 0/1) so the repo boundary
 // passes/receives a native boolean — no manual coercion needed.
 
-import type { PgConnection, SqlValue } from './connection'
+import type { Queryable, SqlValue } from './connection'
 import type {
   ContextCategory,
   ContextSource,
@@ -40,7 +40,7 @@ const SELECT_COLS =
   'id, project_id, source_type, source_path, label, category, priority, is_active'
 
 export class PostgresContextSourceRepository {
-  constructor(private readonly conn: PgConnection) {}
+  constructor(private readonly conn: Queryable) {}
 
   async create(input: CreateContextSourceInput): Promise<ContextSource> {
     const id = input.id || generateId('CTXSRC')

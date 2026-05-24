@@ -1,4 +1,4 @@
-// ADR-030 — Postgres sibling of OAuthRepository (ADR-027).
+﻿// ADR-030 — Postgres sibling of OAuthRepository (ADR-027).
 //
 // Shape parity with SQLite via the shared OAuthOperations interface — both
 // repos implement it so the HTTP transport (authorize/register/token/
@@ -13,7 +13,7 @@
 // replay-detect / revoke-chain semantics as the SQLite repo.
 
 import { randomBytes } from 'crypto'
-import type { PgConnection, TxClient } from './connection'
+import { runInTx, type Queryable, type TxClient } from './connection'
 import type {
   OAuthAccessToken,
   OAuthAuthCode,
@@ -75,7 +75,7 @@ function isoFromNow(seconds: number): string {
 }
 
 export class PostgresOAuthRepository implements OAuthOperations {
-  constructor(private readonly conn: PgConnection) {}
+  constructor(private readonly conn: Queryable) {}
 
   async registerClient(input: {
     clientName: string
@@ -182,7 +182,7 @@ export class PostgresOAuthRepository implements OAuthOperations {
     refreshToken: string,
     ttls: { accessTtlSeconds: number; refreshTtlSeconds: number }
   ): Promise<RotateResult> {
-    return this.conn.transaction(async (tx: TxClient): Promise<RotateResult> => {
+    return runInTx(this.conn, async (tx: TxClient): Promise<RotateResult> => {
       const lookup = await tx.query<TokenDbRow>(
         `SELECT access_token, refresh_token, client_id, access_expires_at,
                 refresh_expires_at, revoked

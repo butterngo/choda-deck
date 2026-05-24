@@ -1,14 +1,14 @@
-// ADR-030 — Postgres sibling of CounterRepository.
+﻿// ADR-030 — Postgres sibling of CounterRepository.
 //
 // Same upsert-returning pattern as the SQLite impl, just with $N parameter
 // binding and async/await. BIGINT comes back as a string from node-pg by
 // default (to avoid precision loss above 2^53) — Number() is safe here
 // because realistic counter values stay well under that.
 
-import type { PgConnection } from './connection'
+import type { Queryable } from './connection'
 
 export class PostgresCounterRepository {
-  constructor(private readonly conn: PgConnection) {}
+  constructor(private readonly conn: Queryable) {}
 
   async nextNumber(entityType: string): Promise<number> {
     const result = await this.conn.query<{ last_number: string }>(

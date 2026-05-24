@@ -30,6 +30,11 @@ import { PostgresToolInvocationsRepository } from './repositories/postgres/tool-
 import { PostgresSessionEventRepository } from './repositories/postgres/session-event-repository.pg'
 import { PostgresAgentMemoryRepository } from './repositories/postgres/agent-memory-repository.pg'
 import { PostgresNotImplementedError } from './postgres-not-implemented-error'
+import {
+  InboxNotFoundError,
+  InboxStatusError,
+  InboxConflictError
+} from './lifecycle/errors'
 import type { ProjectRow } from './repositories/project-repository'
 import type { WorkspaceRow } from './repositories/workspace-repository'
 import type {
@@ -418,15 +423,118 @@ export class PostgresTaskService implements BackendTaskService {
     await this.inbox.delete(id)
   }
 
-  // ── Inbox lifecycle (composite, transactional) — slice 11 throws ──────────
-  async startInboxResearch(_id: string, _researcher: string): Promise<InboxResearchResult> {
-    throw new PostgresNotImplementedError('startInboxResearch')
+  // ── Inbox lifecycle (composite, transactional) — slice 15 ─────────────────
+  //
+  // Each composite opens a single `conn.transaction(async tx => …)` and
+  // constructs tx-bound repos inside. The `Queryable` constructor type on
+  // every PG repo (slice 15 foundation) is what makes the tx hand-off work
+  // without per-repo `withTx` clones. Sub-repos like CounterRepository must
+  // also be tx-bound so id-mint participates in the same atomic step.
+
+  async startInboxResearch(id: string, researcher: string): Promise<InboxResearchResult> {
+    return this.conn.transaction(async (tx): Promise<InboxResearchResult> => {
+      const counters = new PostgresCounterRepository(tx)
+      const inbox = new PostgresInboxRepository(tx, counters)
+      const conversations = new PostgresConversationRepository(tx)
+
+      const item = await inbox.get(id)
+      if (!item) throw new InboxNotFoundError(id)
+      if (item.status !== 'raw') {
+        throw new InboxStatusError(id, item.status, 'cannot start research (must be raw)')
+      }
+      const existing = await conversations.findByLink('inbox', id)
+      if (existing.length > 0) {
+        throw new InboxConflictError(id, `already has conversation ${existing[0].id}`)
+      }
+      const projectId = item.projectId ?? 'global'
+      const conv = await conversations.create({
+        projectId,
+        title: `Research: ${item.content.slice(0, 80)}`,
+        createdBy: researcher,
+        status: 'open',
+        participants: [
+          { name: 'Butter', type: 'human' },
+          { name: researcher, type: 'agent' }
+        ]
+      })
+      await conversations.link(conv.id, 'inbox', id)
+      await inbox.update(id, { status: 'researching' })
+      return { inboxId: id, conversationId: conv.id, status: 'researching' }
+    })
   }
-  async convertInboxToTask(_id: string, _input: InboxConvertInput): Promise<InboxConvertResult> {
-    throw new PostgresNotImplementedError('convertInboxToTask')
+
+  async convertInboxToTask(id: string, input: InboxConvertInput): Promise<InboxConvertResult> {
+    return this.conn.transaction(async (tx): Promise<InboxConvertResult> => {
+      const counters = new PostgresCounterRepository(tx)
+      const inbox = new PostgresInboxRepository(tx, counters)
+      const conversations = new PostgresConversationRepository(tx)
+      const relationships = new PostgresRelationshipRepository(tx)
+      const tasks = new PostgresTaskRepository(tx, relationships, counters)
+
+      const item = await inbox.get(id)
+      if (!item) throw new InboxNotFoundError(id)
+      if (item.status === 'converted' || item.status === 'archived') {
+        throw new InboxStatusError(id, item.status, 'cannot convert')
+      }
+      if (!item.projectId) {
+        throw new InboxConflictError(id, 'no projectId — assign one before converting')
+      }
+      const task = await tasks.create({
+        projectId: item.projectId,
+        title: input.title,
+        priority: input.priority,
+        labels: input.labels,
+        status: 'TODO'
+      })
+      if (input.body) await tasks.update(task.id, { body: input.body })
+      await inbox.update(id, { status: 'converted', linkedTaskId: task.id })
+      await this.closeLinkedConversations(
+        conversations,
+        id,
+        `Converted to ${task.id}: ${input.title}`
+      )
+      const final = await tasks.get(task.id)
+      if (!final) throw new Error(`Task ${task.id} disappeared mid-transaction`)
+      return { inboxId: id, taskId: task.id, task: final }
+    })
   }
-  async archiveInbox(_id: string, _reason?: string): Promise<InboxItem> {
-    throw new PostgresNotImplementedError('archiveInbox')
+
+  async archiveInbox(id: string, reason?: string): Promise<InboxItem> {
+    return this.conn.transaction(async (tx): Promise<InboxItem> => {
+      const counters = new PostgresCounterRepository(tx)
+      const inbox = new PostgresInboxRepository(tx, counters)
+      const conversations = new PostgresConversationRepository(tx)
+
+      const item = await inbox.get(id)
+      if (!item) throw new InboxNotFoundError(id)
+      if (item.status === 'converted') {
+        throw new InboxStatusError(id, item.status, 'already converted — cannot archive')
+      }
+      await inbox.update(id, { status: 'archived' })
+      await this.closeLinkedConversations(
+        conversations,
+        id,
+        reason ? `Archived: ${reason}` : 'Archived'
+      )
+      const final = await inbox.get(id)
+      if (!final) throw new Error(`Inbox ${id} disappeared mid-transaction`)
+      return final
+    })
+  }
+
+  private async closeLinkedConversations(
+    conversations: PostgresConversationRepository,
+    inboxId: string,
+    decisionSummary: string
+  ): Promise<void> {
+    const convs = await conversations.findByLink('inbox', inboxId)
+    if (convs.length === 0) return
+    const closedAt = new Date().toISOString()
+    for (const c of convs) {
+      if (c.status !== 'closed') {
+        await conversations.update(c.id, { status: 'closed', decisionSummary, closedAt })
+      }
+    }
   }
 
   // ── Conversation lifecycle (composite) — slice 11 throws ──────────────────
