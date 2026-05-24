@@ -23,7 +23,7 @@ export interface ToolInvocationWindow {
 }
 
 export interface ToolInvocationOperations {
-  recordToolInvocation(invocation: ToolInvocation): void
-  countToolInvocations(): number
-  queryToolInvocations(window: ToolInvocationWindow): ToolInvocationAggregate[]
+  recordToolInvocation(invocation: ToolInvocation): Promise<void>
+  countToolInvocations(): Promise<number>
+  queryToolInvocations(window: ToolInvocationWindow): Promise<ToolInvocationAggregate[]>
 }

@@ -40,7 +40,7 @@ export class ToolInvocationsRepository implements ToolInvocationOperations {
     )
   }
 
-  recordToolInvocation(invocation: ToolInvocation): void {
+  async recordToolInvocation(invocation: ToolInvocation): Promise<void> {
     this.insertStmt.run(
       invocation.toolName,
       invocation.ts,
@@ -50,12 +50,12 @@ export class ToolInvocationsRepository implements ToolInvocationOperations {
     )
   }
 
-  countToolInvocations(): number {
+  async countToolInvocations(): Promise<number> {
     const row = this.countStmt.get() as { n: number }
     return row.n
   }
 
-  queryToolInvocations(window: ToolInvocationWindow): ToolInvocationAggregate[] {
+  async queryToolInvocations(window: ToolInvocationWindow): Promise<ToolInvocationAggregate[]> {
     const rows = this.queryStmt.all({
       since: window.since,
       until: window.until
