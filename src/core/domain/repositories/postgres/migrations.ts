@@ -321,6 +321,47 @@ export const MIGRATIONS: readonly Migration[] = [
 
       CREATE INDEX IF NOT EXISTS tool_invocations_tool_ts_idx ON tool_invocations (tool_name, ts);
     `
+  },
+  {
+    // ADR-027 OAuth tables. redirect_uris is JSONB (vs SQLite TEXT/JSON-string)
+    // so node-pg auto-parses string[]. code_challenge_method CHECK preserves
+    // 'S256'-only from the SQLite side. revoked is BOOLEAN (vs INTEGER 0/1).
+    // Token expiry comparisons stay in JS via Date.parse — TEXT timestamps.
+    name: '010_oauth',
+    sql: `
+      CREATE TABLE IF NOT EXISTS oauth_clients (
+        client_id TEXT PRIMARY KEY,
+        client_name TEXT NOT NULL,
+        redirect_uris JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS oauth_auth_codes (
+        code TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL REFERENCES oauth_clients(client_id),
+        code_challenge TEXT NOT NULL,
+        code_challenge_method TEXT NOT NULL CHECK (code_challenge_method = 'S256'),
+        redirect_uri TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS oauth_auth_codes_client_idx ON oauth_auth_codes (client_id);
+      CREATE INDEX IF NOT EXISTS oauth_auth_codes_expires_idx ON oauth_auth_codes (expires_at);
+
+      CREATE TABLE IF NOT EXISTS oauth_tokens (
+        access_token TEXT PRIMARY KEY,
+        refresh_token TEXT UNIQUE NOT NULL,
+        client_id TEXT NOT NULL REFERENCES oauth_clients(client_id),
+        access_expires_at TEXT NOT NULL,
+        refresh_expires_at TEXT NOT NULL,
+        revoked BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS oauth_tokens_client_idx ON oauth_tokens (client_id);
+      CREATE INDEX IF NOT EXISTS oauth_tokens_access_expires_idx ON oauth_tokens (access_expires_at);
+    `
   }
 ]
 
