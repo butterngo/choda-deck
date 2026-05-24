@@ -40,10 +40,13 @@ import {
   SessionStatusError,
   TaskLockedBySessionError,
   TaskNotFoundError,
-  TaskStatusError
+  TaskStatusError,
+  NoActiveSessionError
 } from './lifecycle/errors'
+import { ReviewSessionResolutionError } from './lifecycle/task-review-lifecycle-service'
 import { now } from './repositories/shared'
-import { findAcItems } from './lifecycle/ac-check'
+import { findAcItems, flipAcCheckbox } from './lifecycle/ac-check'
+import type { Queryable } from './repositories/postgres/connection'
 import { buildSelfEditPrompt } from './lifecycle/session-lifecycle-service'
 import type { DecideConversationResultAction } from './interfaces/conversation-lifecycle.interface'
 import type { SessionSummaryPayload } from './interfaces/session-lifecycle.interface'
@@ -780,72 +783,83 @@ export class PostgresTaskService implements BackendTaskService {
   }
 
   async endSession(id: string, input: EndSessionInput): Promise<EndSessionResult> {
-    return this.conn.transaction(async (tx): Promise<EndSessionResult> => {
-      const counters = new PostgresCounterRepository(tx)
-      const relationships = new PostgresRelationshipRepository(tx)
-      const sessions = new PostgresSessionRepository(tx)
-      const tasks = new PostgresTaskRepository(tx, relationships, counters)
-      const conversations = new PostgresConversationRepository(tx)
-      const sessionEvents = new PostgresSessionEventRepository(tx)
+    return this.conn.transaction((tx) => this.endSessionInTx(tx, id, input))
+  }
 
-      const session = await sessions.get(id)
-      if (!session) throw new SessionNotFoundError(id)
-      if (session.status !== 'active') {
-        throw new SessionStatusError(id, session.status, 'only active sessions can end')
-      }
+  // Tx-bound body of endSession — extracted so approveTask/rejectTask (slice 18)
+  // can compose it inside their own outer transaction. The pattern mirrors the
+  // sqlite side's endSessionSync, which exists for the same reason (better-sqlite3
+  // doesn't allow async transactions, so the composing call must reuse the same
+  // sync tx callback).
+  private async endSessionInTx(
+    tx: Queryable,
+    id: string,
+    input: EndSessionInput
+  ): Promise<EndSessionResult> {
+    const counters = new PostgresCounterRepository(tx)
+    const relationships = new PostgresRelationshipRepository(tx)
+    const sessions = new PostgresSessionRepository(tx)
+    const tasks = new PostgresTaskRepository(tx, relationships, counters)
+    const conversations = new PostgresConversationRepository(tx)
+    const sessionEvents = new PostgresSessionEventRepository(tx)
 
-      const endedAt = now()
-      const decisionSummary =
-        input.decisionSummary ?? input.handoff.resumePoint ?? 'Session ended'
+    const session = await sessions.get(id)
+    if (!session) throw new SessionNotFoundError(id)
+    if (session.status !== 'active') {
+      throw new SessionStatusError(id, session.status, 'only active sessions can end')
+    }
 
-      const closedConversationIds: string[] = []
-      const linkedConvs = await conversations.findByLink('session', id)
-      for (const conv of linkedConvs) {
-        if (conv.status === 'closed') continue
-        await conversations.update(conv.id, {
-          status: 'closed',
-          decisionSummary,
-          closedAt: endedAt
-        })
-        closedConversationIds.push(conv.id)
-      }
+    const endedAt = now()
+    const decisionSummary =
+      input.decisionSummary ?? input.handoff.resumePoint ?? 'Session ended'
 
-      let taskUpdated: EndSessionResult['taskUpdated'] = null
-      if (session.taskId) {
-        const task = await tasks.get(session.taskId)
-        if (task) {
-          await tasks.update(session.taskId, { status: 'DONE' })
-          taskUpdated = { id: task.id, title: task.title, newStatus: 'DONE' }
-        }
-      }
-
-      const updated = await sessions.update(id, {
-        status: 'completed',
-        endedAt,
-        handoff: input.handoff
+    const closedConversationIds: string[] = []
+    const linkedConvs = await conversations.findByLink('session', id)
+    for (const conv of linkedConvs) {
+      if (conv.status === 'closed') continue
+      await conversations.update(conv.id, {
+        status: 'closed',
+        decisionSummary,
+        closedAt: endedAt
       })
+      closedConversationIds.push(conv.id)
+    }
 
-      if (input.summary) {
-        const merged = await aggregateSessionSummaryAsync(sessionEvents, tasks, id, input.summary)
-        await sessionEvents.create({
-          sessionId: id,
-          eventType: 'observation',
-          payloadJson: JSON.stringify({ kind: 'session_summary', ...merged }),
-          memoryCandidate: false
-        })
+    let taskUpdated: EndSessionResult['taskUpdated'] = null
+    if (session.taskId) {
+      const task = await tasks.get(session.taskId)
+      if (task) {
+        await tasks.update(session.taskId, { status: 'DONE' })
+        taskUpdated = { id: task.id, title: task.title, newStatus: 'DONE' }
       }
+    }
 
-      const memoryCandidates = await sessionEvents.listMemoryCandidates(id)
-      const selfEditPrompt = buildSelfEditPrompt(memoryCandidates)
-
-      return {
-        session: updated,
-        closedConversationIds,
-        taskUpdated,
-        memoryCandidates,
-        selfEditPrompt
-      }
+    const updated = await sessions.update(id, {
+      status: 'completed',
+      endedAt,
+      handoff: input.handoff
     })
+
+    if (input.summary) {
+      const merged = await aggregateSessionSummaryAsync(sessionEvents, tasks, id, input.summary)
+      await sessionEvents.create({
+        sessionId: id,
+        eventType: 'observation',
+        payloadJson: JSON.stringify({ kind: 'session_summary', ...merged }),
+        memoryCandidate: false
+      })
+    }
+
+    const memoryCandidates = await sessionEvents.listMemoryCandidates(id)
+    const selfEditPrompt = buildSelfEditPrompt(memoryCandidates)
+
+    return {
+      session: updated,
+      closedConversationIds,
+      taskUpdated,
+      memoryCandidates,
+      selfEditPrompt
+    }
   }
 
   async abandonSession(id: string, reason: string): Promise<AbandonSessionResult> {
@@ -920,12 +934,87 @@ export class PostgresTaskService implements BackendTaskService {
     }
   }
 
-  // ── Task review lifecycle (ADR-024) — slice 11 throws ─────────────────────
-  async approveTask(_taskId: string, _note?: string): Promise<ApproveTaskResult> {
-    throw new PostgresNotImplementedError('approveTask')
+  // ── Task review lifecycle (ADR-024) — slice 18 ────────────────────────────
+  async approveTask(taskId: string, note?: string): Promise<ApproveTaskResult> {
+    return this.conn.transaction(async (tx): Promise<ApproveTaskResult> => {
+      const counters = new PostgresCounterRepository(tx)
+      const relationships = new PostgresRelationshipRepository(tx)
+      const tasks = new PostgresTaskRepository(tx, relationships, counters)
+      const sessions = new PostgresSessionRepository(tx)
+
+      const sessionId = await this.guardAndResolveReviewSession(tx, taskId, sessions, tasks, 'approve')
+      const handoff = {
+        reviewOutcome: 'approved' as const,
+        resumePoint: note ? `Approved: ${note}` : 'Approved after review',
+        ...(note ? { decisions: [`Approved: ${note}`] } : {})
+      }
+      const endResult = await this.endSessionInTx(tx, sessionId, { handoff })
+      // endSession sets task → DONE when session has taskId; re-apply explicitly so
+      // the composite's final state is self-documenting and won't drift if endSession
+      // changes. Mirrors the sqlite side.
+      await tasks.update(taskId, { status: 'DONE' })
+      return {
+        taskId,
+        status: 'DONE',
+        sessionId,
+        memoryCandidates: endResult.memoryCandidates,
+        selfEditPrompt: endResult.selfEditPrompt
+      }
+    })
   }
-  async rejectTask(_taskId: string, _reason: string): Promise<RejectTaskResult> {
-    throw new PostgresNotImplementedError('rejectTask')
+
+  async rejectTask(taskId: string, reason: string): Promise<RejectTaskResult> {
+    return this.conn.transaction(async (tx): Promise<RejectTaskResult> => {
+      const counters = new PostgresCounterRepository(tx)
+      const relationships = new PostgresRelationshipRepository(tx)
+      const tasks = new PostgresTaskRepository(tx, relationships, counters)
+      const sessions = new PostgresSessionRepository(tx)
+
+      const sessionId = await this.guardAndResolveReviewSession(tx, taskId, sessions, tasks, 'reject')
+      const handoff = {
+        reviewOutcome: 'rejected' as const,
+        reviewReason: reason,
+        resumePoint: `Rejected: ${reason}`,
+        decisions: [`Rejected: ${reason}`]
+      }
+      const endResult = await this.endSessionInTx(tx, sessionId, { handoff })
+      // endSession unconditionally sets task → DONE; override to IN-PROGRESS within
+      // the same outer tx so the task lands back in the work queue.
+      await tasks.update(taskId, { status: 'IN-PROGRESS' })
+      return {
+        taskId,
+        status: 'IN-PROGRESS',
+        sessionId,
+        memoryCandidates: endResult.memoryCandidates,
+        selfEditPrompt: endResult.selfEditPrompt
+      }
+    })
+  }
+
+  private async guardAndResolveReviewSession(
+    _tx: Queryable,
+    taskId: string,
+    sessions: PostgresSessionRepository,
+    tasks: PostgresTaskRepository,
+    op: 'approve' | 'reject'
+  ): Promise<string> {
+    const task = await tasks.get(taskId)
+    if (!task) throw new TaskNotFoundError(taskId)
+    if (task.status !== 'REVIEW') {
+      throw new TaskStatusError(taskId, task.status, `not in REVIEW — cannot ${op}`)
+    }
+    const actives = await sessions.findByProject(task.projectId, 'active')
+    const bound = actives.filter((s) => s.taskId === taskId)
+    if (bound.length === 0) {
+      throw new ReviewSessionResolutionError(taskId, 'no active session bound to task')
+    }
+    if (bound.length > 1) {
+      throw new ReviewSessionResolutionError(
+        taskId,
+        `${bound.length} active sessions bound to task — race detected`
+      )
+    }
+    return bound[0].id
   }
 
   // ── Queue lifecycle (ADR-019) — slice 11 throws ───────────────────────────
@@ -933,9 +1022,49 @@ export class PostgresTaskService implements BackendTaskService {
     throw new PostgresNotImplementedError('createQueueLifecycle')
   }
 
-  // ── ac-check (ADR-029 channel 2) — slice 11 throws ────────────────────────
-  async checkAcItem(_input: CheckAcItemInput): Promise<CheckAcItemResult> {
-    throw new PostgresNotImplementedError('checkAcItem')
+  // ── ac-check (ADR-029 channel 2) — slice 18 ───────────────────────────────
+  // Narrow body-lock bypass: flip one AC checkbox + emit an ac_check observation
+  // event in a single transaction. Mirrors SqliteTaskService.checkAcItem.
+  async checkAcItem(input: CheckAcItemInput): Promise<CheckAcItemResult> {
+    // Pre-tx reads + pure helper. The task body diff is computed before the tx
+    // opens so that failures (TaskNotFoundError, AcAlreadyCheckedError) don't
+    // even start a transaction.
+    const task = await this.tasks.get(input.taskId)
+    if (!task) throw new TaskNotFoundError(input.taskId)
+    const { newBody, item } = flipAcCheckbox(task.body ?? '', task.id, input.acIndex)
+
+    const session = await this.sessions.getActive(task.projectId, input.workspaceId)
+    if (!session) throw new NoActiveSessionError(task.projectId, input.workspaceId ?? null)
+
+    return this.conn.transaction(async (tx): Promise<CheckAcItemResult> => {
+      const counters = new PostgresCounterRepository(tx)
+      const relationships = new PostgresRelationshipRepository(tx)
+      const tasks = new PostgresTaskRepository(tx, relationships, counters)
+      const sessionEvents = new PostgresSessionEventRepository(tx)
+
+      await tasks.update(task.id, { body: newBody })
+      const event = await sessionEvents.create({
+        sessionId: session.id,
+        eventType: 'observation',
+        payloadJson: JSON.stringify({
+          kind: 'ac_check',
+          taskId: task.id,
+          acIndex: input.acIndex,
+          text: item.text,
+          evidence: input.evidence,
+          sessionId: session.id
+        }),
+        memoryCandidate: false
+      })
+      return {
+        taskId: task.id,
+        acIndex: input.acIndex,
+        text: item.text,
+        evidence: input.evidence,
+        eventId: event.id,
+        sessionId: session.id
+      }
+    })
   }
 
   // ── Knowledge — slice 11 throws (needs pgvector embedding store) ──────────
