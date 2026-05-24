@@ -220,6 +220,44 @@ export const MIGRATIONS: readonly Migration[] = [
 
       CREATE INDEX IF NOT EXISTS conv_actions_conv_idx ON conversation_actions (conversation_id);
     `
+  },
+  {
+    // M2 cluster (ADR-023 agent memory): session_events + agent_memories.
+    // payload_json stays TEXT because the contract is `string | null` — callers
+    // pre-stringify, and may pass non-JSON blobs. tags + source_event_ids are
+    // JSONB so node-pg auto-parses string[] back without the SQLite-side helper.
+    // CHECK constraints inline match the SQLite definitions verbatim.
+    name: '007_m2',
+    sql: `
+      CREATE TABLE IF NOT EXISTS session_events (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(id),
+        event_type TEXT NOT NULL,
+        payload_json TEXT,
+        memory_candidate BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS session_events_session_idx ON session_events (session_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS agent_memories (
+        id TEXT PRIMARY KEY,
+        scope_type TEXT NOT NULL CHECK (scope_type IN ('user','project','workspace','task')),
+        scope_id TEXT NOT NULL,
+        memory_type TEXT NOT NULL CHECK (memory_type IN ('episodic','procedural')),
+        content TEXT NOT NULL,
+        tags JSONB,
+        importance INTEGER NOT NULL DEFAULT 50,
+        source_session_id TEXT,
+        source_event_ids JSONB,
+        created_at TEXT NOT NULL,
+        last_recalled_at TEXT,
+        recall_count INTEGER NOT NULL DEFAULT 0
+      );
+
+      CREATE INDEX IF NOT EXISTS agent_memories_scope_idx ON agent_memories (scope_type, scope_id, memory_type);
+      CREATE INDEX IF NOT EXISTS agent_memories_recall_idx ON agent_memories (importance DESC, recall_count DESC);
+    `
   }
 ]
 
