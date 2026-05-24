@@ -263,7 +263,7 @@ export class SqliteTaskService
 
   // ── Tool invocations (TASK-681) ────────────────────────────────────────────
   async recordToolInvocation(invocation: ToolInvocation): Promise<void> {
-    this.toolInvocations.recordToolInvocation(invocation)
+    await this.toolInvocations.recordToolInvocation(invocation)
   }
   async countToolInvocations(): Promise<number> {
     return this.toolInvocations.countToolInvocations()
