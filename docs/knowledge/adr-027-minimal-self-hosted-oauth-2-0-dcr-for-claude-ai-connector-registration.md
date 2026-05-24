@@ -127,7 +127,7 @@ Token TTLs: **access = 1h, refresh = 30d, single-use refresh with rotation.** Ro
 
 Three layers, each catching what the others can't:
 
-1. **Pre-shared password on `/authorize`.** Stored hashed at `sensitive_information/oauth-consent-password.txt` (gitignored per CLAUDE.md sensitive-data rules). Hash comparison via `crypto.timingSafeEqual`. Rejects submissions without the password — prevents URL-finder self-consent.
+1. **Pre-shared password on `/authorize`.** Stored as SHA-256 hex digest at `sensitive_information/oauth-consent-password.txt` (gitignored per CLAUDE.md sensitive-data rules). Hash comparison via `crypto.timingSafeEqual`. Rejects submissions without the password — prevents URL-finder self-consent. **Guardrail: the plaintext password MUST be ≥32 chars high-entropy** (password-manager generated, not memorable). SHA-256 is a fast hash, not a KDF — it gives a fingerprint, not work-factor protection. A short/memorable password + leaked file = trivially brute-forceable. See "Revisit when" for the scrypt/argon2 upgrade trigger.
 2. **Cloudflare WAF allowlist `160.79.104.0/21` on `/mcp` path ONLY** (defense in depth). The Anthropic broker is the only legitimate caller of `/mcp`, and its egress range is documented. `/authorize`, `/token`, `/register`, `/.well-known/*` MUST stay globally reachable — they're hit by the **user's browser**, not the broker, and an allowlist there would break the consent redirect.
 3. **Bearer token validation against `oauth_tokens` table** on `/mcp` calls. Replaces the V1 `MCP_HTTP_TOKEN` check when OAuth mode is on (env-flag selectable — legacy mode kept for stdio-bound testing).
 
@@ -222,6 +222,7 @@ When OAuth mode is on, `MCP_HTTP_TOKEN` is ignored and `oauth_tokens` is the onl
 - **DCR scraping ever observed** → add per-IP rate limits + hard client-count cap with 429 response
 - **The Anthropic broker IP range changes** → update WAF allowlist; if it changes often, drop the allowlist (defense-in-depth only — OAuth alone is sufficient)
 - **Consent password ever leaks or is brute-forced** → rotate + add per-IP rate limiting on `/authorize`; consider one-time approve tokens (admin pre-generates) as an alternative model
+- **Multi-user lands, OR the consent password file leaves `sensitive_information/` (e.g. into a k8s Secret readable by additional humans), OR the password becomes memorable instead of password-manager generated** → upgrade SHA-256 → `crypto.scryptSync` (built-in, no dep) with OWASP-standard `salt$N$r$p$keylen$hash` encoding. argon2id (via npm) is the OWASP first-choice but adds a dep. Researched in [[CONV-1779417384922-1]]
 - **Postgres migration ships** ([[INBOX-366]]) → `oauth_*` tables move with the rest; no special handling needed
 - **A non-Claude OAuth client** (custom MCP client, scripted automation) needs to register → confirm DCR works for arbitrary RFC 7591 clients (it should — that's the spec); add docs
 
