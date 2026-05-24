@@ -1,9 +1,8 @@
 // ADR-030 — Postgres sibling of OAuthRepository (ADR-027).
 //
-// Shape parity with SQLite: same method names + same return shapes, but async.
-// No shared interface yet — the HTTP-transport consumers (authorize/register/
-// token handlers + verifyOAuthBearer) still expect sync OAuthRepository, so
-// async-ifying those is a wire-up-phase change (PostgresTaskService slice).
+// Shape parity with SQLite via the shared OAuthOperations interface — both
+// repos implement it so the HTTP transport (authorize/register/token/
+// verifyOAuthBearer) is backend-agnostic.
 //
 // Schema differences:
 //   - redirect_uris JSONB (vs SQLite JSON-encoded TEXT) — node-pg auto-parses
@@ -15,40 +14,14 @@
 
 import { randomBytes } from 'crypto'
 import type { PgConnection, TxClient } from './connection'
-
-export interface OAuthClient {
-  clientId: string
-  clientName: string
-  redirectUris: string[]
-  createdAt: string
-}
-
-export interface OAuthAuthCodeInput {
-  clientId: string
-  codeChallenge: string
-  redirectUri: string
-  ttlSeconds: number
-}
-
-export interface OAuthAuthCode {
-  code: string
-  clientId: string
-  codeChallenge: string
-  redirectUri: string
-  expiresAt: string
-}
-
-export interface OAuthAccessToken {
-  accessToken: string
-  refreshToken: string
-  clientId: string
-  accessExpiresAt: string
-  refreshExpiresAt: string
-}
-
-export type RotateResult =
-  | { ok: true; tokens: OAuthAccessToken }
-  | { ok: false; error: 'invalid_grant' | 'replay_detected' }
+import type {
+  OAuthAccessToken,
+  OAuthAuthCode,
+  OAuthAuthCodeInput,
+  OAuthClient,
+  OAuthOperations,
+  RotateResult
+} from '../../interfaces/oauth-repository.interface'
 
 interface ClientDbRow {
   client_id: string
@@ -101,7 +74,7 @@ function isoFromNow(seconds: number): string {
   return new Date(Date.now() + seconds * 1000).toISOString()
 }
 
-export class PostgresOAuthRepository {
+export class PostgresOAuthRepository implements OAuthOperations {
   constructor(private readonly conn: PgConnection) {}
 
   async registerClient(input: {

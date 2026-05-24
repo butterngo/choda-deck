@@ -1,4 +1,4 @@
-import type { OAuthRepository } from '../../../core/domain/repositories/oauth-repository'
+import type { OAuthOperations } from '../../../core/domain/interfaces/oauth-repository.interface'
 
 // ADR-027: RFC 7591 Dynamic Client Registration. Public-client-only — we don't
 // issue a client_secret because PKCE replaces it. Validation is intentionally
@@ -15,7 +15,10 @@ interface RawRegisterRequest {
   redirect_uris?: unknown
 }
 
-export function handleRegister(repo: OAuthRepository, raw: unknown): RegisterResult {
+export async function handleRegister(
+  repo: OAuthOperations,
+  raw: unknown
+): Promise<RegisterResult> {
   if (raw === null || typeof raw !== 'object') {
     return errorResponse(400, 'invalid_client_metadata', 'request body must be a JSON object')
   }
@@ -38,7 +41,7 @@ export function handleRegister(repo: OAuthRepository, raw: unknown): RegisterRes
 
   const clientName = typeof req.client_name === 'string' ? req.client_name : 'mcp-client'
 
-  const client = repo.registerClient({
+  const client = await repo.registerClient({
     clientName,
     redirectUris: req.redirect_uris as string[]
   })

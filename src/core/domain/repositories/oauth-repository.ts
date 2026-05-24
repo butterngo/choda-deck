@@ -1,44 +1,31 @@
 import { randomBytes } from 'crypto'
 import type Database from 'better-sqlite3'
+import type {
+  OAuthAccessToken,
+  OAuthAuthCode,
+  OAuthAuthCodeInput,
+  OAuthClient,
+  OAuthOperations,
+  RotateResult
+} from '../interfaces/oauth-repository.interface'
 
 // ADR-027: minimal OAuth 2.0 + DCR storage. CRUD over oauth_clients,
 // oauth_auth_codes, oauth_tokens. Token rotation uses the "keep-revoked"
 // pattern so a replayed refresh token can be detected and revoke its whole
 // chain (OAuth 2.1 §4.13.2).
+//
+// All methods are async per OAuthOperations. better-sqlite3 is sync; the
+// bodies stay sync and the returns wrap in resolved Promises implicitly.
 
-export interface OAuthClient {
-  clientId: string
-  clientName: string
-  redirectUris: string[]
-  createdAt: string
+// Re-export so `import { OAuthClient, ... } from './oauth-repository'`
+// keeps working — these are the canonical types from the interface module.
+export type {
+  OAuthAccessToken,
+  OAuthAuthCode,
+  OAuthAuthCodeInput,
+  OAuthClient,
+  RotateResult
 }
-
-export interface OAuthAuthCodeInput {
-  clientId: string
-  codeChallenge: string
-  redirectUri: string
-  ttlSeconds: number
-}
-
-export interface OAuthAuthCode {
-  code: string
-  clientId: string
-  codeChallenge: string
-  redirectUri: string
-  expiresAt: string
-}
-
-export interface OAuthAccessToken {
-  accessToken: string
-  refreshToken: string
-  clientId: string
-  accessExpiresAt: string
-  refreshExpiresAt: string
-}
-
-export type RotateResult =
-  | { ok: true; tokens: OAuthAccessToken }
-  | { ok: false; error: 'invalid_grant' | 'replay_detected' }
 
 interface ClientRow {
   client_id: string
@@ -64,7 +51,7 @@ interface TokenRow {
   revoked: number
 }
 
-export class OAuthRepository {
+export class OAuthRepository implements OAuthOperations {
   private readonly insertClient: Database.Statement
   private readonly selectClient: Database.Statement
   private readonly insertAuthCode: Database.Statement
@@ -109,19 +96,22 @@ export class OAuthRepository {
     )
   }
 
-  registerClient(input: { clientName: string; redirectUris: string[] }): OAuthClient {
+  async registerClient(input: {
+    clientName: string
+    redirectUris: string[]
+  }): Promise<OAuthClient> {
     const clientId = `cdck_cli_${randomToken(16)}`
     this.insertClient.run(clientId, input.clientName, JSON.stringify(input.redirectUris))
     const row = this.selectClient.get(clientId) as ClientRow
     return rowToClient(row)
   }
 
-  getClient(clientId: string): OAuthClient | null {
+  async getClient(clientId: string): Promise<OAuthClient | null> {
     const row = this.selectClient.get(clientId) as ClientRow | undefined
     return row ? rowToClient(row) : null
   }
 
-  createAuthCode(input: OAuthAuthCodeInput): OAuthAuthCode {
+  async createAuthCode(input: OAuthAuthCodeInput): Promise<OAuthAuthCode> {
     const code = `cdck_code_${randomToken(32)}`
     const expiresAt = isoFromNow(input.ttlSeconds)
     this.insertAuthCode.run(
@@ -141,7 +131,7 @@ export class OAuthRepository {
   }
 
   // Single-use: deletes the row even if expired. Caller must check expiresAt.
-  consumeAuthCode(code: string): OAuthAuthCode | null {
+  async consumeAuthCode(code: string): Promise<OAuthAuthCode | null> {
     const row = this.consumeAuthCodeStmt.get(code) as AuthCodeRow | undefined
     if (!row) return null
     return {
@@ -153,11 +143,11 @@ export class OAuthRepository {
     }
   }
 
-  createTokens(input: {
+  async createTokens(input: {
     clientId: string
     accessTtlSeconds: number
     refreshTtlSeconds: number
-  }): OAuthAccessToken {
+  }): Promise<OAuthAccessToken> {
     const accessToken = `cdck_at_${randomToken(32)}`
     const refreshToken = `cdck_rt_${randomToken(32)}`
     const accessExpiresAt = isoFromNow(input.accessTtlSeconds)
@@ -179,7 +169,7 @@ export class OAuthRepository {
   }
 
   // Returns the row only if not revoked and not expired. Otherwise null.
-  validateAccessToken(accessToken: string): OAuthAccessToken | null {
+  async validateAccessToken(accessToken: string): Promise<OAuthAccessToken | null> {
     const row = this.selectAccessToken.get(accessToken) as TokenRow | undefined
     if (!row) return null
     if (Date.parse(row.access_expires_at) <= Date.now()) return null
@@ -188,10 +178,10 @@ export class OAuthRepository {
 
   // Atomic transaction: detect replay (revoked refresh) → revoke chain;
   // detect expiry → invalid_grant; happy path → mark old revoked + insert new.
-  rotateRefresh(
+  async rotateRefresh(
     refreshToken: string,
     ttls: { accessTtlSeconds: number; refreshTtlSeconds: number }
-  ): RotateResult {
+  ): Promise<RotateResult> {
     const tx = this.db.transaction((): RotateResult => {
       const row = this.selectRefreshToken.get(refreshToken) as TokenRow | undefined
       if (!row) return { ok: false, error: 'invalid_grant' }
@@ -204,12 +194,29 @@ export class OAuthRepository {
         return { ok: false, error: 'invalid_grant' }
       }
       this.markRevoked.run(row.access_token)
-      const fresh = this.createTokens({
-        clientId: row.client_id,
-        accessTtlSeconds: ttls.accessTtlSeconds,
-        refreshTtlSeconds: ttls.refreshTtlSeconds
-      })
-      return { ok: true, tokens: fresh }
+      // Mint fresh inline (not via createTokens, which is async and can't be
+      // awaited inside the sync better-sqlite3 transaction callback).
+      const accessToken = `cdck_at_${randomToken(32)}`
+      const newRefreshToken = `cdck_rt_${randomToken(32)}`
+      const accessExpiresAt = isoFromNow(ttls.accessTtlSeconds)
+      const refreshExpiresAt = isoFromNow(ttls.refreshTtlSeconds)
+      this.insertToken.run(
+        accessToken,
+        newRefreshToken,
+        row.client_id,
+        accessExpiresAt,
+        refreshExpiresAt
+      )
+      return {
+        ok: true,
+        tokens: {
+          accessToken,
+          refreshToken: newRefreshToken,
+          clientId: row.client_id,
+          accessExpiresAt,
+          refreshExpiresAt
+        }
+      }
     })
     return tx()
   }

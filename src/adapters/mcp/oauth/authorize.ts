@@ -1,7 +1,9 @@
 import { createHash, timingSafeEqual } from 'crypto'
 import { Buffer } from 'buffer'
-import type { OAuthRepository } from '../../../core/domain/repositories/oauth-repository'
-import type { OAuthClient } from '../../../core/domain/repositories/oauth-repository'
+import type {
+  OAuthClient,
+  OAuthOperations
+} from '../../../core/domain/interfaces/oauth-repository.interface'
 import { renderConsentScreen } from './consent-template'
 
 // ADR-027: /authorize handlers. GET renders the consent screen; POST validates
@@ -29,23 +31,23 @@ interface Params {
   codeChallengeMethod: string | null
 }
 
-export function handleAuthorizeGet(
-  repo: OAuthRepository,
+export async function handleAuthorizeGet(
+  repo: OAuthOperations,
   query: URLSearchParams
-): AuthorizeResult {
+): Promise<AuthorizeResult> {
   const params = parseParams(query)
-  const v = validate(repo, params)
+  const v = await validate(repo, params)
   if (v.kind !== 'ok') return v.result
   return renderForm(params, v.client.clientName)
 }
 
-export function handleAuthorizePost(
-  repo: OAuthRepository,
+export async function handleAuthorizePost(
+  repo: OAuthOperations,
   form: URLSearchParams,
   consentPasswordHashHex: string
-): AuthorizeResult {
+): Promise<AuthorizeResult> {
   const params = parseParams(form)
-  const v = validate(repo, params)
+  const v = await validate(repo, params)
   if (v.kind !== 'ok') return v.result
 
   const submitted = form.get('consent_password') ?? ''
@@ -66,7 +68,7 @@ export function handleAuthorizePost(
     }
   }
 
-  const ac = repo.createAuthCode({
+  const ac = await repo.createAuthCode({
     clientId: params.clientId as string,
     codeChallenge: params.codeChallenge as string,
     redirectUri: params.redirectUri as string,
@@ -95,11 +97,11 @@ type Validation =
   | { kind: 'fatal'; result: AuthorizeResult }
   | { kind: 'redirectError'; result: AuthorizeResult }
 
-function validate(repo: OAuthRepository, p: Params): Validation {
+async function validate(repo: OAuthOperations, p: Params): Promise<Validation> {
   if (!p.clientId) {
     return { kind: 'fatal', result: htmlError(400, 'Missing client_id.') }
   }
-  const client = repo.getClient(p.clientId)
+  const client = await repo.getClient(p.clientId)
   if (!client) {
     return { kind: 'fatal', result: htmlError(400, 'Unknown client_id.') }
   }

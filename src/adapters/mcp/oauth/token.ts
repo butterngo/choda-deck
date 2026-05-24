@@ -1,7 +1,7 @@
 import type {
   OAuthAccessToken,
-  OAuthRepository
-} from '../../../core/domain/repositories/oauth-repository'
+  OAuthOperations
+} from '../../../core/domain/interfaces/oauth-repository.interface'
 import { verifyPkceS256 } from './pkce'
 
 // ADR-027: POST /token implements two RFC 6749 grants:
@@ -18,7 +18,10 @@ export interface TokenResult {
 const ACCESS_TTL_SECONDS = 60 * 60 // 1h
 const REFRESH_TTL_SECONDS = 60 * 60 * 24 * 30 // 30d
 
-export function handleToken(repo: OAuthRepository, form: URLSearchParams): TokenResult {
+export async function handleToken(
+  repo: OAuthOperations,
+  form: URLSearchParams
+): Promise<TokenResult> {
   const grantType = form.get('grant_type')
   if (grantType === 'authorization_code') return handleCodeGrant(repo, form)
   if (grantType === 'refresh_token') return handleRefreshGrant(repo, form)
@@ -29,7 +32,10 @@ export function handleToken(repo: OAuthRepository, form: URLSearchParams): Token
   )
 }
 
-function handleCodeGrant(repo: OAuthRepository, form: URLSearchParams): TokenResult {
+async function handleCodeGrant(
+  repo: OAuthOperations,
+  form: URLSearchParams
+): Promise<TokenResult> {
   const code = form.get('code')
   const redirectUri = form.get('redirect_uri')
   const clientId = form.get('client_id')
@@ -40,7 +46,7 @@ function handleCodeGrant(repo: OAuthRepository, form: URLSearchParams): TokenRes
 
   // Consume is atomic — the code is burned even if validation fails below.
   // That's intentional: single-use semantics enforced at the storage layer.
-  const consumed = repo.consumeAuthCode(code)
+  const consumed = await repo.consumeAuthCode(code)
   if (!consumed) return errorResponse(400, 'invalid_grant', 'code unknown or already used')
   if (Date.parse(consumed.expiresAt) <= Date.now()) {
     return errorResponse(400, 'invalid_grant', 'code expired')
@@ -55,7 +61,7 @@ function handleCodeGrant(repo: OAuthRepository, form: URLSearchParams): TokenRes
     return errorResponse(400, 'invalid_grant', 'PKCE verifier does not match challenge')
   }
 
-  const tokens = repo.createTokens({
+  const tokens = await repo.createTokens({
     clientId,
     accessTtlSeconds: ACCESS_TTL_SECONDS,
     refreshTtlSeconds: REFRESH_TTL_SECONDS
@@ -63,11 +69,14 @@ function handleCodeGrant(repo: OAuthRepository, form: URLSearchParams): TokenRes
   return tokenSuccess(tokens)
 }
 
-function handleRefreshGrant(repo: OAuthRepository, form: URLSearchParams): TokenResult {
+async function handleRefreshGrant(
+  repo: OAuthOperations,
+  form: URLSearchParams
+): Promise<TokenResult> {
   const refreshToken = form.get('refresh_token')
   if (!refreshToken) return errorResponse(400, 'invalid_request', 'missing refresh_token')
 
-  const result = repo.rotateRefresh(refreshToken, {
+  const result = await repo.rotateRefresh(refreshToken, {
     accessTtlSeconds: ACCESS_TTL_SECONDS,
     refreshTtlSeconds: REFRESH_TTL_SECONDS
   })
