@@ -20,8 +20,13 @@ export interface PgTestEnv {
   connectionString: string
 }
 
+// Image choice: `pgvector/pgvector:pg16` — same postgres 16 binary as the
+// upstream alpine image but with the pgvector extension preinstalled.
+// Migration 011 runs `CREATE EXTENSION vector`; using a vanilla postgres
+// image would fail every .pg.test.ts at boot. Cost is a ~250MB image pull
+// (vs 80MB alpine), amortized — every later container reuses the cache.
 export async function startPostgresTestEnv(): Promise<PgTestEnv> {
-  const container = await new PostgreSqlContainer('postgres:16-alpine')
+  const container = await new PostgreSqlContainer('pgvector/pgvector:pg16')
     .withDatabase('choda_test')
     .withUsername('choda')
     .withPassword('choda')
