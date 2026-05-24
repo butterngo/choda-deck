@@ -29,7 +29,7 @@ export const register = (server: InstrumentedServer, svc: SessionEventOperations
       }
     },
     async ({ sessionId, eventType, limit }) => {
-      const events = svc.listSessionEvents(sessionId, eventType as SessionEventType | undefined, limit)
+      const events = await svc.listSessionEvents(sessionId, eventType as SessionEventType | undefined, limit)
       return textResponse(events)
     }
   )
