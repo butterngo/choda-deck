@@ -1,9 +1,9 @@
-// ADR-030 — Postgres sibling of DocumentRepository.
+﻿// ADR-030 — Postgres sibling of DocumentRepository.
 //
 // created_at / updated_at are TIMESTAMPTZ in Postgres; rehydrated to ISO-8601
 // strings at the repo boundary so the Document shape matches the SQLite repo.
 
-import type { PgConnection } from './connection'
+import { runInTx, type Queryable } from './connection'
 import type {
   CreateDocumentInput,
   Document,
@@ -37,7 +37,7 @@ function mapRow(row: DocumentDbRow): Document {
 const SELECT_COLS = 'id, project_id, type, title, file_path, created_at, updated_at'
 
 export class PostgresDocumentRepository {
-  constructor(private readonly conn: PgConnection) {}
+  constructor(private readonly conn: Queryable) {}
 
   async create(input: CreateDocumentInput): Promise<Document> {
     const id = input.id || generateId('DOC')
@@ -80,7 +80,7 @@ export class PostgresDocumentRepository {
   }
 
   async delete(id: string): Promise<void> {
-    await this.conn.transaction(async (tx) => {
+    await runInTx(this.conn, async (tx) => {
       await tx.query('DELETE FROM tags WHERE item_id = $1', [id])
       await tx.query('DELETE FROM documents WHERE id = $1', [id])
     })

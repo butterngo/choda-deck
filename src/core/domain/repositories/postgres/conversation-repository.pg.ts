@@ -1,4 +1,4 @@
-// ADR-030 — Postgres sibling of ConversationRepository. The largest of the
+﻿// ADR-030 — Postgres sibling of ConversationRepository. The largest of the
 // M1 cluster: 5 tables, role-routed event fanout (ADR-021 Phase 3), and a
 // delete that cascades through 4 child tables in a single transaction.
 //
@@ -13,7 +13,7 @@
 // is db-agnostic (JSONL files). The only db work in the fanout path is the
 // project-existence check, ported to `$1` parameter style.
 
-import type { PgConnection, SqlValue } from './connection'
+import { runInTx, type Queryable, type SqlValue } from './connection'
 import type {
   Conversation,
   ConversationAction,
@@ -136,7 +136,7 @@ const ACTION_COLS =
   'id, conversation_id, assignee, description, status, linked_task_id, created_at'
 
 export class PostgresConversationRepository {
-  constructor(private readonly conn: PgConnection) {}
+  constructor(private readonly conn: Queryable) {}
 
   // ── Conversations ──────────────────────────────────────────────────────────
 
@@ -230,7 +230,7 @@ export class PostgresConversationRepository {
   }
 
   async delete(id: string): Promise<void> {
-    await this.conn.transaction(async (tx) => {
+    await runInTx(this.conn, async (tx) => {
       await tx.query('DELETE FROM conversation_actions WHERE conversation_id = $1', [id])
       await tx.query('DELETE FROM conversation_links WHERE conversation_id = $1', [id])
       await tx.query('DELETE FROM conversation_messages WHERE conversation_id = $1', [id])

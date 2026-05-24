@@ -1,4 +1,4 @@
-// ADR-030 — Postgres sibling of SessionRepository.
+﻿// ADR-030 — Postgres sibling of SessionRepository.
 //
 // Schema differences vs SQLite:
 //   - handoff_json + checkpoint are JSONB (node-pg auto-parses on read,
@@ -10,7 +10,7 @@
 // Tie-break ordering uses `id DESC` (SESSION-* + Date.now() suffix from
 // generateId is monotonic within a process) — Postgres has no rowid.
 
-import type { PgConnection, SqlValue } from './connection'
+import type { Queryable, SqlValue } from './connection'
 import type {
   CreateSessionInput,
   Session,
@@ -55,7 +55,7 @@ const SELECT_COLS =
   'id, project_id, workspace_id, task_id, started_at, ended_at, status, handoff_json, checkpoint, checkpoint_at, created_at'
 
 export class PostgresSessionRepository {
-  constructor(private readonly conn: PgConnection) {}
+  constructor(private readonly conn: Queryable) {}
 
   async create(input: CreateSessionInput): Promise<Session> {
     const ts = now()

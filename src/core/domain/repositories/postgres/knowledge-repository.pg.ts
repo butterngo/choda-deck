@@ -1,10 +1,10 @@
-// ADR-030 — Postgres sibling of KnowledgeRepository.
+﻿// ADR-030 — Postgres sibling of KnowledgeRepository.
 // scope + type CHECK constraints inline. workspace_id FK (ADR-022) optional.
 // embedding_provider_id / embedding_dims columns exist in the schema for
 // forward-compat with the pgvector store slice; this repo doesn't read/write
 // them yet, matching the SQLite contract.
 
-import type { PgConnection, SqlValue } from './connection'
+import type { Queryable, SqlValue } from './connection'
 import type {
   KnowledgeIndexRow,
   KnowledgeListFilter,
@@ -42,7 +42,7 @@ const SELECT_COLS =
   'slug, project_id, workspace_id, scope, type, title, file_path, created_at, last_verified_at'
 
 export class PostgresKnowledgeRepository {
-  constructor(private readonly conn: PgConnection) {}
+  constructor(private readonly conn: Queryable) {}
 
   async upsert(row: KnowledgeIndexRow): Promise<void> {
     await this.conn.query(

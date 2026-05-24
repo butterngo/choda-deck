@@ -1,9 +1,9 @@
-// ADR-030 — Postgres sibling of SessionEventRepository.
+﻿// ADR-030 — Postgres sibling of SessionEventRepository.
 // payload_json stays TEXT (the public contract is `string | null` — callers
 // pre-stringify and may pass non-JSON content). memory_candidate is a native
 // BOOLEAN so no 0/1 coercion at the boundary.
 
-import type { PgConnection } from './connection'
+import type { Queryable } from './connection'
 import type {
   CreateSessionEventInput,
   SessionEvent,
@@ -34,7 +34,7 @@ function mapRow(row: SessionEventDbRow): SessionEvent {
 const SELECT_COLS = 'id, session_id, event_type, payload_json, memory_candidate, created_at'
 
 export class PostgresSessionEventRepository {
-  constructor(private readonly conn: PgConnection) {}
+  constructor(private readonly conn: Queryable) {}
 
   async create(input: CreateSessionEventInput): Promise<SessionEvent> {
     const id = input.id || generateId('EVT')

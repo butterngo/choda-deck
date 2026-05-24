@@ -1,10 +1,10 @@
-// ADR-030 — Postgres sibling of WorkspaceRepository.
+﻿// ADR-030 — Postgres sibling of WorkspaceRepository.
 //
 // `archived_at` is stored as TIMESTAMPTZ (Postgres-native) and rehydrated to
 // an ISO-8601 string at the repository boundary so consumers see the same
 // shape as the SQLite repo (which stores `new Date().toISOString()` directly).
 
-import type { PgConnection } from './connection'
+import type { Queryable } from './connection'
 import type {
   WorkspaceReferenceCounts,
   WorkspaceRow
@@ -31,7 +31,7 @@ function mapRow(row: WorkspaceDbRow): WorkspaceRow {
 const SELECT_COLS = 'id, project_id, label, cwd, archived_at'
 
 export class PostgresWorkspaceRepository {
-  constructor(private readonly conn: PgConnection) {}
+  constructor(private readonly conn: Queryable) {}
 
   async add(projectId: string, id: string, label: string, cwd: string): Promise<WorkspaceRow> {
     await this.conn.query(

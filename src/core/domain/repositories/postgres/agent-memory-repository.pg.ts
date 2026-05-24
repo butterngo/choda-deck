@@ -1,10 +1,10 @@
-// ADR-030 — Postgres sibling of AgentMemoryRepository.
+﻿// ADR-030 — Postgres sibling of AgentMemoryRepository.
 // tags + source_event_ids are JSONB (node-pg auto-parses the string[] back —
 // no SQLite-side parseTags helper needed). recall() filters by tags client-side
 // to match SQLite behavior exactly; the DB-side jsonb ?| approach exists but
 // post-filter keeps semantics identical and lets us page-then-filter cleanly.
 
-import type { PgConnection, SqlValue } from './connection'
+import type { Queryable, SqlValue } from './connection'
 import type {
   AgentMemory,
   CreateAgentMemoryInput,
@@ -50,7 +50,7 @@ const SELECT_COLS =
   'id, scope_type, scope_id, memory_type, content, tags, importance, source_session_id, source_event_ids, created_at, last_recalled_at, recall_count'
 
 export class PostgresAgentMemoryRepository {
-  constructor(private readonly conn: PgConnection) {}
+  constructor(private readonly conn: Queryable) {}
 
   async create(input: CreateAgentMemoryInput): Promise<AgentMemory> {
     const id = input.id || generateId('MEM')

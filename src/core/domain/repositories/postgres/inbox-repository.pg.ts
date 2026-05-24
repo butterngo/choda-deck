@@ -1,8 +1,8 @@
-// ADR-030 — Postgres sibling of InboxRepository. Status stays TEXT (no CHECK;
+﻿// ADR-030 — Postgres sibling of InboxRepository. Status stays TEXT (no CHECK;
 // matches SQLite — typed at TS boundary). project_id is nullable for unscoped
 // scratch items. id-mint uses the shared counter (slice-1 PG counter repo).
 
-import type { PgConnection, SqlValue } from './connection'
+import type { Queryable, SqlValue } from './connection'
 import type {
   CreateInboxInput,
   InboxFilter,
@@ -40,7 +40,7 @@ const SELECT_COLS =
 
 export class PostgresInboxRepository {
   constructor(
-    private readonly conn: PgConnection,
+    private readonly conn: Queryable,
     private readonly counters: PostgresCounterRepository
   ) {}
 

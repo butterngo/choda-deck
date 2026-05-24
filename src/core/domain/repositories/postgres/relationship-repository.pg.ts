@@ -1,6 +1,6 @@
-// ADR-030 — Postgres sibling of RelationshipRepository.
+﻿// ADR-030 — Postgres sibling of RelationshipRepository.
 
-import type { PgConnection } from './connection'
+import type { Queryable } from './connection'
 import type { Relationship, RelationType } from '../../task-types'
 
 interface RelationshipDbRow {
@@ -14,7 +14,7 @@ function mapRow(row: RelationshipDbRow): Relationship {
 }
 
 export class PostgresRelationshipRepository {
-  constructor(private readonly conn: PgConnection) {}
+  constructor(private readonly conn: Queryable) {}
 
   async add(fromId: string, toId: string, type: RelationType): Promise<void> {
     await this.conn.query(
