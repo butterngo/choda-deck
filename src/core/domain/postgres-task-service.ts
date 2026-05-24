@@ -33,8 +33,12 @@ import { PostgresNotImplementedError } from './postgres-not-implemented-error'
 import {
   InboxNotFoundError,
   InboxStatusError,
-  InboxConflictError
+  InboxConflictError,
+  ConversationNotFoundError,
+  ConversationStatusError
 } from './lifecycle/errors'
+import { now } from './repositories/shared'
+import type { DecideConversationResultAction } from './interfaces/conversation-lifecycle.interface'
 import type { ProjectRow } from './repositories/project-repository'
 import type { WorkspaceRow } from './repositories/workspace-repository'
 import type {
@@ -537,18 +541,177 @@ export class PostgresTaskService implements BackendTaskService {
     }
   }
 
-  // ── Conversation lifecycle (composite) — slice 11 throws ──────────────────
-  async openConversation(_input: OpenConversationInput): Promise<Conversation> {
-    throw new PostgresNotImplementedError('openConversation')
+  // ── Conversation lifecycle (composite) — slice 16 ─────────────────────────
+  async openConversation(input: OpenConversationInput): Promise<Conversation> {
+    return this.conn.transaction(async (tx): Promise<Conversation> => {
+      const conversations = new PostgresConversationRepository(tx)
+      const sessions = new PostgresSessionRepository(tx)
+
+      const resolvedSessionId = await this.resolveOpenSessionId(
+        sessions,
+        input.projectId,
+        input.sessionId
+      )
+
+      const conv = await conversations.create({
+        projectId: input.projectId,
+        title: input.title,
+        createdBy: input.createdBy,
+        participants: input.participants,
+        ownerType: 'interactive',
+        ownerSessionId: resolvedSessionId ?? undefined
+      })
+
+      await conversations.emitLifecycleEvent(
+        conv.id,
+        'conversation.open',
+        input.createdBy,
+        conv.createdAt
+      )
+
+      await conversations.addMessage({
+        conversationId: conv.id,
+        authorName: input.createdBy,
+        content: input.initialMessage.content,
+        messageType: input.initialMessage.type
+      })
+
+      for (const taskId of input.linkedTasks ?? []) {
+        await conversations.link(conv.id, 'task', taskId)
+      }
+
+      if (resolvedSessionId) {
+        await conversations.link(conv.id, 'session', resolvedSessionId)
+      }
+
+      const final = await conversations.get(conv.id)
+      if (!final) throw new Error(`Conversation ${conv.id} disappeared mid-transaction`)
+      return final
+    })
   }
-  async decideConversation(_id: string, _input: DecideConversationInput): Promise<DecideConversationResult> {
-    throw new PostgresNotImplementedError('decideConversation')
+
+  private async resolveOpenSessionId(
+    sessions: PostgresSessionRepository,
+    projectId: string,
+    explicit: string | undefined
+  ): Promise<string | null> {
+    if (explicit !== undefined) {
+      const session = await sessions.get(explicit)
+      if (!session) throw new Error(`Session ${explicit} not found`)
+      if (session.status !== 'active') throw new Error(`Session ${explicit} is not active`)
+      if (session.projectId !== projectId) {
+        throw new Error(
+          `Session ${explicit} belongs to project ${session.projectId}, not ${projectId}`
+        )
+      }
+      return explicit
+    }
+
+    const active = await sessions.findByProject(projectId, 'active')
+    if (active.length === 1) return active[0].id
+    if (active.length > 1) {
+      console.warn(
+        `[PostgresConversationLifecycle] ${active.length} active sessions in project ${projectId} — skipping auto-link`
+      )
+    }
+    return null
   }
-  async closeConversation(_id: string): Promise<Conversation> {
-    throw new PostgresNotImplementedError('closeConversation')
+
+  async decideConversation(
+    id: string,
+    input: DecideConversationInput
+  ): Promise<DecideConversationResult> {
+    return this.conn.transaction(async (tx): Promise<DecideConversationResult> => {
+      const counters = new PostgresCounterRepository(tx)
+      const relationships = new PostgresRelationshipRepository(tx)
+      const conversations = new PostgresConversationRepository(tx)
+      const tasks = new PostgresTaskRepository(tx, relationships, counters)
+
+      const conv = await conversations.get(id)
+      if (!conv) throw new ConversationNotFoundError(id)
+
+      await conversations.addMessage({
+        conversationId: id,
+        authorName: input.author,
+        content: input.decision,
+        messageType: 'decision'
+      })
+
+      const decidedAt = now()
+      const updated = await conversations.update(id, {
+        status: 'decided',
+        decisionSummary: input.decision,
+        decidedAt
+      })
+
+      const actions: DecideConversationResultAction[] = []
+      for (const action of input.actions ?? []) {
+        let linkedTaskId: string | undefined
+        if (action.spawnTask) {
+          const task = await tasks.create({
+            projectId: conv.projectId,
+            title: action.spawnTask.title,
+            priority: action.spawnTask.priority,
+            labels: [`assignee:${action.assignee}`]
+          })
+          linkedTaskId = task.id
+          await conversations.link(id, 'task', task.id)
+        }
+        const created = await conversations.addAction({
+          conversationId: id,
+          assignee: action.assignee,
+          description: action.description,
+          linkedTaskId
+        })
+        actions.push({
+          id: created.id,
+          assignee: created.assignee,
+          description: created.description,
+          linkedTaskId: created.linkedTaskId
+        })
+      }
+
+      await conversations.emitLifecycleEvent(id, 'conversation.decide', input.author, decidedAt)
+      return { conversation: updated, actions }
+    })
   }
-  async reopenConversation(_id: string): Promise<Conversation> {
-    throw new PostgresNotImplementedError('reopenConversation')
+
+  async closeConversation(id: string): Promise<Conversation> {
+    return this.conn.transaction(async (tx): Promise<Conversation> => {
+      const conversations = new PostgresConversationRepository(tx)
+      const conv = await conversations.get(id)
+      if (!conv) throw new ConversationNotFoundError(id)
+      if (conv.status !== 'decided') {
+        throw new ConversationStatusError(id, conv.status, 'must be decided before closing')
+      }
+      const closedAt = now()
+      const updated = await conversations.update(id, { status: 'closed', closedAt })
+      await conversations.emitLifecycleEvent(id, 'conversation.close', 'system', closedAt)
+      return updated
+    })
+  }
+
+  async reopenConversation(id: string): Promise<Conversation> {
+    return this.conn.transaction(async (tx): Promise<Conversation> => {
+      const conversations = new PostgresConversationRepository(tx)
+      const conv = await conversations.get(id)
+      if (!conv) throw new ConversationNotFoundError(id)
+      if (conv.status !== 'decided' && conv.status !== 'closed') {
+        throw new ConversationStatusError(
+          id,
+          conv.status,
+          'only decided or closed conversations can reopen'
+        )
+      }
+      const updated = await conversations.update(id, {
+        status: 'discussing',
+        closedAt: null,
+        decidedAt: null,
+        decisionSummary: null
+      })
+      await conversations.emitLifecycleEvent(id, 'conversation.reopen', 'system', now())
+      return updated
+    })
   }
 
   // ── Session lifecycle (composite) — slice 11 throws ───────────────────────
