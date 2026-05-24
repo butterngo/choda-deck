@@ -258,6 +258,49 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX IF NOT EXISTS agent_memories_scope_idx ON agent_memories (scope_type, scope_id, memory_type);
       CREATE INDEX IF NOT EXISTS agent_memories_recall_idx ON agent_memories (importance DESC, recall_count DESC);
     `
+  },
+  {
+    // inbox: no CHECK on status (matches SQLite — typed via TS unions).
+    // project_id nullable + no FK (inbox can hold unscoped scratch items).
+    //
+    // knowledge_index: CHECK on scope + type inline (SQLite has them too).
+    // FK to projects required; workspace_id (ADR-022) optional FK.
+    // embedding_provider_id + embedding_dims columns are forward-compat for the
+    // pgvector embedding store slice — the current repo doesn't expose them.
+    name: '008_inbox_knowledge',
+    sql: `
+      CREATE TABLE IF NOT EXISTS inbox_items (
+        id TEXT PRIMARY KEY,
+        project_id TEXT,
+        content TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'raw',
+        linked_task_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS inbox_project_idx ON inbox_items (project_id);
+      CREATE INDEX IF NOT EXISTS inbox_status_idx ON inbox_items (project_id, status);
+
+      CREATE TABLE IF NOT EXISTS knowledge_index (
+        slug TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        workspace_id TEXT REFERENCES workspaces(id),
+        scope TEXT NOT NULL CHECK (scope IN ('project','cross')),
+        type TEXT NOT NULL CHECK (type IN ('spike','decision','postmortem','learning','evaluation')),
+        title TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_verified_at TEXT NOT NULL,
+        embedding_provider_id TEXT,
+        embedding_dims INTEGER
+      );
+
+      CREATE INDEX IF NOT EXISTS knowledge_project_idx ON knowledge_index (project_id);
+      CREATE INDEX IF NOT EXISTS knowledge_type_idx ON knowledge_index (project_id, type);
+      CREATE INDEX IF NOT EXISTS knowledge_scope_idx ON knowledge_index (project_id, scope);
+      CREATE INDEX IF NOT EXISTS knowledge_workspace_idx ON knowledge_index (workspace_id);
+    `
   }
 ]
 
