@@ -362,6 +362,34 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX IF NOT EXISTS oauth_tokens_client_idx ON oauth_tokens (client_id);
       CREATE INDEX IF NOT EXISTS oauth_tokens_access_expires_idx ON oauth_tokens (access_expires_at);
     `
+  },
+  {
+    // pgvector sibling of the sqlite-vec `knowledge_vec` virtual table.
+    // CREATE EXTENSION needs the role to own the database (testcontainers
+    // default) or be superuser. Fails fast at startup with a clear error
+    // ("extension \"vector\" is not available") if pgvector isn't installed
+    // on the server — matches the task's "fail fast" requirement.
+    //
+    // Schema choice: unconstrained `vector` (no fixed dim at table-create
+    // time) + per-row `dims` column. Diverges from SQLite which must DROP
+    // and recreate on dim change because sqlite-vec virtual tables bake the
+    // dim into the table. Here we clear rows + reset knowledge_index
+    // embedding columns on provider mismatch in PgVectorEmbeddingStore.
+    //
+    // No HNSW/IVFFlat index — the knowledge layer is small-scale (dozens
+    // to hundreds of rows) and brute-force <-> scan is well under 1ms.
+    // Add an index when a project crosses ~10k rows.
+    name: '011_embeddings',
+    sql: `
+      CREATE EXTENSION IF NOT EXISTS vector;
+
+      CREATE TABLE IF NOT EXISTS knowledge_embeddings (
+        slug TEXT PRIMARY KEY REFERENCES knowledge_index(slug) ON DELETE CASCADE,
+        provider_id TEXT NOT NULL,
+        dims INTEGER NOT NULL,
+        embedding vector NOT NULL
+      );
+    `
   }
 ]
 
