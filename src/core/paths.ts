@@ -61,9 +61,9 @@ export function resolveDataPaths(electronDataDir?: string): DataPaths {
  *   CHODA_BACKEND  — 'sqlite' (default) | 'postgres'
  *   CHODA_PG_URL   — required when CHODA_BACKEND=postgres
  *
- * SQLite reuses the dbPath from `resolveDataPaths`. Postgres is wired but
- * not yet implemented — the factory throws BackendNotImplementedError until
- * TASK-934 lands the adapter.
+ * SQLite reuses the dbPath from `resolveDataPaths`. Postgres uses
+ * `CHODA_PG_URL` (validated here) plus optional `CHODA_PG_POOL_SIZE`
+ * (consumed in the task-service factory; defaults to 10).
  */
 export function resolveBackendConfig(dataPaths: DataPaths): BackendConfig {
   const kind = (process.env.CHODA_BACKEND ?? 'sqlite').toLowerCase()
