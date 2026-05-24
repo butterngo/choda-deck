@@ -4,8 +4,13 @@ import Database from 'better-sqlite3'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
+import type { BackendConfig } from '../../core/backend-config'
 import { createTaskService } from '../../core/domain/task-service-factory'
 import { OAuthRepository } from '../../core/domain/repositories/oauth-repository'
+import { PostgresOAuthRepository } from '../../core/domain/repositories/postgres/oauth-repository.pg'
+import { PgConnection } from '../../core/domain/repositories/postgres/connection'
+import { migrate } from '../../core/domain/repositories/postgres/migrations'
+import type { OAuthOperations } from '../../core/domain/interfaces/oauth-repository.interface'
 import { resolveBackendConfig, resolveDataPaths } from '../../core/paths'
 import { createInstrumentedServer } from './instrumented-server'
 import { startHttpTransport, type OAuthConfig } from './http-transport'
@@ -98,7 +103,7 @@ export async function startMcpServer(): Promise<void> {
   const mode = (process.env.MCP_TRANSPORT ?? 'stdio').toLowerCase()
 
   if (mode === 'http') {
-    const oauth = buildOAuthConfig(dataPaths.dbPath)
+    const oauth = await buildOAuthConfig(backend)
     const token = process.env.MCP_HTTP_TOKEN ?? ''
     if (!oauth && token.length === 0) {
       process.stderr.write(
@@ -139,10 +144,15 @@ export async function startMcpServer(): Promise<void> {
   await server.connect(transport)
 }
 
-// ADR-027: when MCP_OAUTH_MODE=1, build an OAuthConfig from env + consent
-// password file. Uses a SECOND better-sqlite3 connection so SqliteTaskService
-// stays untouched — WAL handles concurrency, OAuth writes are rare.
-function buildOAuthConfig(dbPath: string): OAuthConfig | undefined {
+// ADR-027 + ADR-030: when MCP_OAUTH_MODE=1, build an OAuthConfig from env +
+// consent password file. The repo is constructed against whatever backend the
+// rest of the process is using (CHODA_BACKEND), so HTTP transport stays
+// uniform across SQLite and Postgres deploys.
+//
+// Both backends use a dedicated connection/pool for OAuth (separate from the
+// TaskService) — matches the original ADR-027 "SqliteTaskService stays
+// untouched" decoupling and keeps OAuth writes off the hot path.
+async function buildOAuthConfig(backend: BackendConfig): Promise<OAuthConfig | undefined> {
   if (process.env.MCP_OAUTH_MODE !== '1') return undefined
 
   const issuer = (process.env.MCP_OAUTH_ISSUER ?? '').replace(/\/$/, '')
@@ -170,9 +180,28 @@ function buildOAuthConfig(dbPath: string): OAuthConfig | undefined {
     process.exit(2)
   }
 
-  const oauthDb = new Database(dbPath)
-  oauthDb.pragma('foreign_keys = ON')
-  const repo = new OAuthRepository(oauthDb)
+  const repo: OAuthOperations =
+    backend.kind === 'postgres'
+      ? await buildPostgresOAuthRepo(backend.connectionString)
+      : buildSqliteOAuthRepo(backend.dbPath)
 
   return { repo, issuer, consentPasswordHashHex: hash }
+}
+
+function buildSqliteOAuthRepo(dbPath: string): OAuthRepository {
+  const oauthDb = new Database(dbPath)
+  oauthDb.pragma('foreign_keys = ON')
+  return new OAuthRepository(oauthDb)
+}
+
+async function buildPostgresOAuthRepo(
+  connectionString: string
+): Promise<PostgresOAuthRepository> {
+  const poolMax = Number.parseInt(process.env.CHODA_PG_POOL_SIZE ?? '10', 10)
+  const conn = new PgConnection({ connectionString, max: poolMax })
+  // Idempotent — task-service-factory already ran the same migrations on its
+  // own pool, but the _migrations gate makes the second run a no-op. Belt-and-
+  // braces in case the OAuth process boots before / without the facade init.
+  await migrate(conn)
+  return new PostgresOAuthRepository(conn)
 }
