@@ -101,20 +101,9 @@ describeIfDocker('PostgresTaskService facade (TASK-934 slice 11)', () => {
   })
 
   // ── lifecycle / composite / knowledge / backup throw NotImplementedError ──
-  // Inbox lifecycle (startInboxResearch / convertInboxToTask / archiveInbox)
-  // is implemented in slice 15 — see inbox-lifecycle.pg.test.ts.
+  // Inbox lifecycle implemented in slice 15 (inbox-lifecycle.pg.test.ts).
+  // Conversation lifecycle implemented in slice 16 (conversation-lifecycle.pg.test.ts).
   it.each([
-    ['openConversation', () =>
-      svc.openConversation({
-        projectId: 'facade-p1',
-        title: 't',
-        createdBy: 'butter',
-        participants: []
-      })],
-    ['decideConversation', () =>
-      svc.decideConversation('CONV-1', { author: 'butter', decision: 'd' })],
-    ['closeConversation', () => svc.closeConversation('CONV-1')],
-    ['reopenConversation', () => svc.reopenConversation('CONV-1')],
     ['startSession', () => svc.startSession({ projectId: 'facade-p1' })],
     ['endSession', () =>
       svc.endSession('SESSION-1', { handoff: { commits: [], decisions: [], resumePoint: '' } })],
