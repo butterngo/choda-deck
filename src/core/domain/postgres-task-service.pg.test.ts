@@ -104,11 +104,8 @@ describeIfDocker('PostgresTaskService facade (TASK-934 slice 11)', () => {
   // Inbox lifecycle implemented in slice 15 (inbox-lifecycle.pg.test.ts).
   // Conversation lifecycle implemented in slice 16 (conversation-lifecycle.pg.test.ts).
   // Session lifecycle implemented in slice 17 (session-lifecycle.pg.test.ts).
+  // Task review + ac-check implemented in slice 18 (task-review-ac-check.pg.test.ts).
   it.each([
-    ['approveTask', () => svc.approveTask('TASK-1')],
-    ['rejectTask', () => svc.rejectTask('TASK-1', 'nope')],
-    ['checkAcItem', () =>
-      svc.checkAcItem({ taskId: 'TASK-1', acIndex: 0, evidence: 'e', workspaceId: undefined })],
     ['createKnowledge', () =>
       svc.createKnowledge({
         projectId: 'facade-p1',
