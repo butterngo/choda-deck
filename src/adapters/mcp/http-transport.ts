@@ -3,7 +3,7 @@ import { Buffer } from 'buffer'
 import { timingSafeEqual } from 'crypto'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import type { OAuthRepository } from '../../core/domain/repositories/oauth-repository'
+import type { OAuthOperations } from '../../core/domain/interfaces/oauth-repository.interface'
 import { authServerMetadata, protectedResourceMetadata } from './oauth/discovery'
 import { handleRegister } from './oauth/register'
 import { handleAuthorizeGet, handleAuthorizePost, type AuthorizeResult } from './oauth/authorize'
@@ -19,7 +19,7 @@ const MAX_BODY_BYTES = 4 * 1024 * 1024
 export type McpServerFactory = () => Promise<McpServer> | McpServer
 
 export interface OAuthConfig {
-  repo: OAuthRepository
+  repo: OAuthOperations
   issuer: string // e.g. https://mcp.choda.dev — no trailing slash
   consentPasswordHashHex: string
 }
@@ -130,12 +130,12 @@ async function tryHandleOAuthRoute(
       writeBodyError(res, err)
       return true
     }
-    const result = handleRegister(oauth.repo, parsed)
+    const result = await handleRegister(oauth.repo, parsed)
     sendJson(res, result.status, result.body)
     return true
   }
   if (pathname === '/authorize' && method === 'GET') {
-    sendAuthorizeResult(res, handleAuthorizeGet(oauth.repo, parsedUrl.searchParams))
+    sendAuthorizeResult(res, await handleAuthorizeGet(oauth.repo, parsedUrl.searchParams))
     return true
   }
   if (pathname === '/authorize' && method === 'POST') {
@@ -148,7 +148,7 @@ async function tryHandleOAuthRoute(
     }
     sendAuthorizeResult(
       res,
-      handleAuthorizePost(oauth.repo, form, oauth.consentPasswordHashHex)
+      await handleAuthorizePost(oauth.repo, form, oauth.consentPasswordHashHex)
     )
     return true
   }
@@ -160,7 +160,7 @@ async function tryHandleOAuthRoute(
       writeBodyError(res, err)
       return true
     }
-    const result = handleToken(oauth.repo, form)
+    const result = await handleToken(oauth.repo, form)
     // RFC 6749 §5.1: token endpoint MUST send Cache-Control: no-store
     res.setHeader('Cache-Control', 'no-store')
     sendJson(res, result.status, result.body)
@@ -178,7 +178,7 @@ async function handleMcp(
 ): Promise<void> {
   const authHeader = req.headers.authorization ?? ''
   const authorized = oauth
-    ? verifyOAuthBearer(authHeader, oauth.repo)
+    ? await verifyOAuthBearer(authHeader, oauth.repo)
     : verifyBearer(authHeader, tokenBuf)
   if (!authorized) {
     if (oauth) {
@@ -244,11 +244,14 @@ function verifyBearer(authHeader: string, tokenBuf: Buffer): boolean {
   return timingSafeEqual(provided, tokenBuf)
 }
 
-function verifyOAuthBearer(authHeader: string, repo: OAuthRepository): boolean {
+async function verifyOAuthBearer(
+  authHeader: string,
+  repo: OAuthOperations
+): Promise<boolean> {
   const prefix = 'Bearer '
   if (!authHeader.startsWith(prefix)) return false
   const token = authHeader.slice(prefix.length)
-  return repo.validateAccessToken(token) !== null
+  return (await repo.validateAccessToken(token)) !== null
 }
 
 function sendJson(res: ServerResponse, status: number, body: object): void {

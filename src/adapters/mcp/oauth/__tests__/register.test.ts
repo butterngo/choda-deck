@@ -24,8 +24,8 @@ afterEach(() => {
 })
 
 describe('handleRegister — happy path', () => {
-  it('mints a client_id, persists, returns RFC 7591 response (201)', () => {
-    const result = handleRegister(repo, {
+  it('mints a client_id, persists, returns RFC 7591 response (201)', async () => {
+    const result = await handleRegister(repo, {
       client_name: 'claude.ai',
       redirect_uris: ['https://claude.ai/api/mcp/auth_callback']
     })
@@ -40,20 +40,20 @@ describe('handleRegister — happy path', () => {
     expect(typeof body.client_id_issued_at).toBe('number')
 
     // Persisted
-    const fetched = repo.getClient(body.client_id as string)
+    const fetched = await repo.getClient(body.client_id as string)
     expect(fetched?.redirectUris).toEqual(['https://claude.ai/api/mcp/auth_callback'])
   })
 
-  it('defaults client_name when omitted', () => {
-    const result = handleRegister(repo, {
+  it('defaults client_name when omitted', async () => {
+    const result = await handleRegister(repo, {
       redirect_uris: ['https://x.test/cb']
     })
     expect(result.status).toBe(201)
     expect((result.body as { client_name: string }).client_name).toBe('mcp-client')
   })
 
-  it('accepts multiple redirect_uris', () => {
-    const result = handleRegister(repo, {
+  it('accepts multiple redirect_uris', async () => {
+    const result = await handleRegister(repo, {
       client_name: 'multi',
       redirect_uris: ['https://a.test/cb', 'https://b.test/cb']
     })
@@ -66,41 +66,41 @@ describe('handleRegister — happy path', () => {
 })
 
 describe('handleRegister — validation', () => {
-  it('rejects non-object body with invalid_client_metadata', () => {
-    expect(handleRegister(repo, null)).toEqual({
+  it('rejects non-object body with invalid_client_metadata', async () => {
+    expect(await handleRegister(repo, null)).toEqual({
       status: 400,
       body: {
         error: 'invalid_client_metadata',
         error_description: 'request body must be a JSON object'
       }
     })
-    expect(handleRegister(repo, 'string').status).toBe(400)
+    expect((await handleRegister(repo, 'string')).status).toBe(400)
   })
 
-  it('rejects missing or empty redirect_uris', () => {
-    expect(handleRegister(repo, {}).status).toBe(400)
-    expect(handleRegister(repo, { redirect_uris: [] }).status).toBe(400)
-    expect(handleRegister(repo, { redirect_uris: 'https://x/cb' }).status).toBe(400)
+  it('rejects missing or empty redirect_uris', async () => {
+    expect((await handleRegister(repo, {})).status).toBe(400)
+    expect((await handleRegister(repo, { redirect_uris: [] })).status).toBe(400)
+    expect((await handleRegister(repo, { redirect_uris: 'https://x/cb' })).status).toBe(400)
   })
 
-  it('rejects non-http(s) redirect_uris', () => {
-    const result = handleRegister(repo, {
+  it('rejects non-http(s) redirect_uris', async () => {
+    const result = await handleRegister(repo, {
       redirect_uris: ['ftp://x.test/cb']
     })
     expect(result.status).toBe(400)
     expect((result.body as { error: string }).error).toBe('invalid_redirect_uri')
   })
 
-  it('rejects malformed redirect_uris', () => {
-    const result = handleRegister(repo, {
+  it('rejects malformed redirect_uris', async () => {
+    const result = await handleRegister(repo, {
       redirect_uris: ['not a url']
     })
     expect(result.status).toBe(400)
     expect((result.body as { error: string }).error).toBe('invalid_redirect_uri')
   })
 
-  it('rejects when any one of several redirect_uris is bad', () => {
-    const result = handleRegister(repo, {
+  it('rejects when any one of several redirect_uris is bad', async () => {
+    const result = await handleRegister(repo, {
       redirect_uris: ['https://a.test/cb', 'javascript:alert(1)']
     })
     expect(result.status).toBe(400)

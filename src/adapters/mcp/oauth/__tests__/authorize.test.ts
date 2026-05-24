@@ -22,12 +22,12 @@ const PASSWORD_HASH_HEX = createHash('sha256').update(PASSWORD, 'utf8').digest('
 const VALID_CHALLENGE = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM' // 43 chars, RFC vector
 const REDIRECT = 'https://claude.ai/api/mcp/auth_callback'
 
-beforeEach(() => {
+beforeEach(async () => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'oauth-authz-'))
   db = new Database(path.join(tmpDir, 'test.db'))
   initSchema(db)
   repo = new OAuthRepository(db)
-  client = repo.registerClient({ clientName: 'claude.ai', redirectUris: [REDIRECT] })
+  client = await repo.registerClient({ clientName: 'claude.ai', redirectUris: [REDIRECT] })
 })
 
 afterEach(() => {
@@ -47,28 +47,28 @@ function validParams(): URLSearchParams {
 }
 
 describe('handleAuthorizeGet — fatal errors (no redirect, 400 HTML)', () => {
-  it('rejects missing client_id', () => {
+  it('rejects missing client_id', async () => {
     const p = validParams()
     p.delete('client_id')
-    const r = handleAuthorizeGet(repo, p)
+    const r = await handleAuthorizeGet(repo, p)
     expect(r.kind).toBe('html')
     if (r.kind !== 'html') return
     expect(r.status).toBe(400)
   })
 
-  it('rejects unknown client_id', () => {
+  it('rejects unknown client_id', async () => {
     const p = validParams()
     p.set('client_id', 'cdck_cli_unknown')
-    const r = handleAuthorizeGet(repo, p)
+    const r = await handleAuthorizeGet(repo, p)
     expect(r.kind).toBe('html')
     if (r.kind !== 'html') return
     expect(r.status).toBe(400)
   })
 
-  it('rejects unregistered redirect_uri', () => {
+  it('rejects unregistered redirect_uri', async () => {
     const p = validParams()
     p.set('redirect_uri', 'https://attacker.test/cb')
-    const r = handleAuthorizeGet(repo, p)
+    const r = await handleAuthorizeGet(repo, p)
     expect(r.kind).toBe('html')
     if (r.kind !== 'html') return
     expect(r.status).toBe(400)
@@ -76,10 +76,10 @@ describe('handleAuthorizeGet — fatal errors (no redirect, 400 HTML)', () => {
 })
 
 describe('handleAuthorizeGet — redirect errors (302 with ?error=...)', () => {
-  it('redirects with unsupported_response_type when response_type != code', () => {
+  it('redirects with unsupported_response_type when response_type != code', async () => {
     const p = validParams()
     p.set('response_type', 'token')
-    const r = handleAuthorizeGet(repo, p)
+    const r = await handleAuthorizeGet(repo, p)
     expect(r.kind).toBe('redirect')
     if (r.kind !== 'redirect') return
     const url = new URL(r.location)
@@ -88,28 +88,28 @@ describe('handleAuthorizeGet — redirect errors (302 with ?error=...)', () => {
     expect(url.searchParams.get('state')).toBe('xyz123')
   })
 
-  it('redirects with invalid_request when code_challenge_method != S256', () => {
+  it('redirects with invalid_request when code_challenge_method != S256', async () => {
     const p = validParams()
     p.set('code_challenge_method', 'plain')
-    const r = handleAuthorizeGet(repo, p)
+    const r = await handleAuthorizeGet(repo, p)
     expect(r.kind).toBe('redirect')
     if (r.kind !== 'redirect') return
     expect(new URL(r.location).searchParams.get('error')).toBe('invalid_request')
   })
 
-  it('redirects with invalid_request when code_challenge missing', () => {
+  it('redirects with invalid_request when code_challenge missing', async () => {
     const p = validParams()
     p.delete('code_challenge')
-    const r = handleAuthorizeGet(repo, p)
+    const r = await handleAuthorizeGet(repo, p)
     expect(r.kind).toBe('redirect')
     if (r.kind !== 'redirect') return
     expect(new URL(r.location).searchParams.get('error')).toBe('invalid_request')
   })
 
-  it('redirects with invalid_request when code_challenge wrong length', () => {
+  it('redirects with invalid_request when code_challenge wrong length', async () => {
     const p = validParams()
     p.set('code_challenge', 'short')
-    const r = handleAuthorizeGet(repo, p)
+    const r = await handleAuthorizeGet(repo, p)
     expect(r.kind).toBe('redirect')
     if (r.kind !== 'redirect') return
     expect(new URL(r.location).searchParams.get('error')).toBe('invalid_request')
@@ -117,8 +117,8 @@ describe('handleAuthorizeGet — redirect errors (302 with ?error=...)', () => {
 })
 
 describe('handleAuthorizeGet — happy path renders consent form', () => {
-  it('returns 200 HTML with hidden fields carrying every param', () => {
-    const r = handleAuthorizeGet(repo, validParams())
+  it('returns 200 HTML with hidden fields carrying every param', async () => {
+    const r = await handleAuthorizeGet(repo, validParams())
     expect(r.kind).toBe('html')
     if (r.kind !== 'html') return
     expect(r.status).toBe(200)
@@ -133,27 +133,27 @@ describe('handleAuthorizeGet — happy path renders consent form', () => {
 })
 
 describe('handleAuthorizePost — password gate', () => {
-  it('rejects missing password with 401 + re-rendered form', () => {
-    const r = handleAuthorizePost(repo, validParams(), PASSWORD_HASH_HEX)
+  it('rejects missing password with 401 + re-rendered form', async () => {
+    const r = await handleAuthorizePost(repo, validParams(), PASSWORD_HASH_HEX)
     expect(r.kind).toBe('html')
     if (r.kind !== 'html') return
     expect(r.status).toBe(401)
     expect(r.html).toContain('Incorrect consent password')
   })
 
-  it('rejects wrong password with 401', () => {
+  it('rejects wrong password with 401', async () => {
     const form = validParams()
     form.set('consent_password', 'wrong')
-    const r = handleAuthorizePost(repo, form, PASSWORD_HASH_HEX)
+    const r = await handleAuthorizePost(repo, form, PASSWORD_HASH_HEX)
     expect(r.kind).toBe('html')
     if (r.kind !== 'html') return
     expect(r.status).toBe(401)
   })
 
-  it('rejects when configured hash is empty', () => {
+  it('rejects when configured hash is empty', async () => {
     const form = validParams()
     form.set('consent_password', PASSWORD)
-    const r = handleAuthorizePost(repo, form, '')
+    const r = await handleAuthorizePost(repo, form, '')
     expect(r.kind).toBe('html')
     if (r.kind !== 'html') return
     expect(r.status).toBe(401)
@@ -161,10 +161,10 @@ describe('handleAuthorizePost — password gate', () => {
 })
 
 describe('handleAuthorizePost — happy path', () => {
-  it('mints a code, persists it w/ challenge, redirects to redirect_uri?code=...&state=...', () => {
+  it('mints a code, persists it w/ challenge, redirects to redirect_uri?code=...&state=...', async () => {
     const form = validParams()
     form.set('consent_password', PASSWORD)
-    const r = handleAuthorizePost(repo, form, PASSWORD_HASH_HEX)
+    const r = await handleAuthorizePost(repo, form, PASSWORD_HASH_HEX)
     expect(r.kind).toBe('redirect')
     if (r.kind !== 'redirect') return
     const url = new URL(r.location)
@@ -174,18 +174,18 @@ describe('handleAuthorizePost — happy path', () => {
     expect(code).toMatch(/^cdck_code_/)
 
     // Consume from repo to confirm persistence + correct binding
-    const consumed = repo.consumeAuthCode(code as string)
+    const consumed = await repo.consumeAuthCode(code as string)
     expect(consumed).not.toBeNull()
     expect(consumed?.clientId).toBe(client.clientId)
     expect(consumed?.codeChallenge).toBe(VALID_CHALLENGE)
     expect(consumed?.redirectUri).toBe(REDIRECT)
   })
 
-  it('omits state from redirect when client did not send one', () => {
+  it('omits state from redirect when client did not send one', async () => {
     const form = validParams()
     form.delete('state')
     form.set('consent_password', PASSWORD)
-    const r = handleAuthorizePost(repo, form, PASSWORD_HASH_HEX)
+    const r = await handleAuthorizePost(repo, form, PASSWORD_HASH_HEX)
     expect(r.kind).toBe('redirect')
     if (r.kind !== 'redirect') return
     const url = new URL(r.location)
@@ -193,11 +193,11 @@ describe('handleAuthorizePost — happy path', () => {
     expect(url.searchParams.has('code')).toBe(true)
   })
 
-  it('still validates params on POST (no trust in re-submitted hidden fields)', () => {
+  it('still validates params on POST (no trust in re-submitted hidden fields)', async () => {
     const form = validParams()
     form.set('client_id', 'cdck_cli_swapped')
     form.set('consent_password', PASSWORD)
-    const r = handleAuthorizePost(repo, form, PASSWORD_HASH_HEX)
+    const r = await handleAuthorizePost(repo, form, PASSWORD_HASH_HEX)
     expect(r.kind).toBe('html')
     if (r.kind !== 'html') return
     expect(r.status).toBe(400)
