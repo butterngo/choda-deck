@@ -135,7 +135,11 @@ import type {
 } from './interfaces/tool-invocations-repository.interface'
 import type { MemoryWriteInput, MemoryRecallInput } from './interfaces/agent-memory-operations.interface'
 import type { CheckAcItemInput, CheckAcItemResult } from './lifecycle/ac-check'
-import type { QueueLifecycleService, QueueRuntime } from './lifecycle/queue-lifecycle-service'
+import {
+  QueueLifecycleService,
+  type QueueRuntime,
+  type QueueSessionGateway
+} from './lifecycle/queue-lifecycle-service'
 
 export class PostgresTaskService implements BackendTaskService {
   private readonly conn: PgConnection
@@ -1017,9 +1021,24 @@ export class PostgresTaskService implements BackendTaskService {
     return bound[0].id
   }
 
-  // ── Queue lifecycle (ADR-019) — slice 11 throws ───────────────────────────
-  createQueueLifecycle(_runtime: QueueRuntime): QueueLifecycleService {
-    throw new PostgresNotImplementedError('createQueueLifecycle')
+  // ── Queue lifecycle (ADR-019) — slice 19 ──────────────────────────────────
+  /* QueueLifecycleService takes a `SessionLifecycleService` as its 4th arg in
+   * the sqlite path. Postgres does not expose a standalone session-lifecycle
+   * instance — start/checkpoint/abandon are facade methods. The narrow
+   * `QueueSessionGateway` port (start + checkpoint only) lets us hand back a
+   * thin adapter without leaking the full lifecycle service. */
+  createQueueLifecycle(runtime: QueueRuntime): QueueLifecycleService {
+    const sessionGateway: QueueSessionGateway = {
+      startSession: (input) => this.startSession(input),
+      checkpointSession: (id, input) => this.checkpointSession(id, input)
+    }
+    return new QueueLifecycleService(
+      this.tasks,
+      this.workspaces,
+      this.conversations,
+      sessionGateway,
+      runtime
+    )
   }
 
   // ── ac-check (ADR-029 channel 2) — slice 18 ───────────────────────────────

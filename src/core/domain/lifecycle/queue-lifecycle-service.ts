@@ -1,19 +1,62 @@
 import * as path from 'node:path'
 import { splitLines } from '../../utils/lines'
-import type { ConversationRepository } from '../repositories/conversation-repository'
-import type { TaskRepository } from '../repositories/task-repository'
-import type { WorkspaceRepository, WorkspaceRow } from '../repositories/workspace-repository'
-import type { Task } from '../task-types'
+import type { WorkspaceRow } from '../repositories/workspace-repository'
+import type {
+  Task,
+  UpdateTaskInput,
+  TaskFilter,
+  Conversation,
+  ConversationLinkType,
+  ConversationMessage,
+  CreateConversationMessageInput
+} from '../task-types'
 import { AUTO_SAFE_LABEL, validateAutoSafeTask } from '../auto-safe-validator'
 import { parseAcCommands } from './ac-parser'
 import { QueueDirtyTreeError, TaskNotFoundError, WorkspaceResolutionError } from './errors'
-import type { SessionLifecycleService } from './session-lifecycle-service'
+import type {
+  StartSessionInput,
+  StartSessionResult,
+  CheckpointSessionInput,
+  CheckpointSessionResult
+} from '../interfaces/session-lifecycle.interface'
 import { computeToolSchemaTokens } from '../../executor/queue-claude-spawn'
 import {
   validateQueueStartPreflight,
   type PreflightGitFns,
   type PreflightResult
 } from './queue-start-preflight'
+
+type Awaitable<T> = T | Promise<T>
+
+/**
+ * Narrow ports the queue service depends on. SQLite repositories satisfy them
+ * via their synchronous returns (a `T` is assignable to `T | Promise<T>`); the
+ * Postgres facade satisfies them with its native `Promise<T>` returns. Keeping
+ * the ports here (not in `repositories/`) signals they are queue-internal — a
+ * different consumer can define its own slice without inheriting this surface.
+ */
+export interface QueueTaskPort {
+  get(id: string): Awaitable<Task | null>
+  update(id: string, input: UpdateTaskInput): Awaitable<Task>
+  find(filter: TaskFilter): Awaitable<Task[]>
+}
+
+export interface QueueWorkspacePort {
+  get(id: string): Awaitable<WorkspaceRow | null>
+}
+
+export interface QueueConversationPort {
+  findByLink(linkedType: ConversationLinkType, linkedId: string): Awaitable<Conversation[]>
+  addMessage(input: CreateConversationMessageInput): Awaitable<ConversationMessage>
+}
+
+export interface QueueSessionGateway {
+  startSession(input: StartSessionInput): Promise<StartSessionResult>
+  checkpointSession(
+    id: string,
+    input: CheckpointSessionInput
+  ): Promise<CheckpointSessionResult>
+}
 
 const DEFAULT_MAX_COST_PER_TASK = 1.5
 const DEFAULT_MODEL = 'claude-sonnet-4-6'
@@ -256,10 +299,10 @@ type PreflightEffect =
 
 export class QueueLifecycleService {
   constructor(
-    private readonly tasks: TaskRepository,
-    private readonly workspaces: WorkspaceRepository,
-    private readonly conversations: ConversationRepository,
-    private readonly sessions: SessionLifecycleService,
+    private readonly tasks: QueueTaskPort,
+    private readonly workspaces: QueueWorkspacePort,
+    private readonly conversations: QueueConversationPort,
+    private readonly sessions: QueueSessionGateway,
     private readonly runtime: QueueRuntime
   ) {}
 
@@ -271,7 +314,7 @@ export class QueueLifecycleService {
   }
 
   async runQueue(opts: QueueRunOptions): Promise<QueueRunResult> {
-    const ws = this.workspaces.get(opts.workspaceId)
+    const ws = await this.workspaces.get(opts.workspaceId)
     if (!ws) {
       throw new WorkspaceResolutionError(`workspace ${opts.workspaceId} not found`)
     }
@@ -283,7 +326,7 @@ export class QueueLifecycleService {
     const branch = await this.runtime.gitCurrentBranch(ws.cwd)
     const commitSha = await this.runtime.gitHeadSha(ws.cwd)
 
-    const eligible = this.collectEligibleTasks(ws)
+    const eligible = await this.collectEligibleTasks(ws)
     const taskCap = opts.maxTasks ?? eligible.length
     const tasks = eligible.slice(0, taskCap)
 
@@ -501,7 +544,7 @@ export class QueueLifecycleService {
           break
         }
 
-        this.tasks.update(task.id, { status: 'REVIEW' })
+        await this.tasks.update(task.id, { status: 'REVIEW' })
         await this.sessions.checkpointSession(sessionId, {
           checkpoint: {
             outcome: 'pass',
@@ -609,7 +652,7 @@ export class QueueLifecycleService {
    *    on. There is no `haltCode`; the runner only stops at end-of-list.
    */
   async runQueueStart(opts: QueueStartOptions): Promise<QueueStartResult> {
-    const ws = this.workspaces.get(opts.workspaceId)
+    const ws = await this.workspaces.get(opts.workspaceId)
     if (!ws) {
       throw new WorkspaceResolutionError(`workspace ${opts.workspaceId} not found`)
     }
@@ -617,7 +660,7 @@ export class QueueLifecycleService {
     const branchPrefix = opts.branchPrefix ?? 'auto/'
     const startedAt = new Date().toISOString()
 
-    const eligible = this.collectEligibleTasks(ws)
+    const eligible = await this.collectEligibleTasks(ws)
     const taskCap = opts.maxTasks ?? eligible.length
     const allTasks = eligible.slice(0, taskCap)
 
@@ -775,7 +818,7 @@ export class QueueLifecycleService {
 
       if (setupFailReason !== null) {
         await this.rollbackPreflightEffects(effects, setupFailReason)
-        this.markTaskFailed(task, setupFailReason, taskDir)
+        await this.markTaskFailed(task, setupFailReason, taskDir)
         taskOutcomes.push({
           taskId: task.id,
           worktreePath: effects.length > 0 ? worktreePath : null,
@@ -919,7 +962,7 @@ export class QueueLifecycleService {
         continue
       }
 
-      this.tasks.update(task.id, { status: 'REVIEW' })
+      await this.tasks.update(task.id, { status: 'REVIEW' })
       await this.sessions.checkpointSession(sessionId, {
         checkpoint: {
           outcome: 'pass',
@@ -1087,8 +1130,8 @@ export class QueueLifecycleService {
     return { output: null, error: new Error('spawn retry loop produced no result') }
   }
 
-  private collectEligibleTasks(ws: WorkspaceRow): Task[] {
-    const candidates = this.tasks.find({ projectId: ws.projectId, status: 'READY' })
+  private async collectEligibleTasks(ws: WorkspaceRow): Promise<Task[]> {
+    const candidates = await this.tasks.find({ projectId: ws.projectId, status: 'READY' })
     return candidates
       .filter(
         (t) =>
@@ -1146,7 +1189,7 @@ export class QueueLifecycleService {
           await this.sessions.checkpointSession(effect.id, {
             checkpoint: { outcome: 'fail', reason: `preflight-rollback: ${reason}` }
           })
-          this.tasks.update(effect.taskId, { status: 'REVIEW' })
+          await this.tasks.update(effect.taskId, { status: 'REVIEW' })
         }
       } catch (rollbackErr) {
         process.stderr.write(
@@ -1157,18 +1200,18 @@ export class QueueLifecycleService {
     }
   }
 
-  private markTaskFailed(task: Task, reason: string, taskDir: string): void {
-    const refreshed = this.tasks.get(task.id)
+  private async markTaskFailed(task: Task, reason: string, taskDir: string): Promise<void> {
+    const refreshed = await this.tasks.get(task.id)
     if (!refreshed) throw new TaskNotFoundError(task.id)
     const nextLabels = refreshed.labels.includes(AUTO_FAILED_LABEL)
       ? refreshed.labels
       : [...refreshed.labels, AUTO_FAILED_LABEL]
-    this.tasks.update(task.id, { labels: nextLabels, status: 'REVIEW' })
+    await this.tasks.update(task.id, { labels: nextLabels, status: 'REVIEW' })
 
-    const linkedConvs = this.conversations.findByLink('task', task.id)
+    const linkedConvs = await this.conversations.findByLink('task', task.id)
     for (const conv of linkedConvs) {
       if (conv.status === 'closed') continue
-      this.conversations.addMessage({
+      await this.conversations.addMessage({
         conversationId: conv.id,
         authorName: 'queue-runner',
         content: `Auto-failed: ${reason}\nDiff: ${path.join(taskDir, 'diff.patch')}`,
@@ -1183,7 +1226,7 @@ export class QueueLifecycleService {
     reason: string,
     taskDir: string
   ): Promise<void> {
-    this.markTaskFailed(task, reason, taskDir)
+    await this.markTaskFailed(task, reason, taskDir)
     await this.sessions.checkpointSession(sessionId, {
       checkpoint: {
         outcome: 'fail',
