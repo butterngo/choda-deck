@@ -202,10 +202,12 @@ Claude : (knowledge_verify) → flags ADR-020 as potentially stale (refs SHA mis
 |---|---|---|
 | `CHODA_DATA_DIR` | _required_ | SQLite DB, artifacts, and backups directory. Created on first run. |
 | `CHODA_CONTENT_ROOT` | _optional_ | Root for knowledge / vault content lookup. |
-| `CHODA_BACKEND` | `sqlite` | Storage backend (ADR-030). `sqlite` is the only implemented kind today; `postgres` is wired through the factory but throws until TASK-934 lands the adapter. |
-| `CHODA_PG_URL` | _required when `CHODA_BACKEND=postgres`_ | Postgres connection string. Unused for SQLite. |
+| `CHODA_BACKEND` | `sqlite` | Storage backend (ADR-030). `sqlite` (local file) or `postgres` (remote, k8s-friendly). |
+| `CHODA_PG_URL` | _required when `CHODA_BACKEND=postgres`_ | Postgres connection string (e.g. `postgres://user:pass@host:5432/db`). |
+| `CHODA_PG_POOL_SIZE` | `10` | Postgres connection pool max size. Tune for concurrent HTTP requests. |
+| `CHODA_EMBEDDING_PROVIDER` | `local` | `local` (transformers.js MiniLM-L6) or `noop` (disable embedding-backed search). |
 
-### Data layout
+### Data layout (SQLite)
 
 ```
 $CHODA_DATA_DIR/
@@ -213,6 +215,66 @@ $CHODA_DATA_DIR/
 ├── artifacts/<sessionId>/        ← per-session scratch
 └── backups/choda-deck-<date>.db  ← auto daily, retained
 ```
+
+### Postgres backend
+
+The Postgres adapter is full-feature parity with SQLite — all `mcp__choda-tasks__*` tools work against either backend. Use Postgres when running the MCP HTTP transport in k8s (ADR-026 + ADR-030).
+
+**Local dev** with the shipped `docker-compose.yml`:
+
+```bash
+docker compose up -d                             # boots pgvector/pgvector:pg16 on :5432
+export CHODA_BACKEND=postgres
+export CHODA_PG_URL="postgres://choda:choda@localhost:5432/choda"
+pnpm run mcp:http                                # schema migrates on first connect
+```
+
+**k8s** — minimal `Deployment` + `Secret` shape:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata: { name: choda-pg }
+type: Opaque
+stringData:
+  CHODA_PG_URL: postgres://choda:CHANGEME@choda-pg.default.svc.cluster.local:5432/choda
+  MCP_HTTP_TOKEN: REPLACE_WITH_BASE64URL_32_BYTES
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: choda-deck }
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: choda
+          image: ghcr.io/your-org/choda-deck:latest
+          env:
+            - { name: CHODA_BACKEND,  value: postgres }
+            - { name: MCP_TRANSPORT,  value: http }
+            - { name: MCP_HTTP_BIND,  value: 0.0.0.0 }
+          envFrom:
+            - secretRef: { name: choda-pg }
+          ports:
+            - containerPort: 7337
+          readinessProbe:
+            httpGet: { path: /healthz, port: 7337 }
+```
+
+Bring your own Postgres (Cloud SQL, RDS, managed) or run a sidecar `StatefulSet` with the `pgvector/pgvector:pg16` image. Migrations and the pgvector extension setup are idempotent — they run automatically inside `initializeAsync()` on every boot.
+
+**Migration from existing SQLite data** — one-shot script:
+
+```bash
+CHODA_PG_URL="postgres://choda:choda@localhost:5432/choda" \
+  node scripts/migrate-sqlite-to-postgres.mjs \
+    --sqlite $CHODA_DATA_DIR/database/choda-deck.db [--dry-run]
+```
+
+The script is idempotent (skips tables that already have rows; pass `--force` to wipe + reload). Embedding vectors are NOT copied — re-run `scripts/backfill-embeddings.mjs` against the Postgres backend after migration to rebuild them.
+
+The cross-device pending-ops sync engine (ADR-030 §2) is **not** in this release — laptop ↔ remote MCP today is "one backend at a time," not a live sync. Pick `CHODA_BACKEND` per process.
 
 ## Architecture
 

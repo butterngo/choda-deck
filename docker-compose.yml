@@ -1,0 +1,38 @@
+# Local Postgres + pgvector for choda-deck (ADR-030).
+#
+# Same image as the test harness (src/test/postgres-harness.ts), so what you
+# develop against here is what CI exercises. Use this when running the MCP
+# HTTP server locally with CHODA_BACKEND=postgres.
+#
+# Usage:
+#   docker compose up -d
+#   export CHODA_PG_URL="postgres://choda:choda@localhost:5432/choda"
+#   export CHODA_BACKEND=postgres
+#   pnpm run mcp:http
+#
+# The Postgres data volume persists across `down`/`up`. To wipe state:
+#   docker compose down -v
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: choda-deck-pg
+    environment:
+      POSTGRES_USER: choda
+      POSTGRES_PASSWORD: choda
+      POSTGRES_DB: choda
+    ports:
+      - '5432:5432'
+    volumes:
+      - choda-deck-pg-data:/var/lib/postgresql/data
+    # CREATE EXTENSION vector runs inside the choda-deck migrations
+    # (src/core/domain/repositories/postgres/migrations.ts), not here —
+    # the pgvector image just preinstalls the binary.
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U choda -d choda']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  choda-deck-pg-data:

@@ -17,10 +17,26 @@ refs:
   - path: src/adapters/mcp/server-bootstrap.ts
     commitSha: 255f371b3340903687577a34bcf1e25432aa7532
 createdAt: 2026-05-22
-lastVerifiedAt: 2026-05-22
+lastVerifiedAt: 2026-05-25
 ---
 
 > **AI-Context:** Two storage backends behind one driver port. Local MCP (stdio) drives SQLite; remote MCP (http, k8s) drives Postgres. The laptop syncs to remote via a **pending-ops queue + LWW reconciliation** built on top of the existing `src/core/sync/` snapshot machinery. Remote Postgres is **canonical when reachable**; local SQLite is a working copy that can write offline and drain on reconnect. Op-log-per-tool-call is rejected — the existing export/import + a small pending queue covers single-user multi-device without it.
+
+## Status (2026-05-25)
+
+| Component | State | Where it landed |
+|---|---|---|
+| Backend service port (`BackendTaskService`) | **Done** | TASK-933 + TASK-934 slice 11 (facade) |
+| Postgres adapter (`PostgresTaskService`) — all 24 service methods | **Done** | TASK-934 slices 1–20b (PRs #131–#152) |
+| pgvector embedding store + slug-keyed `EmbeddingStorePort` | **Done** | TASK-934 slice 14 + 20b |
+| Factory wiring via `CHODA_BACKEND` env | **Done** | TASK-934 slice 11 |
+| One-shot SQLite → Postgres data migration script | **Done** | TASK-934 slice 21 (`scripts/migrate-sqlite-to-postgres.mjs`) |
+| docker-compose + README k8s recipe | **Done** | TASK-934 slice 21 |
+| **Sync engine — `pending_ops` queue, Lamport clocks, LWW reconcile, `sync_conflicts` table, `CHODA_BACKEND=sync` mode** | **Open** | not started |
+
+The driver/adapter half of this ADR shipped; the cross-device sync half did not. Today the deployment model is **one backend per process** — pick `sqlite` for local stdio, `postgres` for remote HTTP, no automatic drain between them. Same machine can absolutely run both with separate data, but a single logical "my tasks" view that follows you across devices via offline-tolerant sync is still future work. Use the existing manual export/import (`src/core/sync/`, [[cross-device-sync-export-import-spec]]) when you need to round-trip between devices.
+
+Revisit the sync engine when: (a) the claude.ai remote connector becomes day-to-day and a second device starts writing concurrently, OR (b) a concrete data-loss incident from manual export/import makes the case for automatic drain.
 
 ## Context
 
