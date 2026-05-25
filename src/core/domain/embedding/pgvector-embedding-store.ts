@@ -96,7 +96,7 @@ export class PgVectorEmbeddingStore {
     return report
   }
 
-  async upsert(
+  async upsertBySlug(
     slug: string,
     providerId: string,
     dims: number,
@@ -121,7 +121,7 @@ export class PgVectorEmbeddingStore {
     })
   }
 
-  async delete(slug: string): Promise<void> {
+  async deleteBySlug(slug: string): Promise<void> {
     if (!this.vecTableReady) return
     await this.conn.query('DELETE FROM knowledge_embeddings WHERE slug = $1', [slug])
   }

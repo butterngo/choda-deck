@@ -2,8 +2,9 @@
 // + ProjectRepository over an in-memory sqlite db) — drives the 7 non-search
 // knowledge ops through PostgresTaskService.
 //
-// Slice 20b will add searchKnowledge once the EmbeddingStore port unifies
-// sqlite-vec + pgvector; this slice deliberately leaves that stub throwing.
+// Slice 20b wires searchKnowledge via the unified EmbeddingStore port —
+// search-path coverage lives in knowledge-search.pg.test.ts; this file
+// keeps the 7 simple ops.
 //
 // Scope: verify each public op writes the expected file on disk AND the
 // expected knowledge_index row in Postgres, plus that updates / verify /
@@ -27,7 +28,6 @@ import {
   KnowledgeValidationError
 } from '../knowledge-service'
 import { parseFrontmatter } from '../knowledge-frontmatter'
-import { PostgresNotImplementedError } from '../postgres-not-implemented-error'
 
 describeIfDocker('PostgresTaskService knowledge simple ops (slice 20a)', () => {
   let env: PgTestEnv
@@ -284,9 +284,4 @@ describeIfDocker('PostgresTaskService knowledge simple ops (slice 20a)', () => {
     })
   })
 
-  describe('searchKnowledge still throws (slice 20b)', () => {
-    it('throws PostgresNotImplementedError', async () => {
-      await expect(svc.searchKnowledge('q')).rejects.toBeInstanceOf(PostgresNotImplementedError)
-    })
-  })
 })

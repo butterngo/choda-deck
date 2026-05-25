@@ -107,11 +107,9 @@ describeIfDocker('PostgresTaskService facade (TASK-934 slice 11)', () => {
   // Task review + ac-check implemented in slice 18 (task-review-ac-check.pg.test.ts).
   // Queue lifecycle implemented in slice 19 (queue-lifecycle.pg.test.ts).
   // Knowledge 7 simple ops implemented in slice 20a (knowledge-simple-ops.pg.test.ts).
-  // searchKnowledge stays unimplemented until slice 20b (pgvector + EmbeddingStore port).
-  it.each([
-    ['searchKnowledge', () => svc.searchKnowledge('q')],
-    ['backup', () => svc.backup('/tmp/bk.sql')]
-  ])('%s throws PostgresNotImplementedError', async (_name, callIt) => {
-    await expect(callIt()).rejects.toBeInstanceOf(PostgresNotImplementedError)
+  // searchKnowledge implemented in slice 20b (knowledge-search.pg.test.ts).
+  // Only `backup` remains — full backup needs pg_dump (out of scope for ADR-030).
+  it('backup throws PostgresNotImplementedError', async () => {
+    await expect(svc.backup('/tmp/bk.sql')).rejects.toBeInstanceOf(PostgresNotImplementedError)
   })
 })

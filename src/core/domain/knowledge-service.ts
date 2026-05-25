@@ -23,7 +23,6 @@ import type {
 } from './knowledge-types'
 import type { KnowledgeOperations } from './interfaces/knowledge-operations.interface'
 import type { EmbeddingProvider } from './embedding/embedding-provider.interface'
-import type { EmbeddingStore } from './embedding/embedding-store'
 
 type Awaitable<T> = T | Promise<T>
 
@@ -48,6 +47,31 @@ export interface KnowledgeProjectPort {
 
 export interface KnowledgeWorkspacePort {
   get(id: string): Awaitable<WorkspaceRow | null>
+}
+
+/**
+ * Slug-keyed embedding store contract (slice 20b). Drops `rowid` from search
+ * hits — pgvector has no implicit rowid, and `KnowledgeService` only ever
+ * read `slug` / `distance` / `providerId` off the hits. The sqlite-vec
+ * `EmbeddingStore` satisfies this via its `upsertBySlug` / `deleteBySlug`
+ * wrappers; `PgVectorEmbeddingStore` satisfies it natively.
+ */
+export interface EmbeddingSearchHitNarrow {
+  slug: string
+  distance: number
+  providerId: string
+}
+
+export interface EmbeddingStorePort {
+  isEnabled(): boolean
+  upsertBySlug(
+    slug: string,
+    providerId: string,
+    dims: number,
+    vector: Float32Array
+  ): Awaitable<void>
+  deleteBySlug(slug: string): Awaitable<void>
+  search(query: Float32Array, k: number): Awaitable<EmbeddingSearchHitNarrow[]>
 }
 
 export class KnowledgeNotFoundError extends Error {
@@ -78,7 +102,7 @@ export interface KnowledgeServiceDeps {
   git?: GitOps
   contentRoot?: string
   now?: () => Date
-  embeddingStore?: EmbeddingStore
+  embeddingStore?: EmbeddingStorePort
   embeddingProvider?: () => Promise<EmbeddingProvider>
 }
 
@@ -89,7 +113,7 @@ export class KnowledgeService implements KnowledgeOperations {
   private readonly git: GitOps
   private readonly contentRoot: string
   private readonly now: () => Date
-  private readonly embeddingStore: EmbeddingStore | null
+  private readonly embeddingStore: EmbeddingStorePort | null
   private readonly embeddingProvider: (() => Promise<EmbeddingProvider>) | null
 
   constructor(deps: KnowledgeServiceDeps) {
@@ -304,16 +328,18 @@ export class KnowledgeService implements KnowledgeOperations {
     const row = await this.knowledge.get(slug)
     if (!row) throw new KnowledgeNotFoundError(slug)
 
-    const rowid = this.embeddingStore?.rowidForSlug(slug) ?? null
-
     let deletedFile = false
     if (fs.existsSync(row.filePath)) {
       fs.unlinkSync(row.filePath)
       deletedFile = true
     }
-    await this.knowledge.delete(slug)
 
-    if (rowid !== null) this.embeddingStore?.delete(rowid)
+    /* Embedding delete BEFORE knowledge.delete: pgvector enforces FK
+     * (knowledge_embeddings.slug → knowledge_index.slug), so dropping the
+     * index row first would fail. SQLite has no such FK but the order
+     * works there too. */
+    await this.embeddingStore?.deleteBySlug(slug)
+    await this.knowledge.delete(slug)
 
     if (row.scope === 'project') {
       await this.regenerateIndexForRow(row)
@@ -547,7 +573,7 @@ export class KnowledgeService implements KnowledgeOperations {
     if (!this.embeddingStore.isEnabled() || provider.id === 'noop') {
       return {
         enabled: false,
-        reason: 'sqlite-vec extension or embedding deps unavailable',
+        reason: 'embedding store or embedding deps unavailable',
         providerId: provider.id,
         results: []
       }
@@ -563,7 +589,7 @@ export class KnowledgeService implements KnowledgeOperations {
         results: []
       }
     }
-    const hits = this.embeddingStore.search(vec, Math.max(1, k))
+    const hits = await this.embeddingStore.search(vec, Math.max(1, k))
     const rows = await Promise.all(hits.map((h) => this.knowledge.get(h.slug)))
     const results = hits
       .map((h, i) => {
@@ -595,10 +621,8 @@ export class KnowledgeService implements KnowledgeOperations {
       try {
         const provider = await this.embeddingProvider!()
         if (!this.embeddingStore!.isEnabled() || provider.id === 'noop') return
-        const rowid = this.embeddingStore!.rowidForSlug(slug)
-        if (rowid === null) return
         const vec = await provider.embed(body)
-        this.embeddingStore!.upsert(rowid, provider.id, provider.dims, vec)
+        await this.embeddingStore!.upsertBySlug(slug, provider.id, provider.dims, vec)
       } catch (err) {
         console.warn(
           `[choda-deck] embed failed for knowledge ${slug}:`,
