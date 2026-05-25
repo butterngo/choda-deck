@@ -59,7 +59,6 @@ beforeEach(() => {
   repo = new KnowledgeRepository(db)
   git = new FakeGitOps()
   svc = new KnowledgeService({
-    db,
     knowledge: repo,
     projects,
     git,
@@ -142,7 +141,6 @@ describe('createKnowledge — worktree guard', () => {
     workspaces.add('proj-k', 'ws-wt', 'wt', worktreeCwd)
 
     const svcWithWs = new KnowledgeService({
-      db,
       knowledge: repo,
       projects,
       workspaces,
@@ -387,7 +385,6 @@ describe('workspace-scoped knowledge', () => {
     projects.ensure('proj-other', 'Other', path.join(tmpDir, 'other'))
     workspaces.add('proj-other', 'ws-other', 'Other WS', path.join(tmpDir, 'other-ws'))
     wsSvc = new KnowledgeService({
-      db,
       knowledge: repo,
       projects,
       workspaces,

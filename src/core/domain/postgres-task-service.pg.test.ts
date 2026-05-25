@@ -106,16 +106,9 @@ describeIfDocker('PostgresTaskService facade (TASK-934 slice 11)', () => {
   // Session lifecycle implemented in slice 17 (session-lifecycle.pg.test.ts).
   // Task review + ac-check implemented in slice 18 (task-review-ac-check.pg.test.ts).
   // Queue lifecycle implemented in slice 19 (queue-lifecycle.pg.test.ts).
+  // Knowledge 7 simple ops implemented in slice 20a (knowledge-simple-ops.pg.test.ts).
+  // searchKnowledge stays unimplemented until slice 20b (pgvector + EmbeddingStore port).
   it.each([
-    ['createKnowledge', () =>
-      svc.createKnowledge({
-        projectId: 'facade-p1',
-        scope: 'project',
-        type: 'decision',
-        title: 't',
-        body: 'b'
-      })],
-    ['getKnowledge', () => svc.getKnowledge('slug')],
     ['searchKnowledge', () => svc.searchKnowledge('q')],
     ['backup', () => svc.backup('/tmp/bk.sql')]
   ])('%s throws PostgresNotImplementedError', async (_name, callIt) => {

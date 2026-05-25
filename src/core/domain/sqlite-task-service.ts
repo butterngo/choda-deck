@@ -221,7 +221,6 @@ export class SqliteTaskService
     )
     this.knowledgeRepo = new KnowledgeRepository(this.db)
     this.knowledgeService = new KnowledgeService({
-      db: this.db,
       knowledge: this.knowledgeRepo,
       projects: this.projects,
       workspaces: this.workspaces,
