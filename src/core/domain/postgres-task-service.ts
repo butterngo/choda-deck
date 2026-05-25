@@ -142,6 +142,9 @@ import {
 } from './lifecycle/queue-lifecycle-service'
 import { KnowledgeService } from './knowledge-service'
 import { PostgresKnowledgeRepository } from './repositories/postgres/knowledge-repository.pg'
+import { PgVectorEmbeddingStore } from './embedding/pgvector-embedding-store'
+import { loadEmbeddingProvider } from './embedding/embedding-provider-factory'
+import type { EmbeddingProvider } from './embedding/embedding-provider.interface'
 
 export class PostgresTaskService implements BackendTaskService {
   private readonly conn: PgConnection
@@ -161,7 +164,10 @@ export class PostgresTaskService implements BackendTaskService {
   private readonly agentMemories: PostgresAgentMemoryRepository
   private readonly knowledge: PostgresKnowledgeRepository
   private readonly knowledgeService: KnowledgeService
+  private readonly embeddingStore: PgVectorEmbeddingStore
+  private readonly embeddingProviderPromise: Promise<EmbeddingProvider>
   private migrationsRanPromise: Promise<void> | null = null
+  private embeddingReadyPromise: Promise<void> | null = null
 
   constructor(conn: PgConnection) {
     this.conn = conn
@@ -180,14 +186,17 @@ export class PostgresTaskService implements BackendTaskService {
     this.conversations = new PostgresConversationRepository(conn)
     this.inbox = new PostgresInboxRepository(conn, this.counters)
     this.knowledge = new PostgresKnowledgeRepository(conn)
-    /* embeddingStore / embeddingProvider stay undefined — slice 20b wires
-     * pgvector. searchKnowledge keeps throwing until then; the other 7 ops
-     * don't need an embedding store (scheduleEmbed no-ops without one,
-     * deleteKnowledge's optional-chain skips the rowid lookup). */
+    this.embeddingStore = new PgVectorEmbeddingStore(conn)
+    this.embeddingProviderPromise = loadEmbeddingProvider().catch((err) => {
+      console.warn('[choda-deck] embedding provider load failed:', (err as Error).message)
+      throw err
+    })
     this.knowledgeService = new KnowledgeService({
       knowledge: this.knowledge,
       projects: this.projects,
-      workspaces: this.workspaces
+      workspaces: this.workspaces,
+      embeddingStore: this.embeddingStore,
+      embeddingProvider: () => this.embeddingProviderPromise
     })
   }
 
@@ -200,6 +209,23 @@ export class PostgresTaskService implements BackendTaskService {
     if (this.migrationsRanPromise) return this.migrationsRanPromise
     this.migrationsRanPromise = (async (): Promise<void> => {
       await migrate(this.conn)
+      /* ensureSchema runs after migrate so knowledge_embeddings exists; it
+       * flips the store's vecTableReady flag and clears stale embeddings if
+       * the active provider id differs from a previously-stored one. Mirrors
+       * SqliteTaskService.initializeAsync. Provider load failure is logged
+       * and swallowed — the store stays disabled and search just returns
+       * `enabled:false` with a reason. */
+      try {
+        const provider = await this.embeddingProviderPromise
+        const report = await this.embeddingStore.ensureSchema(provider)
+        if (report.reembeddedAll) {
+          console.warn(
+            `[choda-deck] embedding provider switched ${report.previousProviderId} → ${report.activeProviderId}; cleared per-row embeddings, run backfill to repopulate`
+          )
+        }
+      } catch {
+        /* provider load already logged; leave store disabled */
+      }
     })()
     return this.migrationsRanPromise
   }
@@ -1100,8 +1126,7 @@ export class PostgresTaskService implements BackendTaskService {
     })
   }
 
-  // ── Knowledge — slice 20a wires 7 simple ops; searchKnowledge stays ──────
-  // unwired pending slice 20b (pgvector embedding store + EmbeddingStore port).
+  // ── Knowledge — slice 20a wired 7 simple ops; 20b wired searchKnowledge ──
   async createKnowledge(input: CreateKnowledgeInput): Promise<KnowledgeEntry> {
     return this.knowledgeService.createKnowledge(input)
   }
@@ -1123,8 +1148,8 @@ export class PostgresTaskService implements BackendTaskService {
   async deleteKnowledge(slug: string): Promise<{ slug: string; deletedFile: boolean }> {
     return this.knowledgeService.deleteKnowledge(slug)
   }
-  async searchKnowledge(_query: string, _k?: number): Promise<KnowledgeSearchResult> {
-    throw new PostgresNotImplementedError('searchKnowledge')
+  async searchKnowledge(query: string, k?: number): Promise<KnowledgeSearchResult> {
+    return this.knowledgeService.searchKnowledge(query, k)
   }
 
   // ── Session events ─────────────────────────────────────────────────────────

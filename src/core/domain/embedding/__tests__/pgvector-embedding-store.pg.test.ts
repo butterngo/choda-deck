@@ -69,7 +69,7 @@ describeIfDocker('PgVectorEmbeddingStore', () => {
     const provider = fakeProvider('local-minilm-l6-v2', 384)
     await store.ensureSchema(provider)
     await insertKnowledgeRow('adr-001')
-    await store.upsert('adr-001', provider.id, provider.dims, new Float32Array(384).fill(0.1))
+    await store.upsertBySlug('adr-001', provider.id, provider.dims, new Float32Array(384).fill(0.1))
 
     const second = new PgVectorEmbeddingStore(env.conn)
     const secondReport = await second.ensureSchema(provider)
@@ -87,7 +87,7 @@ describeIfDocker('PgVectorEmbeddingStore', () => {
     const oldProvider = fakeProvider('local-minilm-l6-v2', 384)
     await store.ensureSchema(oldProvider)
     await insertKnowledgeRow('adr-001')
-    await store.upsert('adr-001', oldProvider.id, oldProvider.dims, new Float32Array(384).fill(0.5))
+    await store.upsertBySlug('adr-001', oldProvider.id, oldProvider.dims, new Float32Array(384).fill(0.5))
 
     const newProvider = fakeProvider('voyage-3-lite', 512)
     const fresh = new PgVectorEmbeddingStore(env.conn)
@@ -119,9 +119,9 @@ describeIfDocker('PgVectorEmbeddingStore', () => {
     await insertKnowledgeRow('a')
     await insertKnowledgeRow('b')
     await insertKnowledgeRow('c')
-    await store.upsert('a', provider.id, 4, new Float32Array([1, 0, 0, 0]))
-    await store.upsert('b', provider.id, 4, new Float32Array([0, 1, 0, 0]))
-    await store.upsert('c', provider.id, 4, new Float32Array([1, 0, 0, 0]))
+    await store.upsertBySlug('a', provider.id, 4, new Float32Array([1, 0, 0, 0]))
+    await store.upsertBySlug('b', provider.id, 4, new Float32Array([0, 1, 0, 0]))
+    await store.upsertBySlug('c', provider.id, 4, new Float32Array([1, 0, 0, 0]))
 
     const hits = await store.search(new Float32Array([1, 0, 0, 0]), 3)
     expect(hits).toHaveLength(3)
@@ -134,8 +134,8 @@ describeIfDocker('PgVectorEmbeddingStore', () => {
     const provider = fakeProvider('local-minilm-l6-v2', 4)
     await store.ensureSchema(provider)
     await insertKnowledgeRow('a')
-    await store.upsert('a', provider.id, 4, new Float32Array([1, 0, 0, 0]))
-    await store.upsert('a', provider.id, 4, new Float32Array([0, 0, 0, 1]))
+    await store.upsertBySlug('a', provider.id, 4, new Float32Array([1, 0, 0, 0]))
+    await store.upsertBySlug('a', provider.id, 4, new Float32Array([0, 0, 0, 1]))
 
     const hits = await store.search(new Float32Array([0, 0, 0, 1]), 1)
     expect(hits[0].slug).toBe('a')
@@ -152,9 +152,9 @@ describeIfDocker('PgVectorEmbeddingStore', () => {
     const provider = fakeProvider('local-minilm-l6-v2', 4)
     await store.ensureSchema(provider)
     await insertKnowledgeRow('a')
-    await store.upsert('a', provider.id, 4, new Float32Array([1, 0, 0, 0]))
+    await store.upsertBySlug('a', provider.id, 4, new Float32Array([1, 0, 0, 0]))
 
-    await store.delete('a')
+    await store.deleteBySlug('a')
     const hits = await store.search(new Float32Array([1, 0, 0, 0]), 5)
     expect(hits).toHaveLength(0)
 

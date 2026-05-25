@@ -105,6 +105,25 @@ export class EmbeddingStore {
     }
   }
 
+  /* Slug-keyed wrappers — `EmbeddingStorePort` (slice 20b) is slug-first because
+   * pgvector has no implicit rowid. Internally we still go through rowid since
+   * sqlite-vec's virtual table keys on it. Public callers (`KnowledgeService`)
+   * use these; the rowid methods stay for the existing `embedding-store.test.ts`
+   * unit suite + any future backfill caller that already knows the rowid. */
+  upsertBySlug(slug: string, providerId: string, dims: number, vector: Float32Array): void {
+    if (!this.isEnabled()) return
+    const rowid = this.rowidForSlug(slug)
+    if (rowid === null) return
+    this.upsert(rowid, providerId, dims, vector)
+  }
+
+  deleteBySlug(slug: string): void {
+    if (!this.extensionLoaded) return
+    const rowid = this.rowidForSlug(slug)
+    if (rowid === null) return
+    this.delete(rowid)
+  }
+
   search(query: Float32Array, k: number): EmbeddingSearchHit[] {
     if (!this.isEnabled()) return []
     const json = JSON.stringify(Array.from(query))
