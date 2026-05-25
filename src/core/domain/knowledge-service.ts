@@ -1,9 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import type Database from 'better-sqlite3'
-import type { KnowledgeRepository } from './repositories/knowledge-repository'
-import type { ProjectRepository } from './repositories/project-repository'
-import type { WorkspaceRepository } from './repositories/workspace-repository'
+import type { ProjectRow } from './repositories/project-repository'
+import type { WorkspaceRow } from './repositories/workspace-repository'
 import type { GitOps } from './knowledge-git'
 import { GitOpsImpl } from './knowledge-git'
 import { parseFrontmatter, serializeFrontmatter } from './knowledge-frontmatter'
@@ -27,6 +25,31 @@ import type { KnowledgeOperations } from './interfaces/knowledge-operations.inte
 import type { EmbeddingProvider } from './embedding/embedding-provider.interface'
 import type { EmbeddingStore } from './embedding/embedding-store'
 
+type Awaitable<T> = T | Promise<T>
+
+/**
+ * Narrow ports the knowledge service depends on. SQLite repos satisfy them
+ * via their synchronous returns (a `T` is assignable to `T | Promise<T>`);
+ * the Postgres repos satisfy them with native `Promise<T>` returns. Same
+ * pattern as `QueueLifecycleService` ports (slice 19) — keeps the ports
+ * service-local so a different consumer can define a narrower slice.
+ */
+export interface KnowledgeIndexPort {
+  upsert(row: KnowledgeIndexRow): Awaitable<void>
+  get(slug: string): Awaitable<KnowledgeIndexRow | null>
+  list(filter?: KnowledgeListFilter): Awaitable<KnowledgeIndexRow[]>
+  updateLastVerified(slug: string, lastVerifiedAt: string): Awaitable<void>
+  delete(slug: string): Awaitable<void>
+}
+
+export interface KnowledgeProjectPort {
+  get(id: string): Awaitable<ProjectRow | null>
+}
+
+export interface KnowledgeWorkspacePort {
+  get(id: string): Awaitable<WorkspaceRow | null>
+}
+
 export class KnowledgeNotFoundError extends Error {
   constructor(slug: string) {
     super(`Knowledge entry not found: ${slug}`)
@@ -49,10 +72,9 @@ export class KnowledgeValidationError extends Error {
 }
 
 export interface KnowledgeServiceDeps {
-  db: Database.Database
-  knowledge: KnowledgeRepository
-  projects: ProjectRepository
-  workspaces?: WorkspaceRepository
+  knowledge: KnowledgeIndexPort
+  projects: KnowledgeProjectPort
+  workspaces?: KnowledgeWorkspacePort
   git?: GitOps
   contentRoot?: string
   now?: () => Date
@@ -61,10 +83,9 @@ export interface KnowledgeServiceDeps {
 }
 
 export class KnowledgeService implements KnowledgeOperations {
-  private readonly db: Database.Database
-  private readonly knowledge: KnowledgeRepository
-  private readonly projects: ProjectRepository
-  private readonly workspaces: WorkspaceRepository | null
+  private readonly knowledge: KnowledgeIndexPort
+  private readonly projects: KnowledgeProjectPort
+  private readonly workspaces: KnowledgeWorkspacePort | null
   private readonly git: GitOps
   private readonly contentRoot: string
   private readonly now: () => Date
@@ -72,7 +93,6 @@ export class KnowledgeService implements KnowledgeOperations {
   private readonly embeddingProvider: (() => Promise<EmbeddingProvider>) | null
 
   constructor(deps: KnowledgeServiceDeps) {
-    this.db = deps.db
     this.knowledge = deps.knowledge
     this.projects = deps.projects
     this.workspaces = deps.workspaces ?? null
@@ -85,14 +105,14 @@ export class KnowledgeService implements KnowledgeOperations {
 
   async createKnowledge(input: CreateKnowledgeInput): Promise<KnowledgeEntry> {
     this.validateInput(input)
-    const project = this.projects.get(input.projectId)
+    const project = await this.projects.get(input.projectId)
     if (!project) throw new KnowledgeValidationError(`unknown projectId: ${input.projectId}`)
 
-    const workspaceCwd = this.resolveWorkspaceCwd(input.projectId, input.workspaceId)
+    const workspaceCwd = await this.resolveWorkspaceCwd(input.projectId, input.workspaceId)
 
     const slug = input.slug ?? slugify(input.title)
     if (!slug) throw new KnowledgeValidationError('cannot derive slug from title')
-    if (this.knowledge.get(slug)) {
+    if (await this.knowledge.get(slug)) {
       throw new KnowledgeConflictError(slug, 'slug already exists; pass an explicit slug to disambiguate')
     }
 
@@ -135,13 +155,13 @@ export class KnowledgeService implements KnowledgeOperations {
       createdAt: isoDate,
       lastVerifiedAt: isoDate
     }
-    this.knowledge.upsert(indexRow)
+    await this.knowledge.upsert(indexRow)
 
     if (input.scope === 'project') {
       if (input.workspaceId && workspaceCwd) {
-        this.regenerateWorkspaceIndexMd(input.projectId, input.workspaceId, workspaceCwd)
+        await this.regenerateWorkspaceIndexMd(input.projectId, input.workspaceId, workspaceCwd)
       } else {
-        this.regenerateIndexMd(input.projectId, project.cwd)
+        await this.regenerateIndexMd(input.projectId, project.cwd)
       }
     }
 
@@ -162,9 +182,9 @@ export class KnowledgeService implements KnowledgeOperations {
     if (!fs.existsSync(input.filePath)) {
       throw new KnowledgeValidationError(`file not found: ${input.filePath}`)
     }
-    const project = this.projects.get(input.projectId)
+    const project = await this.projects.get(input.projectId)
     if (!project) throw new KnowledgeValidationError(`unknown projectId: ${input.projectId}`)
-    const workspaceCwd = this.resolveWorkspaceCwd(input.projectId, input.workspaceId)
+    const workspaceCwd = await this.resolveWorkspaceCwd(input.projectId, input.workspaceId)
 
     const raw = fs.readFileSync(input.filePath, 'utf8')
     const { frontmatter, body } = parseFrontmatter(raw)
@@ -193,13 +213,13 @@ export class KnowledgeService implements KnowledgeOperations {
       createdAt: frontmatter.createdAt,
       lastVerifiedAt: frontmatter.lastVerifiedAt
     }
-    this.knowledge.upsert(indexRow)
+    await this.knowledge.upsert(indexRow)
 
     if (frontmatter.scope === 'project') {
       if (input.workspaceId && workspaceCwd) {
-        this.regenerateWorkspaceIndexMd(input.projectId, input.workspaceId, workspaceCwd)
+        await this.regenerateWorkspaceIndexMd(input.projectId, input.workspaceId, workspaceCwd)
       } else {
-        this.regenerateIndexMd(input.projectId, project.cwd)
+        await this.regenerateIndexMd(input.projectId, project.cwd)
       }
     }
 
@@ -217,14 +237,14 @@ export class KnowledgeService implements KnowledgeOperations {
     }
   }
 
-  private resolveWorkspaceCwd(projectId: string, workspaceId?: string): string | null {
+  private async resolveWorkspaceCwd(projectId: string, workspaceId?: string): Promise<string | null> {
     if (!workspaceId) return null
     if (!this.workspaces) {
       throw new KnowledgeValidationError(
         'workspace repository not configured — cannot resolve workspaceId'
       )
     }
-    const ws = this.workspaces.get(workspaceId)
+    const ws = await this.workspaces.get(workspaceId)
     if (!ws) throw new KnowledgeValidationError(`unknown workspaceId: ${workspaceId}`)
     if (ws.projectId !== projectId) {
       throw new KnowledgeValidationError(
@@ -236,14 +256,14 @@ export class KnowledgeService implements KnowledgeOperations {
   }
 
   async getKnowledge(slug: string): Promise<KnowledgeEntry | null> {
-    const row = this.knowledge.get(slug)
+    const row = await this.knowledge.get(slug)
     if (!row) return null
     if (!fs.existsSync(row.filePath)) return null
 
     const raw = fs.readFileSync(row.filePath, 'utf8')
     const { frontmatter, body } = parseFrontmatter(raw)
 
-    const cwd = this.resolveStalenessCwd(row.projectId, row.workspaceId)
+    const cwd = await this.resolveStalenessCwd(row.projectId, row.workspaceId)
     const staleness = this.computeStaleness(frontmatter.refs, cwd, row.scope)
 
     return {
@@ -257,7 +277,8 @@ export class KnowledgeService implements KnowledgeOperations {
   }
 
   async listKnowledge(filter: KnowledgeListFilter = {}): Promise<KnowledgeListItem[]> {
-    return this.knowledge.list(filter).map((r) => ({
+    const rows = await this.knowledge.list(filter)
+    return rows.map((r) => ({
       slug: r.slug,
       projectId: r.projectId,
       workspaceId: r.workspaceId,
@@ -270,16 +291,17 @@ export class KnowledgeService implements KnowledgeOperations {
     }))
   }
 
-  private resolveStalenessCwd(projectId: string, workspaceId: string | null): string {
+  private async resolveStalenessCwd(projectId: string, workspaceId: string | null): Promise<string> {
     if (workspaceId && this.workspaces) {
-      const ws = this.workspaces.get(workspaceId)
+      const ws = await this.workspaces.get(workspaceId)
       if (ws?.cwd) return ws.cwd
     }
-    return this.projects.get(projectId)?.cwd ?? ''
+    const project = await this.projects.get(projectId)
+    return project?.cwd ?? ''
   }
 
   async deleteKnowledge(slug: string): Promise<{ slug: string; deletedFile: boolean }> {
-    const row = this.knowledge.get(slug)
+    const row = await this.knowledge.get(slug)
     if (!row) throw new KnowledgeNotFoundError(slug)
 
     const rowid = this.embeddingStore?.rowidForSlug(slug) ?? null
@@ -289,27 +311,27 @@ export class KnowledgeService implements KnowledgeOperations {
       fs.unlinkSync(row.filePath)
       deletedFile = true
     }
-    this.knowledge.delete(slug)
+    await this.knowledge.delete(slug)
 
     if (rowid !== null) this.embeddingStore?.delete(rowid)
 
     if (row.scope === 'project') {
-      this.regenerateIndexForRow(row)
+      await this.regenerateIndexForRow(row)
     }
 
     return { slug, deletedFile }
   }
 
-  private regenerateIndexForRow(row: KnowledgeIndexRow): void {
+  private async regenerateIndexForRow(row: KnowledgeIndexRow): Promise<void> {
     if (row.workspaceId && this.workspaces) {
-      const ws = this.workspaces.get(row.workspaceId)
+      const ws = await this.workspaces.get(row.workspaceId)
       if (ws?.cwd) {
-        this.regenerateWorkspaceIndexMd(row.projectId, row.workspaceId, ws.cwd)
+        await this.regenerateWorkspaceIndexMd(row.projectId, row.workspaceId, ws.cwd)
         return
       }
     }
-    const project = this.projects.get(row.projectId)
-    if (project) this.regenerateIndexMd(row.projectId, project.cwd)
+    const project = await this.projects.get(row.projectId)
+    if (project) await this.regenerateIndexMd(row.projectId, project.cwd)
   }
 
   async updateKnowledge(input: UpdateKnowledgeInput): Promise<KnowledgeEntry> {
@@ -320,10 +342,10 @@ export class KnowledgeService implements KnowledgeOperations {
     const existing = await this.getKnowledge(input.slug)
     if (!existing) throw new KnowledgeNotFoundError(input.slug)
 
-    const row = this.knowledge.get(input.slug)
+    const row = await this.knowledge.get(input.slug)
     if (!row) throw new KnowledgeNotFoundError(input.slug)
 
-    const stalenessCwd = this.resolveStalenessCwd(row.projectId, row.workspaceId)
+    const stalenessCwd = await this.resolveStalenessCwd(row.projectId, row.workspaceId)
     const scope = existing.frontmatter.scope
 
     const newBody = input.body ?? existing.body
@@ -343,10 +365,10 @@ export class KnowledgeService implements KnowledgeOperations {
     }
 
     fs.writeFileSync(existing.filePath, serializeFrontmatter(updatedFm, newBody), 'utf8')
-    this.knowledge.updateLastVerified(input.slug, isoDate)
+    await this.knowledge.updateLastVerified(input.slug, isoDate)
 
     if (scope === 'project') {
-      this.regenerateIndexForRow(row)
+      await this.regenerateIndexForRow(row)
     }
 
     if (input.body !== undefined && input.body !== existing.body) {
@@ -367,13 +389,13 @@ export class KnowledgeService implements KnowledgeOperations {
   async verifyKnowledge(slug: string): Promise<KnowledgeVerifyResult> {
     const entry = await this.getKnowledge(slug)
     if (!entry) throw new KnowledgeNotFoundError(slug)
-    const row = this.knowledge.get(slug)
+    const row = await this.knowledge.get(slug)
     if (!row) throw new KnowledgeNotFoundError(slug)
 
     const isoDate = toIsoDate(this.now())
-    this.knowledge.updateLastVerified(slug, isoDate)
+    await this.knowledge.updateLastVerified(slug, isoDate)
 
-    const stalenessCwd = this.resolveStalenessCwd(row.projectId, row.workspaceId)
+    const stalenessCwd = await this.resolveStalenessCwd(row.projectId, row.workspaceId)
     const refreshedRefs: KnowledgeRef[] = entry.frontmatter.refs.map((r) => {
       const sha = stalenessCwd ? safeHeadSha(this.git, stalenessCwd) : r.commitSha
       return { path: r.path, commitSha: sha }
@@ -386,7 +408,7 @@ export class KnowledgeService implements KnowledgeOperations {
     fs.writeFileSync(entry.filePath, serializeFrontmatter(updatedFm, entry.body), 'utf8')
 
     if (entry.frontmatter.scope === 'project') {
-      this.regenerateIndexForRow(row)
+      await this.regenerateIndexForRow(row)
     }
 
     const staleness = refreshedRefs.map((r) => ({
@@ -462,22 +484,22 @@ export class KnowledgeService implements KnowledgeOperations {
     })
   }
 
-  private regenerateIndexMd(projectId: string, projectCwd: string): void {
-    const rows = this.knowledge.list({ projectId, workspaceId: null, scope: 'project' })
+  private async regenerateIndexMd(projectId: string, projectCwd: string): Promise<void> {
+    const rows = await this.knowledge.list({ projectId, workspaceId: null, scope: 'project' })
     this.writeIndexMd(projectCwd, `Knowledge — ${projectId}`, rows)
   }
 
-  private regenerateWorkspaceIndexMd(
+  private async regenerateWorkspaceIndexMd(
     projectId: string,
     workspaceId: string,
     workspaceCwd: string
-  ): void {
+  ): Promise<void> {
     // Guard against resurrecting a deleted worktree: writeIndexMd() does
     // mkdirSync(recursive) which would silently rebuild docs/knowledge/ inside
     // a workspace whose cwd has been removed (e.g. orphan worktrees handled by
     // cleanup_worktree_orphans). Skip the regen — the workspace is gone.
     if (!fs.existsSync(workspaceCwd)) return
-    const rows = this.knowledge.list({ projectId, workspaceId, scope: 'project' })
+    const rows = await this.knowledge.list({ projectId, workspaceId, scope: 'project' })
     this.writeIndexMd(workspaceCwd, `Knowledge — ${projectId}/${workspaceId}`, rows)
   }
 
@@ -542,9 +564,10 @@ export class KnowledgeService implements KnowledgeOperations {
       }
     }
     const hits = this.embeddingStore.search(vec, Math.max(1, k))
+    const rows = await Promise.all(hits.map((h) => this.knowledge.get(h.slug)))
     const results = hits
-      .map((h) => {
-        const row = this.knowledge.get(h.slug)
+      .map((h, i) => {
+        const row = rows[i]
         if (!row) return null
         return {
           slug: row.slug,

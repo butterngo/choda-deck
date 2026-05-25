@@ -140,6 +140,8 @@ import {
   type QueueRuntime,
   type QueueSessionGateway
 } from './lifecycle/queue-lifecycle-service'
+import { KnowledgeService } from './knowledge-service'
+import { PostgresKnowledgeRepository } from './repositories/postgres/knowledge-repository.pg'
 
 export class PostgresTaskService implements BackendTaskService {
   private readonly conn: PgConnection
@@ -157,6 +159,8 @@ export class PostgresTaskService implements BackendTaskService {
   private readonly toolInvocations: PostgresToolInvocationsRepository
   private readonly sessionEvents: PostgresSessionEventRepository
   private readonly agentMemories: PostgresAgentMemoryRepository
+  private readonly knowledge: PostgresKnowledgeRepository
+  private readonly knowledgeService: KnowledgeService
   private migrationsRanPromise: Promise<void> | null = null
 
   constructor(conn: PgConnection) {
@@ -175,6 +179,16 @@ export class PostgresTaskService implements BackendTaskService {
     this.contextSources = new PostgresContextSourceRepository(conn)
     this.conversations = new PostgresConversationRepository(conn)
     this.inbox = new PostgresInboxRepository(conn, this.counters)
+    this.knowledge = new PostgresKnowledgeRepository(conn)
+    /* embeddingStore / embeddingProvider stay undefined — slice 20b wires
+     * pgvector. searchKnowledge keeps throwing until then; the other 7 ops
+     * don't need an embedding store (scheduleEmbed no-ops without one,
+     * deleteKnowledge's optional-chain skips the rowid lookup). */
+    this.knowledgeService = new KnowledgeService({
+      knowledge: this.knowledge,
+      projects: this.projects,
+      workspaces: this.workspaces
+    })
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -1086,27 +1100,28 @@ export class PostgresTaskService implements BackendTaskService {
     })
   }
 
-  // ── Knowledge — slice 11 throws (needs pgvector embedding store) ──────────
-  async createKnowledge(_input: CreateKnowledgeInput): Promise<KnowledgeEntry> {
-    throw new PostgresNotImplementedError('createKnowledge')
+  // ── Knowledge — slice 20a wires 7 simple ops; searchKnowledge stays ──────
+  // unwired pending slice 20b (pgvector embedding store + EmbeddingStore port).
+  async createKnowledge(input: CreateKnowledgeInput): Promise<KnowledgeEntry> {
+    return this.knowledgeService.createKnowledge(input)
   }
-  async registerExistingKnowledge(_input: RegisterExistingKnowledgeInput): Promise<KnowledgeEntry> {
-    throw new PostgresNotImplementedError('registerExistingKnowledge')
+  async registerExistingKnowledge(input: RegisterExistingKnowledgeInput): Promise<KnowledgeEntry> {
+    return this.knowledgeService.registerExistingKnowledge(input)
   }
-  async getKnowledge(_slug: string): Promise<KnowledgeEntry | null> {
-    throw new PostgresNotImplementedError('getKnowledge')
+  async getKnowledge(slug: string): Promise<KnowledgeEntry | null> {
+    return this.knowledgeService.getKnowledge(slug)
   }
-  async listKnowledge(_filter?: KnowledgeListFilter): Promise<KnowledgeListItem[]> {
-    throw new PostgresNotImplementedError('listKnowledge')
+  async listKnowledge(filter?: KnowledgeListFilter): Promise<KnowledgeListItem[]> {
+    return this.knowledgeService.listKnowledge(filter)
   }
-  async updateKnowledge(_input: UpdateKnowledgeInput): Promise<KnowledgeEntry> {
-    throw new PostgresNotImplementedError('updateKnowledge')
+  async updateKnowledge(input: UpdateKnowledgeInput): Promise<KnowledgeEntry> {
+    return this.knowledgeService.updateKnowledge(input)
   }
-  async verifyKnowledge(_slug: string): Promise<KnowledgeVerifyResult> {
-    throw new PostgresNotImplementedError('verifyKnowledge')
+  async verifyKnowledge(slug: string): Promise<KnowledgeVerifyResult> {
+    return this.knowledgeService.verifyKnowledge(slug)
   }
-  async deleteKnowledge(_slug: string): Promise<{ slug: string; deletedFile: boolean }> {
-    throw new PostgresNotImplementedError('deleteKnowledge')
+  async deleteKnowledge(slug: string): Promise<{ slug: string; deletedFile: boolean }> {
+    return this.knowledgeService.deleteKnowledge(slug)
   }
   async searchKnowledge(_query: string, _k?: number): Promise<KnowledgeSearchResult> {
     throw new PostgresNotImplementedError('searchKnowledge')

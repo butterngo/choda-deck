@@ -85,7 +85,6 @@ beforeEach(() => {
   provider = new FakeProvider()
   store.ensureSchema(provider)
   svc = new KnowledgeService({
-    db,
     knowledge: repo,
     projects,
     git: new FakeGit(),
@@ -104,7 +103,6 @@ afterEach(() => {
 describe('KnowledgeService.searchKnowledge', () => {
   it('returns enabled=false with reason when no provider is configured', async () => {
     const bareSvc = new KnowledgeService({
-      db,
       knowledge: new KnowledgeRepository(db),
       projects: new ProjectRepository(db)
     })
@@ -116,7 +114,6 @@ describe('KnowledgeService.searchKnowledge', () => {
 
   it('returns enabled=false when provider is noop', async () => {
     const noopSvc = new KnowledgeService({
-      db,
       knowledge: new KnowledgeRepository(db),
       projects: new ProjectRepository(db),
       embeddingStore: store,
