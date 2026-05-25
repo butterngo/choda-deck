@@ -105,6 +105,7 @@ describeIfDocker('PostgresTaskService facade (TASK-934 slice 11)', () => {
   // Conversation lifecycle implemented in slice 16 (conversation-lifecycle.pg.test.ts).
   // Session lifecycle implemented in slice 17 (session-lifecycle.pg.test.ts).
   // Task review + ac-check implemented in slice 18 (task-review-ac-check.pg.test.ts).
+  // Queue lifecycle implemented in slice 19 (queue-lifecycle.pg.test.ts).
   it.each([
     ['createKnowledge', () =>
       svc.createKnowledge({
@@ -119,15 +120,5 @@ describeIfDocker('PostgresTaskService facade (TASK-934 slice 11)', () => {
     ['backup', () => svc.backup('/tmp/bk.sql')]
   ])('%s throws PostgresNotImplementedError', async (_name, callIt) => {
     await expect(callIt()).rejects.toBeInstanceOf(PostgresNotImplementedError)
-  })
-
-  it('createQueueLifecycle throws PostgresNotImplementedError synchronously', () => {
-    expect(() =>
-      svc.createQueueLifecycle({
-        spawn: () => Promise.resolve({ exitCode: 0, signal: null }),
-        now: () => new Date(),
-        log: () => {}
-      } as never)
-    ).toThrow(PostgresNotImplementedError)
   })
 })
