@@ -2,22 +2,27 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
-| [ADR-030-dual-backend-sync](./ADR-030-dual-backend-sync.md) | decision | ADR-030: Dual-backend storage (SQLite local + Postgres remote) with pending-ops sync | 2026-05-22 |  |
+| [ADR-030-dual-backend-sync](./ADR-030-dual-backend-sync.md) | decision | ADR-030: Dual-backend storage (SQLite local + Postgres remote) with pending-ops sync | 2026-05-22 | ✱ |
 | [ADR-029-session-activity-visibility](./ADR-029-session-activity-visibility.md) | decision | ADR-029: Session activity visibility — file edits, AC verification, end-of-session summary | 2026-05-21 |  |
 | [ADR-028-session-end-structured-summary](./ADR-028-session-end-structured-summary.md) | decision | ADR-028: Structured session-summary observation at session_end | 2026-05-21 |  |
 | [adr-027-minimal-self-hosted-oauth-2-0-dcr-for-claude-ai-connector-registration](./adr-027-minimal-self-hosted-oauth-2-0-dcr-for-claude-ai-connector-registration.md) | decision | ADR-027: Minimal self-hosted OAuth 2.0 + DCR for claude.ai connector registration | 2026-05-21 | ✱ |
 | [ADR-026-dual-transport-mcp-server](./ADR-026-dual-transport-mcp-server.md) | decision | ADR-026: Dual-transport MCP server (stdio + Streamable HTTP) with bearer auth for k8s | 2026-05-21 | ✱ |
-| [ADR-025-knowledge-register-existing-keep](./ADR-025-knowledge-register-existing-keep.md) | decision | ADR-025: knowledge_register_existing — keep as-is, error rate is noise | 2026-05-19 |  |
+| [ADR-025-knowledge-register-existing-keep](./ADR-025-knowledge-register-existing-keep.md) | decision | ADR-025: knowledge_register_existing — keep as-is, error rate is noise | 2026-05-19 | ✱ |
+| [ADR-024-review-status-and-session-checkpoint](./ADR-024-review-status-and-session-checkpoint.md) | decision | ADR-024: REVIEW task status + session checkpoint-on-finish cho queue runner | 2026-05-17 | ✱ |
 | [ADR-023-agent-memory-layer](./ADR-023-agent-memory-layer.md) | decision | ADR-023: Agent memory layer — 2-tier episodic + procedural với Letta self-edit distillation | 2026-05-18 | ✱ |
+| [ADR-023-auto-safe-v2-hardening](./ADR-023-auto-safe-v2-hardening.md) | decision | ADR-023: auto-safe v2 hardening — 3 trust fixes từ TASK-726 retro | 2026-05-13 | ✱ |
 | [spike-3way-cold-prewarm-warm-2026-05-11](./spike-3way-cold-prewarm-warm-2026-05-11.md) | spike | Spike v2: Cold vs Pre-warm on TASK-704-shape (ADR-019 Phase 2 follow-up) | 2026-05-11 | ✱ |
 | [ADR-019-autonomous-queue-runner](./ADR-019-autonomous-queue-runner.md) | decision | ADR-019: Autonomous Queue Runner — sequential `auto-safe` task executor | 2026-05-11 | ✱ |
+| [playwright-pilot-skill](./playwright-pilot-skill.md) | learning | Playwright pilot skill — global Claude Code skill for FE executor | 2026-05-08 |  |
+| [playwright-executor-pilot-runbook](./playwright-executor-pilot-runbook.md) | learning | Playwright FE test executor pilot — runbook | 2026-05-08 | ✱ |
+| [sqlite-wal-read-consistency](./sqlite-wal-read-consistency.md) | learning | SQLite WAL read consistency — why CLI may briefly see stale state | 2026-05-07 | ✱ |
 | [cross-device-sync-export-import-spec](./cross-device-sync-export-import-spec.md) | evaluation | Cross-device sync export/import — sequential dual-machine sync without duplicating project knowledge | 2026-05-18 |  |
-| [auto-safe-label-spec](./auto-safe-label-spec.md) | decision | auto-safe label — task contract for autonomous execution | 2026-05-18 |  |
+| [auto-safe-label-spec](./auto-safe-label-spec.md) | decision | auto-safe label — task contract for autonomous execution | 2026-05-18 | ✱ |
 | [ADR-022-workspace-scoped-knowledge](./ADR-022-workspace-scoped-knowledge.md) | decision | ADR-022: Workspace-scoped knowledge — multi-repo project support | 2026-05-18 | ✱ |
 | [ADR-021-cross-project-event-routing](./ADR-021-cross-project-event-routing.md) | decision | ADR-021: Cross-Project Event Routing — Phase 3 | 2026-05-18 |  |
 | [ADR-020-embedding-architecture](./ADR-020-embedding-architecture.md) | decision | ADR-020: Embedding Architecture — local default with provider abstraction for semantic search | 2026-05-18 | ✱ |
 | [pure-heuristic-core-thin-git-wrapper-for-stubbability](./pure-heuristic-core-thin-git-wrapper-for-stubbability.md) | decision | Pure heuristic core, thin git wrapper for stubbability | 2026-05-18 |  |
-| [ADR-019-adr-numbering-convention](./ADR-019-adr-numbering-convention.md) | decision | ADR-019: ADR Numbering Convention — keep ADR-NNN prefix in slug | 2026-05-18 |  |
+| [ADR-019-adr-numbering-convention](./ADR-019-adr-numbering-convention.md) | decision | ADR-019: ADR Numbering Convention — keep ADR-NNN prefix in slug | 2026-05-18 | ✱ |
 | [ADR-018-knowledge-layer](./ADR-018-knowledge-layer.md) | decision | Knowledge Layer Foundation — code-coupled MD with frontmatter and staleness tracking | 2026-05-18 | ✱ |
 | [ADR-017-headless-spawn-strategy](./ADR-017-headless-spawn-strategy.md) | decision | ADR-017: Headless Spawn Strategy — `claude -p` (default config) over Anthropic SDK Direct | 2026-05-18 |  |
 | [ADR-016-graphify-integration](./ADR-016-graphify-integration.md) | decision | ADR-016: Graphify Integration — Query-Only Phase 1, Manual Refresh | 2026-05-18 |  |
