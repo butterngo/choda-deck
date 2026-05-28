@@ -1,4 +1,7 @@
-﻿// ADR-030 — Postgres sibling of RelationshipRepository.
+// ADR-030 / 2026-05-28 narrowing — Postgres relationship repo, read-only.
+// Only getForItem is kept (called by task_context). Writes (add/remove) and
+// direction-scoped read (getFrom) deleted — no remote tool authors edges,
+// and task_context just wants the full edge set per node.
 
 import type { Queryable } from './connection'
 import type { Relationship, RelationType } from '../../task-types'
@@ -16,39 +19,11 @@ function mapRow(row: RelationshipDbRow): Relationship {
 export class PostgresRelationshipRepository {
   constructor(private readonly conn: Queryable) {}
 
-  async add(fromId: string, toId: string, type: RelationType): Promise<void> {
-    await this.conn.query(
-      `INSERT INTO relationships (from_id, to_id, type) VALUES ($1, $2, $3)
-       ON CONFLICT (from_id, to_id, type) DO NOTHING`,
-      [fromId, toId, type]
-    )
-  }
-
-  async remove(fromId: string, toId: string, type: RelationType): Promise<void> {
-    await this.conn.query(
-      'DELETE FROM relationships WHERE from_id = $1 AND to_id = $2 AND type = $3',
-      [fromId, toId, type]
-    )
-  }
-
   async getForItem(itemId: string): Promise<Relationship[]> {
     const result = await this.conn.query<RelationshipDbRow>(
       'SELECT from_id, to_id, type FROM relationships WHERE from_id = $1 OR to_id = $1',
       [itemId]
     )
-    return result.rows.map(mapRow)
-  }
-
-  async getFrom(itemId: string, type?: RelationType): Promise<Relationship[]> {
-    const result = type
-      ? await this.conn.query<RelationshipDbRow>(
-          'SELECT from_id, to_id, type FROM relationships WHERE from_id = $1 AND type = $2',
-          [itemId, type]
-        )
-      : await this.conn.query<RelationshipDbRow>(
-          'SELECT from_id, to_id, type FROM relationships WHERE from_id = $1',
-          [itemId]
-        )
     return result.rows.map(mapRow)
   }
 }

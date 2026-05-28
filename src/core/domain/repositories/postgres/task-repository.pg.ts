@@ -1,31 +1,23 @@
-﻿// ADR-030 — Postgres sibling of TaskRepository. Largest of the slice-3 repos
-// because tasks own the blockedBy/dependency graph (via the relationships
-// table) and the DONE-blocker guard logic.
+// ADR-030 / 2026-05-28 narrowing — Postgres task repo, read-only.
 //
-// Schema differences vs SQLite:
-//   - `labels` is JSONB (node-pg returns it pre-parsed; SQLite stored as TEXT)
-//   - `pinned` is BOOLEAN
-//   - `created_at` / `updated_at` are TIMESTAMPTZ — mapped to ISO string at
-//     the repo boundary for shape parity
-//   - `due_date` stays TEXT (caller-supplied strings round-trip unchanged)
+// Kept: get, find, getSubtasks, getDependencies (the four reads exercised by
+// task_list + task_context). Constructor no longer needs the relationships or
+// counters dependencies — they were only used by create()/update()/dependency
+// writes, all of which are gone. The blockedBy → relationships JOIN logic is
+// inlined as raw SQL in getBlockedBy() since it's the only consumer left.
 //
-// IN-list filters use `= ANY($n::text[])` instead of `IN (?, ?, ...)`-with-spread
-// because pg parameter arrays are cleaner than dynamic placeholder generation.
+// READY filter still post-filters on findBlockers to hide blocked tasks from
+// the remote `task_list status=READY` query — same semantics as SQLite.
 
-import { runInTx, type Queryable, type SqlValue, type TxClient } from './connection'
+import type { Queryable, SqlValue } from './connection'
 import type {
-  CreateTaskInput,
   Task,
   TaskBlocker,
   TaskDependency,
   TaskFilter,
   TaskPriority,
-  TaskStatus,
-  UpdateTaskInput
+  TaskStatus
 } from '../../task-types'
-import { TaskBlockedError } from '../../task-types'
-import type { PostgresCounterRepository } from './counter-repository.pg'
-import type { PostgresRelationshipRepository } from './relationship-repository.pg'
 
 interface TaskDbRow {
   id: string
@@ -66,136 +58,7 @@ const SELECT_COLS =
   'id, project_id, parent_task_id, title, status, priority, labels, due_date, pinned, file_path, body, created_at, updated_at'
 
 export class PostgresTaskRepository {
-  constructor(
-    private readonly conn: Queryable,
-    private readonly relationships: PostgresRelationshipRepository,
-    private readonly counters: PostgresCounterRepository
-  ) {}
-
-  private async nextTaskId(): Promise<string> {
-    const n = await this.counters.nextNumber('task')
-    return `TASK-${String(n).padStart(3, '0')}`
-  }
-
-  async create(input: CreateTaskInput): Promise<Task> {
-    const now = new Date()
-    const id = input.id || (await this.nextTaskId())
-    const status = input.status || 'TODO'
-
-    if (input.blockedBy && input.blockedBy.length > 0) {
-      await this.validateBlockedBy(id, input.blockedBy)
-    }
-
-    if (status === 'DONE') {
-      const blockers = await this.findBlockers(id, input.parentTaskId || null, input.blockedBy || [])
-      if (blockers.length > 0) throw new TaskBlockedError(id, blockers)
-    }
-
-    await this.conn.query(
-      `INSERT INTO tasks
-         (id, project_id, parent_task_id, title, status, priority, labels, due_date, file_path, body, pinned, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, FALSE, $11, $11)`,
-      [
-        id,
-        input.projectId,
-        input.parentTaskId || null,
-        input.title,
-        status,
-        input.priority || null,
-        input.labels ? JSON.stringify(input.labels) : null,
-        input.dueDate || null,
-        input.filePath || null,
-        input.body || null,
-        now
-      ]
-    )
-
-    if (input.blockedBy && input.blockedBy.length > 0) {
-      await this.replaceBlockedBy(id, input.blockedBy)
-    }
-
-    const created = await this.get(id)
-    if (!created) throw new Error(`Task disappeared immediately after insert: ${id}`)
-    return created
-  }
-
-  async update(id: string, input: UpdateTaskInput): Promise<Task> {
-    const existing = await this.get(id)
-    if (!existing) throw new Error(`Task not found: ${id}`)
-
-    if (input.blockedBy !== undefined) {
-      await this.validateBlockedBy(id, input.blockedBy)
-    }
-
-    if (input.status === 'DONE' && existing.status !== 'DONE') {
-      const parentTaskId =
-        input.parentTaskId !== undefined ? input.parentTaskId : existing.parentTaskId
-      const blockedBy = input.blockedBy !== undefined ? input.blockedBy : existing.blockedBy
-      const blockers = await this.findBlockers(id, parentTaskId, blockedBy)
-      if (blockers.length > 0) throw new TaskBlockedError(id, blockers)
-    }
-
-    const sets: string[] = ['updated_at = $1']
-    const params: SqlValue[] = [new Date()]
-    let n = 2
-
-    if (input.title !== undefined) {
-      sets.push(`title = $${n++}`)
-      params.push(input.title)
-    }
-    if (input.status !== undefined) {
-      sets.push(`status = $${n++}`)
-      params.push(input.status)
-    }
-    if (input.priority !== undefined) {
-      sets.push(`priority = $${n++}`)
-      params.push(input.priority)
-    }
-    if (input.parentTaskId !== undefined) {
-      sets.push(`parent_task_id = $${n++}`)
-      params.push(input.parentTaskId)
-    }
-    if (input.labels !== undefined) {
-      sets.push(`labels = $${n++}::jsonb`)
-      params.push(JSON.stringify(input.labels))
-    }
-    if (input.dueDate !== undefined) {
-      sets.push(`due_date = $${n++}`)
-      params.push(input.dueDate)
-    }
-    if (input.pinned !== undefined) {
-      sets.push(`pinned = $${n++}`)
-      params.push(input.pinned)
-    }
-    if (input.filePath !== undefined) {
-      sets.push(`file_path = $${n++}`)
-      params.push(input.filePath)
-    }
-    if (input.body !== undefined) {
-      sets.push(`body = $${n++}`)
-      params.push(input.body)
-    }
-
-    params.push(id)
-    await this.conn.query(`UPDATE tasks SET ${sets.join(', ')} WHERE id = $${n}`, params)
-
-    if (input.blockedBy !== undefined) {
-      await this.replaceBlockedBy(id, input.blockedBy)
-    }
-
-    const updated = await this.get(id)
-    if (!updated) throw new Error(`Task not found: ${id}`)
-    return updated
-  }
-
-  async delete(id: string): Promise<void> {
-    await runInTx(this.conn, async (tx) => {
-      await tx.query('DELETE FROM relationships WHERE from_id = $1 OR to_id = $1', [id])
-      await tx.query('DELETE FROM tags WHERE item_id = $1', [id])
-      await tx.query('UPDATE tasks SET parent_task_id = NULL WHERE parent_task_id = $1', [id])
-      await tx.query('DELETE FROM tasks WHERE id = $1', [id])
-    })
-  }
+  constructor(private readonly conn: Queryable) {}
 
   async get(id: string): Promise<Task | null> {
     const result = await this.conn.query<TaskDbRow>(
@@ -218,7 +81,7 @@ export class PostgresTaskRepository {
     if (filter.status === 'READY') {
       const filtered: Task[] = []
       for (const t of tasks) {
-        const blockers = await this.findBlockers(t.id, t.parentTaskId, t.blockedBy)
+        const blockers = await this.findBlockers(t.id, t.blockedBy)
         if (blockers.length === 0) filtered.push(t)
       }
       tasks = filtered
@@ -238,32 +101,15 @@ export class PostgresTaskRepository {
     return tasks
   }
 
-  async getPinned(): Promise<Task[]> {
-    const result = await this.conn.query<TaskDbRow>(
-      `SELECT ${SELECT_COLS} FROM tasks WHERE pinned = TRUE ORDER BY project_id, created_at`
+  async getDependencies(taskId: string): Promise<TaskDependency[]> {
+    const result = await this.conn.query<{ from_id: string; to_id: string }>(
+      `SELECT from_id, to_id FROM relationships
+       WHERE (from_id = $1 OR to_id = $1) AND type = 'DEPENDS_ON'`,
+      [taskId]
     )
-    const tasks: Task[] = []
-    for (const row of result.rows) {
-      tasks.push(mapRow(row, await this.getBlockedBy(row.id)))
-    }
-    return tasks
+    return result.rows.map((r) => ({ sourceId: r.from_id, targetId: r.to_id }))
   }
 
-  async getDue(date: string): Promise<Task[]> {
-    const result = await this.conn.query<TaskDbRow>(
-      `SELECT ${SELECT_COLS} FROM tasks
-       WHERE due_date <= $1 AND status NOT IN ('DONE', 'CANCELLED')
-       ORDER BY due_date`,
-      [date]
-    )
-    const tasks: Task[] = []
-    for (const row of result.rows) {
-      tasks.push(mapRow(row, await this.getBlockedBy(row.id)))
-    }
-    return tasks
-  }
-
-  // ── blockedBy helpers ─────────────────────────────────────────────────────
   private async getBlockedBy(taskId: string): Promise<string[]> {
     const result = await this.conn.query<{ to_id: string }>(
       "SELECT to_id FROM relationships WHERE from_id = $1 AND type = 'DEPENDS_ON'",
@@ -272,52 +118,10 @@ export class PostgresTaskRepository {
     return result.rows.map((r) => r.to_id)
   }
 
-  private async replaceBlockedBy(taskId: string, blockerIds: string[]): Promise<void> {
-    await runInTx(this.conn, async (tx: TxClient) => {
-      await tx.query(
-        "DELETE FROM relationships WHERE from_id = $1 AND type = 'DEPENDS_ON'",
-        [taskId]
-      )
-      for (const blockerId of blockerIds) {
-        await tx.query(
-          `INSERT INTO relationships (from_id, to_id, type) VALUES ($1, $2, 'DEPENDS_ON')
-           ON CONFLICT (from_id, to_id, type) DO NOTHING`,
-          [taskId, blockerId]
-        )
-      }
-    })
-  }
-
-  private async validateBlockedBy(taskId: string, blockerIds: string[]): Promise<void> {
-    for (const blockerId of blockerIds) {
-      if (blockerId === taskId) {
-        throw new Error(`Task ${taskId} cannot be blocked by itself`)
-      }
-      const exists = await this.conn.query<{ id: string }>(
-        'SELECT id FROM tasks WHERE id = $1',
-        [blockerId]
-      )
-      if (exists.rows.length === 0) {
-        throw new Error(`blockedBy references unknown task: ${blockerId}`)
-      }
-
-      const cycle = await this.conn.query(
-        "SELECT 1 FROM relationships WHERE from_id = $1 AND to_id = $2 AND type = 'DEPENDS_ON'",
-        [blockerId, taskId]
-      )
-      if (cycle.rows.length > 0) {
-        throw new Error(
-          `Cycle detected: ${blockerId} already depends on ${taskId} — cannot add reverse dependency`
-        )
-      }
-    }
-  }
-
-  private async findBlockers(
-    taskId: string,
-    _parentTaskId: string | null,
-    blockedBy: string[]
-  ): Promise<TaskBlocker[]> {
+  // READY filter helper — counts subtasks + blockedBy entries still in
+  // non-terminal status. Mirrors the SQLite-side `findBlockers` minus the
+  // parent guard (no remote tool reads task hierarchy that way).
+  private async findBlockers(taskId: string, blockedBy: string[]): Promise<TaskBlocker[]> {
     const blockers: TaskBlocker[] = []
 
     const subtasks = await this.conn.query<{ id: string; status: string; title: string }>(
@@ -326,7 +130,12 @@ export class PostgresTaskRepository {
       [taskId]
     )
     for (const row of subtasks.rows) {
-      blockers.push({ id: row.id, type: 'subtask', status: row.status as TaskStatus, title: row.title })
+      blockers.push({
+        id: row.id,
+        type: 'subtask',
+        status: row.status as TaskStatus,
+        title: row.title
+      })
     }
 
     if (blockedBy.length > 0) {
@@ -346,24 +155,6 @@ export class PostgresTaskRepository {
     }
 
     return blockers
-  }
-
-  // ── dependencies (relationships-backed) ───────────────────────────────────
-  async addDependency(sourceId: string, targetId: string): Promise<void> {
-    await this.relationships.add(sourceId, targetId, 'DEPENDS_ON')
-  }
-
-  async removeDependency(sourceId: string, targetId: string): Promise<void> {
-    await this.relationships.remove(sourceId, targetId, 'DEPENDS_ON')
-  }
-
-  async getDependencies(taskId: string): Promise<TaskDependency[]> {
-    const result = await this.conn.query<{ from_id: string; to_id: string }>(
-      `SELECT from_id, to_id FROM relationships
-       WHERE (from_id = $1 OR to_id = $1) AND type = 'DEPENDS_ON'`,
-      [taskId]
-    )
-    return result.rows.map((r) => ({ sourceId: r.from_id, targetId: r.to_id }))
   }
 }
 
@@ -400,8 +191,7 @@ function buildTaskQuery(filter: TaskFilter): { sql: string; params: SqlValue[] }
     params.push(`%${filter.query}%`)
   }
   if (filter.labels && filter.labels.length > 0) {
-    // jsonb ?| text[] — true if any of the array's elements appears in the jsonb
-    // string-array. Matches the OR-semantics of the SQLite `labels LIKE ?` chain.
+    // jsonb ?| text[] — true if any array element appears in the jsonb string-array.
     wheres.push(`labels ?| $${n++}::text[]`)
     params.push(filter.labels as unknown as SqlValue)
   }

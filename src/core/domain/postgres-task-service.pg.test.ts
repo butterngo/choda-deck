@@ -1,4 +1,11 @@
-import { afterAll, beforeAll, expect, it } from 'vitest'
+// PostgresTaskService — RemoteOperations smoke (2026-05-28 narrowing).
+//
+// Consolidated from the slice-by-slice tests deleted in TASK-934 cleanup.
+// Verifies all 15 read+inbox-create methods + 2 lifecycle hooks. Setup uses
+// raw INSERTs because the PG facade no longer has any write methods beyond
+// createInbox — repository-level write tests no longer apply.
+
+import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest'
 import {
   describeIfDocker,
   startPostgresTestEnv,
@@ -6,9 +13,8 @@ import {
   type PgTestEnv
 } from '../../test/postgres-harness'
 import { PostgresTaskService } from './postgres-task-service'
-import { PostgresNotImplementedError } from './postgres-not-implemented-error'
 
-describeIfDocker('PostgresTaskService facade (TASK-934 slice 11)', () => {
+describeIfDocker('PostgresTaskService — RemoteOperations smoke', () => {
   let env: PgTestEnv
   let svc: PostgresTaskService
 
@@ -19,97 +25,143 @@ describeIfDocker('PostgresTaskService facade (TASK-934 slice 11)', () => {
   }, 120_000)
 
   afterAll(async () => {
-    // svc.close() ends the same pool as env.conn — stopPostgresTestEnv
-    // tolerates a double-close, so order is fine either way.
     if (env) await stopPostgresTestEnv(env)
   }, 30_000)
 
-  it('initializeAsync runs migrations and is idempotent across calls', async () => {
-    const existing = await env.conn.query<{ name: string }>('SELECT name FROM _migrations')
-    expect(existing.rows.length).toBeGreaterThan(0)
-    // Second call must not re-run or throw — backed by a cached promise.
+  beforeEach(async () => {
+    // Wipe in FK-aware order, then seed a fixed project + workspace + task tree.
+    await env.conn.query('DELETE FROM conversation_actions')
+    await env.conn.query('DELETE FROM conversation_links')
+    await env.conn.query('DELETE FROM conversation_messages')
+    await env.conn.query('DELETE FROM conversation_participants')
+    await env.conn.query('DELETE FROM conversations')
+    await env.conn.query('DELETE FROM inbox_items')
+    await env.conn.query('DELETE FROM tags')
+    await env.conn.query('DELETE FROM relationships')
+    await env.conn.query('DELETE FROM tasks')
+    await env.conn.query('DELETE FROM workspaces')
+    await env.conn.query('DELETE FROM projects')
+    await env.conn.query("UPDATE global_counters SET last_number = 0 WHERE entity_type = 'inbox'")
+
+    await env.conn.query(
+      "INSERT INTO projects (id, name, cwd) VALUES ('p1', 'P One', '/abs/p1'), ('p2', 'P Two', '/abs/p2')"
+    )
+    await env.conn.query(
+      "INSERT INTO workspaces (id, project_id, label, cwd, archived_at) VALUES " +
+        "('w1', 'p1', 'main', '/abs/p1/main', NULL), " +
+        "('w-old', 'p1', 'archived', '/abs/p1/old', NOW())"
+    )
+  })
+
+  it('initializeAsync runs migrations and is idempotent', async () => {
+    const before = await env.conn.query<{ name: string }>('SELECT name FROM _migrations')
     await svc.initializeAsync()
     const after = await env.conn.query<{ name: string }>('SELECT name FROM _migrations')
-    expect(after.rows.length).toBe(existing.rows.length)
+    expect(after.rows.length).toBe(before.rows.length)
+    expect(before.rows.length).toBeGreaterThanOrEqual(6)
   })
 
-  it('project + workspace round-trip through the facade', async () => {
-    await svc.ensureProject('facade-p1', 'Facade Test', '/abs/facade')
-    const project = await svc.getProject('facade-p1')
-    expect(project).toEqual({ id: 'facade-p1', name: 'Facade Test', cwd: '/abs/facade' })
+  it('getProject + listProjects', async () => {
+    const p1 = await svc.getProject('p1')
+    expect(p1).toEqual({ id: 'p1', name: 'P One', cwd: '/abs/p1' })
+    expect(await svc.getProject('nope')).toBeNull()
 
-    const ws = await svc.addWorkspace('facade-p1', 'facade-w1', 'main', '/abs/facade/main')
-    expect(ws.id).toBe('facade-w1')
-
-    const found = await svc.findWorkspaces('facade-p1')
-    expect(found.map((w) => w.id)).toEqual(['facade-w1'])
+    const all = await svc.listProjects()
+    expect(all.map((p) => p.id).sort()).toEqual(['p1', 'p2'])
   })
 
-  it('task create + update + find round-trip', async () => {
-    await svc.ensureProject('facade-p2', 'Task Host', '/abs/p2')
-    const created = await svc.createTask({
-      projectId: 'facade-p2',
-      title: 'first task',
-      priority: 'high'
-    })
-    expect(created.title).toBe('first task')
-    expect(created.status).toBe('TODO')
+  it('findWorkspaces hides archived by default; surfaces with includeArchived', async () => {
+    const defaultList = await svc.findWorkspaces('p1')
+    expect(defaultList.map((w) => w.id)).toEqual(['w1'])
 
-    const updated = await svc.updateTask(created.id, { status: 'READY' })
-    expect(updated.status).toBe('READY')
-
-    const found = await svc.findTasks({ projectId: 'facade-p2', status: 'READY' })
-    expect(found.map((t) => t.id)).toContain(created.id)
+    const all = await svc.findWorkspaces('p1', true)
+    expect(all.map((w) => w.id).sort()).toEqual(['w-old', 'w1'])
   })
 
-  it('session create + getActive round-trip', async () => {
-    await svc.ensureProject('facade-p3', 'Session Host', '/abs/p3')
-    const session = await svc.createSession({
-      id: 'facade-s1',
-      projectId: 'facade-p3',
-      startedAt: '2026-05-24T00:00:00.000Z'
-    })
-    expect(session.status).toBe('active')
+  it('getTask + findTasks + getSubtasks + getDependencies', async () => {
+    const now = new Date()
+    await env.conn.query(
+      `INSERT INTO tasks (id, project_id, parent_task_id, title, status, labels, created_at, updated_at)
+       VALUES
+         ('TASK-001', 'p1', NULL, 'Parent', 'TODO', '["urgent"]'::jsonb, $1, $1),
+         ('TASK-002', 'p1', 'TASK-001', 'Child', 'TODO', NULL, $1, $1),
+         ('TASK-003', 'p1', NULL, 'Solo', 'DONE', NULL, $1, $1)`,
+      [now]
+    )
+    await env.conn.query(
+      `INSERT INTO relationships (from_id, to_id, type) VALUES ('TASK-001', 'TASK-003', 'DEPENDS_ON')`
+    )
 
-    const active = await svc.getActiveSession('facade-p3')
-    expect(active?.id).toBe('facade-s1')
+    const t = await svc.getTask('TASK-001')
+    expect(t?.title).toBe('Parent')
+    expect(t?.labels).toEqual(['urgent'])
+    expect(t?.blockedBy).toEqual(['TASK-003'])
+
+    const todo = await svc.findTasks({ projectId: 'p1', status: 'TODO' })
+    expect(todo.map((x) => x.id).sort()).toEqual(['TASK-001', 'TASK-002'])
+
+    const subs = await svc.getSubtasks('TASK-001')
+    expect(subs.map((x) => x.id)).toEqual(['TASK-002'])
+
+    const deps = await svc.getDependencies('TASK-001')
+    expect(deps).toEqual([{ sourceId: 'TASK-001', targetId: 'TASK-003' }])
   })
 
-  it('inbox create + update + find round-trip', async () => {
-    await svc.ensureProject('facade-p4', 'Inbox Host', '/abs/p4')
-    const item = await svc.createInbox({ projectId: 'facade-p4', content: 'hello' })
-    expect(item.status).toBe('raw')
+  it('getTags + getRelationships', async () => {
+    await env.conn.query(
+      "INSERT INTO tags (item_id, tag) VALUES ('item-1', 'backend'), ('item-1', 'urgent')"
+    )
+    await env.conn.query(
+      "INSERT INTO relationships (from_id, to_id, type) VALUES " +
+        "('item-1', 'item-2', 'IMPLEMENTS'), ('item-3', 'item-1', 'DECIDED_BY')"
+    )
 
-    const updated = await svc.updateInbox(item.id, { content: 'goodbye' })
-    expect(updated.content).toBe('goodbye')
+    expect(await svc.getTags('item-1')).toEqual(['backend', 'urgent'])
 
-    const list = await svc.findInbox({ projectId: 'facade-p4', status: 'raw' })
-    expect(list.map((r) => r.id)).toContain(item.id)
+    const rels = await svc.getRelationships('item-1')
+    expect(rels).toHaveLength(2)
+    expect(rels.map((r) => r.type).sort()).toEqual(['DECIDED_BY', 'IMPLEMENTS'])
   })
 
-  it('tool-invocations record + count round-trip', async () => {
-    const before = await svc.countToolInvocations()
-    await svc.recordToolInvocation({
-      toolName: 'facade-test-tool',
-      ts: '2026-05-24T00:00:00.000Z',
-      durationMs: 1,
-      ok: true,
-      errorKind: null
-    })
-    const after = await svc.countToolInvocations()
-    expect(after).toBe(before + 1)
+  it('createInbox mints INBOX-NNN ids; findInbox + getInbox round-trip', async () => {
+    const a = await svc.createInbox({ projectId: 'p1', content: 'first capture' })
+    const b = await svc.createInbox({ projectId: 'p1', content: 'second capture' })
+    expect(a.id).toBe('INBOX-001')
+    expect(b.id).toBe('INBOX-002')
+    expect(a.status).toBe('raw')
+
+    const got = await svc.getInbox('INBOX-001')
+    expect(got?.content).toBe('first capture')
+
+    const list = await svc.findInbox({ projectId: 'p1', status: 'raw' })
+    expect(list.map((i) => i.id).sort()).toEqual(['INBOX-001', 'INBOX-002'])
   })
 
-  // ── lifecycle / composite / knowledge / backup throw NotImplementedError ──
-  // Inbox lifecycle implemented in slice 15 (inbox-lifecycle.pg.test.ts).
-  // Conversation lifecycle implemented in slice 16 (conversation-lifecycle.pg.test.ts).
-  // Session lifecycle implemented in slice 17 (session-lifecycle.pg.test.ts).
-  // Task review + ac-check implemented in slice 18 (task-review-ac-check.pg.test.ts).
-  // Queue lifecycle implemented in slice 19 (queue-lifecycle.pg.test.ts).
-  // Knowledge 7 simple ops implemented in slice 20a (knowledge-simple-ops.pg.test.ts).
-  // searchKnowledge implemented in slice 20b (knowledge-search.pg.test.ts).
-  // Only `backup` remains — full backup needs pg_dump (out of scope for ADR-030).
-  it('backup throws PostgresNotImplementedError', async () => {
-    await expect(svc.backup('/tmp/bk.sql')).rejects.toBeInstanceOf(PostgresNotImplementedError)
+  it('findConversationsByLink + getConversationMessages + getConversationActions', async () => {
+    await env.conn.query(
+      `INSERT INTO conversations (id, project_id, title, status, created_by)
+       VALUES ('CONV-1', 'p1', 'Linked', 'open', 'butter')`
+    )
+    await env.conn.query(
+      `INSERT INTO conversation_links (conversation_id, linked_type, linked_id)
+       VALUES ('CONV-1', 'inbox', 'INBOX-001')`
+    )
+    await env.conn.query(
+      `INSERT INTO conversation_messages (id, conversation_id, author_name, content, message_type)
+       VALUES ('MSG-1', 'CONV-1', 'butter', 'hello', 'comment')`
+    )
+    await env.conn.query(
+      `INSERT INTO conversation_actions (id, conversation_id, assignee, description, status, linked_task_id)
+       VALUES ('ACT-1', 'CONV-1', 'butter', 'follow up', 'pending', NULL)`
+    )
+
+    const linked = await svc.findConversationsByLink('inbox', 'INBOX-001')
+    expect(linked.map((c) => c.id)).toEqual(['CONV-1'])
+
+    const msgs = await svc.getConversationMessages('CONV-1')
+    expect(msgs.map((m) => m.content)).toEqual(['hello'])
+
+    const acts = await svc.getConversationActions('CONV-1')
+    expect(acts.map((a) => a.assignee)).toEqual(['butter'])
   })
 })

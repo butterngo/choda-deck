@@ -20,11 +20,12 @@ export interface PgTestEnv {
   connectionString: string
 }
 
-// Image choice: `pgvector/pgvector:pg16` — same postgres 16 binary as the
-// upstream alpine image but with the pgvector extension preinstalled.
-// Migration 011 runs `CREATE EXTENSION vector`; using a vanilla postgres
-// image would fail every .pg.test.ts at boot. Cost is a ~250MB image pull
-// (vs 80MB alpine), amortized — every later container reuses the cache.
+// Image choice: `pgvector/pgvector:pg16` — postgres 16 with pgvector
+// pre-installed. The 2026-05-28 PG narrowing removed knowledge_embeddings
+// (vector column) from the schema, so the extension is no longer required.
+// Image pin kept on the vector variant anyway for parity with the prod
+// k8s image (TASK-936) — minimal cost (~250MB vs 80MB alpine) and the
+// cache is amortized across every later container.
 export async function startPostgresTestEnv(): Promise<PgTestEnv> {
   const container = await new PostgreSqlContainer('pgvector/pgvector:pg16')
     .withDatabase('choda_test')
