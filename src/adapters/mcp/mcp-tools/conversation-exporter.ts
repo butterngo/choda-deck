@@ -61,7 +61,7 @@ function renderConversationSection(
 function renderMessageLine(msg: ConversationMessage): string {
   const date = msg.createdAt.slice(0, 10)
   const oneLine = splitLines(msg.content).join(' ')
-  return `- **${date} ${msg.authorName} (${msg.messageType}):** ${oneLine}`
+  return `- **${date} ${msg.authorName}:** ${oneLine}`
 }
 
 function conversationsMarkdownPath(contentRoot: string, projectId: string): string {

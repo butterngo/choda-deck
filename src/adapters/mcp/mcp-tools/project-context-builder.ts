@@ -34,7 +34,7 @@ export interface ProjectContextBundle {
       title: string
       status: Conversation['status']
       participants: string[]
-      recentMessages: Array<{ author: string; content: string; type: string; at: string }>
+      recentMessages: Array<{ author: string; content: string; at: string }>
     }>
   }
   architecture: string | null
@@ -108,17 +108,13 @@ async function pickOpenConversations(
   svc: ProjectContextDeps,
   projectId: string
 ): Promise<ProjectContextBundle['currentState']['openConversations']> {
-  const open = [
-    ...(await svc.findConversations(projectId, 'open')),
-    ...(await svc.findConversations(projectId, 'discussing'))
-  ]
+  const open = await svc.findConversations(projectId, 'open')
   return Promise.all(
     open.map(async (c) => {
       const messages = await svc.getConversationMessages(c.id)
       const recentMessages = messages.slice(-3).map((m) => ({
         author: m.authorName,
         content: m.content.slice(0, 200),
-        type: m.messageType,
         at: m.createdAt
       }))
       const participants = await svc.getConversationParticipants(c.id)

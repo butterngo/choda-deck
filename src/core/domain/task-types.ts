@@ -242,17 +242,8 @@ export interface UpdateContextSourceInput {
 
 // ── Conversations (L2 — Conversation Protocol) ──────────────────────────────
 
-export type ConversationStatus = 'open' | 'discussing' | 'decided' | 'closed' | 'stale'
-export type ConversationMessageType =
-  | 'question'
-  | 'answer'
-  | 'proposal'
-  | 'review'
-  | 'decision'
-  | 'action'
-  | 'comment'
+export type ConversationStatus = 'open' | 'decided'
 export type ConversationLinkType = 'task' | 'adr' | 'commit' | 'inbox' | 'session'
-export type ConversationParticipantType = 'human' | 'agent' | 'role'
 export type ConversationActionStatus = 'pending' | 'done'
 
 export interface Conversation {
@@ -262,22 +253,14 @@ export interface Conversation {
   status: ConversationStatus
   createdBy: string
   decisionSummary: string | null
+  signedOff: string[]
   createdAt: string
   decidedAt: string | null
-  closedAt: string | null
 }
 
 export interface ConversationParticipant {
   conversationId: string
   name: string
-  type: ConversationParticipantType
-  role: string | null
-}
-
-export interface ConversationMessageMetadata {
-  codeChanges?: string[]
-  options?: Array<{ id: string; description: string; tradeoff: string }>
-  selectedOption?: string
 }
 
 export interface ConversationMessage {
@@ -285,9 +268,7 @@ export interface ConversationMessage {
   conversationId: string
   authorName: string
   content: string
-  messageType: ConversationMessageType
-  metadata: ConversationMessageMetadata | null
-  targetRole: string | null
+  readBy: string[]
   createdAt: string
 }
 
@@ -313,7 +294,7 @@ export interface CreateConversationInput {
   title: string
   createdBy: string
   status?: ConversationStatus
-  participants?: Array<{ name: string; type: ConversationParticipantType; role?: string }>
+  participants?: Array<{ name: string }>
   ownerType?: 'interactive' | null
   ownerSessionId?: string | null
 }
@@ -323,7 +304,6 @@ export interface UpdateConversationInput {
   status?: ConversationStatus
   decisionSummary?: string | null
   decidedAt?: string | null
-  closedAt?: string | null
 }
 
 export interface CreateConversationMessageInput {
@@ -331,9 +311,6 @@ export interface CreateConversationMessageInput {
   conversationId: string
   authorName: string
   content: string
-  messageType?: ConversationMessageType
-  metadata?: ConversationMessageMetadata
-  targetRole?: string | null
 }
 
 export interface CreateConversationActionInput {

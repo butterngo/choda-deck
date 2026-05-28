@@ -188,6 +188,47 @@ export const MIGRATIONS: readonly Migration[] = [
     `
   },
   {
+    // TASK-972 Phase 1 (additive) — signed_off_json column + conversation_message_reads
+    // side-table. PG equivalents of SQLite's INSERT OR IGNORE = ON CONFLICT DO NOTHING;
+    // SQLite's GROUP_CONCAT = array_agg.
+    name: '007_conversation_consensus',
+    sql: `
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS signed_off_json TEXT NOT NULL DEFAULT '[]';
+
+      CREATE TABLE IF NOT EXISTS conversation_message_reads (
+        message_id TEXT NOT NULL REFERENCES conversation_messages(id),
+        participant_name TEXT NOT NULL,
+        read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (message_id, participant_name)
+      );
+
+      CREATE INDEX IF NOT EXISTS conv_message_reads_message_idx ON conversation_message_reads (message_id);
+    `
+  },
+  {
+    // TASK-972 Phase 3 (subtractive) — drop dead/priming fields + narrow status enum.
+    // Data migration first: discussing → open, closed/stale → decided. Status CHECK
+    // is added last so the rewritten values pass the constraint. Existing review-type
+    // messages keep their content verbatim (already composed VERDICT/...); the
+    // message_type label column is what gets dropped, not the content.
+    name: '008_conversation_subtractive',
+    sql: `
+      UPDATE conversations SET status = 'open' WHERE status = 'discussing';
+      UPDATE conversations SET status = 'decided' WHERE status IN ('closed','stale');
+
+      ALTER TABLE conversations DROP COLUMN IF EXISTS closed_at;
+      ALTER TABLE conversation_participants DROP COLUMN IF EXISTS participant_type;
+      ALTER TABLE conversation_participants DROP COLUMN IF EXISTS participant_role;
+      ALTER TABLE conversation_messages DROP COLUMN IF EXISTS message_type;
+      ALTER TABLE conversation_messages DROP COLUMN IF EXISTS metadata_json;
+      ALTER TABLE conversation_messages DROP COLUMN IF EXISTS target_role;
+
+      ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_status_check;
+      ALTER TABLE conversations ADD CONSTRAINT conversations_status_check
+        CHECK (status IN ('open','decided'));
+    `
+  },
+  {
     // ADR-027 OAuth tables. redirect_uris is JSONB so node-pg auto-parses string[].
     // code_challenge_method CHECK preserves 'S256'-only. revoked is BOOLEAN.
     // Token expiry comparisons stay in JS via Date.parse — TEXT timestamps.

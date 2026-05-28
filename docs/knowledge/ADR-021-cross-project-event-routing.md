@@ -5,10 +5,23 @@ projectId: choda-deck
 scope: project
 refs: []
 createdAt: 2026-05-04
-lastVerifiedAt: 2026-05-18
+lastVerifiedAt: 2026-05-28
+status: superseded
 ---
 
 # ADR-021: Cross-Project Event Routing — Phase 3
+
+> **Status (2026-05-28): superseded by TASK-972 conversation schema narrowing.**
+> The role-based event emitter is gone — `conversation_participants.participant_role`,
+> `conversation_messages.target_role`, `conversation_messages.message_type` were
+> all dropped, and `src/core/domain/services/event-emitter.ts` + its tests were
+> deleted. The cross-project use case (Butter ↔ choda-gateway, PIM, etc.) did
+> not exercise the address-aware fan-out in production; the audit found the
+> `role` field served no consumer at the decision boundary and was contributing
+> to "agent drifts because schema has too many priming knobs". Revisit (likely
+> as Option A — multi-project conversations) if cross-project messaging
+> becomes load-bearing again. See ADR-010's 2026-05-28 schema-narrowing
+> addendum and TASK-972.
 
 > AI-Context: Phase 3 extends the event-emitter to route conversation events across projects. Conversation ownership stays single-project; the emitter writes the same JSONL line to every project mentioned in `roles[]` (parsed from `"projectId/workspaceId"` address strings). No schema migration. Backwards-compatible with Phase 1/2 free-form role strings — those fall through to owner project only.
 

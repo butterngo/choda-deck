@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 
 export function initSchema(db: Database.Database): void {
   createCoreTables(db)
@@ -205,6 +205,12 @@ function runLegacyMigrations(db: Database.Database): void {
 
   // TASK-526: collapse session status 3→2 + add CHECK constraint
   migrateSessionsStatus(db)
+
+  // TASK-972 Phase 1+3 (combined in this PR): conversation schema narrowing.
+  // Adds signed_off_json + conversation_message_reads; drops type/role/messageType/
+  // metadata/targetRole/closedAt; narrows status enum to (open|decided).
+  // Runs at the end so older legacy migrations have completed first.
+  migrateConversationSchemaNarrowing(db)
 }
 
 function migrateSessionsStatus(db: Database.Database): void {
@@ -275,6 +281,131 @@ function seedGlobalCounter(
   ).run(entityType, max)
 }
 
+// TASK-972 Phase 1+3 — shipped together because we go straight to target schema
+// in one branch. Steps:
+//   0. Drop any leftover `*_new` tables from a previously-aborted migration.
+//   1. Backfill conversations.signed_off_json (additive — new column, default '[]').
+//   2. Create conversation_message_reads side-table + index (additive — new table).
+//   3. Migrate conversation status values: discussing→open, closed/stale→decided.
+//   4. Recreate conversations table dropping closed_at + narrowing status CHECK.
+//      Recreate is required (not ALTER ... DROP COLUMN) because we need to change
+//      the CHECK constraint. Foreign keys are temporarily disabled because four
+//      child tables FK into conversations(id) — DROP TABLE conversations would
+//      otherwise fail. Idempotent: skipped when the live schema already matches
+//      the target shape.
+//   5. participants + messages use simple ALTER TABLE ... DROP COLUMN (SQLite
+//      3.35+) — cheaper than recreate and safe since neither carries the CHECK.
+//
+// PRAGMA foreign_keys cannot be flipped inside an active transaction in SQLite,
+// so the foreign-key toggle wraps the transaction, not the other way around.
+function migrateConversationSchemaNarrowing(db: Database.Database): void {
+  const convCols = db.pragma('table_info(conversations)') as Array<{ name: string }>
+  if (convCols.length === 0) return // conversations table not created yet (fresh DB on first boot — createM1Tables runs after)
+
+  // Step 0: clean up any half-migrated leftovers.
+  db.exec('DROP TABLE IF EXISTS conversations_new')
+  db.exec('DROP TABLE IF EXISTS conversation_participants_new')
+  db.exec('DROP TABLE IF EXISTS conversation_messages_new')
+
+  const convColNames = new Set(convCols.map((c) => c.name))
+
+  // Step 1: signed_off_json (additive).
+  if (!convColNames.has('signed_off_json')) {
+    try {
+      db.exec(
+        "ALTER TABLE conversations ADD COLUMN signed_off_json TEXT NOT NULL DEFAULT '[]'"
+      )
+    } catch {
+      /* exists */
+    }
+  }
+
+  // Step 2: conversation_message_reads side-table (additive).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS conversation_message_reads (
+      message_id TEXT NOT NULL,
+      participant_name TEXT NOT NULL,
+      read_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (message_id, participant_name),
+      FOREIGN KEY (message_id) REFERENCES conversation_messages(id)
+    )
+  `)
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS conv_message_reads_message_idx ON conversation_message_reads (message_id)'
+  )
+
+  // Step 3: status value migration.
+  db.exec("UPDATE conversations SET status = 'open' WHERE status = 'discussing'")
+  db.exec("UPDATE conversations SET status = 'decided' WHERE status IN ('closed','stale')")
+
+  // Step 4: conversations table — drop closed_at + narrow CHECK via recreate.
+  const conversationsSql =
+    (db
+      .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='conversations'")
+      .get() as { sql?: string } | undefined)?.sql ?? ''
+  const needsConvRecreate =
+    convColNames.has('closed_at') ||
+    !/CHECK\s*\(\s*status\s+IN\s*\(\s*'open'\s*,\s*'decided'\s*\)\s*\)/i.test(conversationsSql)
+
+  if (needsConvRecreate) {
+    // PRAGMA foreign_keys must change outside any transaction; the recreate runs
+    // inside a transaction so a mid-step crash rolls back atomically.
+    db.pragma('foreign_keys = OFF')
+    try {
+      const recreate = db.transaction(() => {
+        db.exec(`
+          CREATE TABLE conversations_new (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','decided')),
+            created_by TEXT NOT NULL,
+            decision_summary TEXT,
+            signed_off_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            decided_at TEXT,
+            owner_session_id TEXT,
+            owner_type TEXT,
+            FOREIGN KEY (project_id) REFERENCES projects(id)
+          )
+        `)
+        db.exec(`
+          INSERT INTO conversations_new (id, project_id, title, status, created_by, decision_summary, signed_off_json, created_at, decided_at, owner_session_id, owner_type)
+          SELECT id, project_id, title, status, created_by, decision_summary, signed_off_json, created_at, decided_at, owner_session_id, owner_type FROM conversations
+        `)
+        db.exec('DROP TABLE conversations')
+        db.exec('ALTER TABLE conversations_new RENAME TO conversations')
+      })
+      recreate()
+    } finally {
+      db.pragma('foreign_keys = ON')
+    }
+  }
+
+  // Step 5a: conversation_participants — drop type + role via simple ALTER.
+  const partCols = db.pragma('table_info(conversation_participants)') as Array<{ name: string }>
+  const partColNames = new Set(partCols.map((c) => c.name))
+  if (partColNames.has('participant_type')) {
+    db.exec('ALTER TABLE conversation_participants DROP COLUMN participant_type')
+  }
+  if (partColNames.has('participant_role')) {
+    db.exec('ALTER TABLE conversation_participants DROP COLUMN participant_role')
+  }
+
+  // Step 5b: conversation_messages — drop message_type, metadata_json, target_role.
+  const msgCols = db.pragma('table_info(conversation_messages)') as Array<{ name: string }>
+  const msgColNames = new Set(msgCols.map((c) => c.name))
+  if (msgColNames.has('message_type')) {
+    db.exec('ALTER TABLE conversation_messages DROP COLUMN message_type')
+  }
+  if (msgColNames.has('metadata_json')) {
+    db.exec('ALTER TABLE conversation_messages DROP COLUMN metadata_json')
+  }
+  if (msgColNames.has('target_role')) {
+    db.exec('ALTER TABLE conversation_messages DROP COLUMN target_role')
+  }
+}
+
 function migrateConversationMessages(db: Database.Database): void {
   const cols = db.pragma('table_info(conversation_messages)') as Array<{ name: string }>
   const colNames = cols.map((c) => c.name)
@@ -332,12 +463,12 @@ function createM1Tables(db: Database.Database): void {
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
       title TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'open',
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','decided')),
       created_by TEXT NOT NULL,
       decision_summary TEXT,
+      signed_off_json TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       decided_at TEXT,
-      closed_at TEXT,
       owner_session_id TEXT,
       owner_type TEXT,
       FOREIGN KEY (project_id) REFERENCES projects(id)
@@ -347,8 +478,6 @@ function createM1Tables(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS conversation_participants (
       conversation_id TEXT NOT NULL,
       participant_name TEXT NOT NULL,
-      participant_type TEXT NOT NULL,
-      participant_role TEXT,
       PRIMARY KEY (conversation_id, participant_name),
       FOREIGN KEY (conversation_id) REFERENCES conversations(id)
     )
@@ -359,13 +488,22 @@ function createM1Tables(db: Database.Database): void {
       conversation_id TEXT NOT NULL,
       author_name TEXT NOT NULL,
       content TEXT NOT NULL,
-      message_type TEXT NOT NULL DEFAULT 'comment',
-      metadata_json TEXT,
-      target_role TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (conversation_id) REFERENCES conversations(id)
     )
   `)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS conversation_message_reads (
+      message_id TEXT NOT NULL,
+      participant_name TEXT NOT NULL,
+      read_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (message_id, participant_name),
+      FOREIGN KEY (message_id) REFERENCES conversation_messages(id)
+    )
+  `)
+  db.exec(
+    'CREATE INDEX IF NOT EXISTS conv_message_reads_message_idx ON conversation_message_reads (message_id)'
+  )
   db.exec(`
     CREATE TABLE IF NOT EXISTS conversation_links (
       conversation_id TEXT NOT NULL,

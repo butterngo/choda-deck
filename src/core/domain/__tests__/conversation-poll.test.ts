@@ -24,14 +24,13 @@ describe('conversation_poll timestamp normalization', () => {
       projectId: 'proj-poll',
       title: 'Poll test',
       createdBy: 'Butter',
-      participants: [{ name: 'Butter', type: 'human' as const }]
+      participants: [{ name: 'Butter' }]
     })
 
     await svc.addConversationMessage({
       conversationId: 'CONV-POLL',
       authorName: 'Butter',
-      content: 'message 1',
-      messageType: 'question'
+      content: 'message 1'
     })
 
     const messages = await svc.getConversationMessages('CONV-POLL')

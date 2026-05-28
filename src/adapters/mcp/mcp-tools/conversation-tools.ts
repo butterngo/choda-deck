@@ -3,9 +3,7 @@ import { z } from 'zod'
 import { textResponse } from './types'
 import { now } from '../../../core/domain/repositories/shared'
 import {
-  ConversationAddSchemaError,
   ConversationNotFoundError,
-  ConversationStatusError,
   LifecycleError
 } from '../../../core/domain/lifecycle/errors'
 import type { ConversationOperations } from '../../../core/domain/interfaces/conversation-repository.interface'
@@ -21,112 +19,19 @@ import type {
 
 export type ConversationToolsDeps = ConversationOperations & ConversationLifecycleOperations
 
-const participantTypeSchema = z.enum(['human', 'agent', 'role'])
-const messageTypeSchema = z.enum([
-  'question',
-  'answer',
-  'proposal',
-  'review',
-  'decision',
-  'action',
-  'comment'
-])
-
-export const conversationAddMessageTypeSchema = messageTypeSchema.refine(
-  (t) => t !== 'decision',
-  { message: "use conversation_decide for decision messages — conversation_add doesn't accept type='decision'" }
-)
-const conversationStatusSchema = z.enum(['open', 'discussing', 'decided', 'closed', 'stale'])
+const conversationStatusSchema = z.enum(['open', 'decided'])
 const priorityEnum = z.enum(['critical', 'high', 'medium', 'low'])
 
-export const reviewVerdictSchema = z.enum([
-  'approve',
-  'reject',
-  'need-clarification',
-  'defer'
-])
-
-export const reviewerFieldsSchema = z.object({
-  verdict: reviewVerdictSchema,
-  topConcern: z.string().min(20).max(200),
-  asks: z.array(z.string().min(10).max(120)).min(1).max(5),
-  notes: z.string().max(600).optional()
-})
-
-export type ReviewerFields = z.infer<typeof reviewerFieldsSchema>
-
-export function composeReviewerContent(fields: ReviewerFields): string {
-  const lines = [
-    `VERDICT: ${fields.verdict}`,
-    `TOP CONCERN: ${fields.topConcern}`,
-    'SPECIFIC ASKS:',
-    ...fields.asks.map((a) => `- ${a}`)
-  ]
-  if (fields.notes) {
-    lines.push(`NOTES: ${fields.notes}`)
-  }
-  return lines.join('\n')
-}
-
-export interface ConversationAddContentInput {
-  type: z.infer<typeof conversationAddMessageTypeSchema>
-  content?: string
-  verdict?: z.infer<typeof reviewVerdictSchema>
-  topConcern?: string
-  asks?: string[]
-  notes?: string
-}
-
-// When type='review' the structured fields are required and the server composes
-// the canonical content. For all other types, structured fields are rejected and
-// the free-text `content` must be provided. Single source of truth for both rules.
-export function resolveConversationAddContent(input: ConversationAddContentInput): string {
-  const { type, content, verdict, topConcern, asks, notes } = input
-
-  if (type === 'review') {
-    const parsed = reviewerFieldsSchema.safeParse({ verdict, topConcern, asks, notes })
-    if (!parsed.success) {
-      const issues = parsed.error.issues
-        .map((i) => `${i.path.join('.') || '<root>'}: ${i.message}`)
-        .join('; ')
-      throw new ConversationAddSchemaError(
-        `type='review' requires structured fields (verdict, topConcern, asks[1..5], notes?) — ${issues}`
-      )
-    }
-    return composeReviewerContent(parsed.data)
-  }
-
-  if (
-    verdict !== undefined ||
-    topConcern !== undefined ||
-    asks !== undefined ||
-    notes !== undefined
-  ) {
-    throw new ConversationAddSchemaError(
-      `verdict/topConcern/asks/notes only valid for type='review' (got type='${type}')`
-    )
-  }
-  if (content === undefined || content.length === 0) {
-    throw new ConversationAddSchemaError(`content is required for type='${type}'`)
-  }
-  return content
-}
-
-const metadataSchema = z
-  .object({
-    codeChanges: z.array(z.string()).optional(),
-    options: z
-      .array(
-        z.object({
-          id: z.string(),
-          description: z.string(),
-          tradeoff: z.string()
-        })
-      )
-      .optional(),
-    selectedOption: z.string().optional()
-  })
-  .optional()
+// TASK-972 Phase 2 — Zod cap replaces the prose advisory. Long convergence
+// summaries belong in decisionSummary via conversation_decide.
+const CONTENT_MAX = 1500
+const contentSchema = z
+  .string()
+  .min(1)
+  .max(
+    CONTENT_MAX,
+    `content exceeds ${CONTENT_MAX}-char cap — long convergence summaries belong in decisionSummary via conversation_decide`
+  )
 
 const actionInputSchema = z.object({
   assignee: z.string(),
@@ -151,7 +56,7 @@ async function tryLifecycle<T>(
 }
 
 export function shouldInjectConversationEtiquette(status: string): boolean {
-  return status === 'open' || status === 'discussing'
+  return status === 'open'
 }
 
 export type ReadConversationDeps = Pick<
@@ -161,6 +66,7 @@ export type ReadConversationDeps = Pick<
   | 'getConversationMessages'
   | 'getConversationActions'
   | 'getConversationLinks'
+  | 'markConversationMessageRead'
 >
 
 export interface ConversationReadResponse extends Conversation {
@@ -173,10 +79,20 @@ export interface ConversationReadResponse extends Conversation {
 
 export async function readConversation(
   svc: ReadConversationDeps,
-  conversationId: string
+  conversationId: string,
+  options?: { as?: string }
 ): Promise<ConversationReadResponse | null> {
   const conv = await svc.getConversation(conversationId)
   if (!conv) return null
+
+  const as = options?.as
+  if (as) {
+    const messages = await svc.getConversationMessages(conversationId)
+    for (const m of messages) {
+      if (!m.readBy.includes(as)) await svc.markConversationMessageRead(m.id, as)
+    }
+  }
+
   return {
     ...conv,
     participants: await svc.getConversationParticipants(conversationId),
@@ -200,13 +116,7 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
         title: z.string().describe('Short decision-focused title'),
         createdBy: z.string().describe('Participant name of the initiator'),
         participants: z
-          .array(
-            z.object({
-              name: z.string(),
-              type: participantTypeSchema,
-              role: z.string().optional()
-            })
-          )
+          .array(z.object({ name: z.string() }))
           .describe('All participants (initiator included)'),
         linkedTasks: z
           .array(z.string())
@@ -217,10 +127,7 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
           .optional()
           .describe('Active session ID to link this conversation to. If omitted, auto-links when exactly one active session exists in the project.'),
         initialMessage: z
-          .object({
-            content: z.string(),
-            type: z.enum(['question', 'proposal', 'review'])
-          })
+          .object({ content: contentSchema })
           .describe('Seed message that starts the discussion')
       }
     },
@@ -240,69 +147,22 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
     'conversation_add',
     {
       description:
-        "Add a message to an existing conversation. For type='review', pass the structured fields (verdict, topConcern, asks, notes?) — the server composes the canonical content. Other types (question, answer, proposal, action, comment) use free-text content. type='decision' is rejected — use conversation_decide instead.",
+        'Add a message to an existing conversation. Free-text content only — capped at 1500 chars. Long convergence summaries belong in decisionSummary via conversation_decide.',
       inputSchema: {
         conversationId: z.string(),
         author: z.string().describe('Participant name'),
-        content: z
-          .string()
-          .optional()
-          .describe(
-            "Free-text content. Required for type ∈ {question, answer, proposal, action, comment}. Ignored for type='review' — use the structured fields instead."
-          ),
-        type: conversationAddMessageTypeSchema,
-        metadata: metadataSchema,
-        verdict: reviewVerdictSchema
-          .optional()
-          .describe("type='review' only — overall stance"),
-        topConcern: z
-          .string()
-          .min(20)
-          .max(200)
-          .optional()
-          .describe("type='review' only — single blocker, one sentence (20–200 chars)"),
-        asks: z
-          .array(z.string().min(10).max(120))
-          .min(1)
-          .max(5)
-          .optional()
-          .describe("type='review' only — 1–5 actionable items, each 10–120 chars"),
-        notes: z
-          .string()
-          .max(600)
-          .optional()
-          .describe("type='review' only — optional escape hatch for counter-proposals (≤600 chars)")
+        content: contentSchema
       }
     },
-    async ({ conversationId, author, content, type, verdict, topConcern, asks, notes }) =>
+    async ({ conversationId, author, content }) =>
       tryLifecycle(async () => {
         const conv = await svc.getConversation(conversationId)
         if (!conv) throw new ConversationNotFoundError(conversationId)
-        if (conv.status === 'closed') {
-          throw new ConversationStatusError(
-            conversationId,
-            conv.status,
-            'cannot add message to a closed conversation. Reopen it first.'
-          )
-        }
-        const resolvedContent = resolveConversationAddContent({
-          type,
-          content,
-          verdict,
-          topConcern,
-          asks,
-          notes
-        })
-        const msg = await svc.addConversationMessage({
+        return svc.addConversationMessage({
           conversationId,
           authorName: author,
-          content: resolvedContent,
-          messageType: type
+          content
         })
-        if (conv.status === 'open' && type !== 'comment') {
-          await svc.updateConversation(conversationId, { status: 'discussing' })
-        }
-        return msg
       })
   )
 
@@ -310,7 +170,7 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
     'conversation_decide',
     {
       description:
-        'Record the decision on a conversation, optionally creating actions (which can spawn tasks). Side effects: status → decided, decision_summary set, actions + tasks written.',
+        'Record the decision on a conversation, optionally creating actions (which can spawn tasks). Status flips to `decided` only when every participant has signed off (or there are no registered participants). Otherwise the decisionSummary is recorded and status stays `open` until consensus.',
       inputSchema: {
         conversationId: z.string(),
         author: z.string(),
@@ -325,6 +185,7 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
           conversationId,
           status: r.conversation.status,
           decisionSummary: r.conversation.decisionSummary,
+          signedOff: r.conversation.signedOff,
           decidedAt: r.conversation.decidedAt,
           actions: r.actions
         }
@@ -332,28 +193,44 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
   )
 
   server.registerTool(
-    'conversation_close',
+    'conversation_signoff',
     {
-      description: 'Close a decided conversation (status → closed).',
-      inputSchema: { conversationId: z.string() }
+      description:
+        'Sign off on a conversation as the named participant. Idempotent — re-calling with the same name is a no-op. Flips status to `decided` only when every participant has signed off AND a decisionSummary already exists.',
+      inputSchema: {
+        conversationId: z.string(),
+        name: z.string().describe('Participant name signing off')
+      }
     },
-    async ({ conversationId }) =>
+    async ({ conversationId, name }) =>
       tryLifecycle(async () => {
-        const conv = await svc.closeConversation(conversationId)
-        return { conversationId, status: conv.status }
+        const r = await svc.signoffConversation(conversationId, name)
+        return {
+          conversationId,
+          status: r.conversation.status,
+          signedOff: r.signedOff,
+          decided: r.decided
+        }
       })
   )
 
   server.registerTool(
-    'conversation_reopen',
+    'conversation_mark_read',
     {
-      description: 'Reopen a decided conversation back to discussing.',
-      inputSchema: { conversationId: z.string() }
+      description:
+        'Mark a specific message in a conversation as read by the named participant. Idempotent.',
+      inputSchema: {
+        conversationId: z.string(),
+        messageId: z.string(),
+        name: z.string().describe('Participant name marking the message read')
+      }
     },
-    async ({ conversationId }) =>
+    async ({ conversationId, messageId, name }) =>
       tryLifecycle(async () => {
-        const conv = await svc.reopenConversation(conversationId)
-        return { conversationId, status: conv.status }
+        const conv = await svc.getConversation(conversationId)
+        if (!conv) throw new ConversationNotFoundError(conversationId)
+        await svc.markConversationMessageRead(messageId, name)
+        return { conversationId, messageId, name }
       })
   )
 
@@ -393,7 +270,7 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
     'conversation_poll',
     {
       description:
-        'Poll for new messages in open/discussing conversations since a given timestamp. Use to detect messages added from other sessions.',
+        'Poll for new messages in open conversations since a given timestamp. Use to detect messages added from other sessions.',
       inputSchema: {
         projectId: z.string(),
         since: z
@@ -405,10 +282,7 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
       }
     },
     async ({ projectId, since }) => {
-      const open = [
-        ...(await svc.findConversations(projectId, 'open')),
-        ...(await svc.findConversations(projectId, 'discussing'))
-      ]
+      const open = await svc.findConversations(projectId, 'open')
       const sinceNorm = since ? since.replace('T', ' ').replace('Z', '') : ''
       const results: Array<{
         conversationId: string
@@ -439,11 +313,17 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
     'conversation_read',
     {
       description:
-        'Read a full conversation thread: participants, messages, decision, actions, links',
-      inputSchema: { conversationId: z.string() }
+        'Read a full conversation thread: participants, messages (with readBy), decision, actions, links. Pass `as` to auto-mark every returned message as read by that participant.',
+      inputSchema: {
+        conversationId: z.string(),
+        as: z
+          .string()
+          .optional()
+          .describe('Participant name. When set, every returned message is marked read by this name.')
+      }
     },
-    async ({ conversationId }) => {
-      const result = await readConversation(svc, conversationId)
+    async ({ conversationId, as }) => {
+      const result = await readConversation(svc, conversationId, { as })
       if (!result) return textResponse(`Conversation ${conversationId} not found`)
       return textResponse(result)
     }

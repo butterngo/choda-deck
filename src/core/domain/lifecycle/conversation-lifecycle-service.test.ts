@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import { SqliteTaskService } from '../sqlite-task-service'
-import { ConversationNotFoundError, ConversationStatusError } from './errors'
+import { ConversationNotFoundError } from './errors'
 
 const TEST_DB = path.join(__dirname, '__test-conversation-lifecycle__.db')
 let svc: SqliteTaskService
@@ -12,8 +12,8 @@ async function openFresh(title = 'T'): Promise<string> {
     projectId: 'proj-c',
     title,
     createdBy: 'Butter',
-    participants: [{ name: 'Butter', type: 'human' }],
-    initialMessage: { content: 'seed', type: 'question' }
+    participants: [{ name: 'Butter' }],
+    initialMessage: { content: 'seed' }
   })
   return conv.id
 }
@@ -35,19 +35,17 @@ describe('openConversation', () => {
       projectId: 'proj-c',
       title: 'Design auth',
       createdBy: 'Butter',
-      participants: [
-        { name: 'Butter', type: 'human' },
-        { name: 'Claude', type: 'agent' }
-      ],
-      initialMessage: { content: 'How should we do auth?', type: 'question' }
+      participants: [{ name: 'Butter' }, { name: 'Claude' }],
+      initialMessage: { content: 'How should we do auth?' }
     })
 
     expect(conv.status).toBe('open')
     expect(conv.title).toBe('Design auth')
+    expect(conv.signedOff).toEqual([])
     const messages = await svc.getConversationMessages(conv.id)
     expect(messages).toHaveLength(1)
     expect(messages[0].content).toBe('How should we do auth?')
-    expect(messages[0].messageType).toBe('question')
+    expect(messages[0].readBy).toEqual([])
   })
 
   it('links to tasks when linkedTasks provided', async () => {
@@ -56,9 +54,9 @@ describe('openConversation', () => {
       projectId: 'proj-c',
       title: 'T',
       createdBy: 'Butter',
-      participants: [{ name: 'Butter', type: 'human' }],
+      participants: [{ name: 'Butter' }],
       linkedTasks: [task.id],
-      initialMessage: { content: 'hi', type: 'question' }
+      initialMessage: { content: 'hi' }
     })
     const links = await svc.getConversationLinks(conv.id)
     expect(links).toHaveLength(1)
@@ -73,13 +71,6 @@ describe('openConversation', () => {
     const open = await svc.findConversations('proj-c', 'open')
     expect(open.map((c) => c.id).sort()).toEqual([id1, id2, id3].sort())
   })
-
-  it('allows opening new conv while another is decided but not closed', async () => {
-    const id1 = await openFresh('first')
-    await svc.decideConversation(id1, { author: 'Butter', decision: 'yes' })
-    const id2 = await openFresh('second')
-    expect((await svc.getConversation(id2))?.status).toBe('open')
-  })
 })
 
 describe('openConversation R3 ownership tag', () => {
@@ -88,8 +79,8 @@ describe('openConversation R3 ownership tag', () => {
       projectId: 'proj-c',
       title: 'Interactive',
       createdBy: 'Butter',
-      participants: [{ name: 'Butter', type: 'human' }],
-      initialMessage: { content: 'hi', type: 'question' }
+      participants: [{ name: 'Butter' }],
+      initialMessage: { content: 'hi' }
     })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = (svc as any).db as import('better-sqlite3').Database
@@ -106,8 +97,8 @@ describe('openConversation session auto-link', () => {
       projectId: 'proj-c',
       title: 'T',
       createdBy: 'Butter',
-      participants: [{ name: 'Butter', type: 'human' }],
-      initialMessage: { content: 'hi', type: 'question' },
+      participants: [{ name: 'Butter' }],
+      initialMessage: { content: 'hi' },
       ...extra
     })).id
   }
@@ -132,7 +123,6 @@ describe('openConversation session auto-link', () => {
     const convId = await openConv()
 
     const links = await svc.findConversationsByLink('session', session.session.id)
-    // auto-conv from startSession + our new conv
     expect(links.some((c) => c.id === convId)).toBe(true)
   })
 
@@ -170,16 +160,50 @@ describe('openConversation session auto-link', () => {
 })
 
 describe('decideConversation', () => {
-  it('happy path: adds decision message + flips to decided', async () => {
+  it('solo conversation (no extra participants beyond decider): flips to decided immediately', async () => {
     const id = await openFresh()
     const r = await svc.decideConversation(id, { author: 'Butter', decision: 'go left' })
 
-    expect(r.conversation.status).toBe('decided')
+    // Butter is the only participant and they own the decision — for the
+    // single-participant case the consensus check is trivially satisfied as
+    // soon as they signoff. Without an explicit signoff yet, status stays open.
+    expect(r.conversation.status).toBe('open')
     expect(r.conversation.decisionSummary).toBe('go left')
     expect(r.actions).toHaveLength(0)
     const msgs = await svc.getConversationMessages(id)
-    expect(msgs.at(-1)?.messageType).toBe('decision')
     expect(msgs.at(-1)?.content).toBe('go left')
+  })
+
+  it('zero registered participants: flips to decided immediately (no consensus needed)', async () => {
+    // Use createConversation directly to skip participant registration.
+    const conv = await svc.createConversation({
+      projectId: 'proj-c',
+      title: 'no-participants',
+      createdBy: 'Butter'
+    })
+    const r = await svc.decideConversation(conv.id, { author: 'Butter', decision: 'unilateral' })
+    expect(r.conversation.status).toBe('decided')
+    expect(r.conversation.decidedAt).not.toBeNull()
+  })
+
+  it('multi-participant: stays open until everyone signs off', async () => {
+    const conv = await svc.openConversation({
+      projectId: 'proj-c',
+      title: 'consensus needed',
+      createdBy: 'Butter',
+      participants: [{ name: 'Butter' }, { name: 'Claude' }],
+      initialMessage: { content: 'pick one' }
+    })
+    const r = await svc.decideConversation(conv.id, { author: 'Butter', decision: 'opt A' })
+    expect(r.conversation.status).toBe('open')
+    expect(r.conversation.decisionSummary).toBe('opt A')
+
+    await svc.signoffConversation(conv.id, 'Butter')
+    expect((await svc.getConversation(conv.id))?.status).toBe('open')
+
+    const r2 = await svc.signoffConversation(conv.id, 'Claude')
+    expect(r2.decided).toBe(true)
+    expect(r2.conversation.status).toBe('decided')
   })
 
   it('spawns tasks for actions that include spawnTask', async () => {
@@ -234,93 +258,26 @@ describe('decideConversation', () => {
   })
 })
 
-describe('closeConversation', () => {
-  it('happy path: decided → closed', async () => {
+describe('signoffConversation', () => {
+  it('idempotent — calling twice with same name returns same signedOff[]', async () => {
     const id = await openFresh()
-    await svc.decideConversation(id, { author: 'Butter', decision: 'go' })
-    const conv = await svc.closeConversation(id)
-
-    expect(conv.status).toBe('closed')
-    expect(conv.closedAt).not.toBeNull()
+    const r1 = await svc.signoffConversation(id, 'Butter')
+    expect(r1.signedOff).toEqual(['Butter'])
+    const r2 = await svc.signoffConversation(id, 'Butter')
+    expect(r2.signedOff).toEqual(['Butter'])
   })
 
   it('throws ConversationNotFoundError on missing id', async () => {
-    await expect(svc.closeConversation('CONV-999')).rejects.toThrow(ConversationNotFoundError)
+    await expect(svc.signoffConversation('CONV-999', 'Butter')).rejects.toThrow(
+      ConversationNotFoundError
+    )
   })
 
-  it('throws ConversationStatusError when not decided', async () => {
+  it('does NOT flip status if no decisionSummary yet', async () => {
     const id = await openFresh()
-    await expect(svc.closeConversation(id)).rejects.toThrow(ConversationStatusError)
-  })
-})
-
-describe('reopenConversation', () => {
-  it('happy path: decided → discussing', async () => {
-    const id = await openFresh()
-    await svc.decideConversation(id, { author: 'Butter', decision: 'go' })
-    const conv = await svc.reopenConversation(id)
-    expect(conv.status).toBe('discussing')
-  })
-
-  it('allows reopen even when another conversation is active', async () => {
-    const id1 = await openFresh('first')
-    await svc.decideConversation(id1, { author: 'Butter', decision: 'go' })
-    await openFresh('second') // another open conv exists
-
-    const conv = await svc.reopenConversation(id1)
-    expect(conv.status).toBe('discussing')
-  })
-
-  it('throws ConversationNotFoundError on missing id', async () => {
-    await expect(svc.reopenConversation('CONV-999')).rejects.toThrow(ConversationNotFoundError)
-  })
-
-  it('throws ConversationStatusError when status is open', async () => {
-    const id = await openFresh()
-    await expect(svc.reopenConversation(id)).rejects.toThrow(ConversationStatusError)
-  })
-
-  it('closed → discussing clears closedAt + decidedAt + decisionSummary', async () => {
-    const id = await openFresh()
-    await svc.decideConversation(id, { author: 'Butter', decision: 'go' })
-    await svc.closeConversation(id)
-    const closed = await svc.getConversation(id)
-    expect(closed?.status).toBe('closed')
-    expect(closed?.decidedAt).not.toBeNull()
-    expect(closed?.closedAt).not.toBeNull()
-    expect(closed?.decisionSummary).toBe('go')
-
-    const conv = await svc.reopenConversation(id)
-    expect(conv.status).toBe('discussing')
-    expect(conv.decidedAt).toBeNull()
-    expect(conv.closedAt).toBeNull()
-    expect(conv.decisionSummary).toBeNull()
-  })
-
-  it('decided → discussing (skip close) clears decidedAt + decisionSummary', async () => {
-    const id = await openFresh()
-    await svc.decideConversation(id, { author: 'Butter', decision: 'go' })
-    const decided = await svc.getConversation(id)
-    expect(decided?.status).toBe('decided')
-    expect(decided?.decidedAt).not.toBeNull()
-    expect(decided?.decisionSummary).toBe('go')
-
-    const conv = await svc.reopenConversation(id)
-    expect(conv.status).toBe('discussing')
-    expect(conv.decidedAt).toBeNull()
-    expect(conv.closedAt).toBeNull()
-    expect(conv.decisionSummary).toBeNull()
-  })
-
-  it('preserves message history through close → reopen cycle', async () => {
-    const id = await openFresh()
-    await svc.decideConversation(id, { author: 'Butter', decision: 'go' })
-    await svc.closeConversation(id)
-    const before = (await svc.getConversationMessages(id)).length
-
-    await svc.reopenConversation(id)
-    const after = await svc.getConversationMessages(id)
-    expect(after).toHaveLength(before)
+    const r = await svc.signoffConversation(id, 'Butter')
+    expect(r.conversation.status).toBe('open')
+    expect(r.decided).toBe(false)
   })
 })
 
@@ -338,9 +295,9 @@ describe('transaction rollback (atomicity)', () => {
         projectId: 'proj-c',
         title: 'rollback',
         createdBy: 'Butter',
-        participants: [{ name: 'Butter', type: 'human' }],
+        participants: [{ name: 'Butter' }],
         linkedTasks: [task.id],
-        initialMessage: { content: 'hi', type: 'question' }
+        initialMessage: { content: 'hi' }
       })).rejects.toThrow('simulated link failure')
 
     lifecycle.conversations.link = orig
@@ -350,7 +307,13 @@ describe('transaction rollback (atomicity)', () => {
   })
 
   it('rolls back status flip + decision message when action insert fails mid-decide', async () => {
-    const id = await openFresh()
+    // Use a no-participants conv so decideConversation actually flips status,
+    // exposing the rollback when actions[] fails.
+    const conv = await svc.createConversation({
+      projectId: 'proj-c',
+      title: 'rollback decide',
+      createdBy: 'Butter'
+    })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const lifecycle = (svc as any).conversationLifecycle
@@ -359,7 +322,7 @@ describe('transaction rollback (atomicity)', () => {
       throw new Error('simulated action failure')
     }
 
-    await expect(svc.decideConversation(id, {
+    await expect(svc.decideConversation(conv.id, {
         author: 'Butter',
         decision: 'should rollback',
         actions: [{ assignee: 'Claude', description: 'x' }]
@@ -367,10 +330,10 @@ describe('transaction rollback (atomicity)', () => {
 
     lifecycle.conversations.addAction = orig
 
-    const conv = await svc.getConversation(id)
-    expect(conv?.status).toBe('open')
-    expect(conv?.decisionSummary).toBeNull()
-    const msgs = await svc.getConversationMessages(id)
-    expect(msgs.some((m) => m.messageType === 'decision')).toBe(false)
+    const final = await svc.getConversation(conv.id)
+    expect(final?.status).toBe('open')
+    expect(final?.decisionSummary).toBeNull()
+    const msgs = await svc.getConversationMessages(conv.id)
+    expect(msgs).toHaveLength(0)
   })
 })

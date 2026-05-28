@@ -409,18 +409,15 @@ describe('SqliteTaskService', () => {
       projectId: 'test-proj',
       title: 'Pick DB engine',
       createdBy: 'ARCH',
-      participants: [
-        { name: 'ARCH', type: 'role', role: 'requester' },
-        { name: 'DEV', type: 'role', role: 'reviewer' }
-      ]
+      participants: [{ name: 'ARCH' }, { name: 'DEV' }]
     })
     expect(c.status).toBe('open')
     expect(c.createdBy).toBe('ARCH')
+    expect(c.signedOff).toEqual([])
 
     const parts = await svc.getConversationParticipants('CONV-001')
     expect(parts.length).toBe(2)
-    expect(parts.find((p) => p.name === 'ARCH')?.role).toBe('requester')
-    expect(parts.find((p) => p.name === 'DEV')?.type).toBe('role')
+    expect(parts.map((p) => p.name).sort()).toEqual(['ARCH', 'DEV'])
   })
 
   it('addConversationMessage + getConversationMessages ordered', async () => {
@@ -428,40 +425,20 @@ describe('SqliteTaskService', () => {
       id: 'MSG-001',
       conversationId: 'CONV-001',
       authorName: 'ARCH',
-      content: 'Should we use sql.js or better-sqlite3?',
-      messageType: 'question'
+      content: 'Should we use sql.js or better-sqlite3?'
     })
     await svc.addConversationMessage({
       id: 'MSG-002',
       conversationId: 'CONV-001',
       authorName: 'DEV',
-      content: 'better-sqlite3 — sync API, no WASM',
-      messageType: 'answer'
+      content: 'better-sqlite3 — sync API, no WASM'
     })
     const msgs = await svc.getConversationMessages('CONV-001')
     expect(msgs.length).toBe(2)
     expect(msgs[0].id).toBe('MSG-001')
     expect(msgs[0].authorName).toBe('ARCH')
-    expect(msgs[1].messageType).toBe('answer')
-  })
-
-  it('addConversationMessage with metadata persists JSON', async () => {
-    await svc.addConversationMessage({
-      id: 'MSG-003',
-      conversationId: 'CONV-001',
-      authorName: 'DEV',
-      content: '3 options',
-      messageType: 'proposal',
-      metadata: {
-        options: [
-          { id: 'A', description: 'remove', tradeoff: 'breaking' },
-          { id: 'B', description: 'slim', tradeoff: 'complex' }
-        ]
-      }
-    })
-    const msg = (await svc.getConversationMessages('CONV-001')).find((m) => m.id === 'MSG-003')!
-    expect(msg.metadata?.options?.length).toBe(2)
-    expect(msg.metadata?.options?.[0].id).toBe('A')
+    expect(msgs[1].content).toMatch(/better-sqlite3/)
+    expect(msgs.every((m) => m.readBy.length === 0)).toBe(true)
   })
 
   it('updateConversation records decision', async () => {
@@ -548,38 +525,24 @@ describe('SqliteTaskService', () => {
       projectId: 'test-proj',
       title: 'Remove outputData from execution response',
       createdBy: 'BE',
-      participants: [
-        { name: 'BE', type: 'role', role: 'requester' },
-        { name: 'FE', type: 'role', role: 'reviewer' }
-      ]
+      participants: [{ name: 'BE' }, { name: 'FE' }]
     })
     await svc.linkConversation(conv.id, 'task', 'TASK-501')
 
     await svc.addConversationMessage({
       conversationId: conv.id,
       authorName: 'BE',
-      content: '3 options: A/B/C',
-      messageType: 'proposal',
-      metadata: {
-        options: [
-          { id: 'A', description: 'remove', tradeoff: 'breaking' },
-          { id: 'B', description: 'slim', tradeoff: 'complex' },
-          { id: 'C', description: 'keep', tradeoff: '50KB' }
-        ]
-      }
+      content: '3 options: A/B/C — A remove, B slim, C keep'
     })
     await svc.addConversationMessage({
       conversationId: conv.id,
       authorName: 'FE',
-      content: 'Pick A — lazy-load detail',
-      messageType: 'review',
-      metadata: { selectedOption: 'A' }
+      content: 'Pick A — lazy-load detail'
     })
     await svc.addConversationMessage({
       conversationId: conv.id,
       authorName: 'BE',
-      content: 'Acked, will implement',
-      messageType: 'answer'
+      content: 'Acked, will implement'
     })
 
     await svc.updateConversation(conv.id, {
@@ -609,8 +572,6 @@ describe('SqliteTaskService', () => {
 
     const msgs = await svc.getConversationMessages(conv.id)
     expect(msgs.length).toBe(3)
-    expect(msgs[0].metadata?.options?.length).toBe(3)
-    expect(msgs[1].metadata?.selectedOption).toBe('A')
 
     const actions = await svc.getConversationActions(conv.id)
     expect(actions.length).toBe(1)
@@ -628,13 +589,12 @@ describe('SqliteTaskService', () => {
         projectId: 'test-proj',
         title: 'Export smoke test',
         createdBy: 'ARCH',
-        participants: [{ name: 'ARCH', type: 'role' }]
+        participants: [{ name: 'ARCH' }]
       })
       await svc.addConversationMessage({
         conversationId: conv.id,
         authorName: 'ARCH',
-        content: 'Proposing option A',
-        messageType: 'proposal'
+        content: 'Proposing option A'
       })
       await svc.updateConversation(conv.id, {
         status: 'decided',
@@ -682,7 +642,7 @@ describe('SqliteTaskService', () => {
       projectId: 'test-proj',
       title: 'Decide approach for TASK-CTX',
       createdBy: 'ARCH',
-      participants: [{ name: 'ARCH', type: 'role' }]
+      participants: [{ name: 'ARCH' }]
     })
     await svc.linkConversation(conv.id, 'task', task.id)
     await svc.updateConversation(conv.id, {

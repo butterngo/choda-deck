@@ -5,7 +5,7 @@ projectId: choda-deck
 scope: project
 refs: []
 createdAt: 2026-04-16
-lastVerifiedAt: 2026-05-18
+lastVerifiedAt: 2026-05-28
 ---
 
 # ADR-010: Conversation Protocol — SQLite-only, no .md export
@@ -150,8 +150,50 @@ sequenceDiagram
 - Cross-session collaboration yêu cầu chủ động poll (`conversation_poll`) hoặc manual `conversation_list`
 - `project_context` trả về `openConversations` với 3 messages gần nhất — đủ để Claude biết context khi bắt đầu session
 
+## 2026-05-28 schema narrowing (TASK-972)
+
+Field-level cleanup after a 2026-05-28 audit found agents drifting because the
+schema offered too many "priming" knobs that no consumer actually read at the
+decision boundary. Storage + lifecycle preserved; surface narrowed.
+
+### Added
+
+- `conversations.signed_off_json TEXT NOT NULL DEFAULT '[]'` — consensus tracker. `conversation_decide` records the summary, `conversation_signoff(convId, name)` (idempotent) appends a name. Status flips to `decided` only when `signedOff.length === participants.length` AND a decisionSummary exists.
+- `conversation_message_reads (message_id, participant_name, read_at)` side-table — load-bearing read receipts. `conversation_read({ as })` auto-marks every returned message read by `as`; explicit `conversation_mark_read` (idempotent) for tool-driven marking.
+- `conversation_add` enforces `content.max(1500)` via Zod. Long convergence summaries belong in `decisionSummary` via `conversation_decide`.
+
+### Dropped
+
+| Field | Why |
+|---|---|
+| `conversation_participants.participant_type` | Role-routing dropped (see ADR-021 status note). Type label served no consumer. |
+| `conversation_participants.participant_role` | Same. |
+| `conversation_messages.message_type` | Status/UI never used the label. `decide` is the only special path and it lives in `conversation_decide` (the message body it writes is just content). |
+| `conversation_messages.metadata_json` | No consumer; structured options unused since reviewer-fields (TASK-920) shipped. |
+| `conversation_messages.target_role` | Role-routing dropped. |
+| `conversations.closed_at` | Status enum narrows; `decidedAt` is the single terminal timestamp. |
+| Status values `discussing`, `closed`, `stale` | Narrowed to `{open, decided}`. Migration: `discussing→open`, `closed/stale→decided`. |
+| MCP tools `conversation_close`, `conversation_reopen` | Status is now a function of signoff consensus, not explicit close. |
+| TASK-920 reviewer-fields Zod schema (`verdict/topConcern/asks/notes`, `composeReviewerContent`) | Superseded by the 1500-char content cap — `conversation_add` accepts free-text only. Historical review-typed messages keep their composed content verbatim. |
+
+### Migration
+
+SQLite: in-place via `migrateConversationSchemaNarrowing()` in `schema.ts` —
+status backfill first (`discussing→open`, `closed/stale→decided`) then
+recreate-table to drop columns. Idempotent on second boot.
+
+Postgres: migrations `007_conversation_consensus` (additive — column + side-table)
+and `008_conversation_subtractive` (status backfill + `DROP COLUMN IF EXISTS`
++ rewritten status CHECK).
+
+Historical content preserved verbatim — decisionSummary, message bodies,
+TASK-920-style composed VERDICT/... blobs all survive byte-for-byte.
+
 ## Related
 
 - [[ADR-008-ai-workflow-engine-pivot]] — defines L2 as a layer
 - [[ADR-009-session-lifecycle]] — L3 session, same SQLite-only pattern
 - [[ADR-004-sqlite-task-management]] — SQLite foundation
+- [[ADR-013-session-rules-injection]] — partial supersession of brevity-enforcement role (now Zod-enforced)
+- [[ADR-021-cross-project-event-routing]] — superseded by 2026-05-28 narrowing (event emitter removed)
+- TASK-972 — epic; TASK-971/973/974/975 — phases
