@@ -20,7 +20,8 @@ import type {
   ConversationLifecycleOperations,
   OpenConversationInput,
   DecideConversationInput,
-  DecideConversationResult
+  DecideConversationResult,
+  SignoffConversationResult
 } from './interfaces/conversation-lifecycle.interface'
 import type {
   SessionLifecycleOperations,
@@ -86,7 +87,6 @@ import type {
   ConversationLink,
   ConversationLinkType,
   ConversationParticipant,
-  ConversationParticipantType,
   ConversationAction,
   CreateConversationInput,
   UpdateConversationInput,
@@ -432,13 +432,8 @@ export class SqliteTaskService
     this.conversations.delete(id)
   }
 
-  async addConversationParticipant(
-    conversationId: string,
-    name: string,
-    type: ConversationParticipantType,
-    role?: string | null
-  ): Promise<void> {
-    this.conversations.addParticipant(conversationId, name, type, role)
+  async addConversationParticipant(conversationId: string, name: string): Promise<void> {
+    this.conversations.addParticipant(conversationId, name)
   }
   async removeConversationParticipant(conversationId: string, name: string): Promise<void> {
     this.conversations.removeParticipant(conversationId, name)
@@ -452,6 +447,9 @@ export class SqliteTaskService
   }
   async getConversationMessages(conversationId: string): Promise<ConversationMessage[]> {
     return this.conversations.getMessages(conversationId)
+  }
+  async markConversationMessageRead(messageId: string, participantName: string): Promise<void> {
+    this.conversations.markMessageRead(messageId, participantName)
   }
 
   async addConversationAction(input: CreateConversationActionInput): Promise<ConversationAction> {
@@ -520,11 +518,8 @@ export class SqliteTaskService
   async decideConversation(id: string, input: DecideConversationInput): Promise<DecideConversationResult> {
     return this.conversationLifecycle.decideConversation(id, input)
   }
-  async closeConversation(id: string): Promise<Conversation> {
-    return this.conversationLifecycle.closeConversation(id)
-  }
-  async reopenConversation(id: string): Promise<Conversation> {
-    return this.conversationLifecycle.reopenConversation(id)
+  async signoffConversation(id: string, name: string): Promise<SignoffConversationResult> {
+    return this.conversationLifecycle.signoffConversation(id, name)
   }
 
   // ── Session lifecycle (composite, transactional) ──────────────────────────

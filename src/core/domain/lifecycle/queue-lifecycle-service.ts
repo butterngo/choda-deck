@@ -1210,12 +1210,11 @@ export class QueueLifecycleService {
 
     const linkedConvs = await this.conversations.findByLink('task', task.id)
     for (const conv of linkedConvs) {
-      if (conv.status === 'closed') continue
+      if (conv.status === 'decided') continue
       await this.conversations.addMessage({
         conversationId: conv.id,
         authorName: 'queue-runner',
-        content: `Auto-failed: ${reason}\nDiff: ${path.join(taskDir, 'diff.patch')}`,
-        messageType: 'comment'
+        content: `Auto-failed: ${reason}\nDiff: ${path.join(taskDir, 'diff.patch')}`
       })
     }
   }

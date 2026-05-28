@@ -165,7 +165,7 @@ describe('endSession', () => {
       projectId: 'proj-s',
       title: 'Mid-session discussion',
       createdBy: 'Butter',
-      initialMessage: { content: 'thoughts?', type: 'question' }
+      initialMessage: { content: 'thoughts?' }
     })
 
     const r = await svc.endSession(started.session.id, {
@@ -174,7 +174,7 @@ describe('endSession', () => {
 
     expect(r.closedConversationIds).toEqual([conv.id])
     const after = await svc.getConversation(conv.id)
-    expect(after?.status).toBe('closed')
+    expect(after?.status).toBe('decided')
     expect(after?.decisionSummary).toBe('done for the day')
   })
 
@@ -197,7 +197,7 @@ describe('endSession', () => {
       projectId: 'proj-s',
       title: 'Mid-session discussion',
       createdBy: 'Butter',
-      initialMessage: { content: 'thoughts?', type: 'question' }
+      initialMessage: { content: 'thoughts?' }
     })
     await svc.endSession(started.session.id, {
       handoff: { resumePoint: 'r' },
@@ -604,14 +604,14 @@ describe('abandonSession', () => {
       projectId: 'proj-s',
       title: 'Mid-session discussion',
       createdBy: 'Butter',
-      initialMessage: { content: 'thoughts?', type: 'question' }
+      initialMessage: { content: 'thoughts?' }
     })
 
     const r = await svc.abandonSession(started.session.id, 'cost cap exceeded')
 
     expect(r.closedConversationIds).toEqual([conv.id])
     const after = await svc.getConversation(conv.id)
-    expect(after?.status).toBe('closed')
+    expect(after?.status).toBe('decided')
     expect(after?.decisionSummary).toBe('Abandoned: cost cap exceeded')
   })
 
@@ -646,7 +646,7 @@ describe('abandonSession', () => {
       projectId: 'proj-s',
       title: 'Mid',
       createdBy: 'Butter',
-      initialMessage: { content: 'q', type: 'question' }
+      initialMessage: { content: 'q' }
     })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -808,7 +808,7 @@ describe('resumeSession', () => {
       projectId: 'proj-s',
       title: 'Mid-session discussion',
       createdBy: 'Butter',
-      initialMessage: { content: 'thoughts?', type: 'question' }
+      initialMessage: { content: 'thoughts?' }
     })
 
     const r = await svc.resumeSession(started.session.id)
@@ -866,7 +866,7 @@ describe('transaction rollback (atomicity)', () => {
       projectId: 'proj-s',
       title: 'Mid-session discussion',
       createdBy: 'Butter',
-      initialMessage: { content: 'thoughts?', type: 'question' }
+      initialMessage: { content: 'thoughts?' }
     })
     const task = await svc.createTask({ projectId: 'proj-s', title: 'Y' })
     await svc.updateSession(started.session.id, { taskId: task.id })

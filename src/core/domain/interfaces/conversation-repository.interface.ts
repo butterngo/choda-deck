@@ -5,7 +5,6 @@ import type {
   ConversationLink,
   ConversationLinkType,
   ConversationParticipant,
-  ConversationParticipantType,
   ConversationAction,
   CreateConversationInput,
   UpdateConversationInput,
@@ -21,17 +20,13 @@ export interface ConversationOperations {
   findConversations(projectId: string, status?: ConversationStatus): Promise<Conversation[]>
   deleteConversation(id: string): Promise<void>
 
-  addConversationParticipant(
-    conversationId: string,
-    name: string,
-    type: ConversationParticipantType,
-    role?: string | null
-  ): Promise<void>
+  addConversationParticipant(conversationId: string, name: string): Promise<void>
   removeConversationParticipant(conversationId: string, name: string): Promise<void>
   getConversationParticipants(conversationId: string): Promise<ConversationParticipant[]>
 
   addConversationMessage(input: CreateConversationMessageInput): Promise<ConversationMessage>
   getConversationMessages(conversationId: string): Promise<ConversationMessage[]>
+  markConversationMessageRead(messageId: string, participantName: string): Promise<void>
 
   addConversationAction(input: CreateConversationActionInput): Promise<ConversationAction>
   updateConversationAction(id: string, input: UpdateConversationActionInput): Promise<ConversationAction>

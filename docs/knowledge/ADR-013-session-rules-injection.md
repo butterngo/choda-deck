@@ -5,7 +5,7 @@ projectId: choda-deck
 scope: project
 refs: []
 createdAt: 2026-04-18
-lastVerifiedAt: 2026-05-18
+lastVerifiedAt: 2026-05-28
 ---
 
 # ADR-013: Session rules injected via MCP response — compliance through prompt, not validation
@@ -112,3 +112,39 @@ The "future MCP tools can carry behavioral contracts the same way" note in *Cons
 Pattern validated cross-AI (claude + copilot) on `CONV-1778319386427-5` and `CONV-1778337357060-2`. The same `## On <tool_name>` parsing rule (heading match in `parseSection`) and per-call `fs.readFileSync` hot-reload behavior remain unchanged.
 
 Shipped via PR #73. No supersession of ADR-013 — this is the anticipated extension, not a redesign.
+
+## 2026-05-28 partial supersession (conversation portion) — TASK-972
+
+The 2026-05-28 conversation-schema audit (TASK-971's Context) traced the
+"agent overthinks, goes around the point" failure mode back to ADR-013's
+**compliance-through-prompt** model: brevity rules were prose advisory only,
+and Opus drifted past them on every long turn.
+
+**What moved:**
+- **Brevity enforcement** moved from prose injection to a hard Zod cap on
+  `conversation_add` (`content.max(1500)`). Long convergence summaries are
+  now schema-rejected; they belong in `decisionSummary` via `conversation_decide`.
+- **TASK-920 reviewer-fields Zod schema** (`verdict/topConcern/asks/notes`)
+  was the first prototype of "compliance through schema, not prompt" for
+  this surface. Superseded by the simpler 1500-char cap.
+
+**What survives:**
+- The `## On conversation_read` injection mechanism survives intact. The
+  text is now usage-manual prose for the new mechanics (`readBy`, `signoff`,
+  `propose_rewrite`, content cap, `actions[]`), not a brevity enforcer. The
+  ADR-013 invariant — "rule text sits inside the tool response, in working
+  memory, hard to ignore" — still applies, just to a different rule.
+- All **session rules** (`## On session_start`, `## On session_checkpoint`,
+  `## On session_resume`, `## On session_end`) remain advisory-only. They
+  describe sequencing and payload shape, both of which are validated
+  upstream (session_end has structured schema validation per ADR-028);
+  the prose covers the bits the schema doesn't catch.
+
+**Scope of supersession:** narrow. ADR-013's premise — "compliance through
+prompt, not validation, for protocol-shape rules" — still holds for session
+rules and the conversation usage-manual. What the audit invalidated was
+applying the same model to **enforceable content limits**. Those move to
+schema; everything else stays in the prompt.
+
+See TASK-972 (epic) / TASK-975 (this addendum) and ADR-010's 2026-05-28
+schema-narrowing addendum.

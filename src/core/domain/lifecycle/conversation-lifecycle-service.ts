@@ -7,11 +7,12 @@ import type {
   OpenConversationInput,
   DecideConversationInput,
   DecideConversationResult,
-  DecideConversationResultAction
+  DecideConversationResultAction,
+  SignoffConversationResult
 } from '../interfaces/conversation-lifecycle.interface'
 import type { Conversation } from '../task-types'
 import { now } from '../repositories/shared'
-import { ConversationNotFoundError, ConversationStatusError } from './errors'
+import { ConversationNotFoundError } from './errors'
 
 export class ConversationLifecycleService implements ConversationLifecycleOperations {
   constructor(
@@ -34,18 +35,10 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
         ownerSessionId: resolvedSessionId ?? undefined
       })
 
-      this.conversations.emitLifecycleEvent(
-        conv.id,
-        'conversation.open',
-        input.createdBy,
-        conv.createdAt
-      )
-
       this.conversations.addMessage({
         conversationId: conv.id,
         authorName: input.createdBy,
-        content: input.initialMessage.content,
-        messageType: input.initialMessage.type
+        content: input.initialMessage.content
       })
 
       for (const taskId of input.linkedTasks ?? []) {
@@ -94,61 +87,56 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
       this.conversations.addMessage({
         conversationId: id,
         authorName: input.author,
-        content: input.decision,
-        messageType: 'decision'
+        content: input.decision
       })
 
-      const decidedAt = now()
+      // Record the decision summary but only flip status to `decided` once every
+      // participant has signed off (consensus). For solo conversations (or those
+      // without registered participants) decideConversation flips immediately.
+      const participants = this.conversations.getParticipants(id)
+      const everyoneSignedOff =
+        participants.length === 0 ||
+        participants.every((p) => conv.signedOff.includes(p.name))
+
       const updated = this.conversations.update(id, {
-        status: 'decided',
         decisionSummary: input.decision,
-        decidedAt
+        ...(everyoneSignedOff
+          ? { status: 'decided' as const, decidedAt: now() }
+          : {})
       })
 
       const actions: DecideConversationResultAction[] = (input.actions ?? []).map((action) =>
         this.createActionAndMaybeSpawnTask(conv.projectId, id, action)
       )
 
-      this.conversations.emitLifecycleEvent(id, 'conversation.decide', input.author, decidedAt)
       return { conversation: updated, actions }
     })
     return tx()
   }
 
-  async closeConversation(id: string): Promise<Conversation> {
-    const tx = this.db.transaction((): Conversation => {
+  async signoffConversation(id: string, name: string): Promise<SignoffConversationResult> {
+    const tx = this.db.transaction((): SignoffConversationResult => {
       const conv = this.conversations.get(id)
       if (!conv) throw new ConversationNotFoundError(id)
-      if (conv.status !== 'decided') {
-        throw new ConversationStatusError(id, conv.status, 'must be decided before closing')
-      }
-      const closedAt = now()
-      const updated = this.conversations.update(id, { status: 'closed', closedAt })
-      this.conversations.emitLifecycleEvent(id, 'conversation.close', 'system', closedAt)
-      return updated
-    })
-    return tx()
-  }
 
-  async reopenConversation(id: string): Promise<Conversation> {
-    const tx = this.db.transaction((): Conversation => {
-      const conv = this.conversations.get(id)
-      if (!conv) throw new ConversationNotFoundError(id)
-      if (conv.status !== 'decided' && conv.status !== 'closed') {
-        throw new ConversationStatusError(
-          id,
-          conv.status,
-          'only decided or closed conversations can reopen'
-        )
+      const signedOff = this.conversations.appendSignoff(id, name)
+      const participants = this.conversations.getParticipants(id)
+      const everyoneSignedOff =
+        participants.length > 0 && participants.every((p) => signedOff.includes(p.name))
+
+      // Flip to decided only when:
+      //  1. consensus is reached, AND
+      //  2. a decision summary already exists (decideConversation was called)
+      let updated = conv
+      let decided = false
+      if (everyoneSignedOff && conv.decisionSummary && conv.status !== 'decided') {
+        updated = this.conversations.update(id, { status: 'decided', decidedAt: now() })
+        decided = true
+      } else {
+        // refresh so the returned conv reflects the new signedOff[]
+        updated = this.conversations.get(id) ?? conv
       }
-      const updated = this.conversations.update(id, {
-        status: 'discussing',
-        closedAt: null,
-        decidedAt: null,
-        decisionSummary: null
-      })
-      this.conversations.emitLifecycleEvent(id, 'conversation.reopen', 'system', now())
-      return updated
+      return { conversation: updated, signedOff, decided }
     })
     return tx()
   }

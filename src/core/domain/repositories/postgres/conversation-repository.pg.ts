@@ -12,8 +12,6 @@ import type {
   ConversationActionStatus,
   ConversationLinkType,
   ConversationMessage,
-  ConversationMessageMetadata,
-  ConversationMessageType,
   ConversationStatus
 } from '../../task-types'
 
@@ -24,9 +22,9 @@ interface ConversationDbRow {
   status: string
   created_by: string
   decision_summary: string | null
+  signed_off_json: string | null
   created_at: Date
   decided_at: string | null
-  closed_at: string | null
 }
 
 function mapConversation(row: ConversationDbRow): Conversation {
@@ -37,9 +35,19 @@ function mapConversation(row: ConversationDbRow): Conversation {
     status: row.status as ConversationStatus,
     createdBy: row.created_by,
     decisionSummary: row.decision_summary,
+    signedOff: parseSignedOff(row.signed_off_json),
     createdAt: row.created_at.toISOString(),
-    decidedAt: row.decided_at,
-    closedAt: row.closed_at
+    decidedAt: row.decided_at
+  }
+}
+
+function parseSignedOff(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
   }
 }
 
@@ -48,9 +56,7 @@ interface MessageDbRow {
   conversation_id: string
   author_name: string
   content: string
-  message_type: string
-  metadata_json: ConversationMessageMetadata | null
-  target_role: string | null
+  read_by: string[] | null
   created_at: Date
 }
 
@@ -60,9 +66,7 @@ function mapMessage(row: MessageDbRow): ConversationMessage {
     conversationId: row.conversation_id,
     authorName: row.author_name,
     content: row.content,
-    messageType: row.message_type as ConversationMessageType,
-    metadata: row.metadata_json,
-    targetRole: row.target_role,
+    readBy: row.read_by ?? [],
     createdAt: row.created_at.toISOString()
   }
 }
@@ -90,9 +94,7 @@ function mapAction(row: ActionDbRow): ConversationAction {
 }
 
 const CONV_COLS =
-  'id, project_id, title, status, created_by, decision_summary, created_at, decided_at, closed_at'
-const MESSAGE_COLS =
-  'id, conversation_id, author_name, content, message_type, metadata_json, target_role, created_at'
+  'id, project_id, title, status, created_by, decision_summary, signed_off_json, created_at, decided_at'
 const ACTION_COLS =
   'id, conversation_id, assignee, description, status, linked_task_id, created_at'
 
@@ -118,8 +120,13 @@ export class PostgresConversationRepository {
 
   async getMessages(conversationId: string): Promise<ConversationMessage[]> {
     const result = await this.conn.query<MessageDbRow>(
-      `SELECT ${MESSAGE_COLS} FROM conversation_messages
-       WHERE conversation_id = $1 ORDER BY created_at, id`,
+      `SELECT m.id, m.conversation_id, m.author_name, m.content, m.created_at,
+              COALESCE(array_agg(r.participant_name) FILTER (WHERE r.participant_name IS NOT NULL), '{}') AS read_by
+       FROM conversation_messages m
+       LEFT JOIN conversation_message_reads r ON r.message_id = m.id
+       WHERE m.conversation_id = $1
+       GROUP BY m.id
+       ORDER BY m.created_at, m.id`,
       [conversationId]
     )
     return result.rows.map(mapMessage)

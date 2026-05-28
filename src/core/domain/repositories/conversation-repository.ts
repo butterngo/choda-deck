@@ -3,12 +3,9 @@ import type {
   Conversation,
   ConversationStatus,
   ConversationMessage,
-  ConversationMessageType,
-  ConversationMessageMetadata,
   ConversationLink,
   ConversationLinkType,
   ConversationParticipant,
-  ConversationParticipantType,
   ConversationAction,
   ConversationActionStatus,
   CreateConversationInput,
@@ -17,13 +14,10 @@ import type {
   CreateConversationActionInput,
   UpdateConversationActionInput
 } from '../task-types'
-import {
-  emitConversationEventFanout,
-  type ConversationEventType
-} from '../services/event-emitter'
 import { generateId, type Param } from './shared'
 
 function rowToConversation(row: Record<string, unknown>): Conversation {
+  const signedOff = parseSignedOff(row.signed_off_json)
   return {
     id: row.id as string,
     projectId: row.project_id as string,
@@ -31,33 +25,27 @@ function rowToConversation(row: Record<string, unknown>): Conversation {
     status: row.status as ConversationStatus,
     createdBy: row.created_by as string,
     decisionSummary: (row.decision_summary as string) || null,
+    signedOff,
     createdAt: row.created_at as string,
-    decidedAt: (row.decided_at as string) || null,
-    closedAt: (row.closed_at as string) || null
+    decidedAt: (row.decided_at as string) || null
+  }
+}
+
+function parseSignedOff(raw: unknown): string[] {
+  if (raw == null) return []
+  if (typeof raw !== 'string' || raw.length === 0) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
   }
 }
 
 function rowToParticipant(row: Record<string, unknown>): ConversationParticipant {
   return {
     conversationId: row.conversation_id as string,
-    name: row.participant_name as string,
-    type: row.participant_type as ConversationParticipantType,
-    role: (row.participant_role as string) || null
-  }
-}
-
-function rowToMessage(row: Record<string, unknown>): ConversationMessage {
-  return {
-    id: row.id as string,
-    conversationId: row.conversation_id as string,
-    authorName: row.author_name as string,
-    content: row.content as string,
-    messageType: row.message_type as ConversationMessageType,
-    metadata: row.metadata_json
-      ? (JSON.parse(row.metadata_json as string) as ConversationMessageMetadata)
-      : null,
-    targetRole: (row.target_role as string) || null,
-    createdAt: row.created_at as string
+    name: row.participant_name as string
   }
 }
 
@@ -97,7 +85,7 @@ export class ConversationRepository {
 
     if (input.participants) {
       for (const p of input.participants) {
-        this.addParticipant(id, p.name, p.type, p.role)
+        this.addParticipant(id, p.name)
       }
     }
 
@@ -123,10 +111,6 @@ export class ConversationRepository {
     if (input.decidedAt !== undefined) {
       sets.push('decided_at = ?')
       params.push(input.decidedAt)
-    }
-    if (input.closedAt !== undefined) {
-      sets.push('closed_at = ?')
-      params.push(input.closedAt)
     }
 
     if (sets.length === 0) return this.requireGet(id)
@@ -159,6 +143,11 @@ export class ConversationRepository {
   }
 
   delete(id: string): void {
+    this.db
+      .prepare(
+        'DELETE FROM conversation_message_reads WHERE message_id IN (SELECT id FROM conversation_messages WHERE conversation_id = ?)'
+      )
+      .run(id)
     this.db.prepare('DELETE FROM conversation_actions WHERE conversation_id = ?').run(id)
     this.db.prepare('DELETE FROM conversation_links WHERE conversation_id = ?').run(id)
     this.db.prepare('DELETE FROM conversation_messages WHERE conversation_id = ?').run(id)
@@ -174,19 +163,12 @@ export class ConversationRepository {
 
   // ── Participants ───────────────────────────────────────────────────────────
 
-  addParticipant(
-    conversationId: string,
-    name: string,
-    type: ConversationParticipantType,
-    role?: string | null
-  ): void {
+  addParticipant(conversationId: string, name: string): void {
     this.db
       .prepare(
-        `INSERT OR REPLACE INTO conversation_participants
-       (conversation_id, participant_name, participant_type, participant_role)
-       VALUES (?, ?, ?, ?)`
+        `INSERT OR IGNORE INTO conversation_participants (conversation_id, participant_name) VALUES (?, ?)`
       )
-      .run(conversationId, name, type, role ?? null)
+      .run(conversationId, name)
   }
 
   removeParticipant(conversationId: string, name: string): void {
@@ -200,10 +182,23 @@ export class ConversationRepository {
   getParticipants(conversationId: string): ConversationParticipant[] {
     const rows = this.db
       .prepare(
-        'SELECT * FROM conversation_participants WHERE conversation_id = ? ORDER BY participant_name'
+        'SELECT conversation_id, participant_name FROM conversation_participants WHERE conversation_id = ? ORDER BY participant_name'
       )
       .all(conversationId) as Array<Record<string, unknown>>
     return rows.map(rowToParticipant)
+  }
+
+  // ── Signoff (TASK-972) ─────────────────────────────────────────────────────
+
+  appendSignoff(conversationId: string, name: string): string[] {
+    const conv = this.get(conversationId)
+    if (!conv) throw new Error(`Conversation not found: ${conversationId}`)
+    if (conv.signedOff.includes(name)) return conv.signedOff
+    const next = [...conv.signedOff, name]
+    this.db
+      .prepare('UPDATE conversations SET signed_off_json = ? WHERE id = ?')
+      .run(JSON.stringify(next), conversationId)
+    return next
   }
 
   // ── Messages ───────────────────────────────────────────────────────────────
@@ -212,120 +207,51 @@ export class ConversationRepository {
     const id = input.id || generateId('MSG')
     this.db
       .prepare(
-        `INSERT INTO conversation_messages
-       (id, conversation_id, author_name, content, message_type, metadata_json, target_role)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO conversation_messages (id, conversation_id, author_name, content)
+       VALUES (?, ?, ?, ?)`
       )
-      .run(
-        id,
-        input.conversationId,
-        input.authorName,
-        input.content,
-        input.messageType || 'comment',
-        input.metadata ? JSON.stringify(input.metadata) : null,
-        input.targetRole ?? null
-      )
+      .run(id, input.conversationId, input.authorName, input.content)
     const row = this.db
       .prepare('SELECT * FROM conversation_messages WHERE id = ?')
       .get(id) as Record<string, unknown>
-    const message = rowToMessage(row)
-    this.emitMessageEventIfRoleRouted(message)
-    return message
-  }
-
-  private emitMessageEventIfRoleRouted(message: ConversationMessage): void {
-    const eventType: ConversationEventType | null =
-      message.messageType === 'question'
-        ? 'message.question'
-        : message.messageType === 'answer'
-          ? 'message.answer'
-          : null
-    if (!eventType) return
-    this.emitWithRoleFilter(
-      message.conversationId,
-      eventType,
-      message.messageType,
-      message.authorName,
-      message.createdAt,
-      message.targetRole
-    )
-  }
-
-  emitLifecycleEvent(
-    conversationId: string,
-    type: ConversationEventType,
-    author: string,
-    timestamp: string
-  ): void {
-    this.emitWithRoleFilter(conversationId, type, type, author, timestamp, null)
-  }
-
-  private emitWithRoleFilter(
-    conversationId: string,
-    type: ConversationEventType,
-    messageType: string,
-    author: string,
-    timestamp: string,
-    targetRole: string | null
-  ): void {
-    const conv = this.get(conversationId)
-    if (!conv) return
-    const allRoles = this.getParticipants(conversationId)
-      .map((p) => p.role)
-      .filter((r): r is string => !!r)
-    let roles: string[]
-    if (targetRole !== null) {
-      if (!allRoles.includes(targetRole)) return
-      roles = [targetRole]
-    } else {
-      if (allRoles.length === 0) return
-      roles = allRoles
+    return {
+      id: row.id as string,
+      conversationId: row.conversation_id as string,
+      authorName: row.author_name as string,
+      content: row.content as string,
+      readBy: [],
+      createdAt: row.created_at as string
     }
-    const targetProjectIds = this.resolveFanoutTargets(roles, conv.projectId)
-    emitConversationEventFanout(conv.projectId, targetProjectIds, {
-      type,
-      conversationId,
-      roles,
-      messageType,
-      author,
-      timestamp
-    })
   }
 
-  // ADR-021 Phase 3: parse "<projectId>/<workspaceId>" address strings from
-  // roles[] and return the unique, validated set of fan-out target projectIds
-  // (owner excluded). Unknown projectIds are logged and skipped — never throw.
-  private resolveFanoutTargets(roles: string[], ownerProjectId: string): string[] {
-    const candidates = new Set<string>()
-    for (const role of roles) {
-      const slash = role.indexOf('/')
-      if (slash <= 0) continue
-      const projectId = role.slice(0, slash)
-      if (projectId === ownerProjectId) continue
-      candidates.add(projectId)
-    }
-    if (candidates.size === 0) return []
-    const targets: string[] = []
-    for (const projectId of candidates) {
-      const exists = this.db.prepare('SELECT 1 FROM projects WHERE id = ?').get(projectId)
-      if (exists) {
-        targets.push(projectId)
-      } else {
-        console.warn(
-          `[conversation-event-emitter] unknown target projectId in role address: ${projectId}`
-        )
-      }
-    }
-    return targets
+  markMessageRead(messageId: string, participantName: string): void {
+    this.db
+      .prepare(
+        'INSERT OR IGNORE INTO conversation_message_reads (message_id, participant_name) VALUES (?, ?)'
+      )
+      .run(messageId, participantName)
   }
 
   getMessages(conversationId: string): ConversationMessage[] {
     const rows = this.db
       .prepare(
-        'SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY created_at, id'
+        `SELECT m.id, m.conversation_id, m.author_name, m.content, m.created_at,
+                GROUP_CONCAT(r.participant_name) AS read_by_csv
+         FROM conversation_messages m
+         LEFT JOIN conversation_message_reads r ON r.message_id = m.id
+         WHERE m.conversation_id = ?
+         GROUP BY m.id
+         ORDER BY m.created_at, m.id`
       )
       .all(conversationId) as Array<Record<string, unknown>>
-    return rows.map(rowToMessage)
+    return rows.map((row) => ({
+      id: row.id as string,
+      conversationId: row.conversation_id as string,
+      authorName: row.author_name as string,
+      content: row.content as string,
+      readBy: parseReadByCsv(row.read_by_csv),
+      createdAt: row.created_at as string
+    }))
   }
 
   // ── Actions ────────────────────────────────────────────────────────────────
@@ -432,4 +358,9 @@ export class ConversationRepository {
       .all(linkedType, linkedId) as Array<Record<string, unknown>>
     return rows.map(rowToConversation)
   }
+}
+
+function parseReadByCsv(raw: unknown): string[] {
+  if (raw == null || typeof raw !== 'string' || raw.length === 0) return []
+  return raw.split(',').filter((s) => s.length > 0)
 }

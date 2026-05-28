@@ -48,7 +48,7 @@ describe('inbox: state machine', () => {
       title: `Research: ${item.content}`,
       createdBy: 'Claude',
       status: 'open',
-      participants: [{ name: 'Claude', type: 'agent' as const }]
+      participants: [{ name: 'Claude' }]
     })
     await svc.linkConversation(conv.id, 'inbox', item.id)
     const updated = await svc.updateInbox(item.id, { status: 'researching' })
@@ -73,7 +73,7 @@ describe('inbox: state machine', () => {
       title: `Research: ${item.content}`,
       createdBy: 'Claude',
       status: 'open',
-      participants: [{ name: 'Claude', type: 'agent' as const }]
+      participants: [{ name: 'Claude' }]
     })
     await svc.linkConversation(conv.id, 'inbox', item.id)
     await svc.updateInbox(item.id, { status: 'researching' })
@@ -86,9 +86,9 @@ describe('inbox: state machine', () => {
     })
     await svc.updateInbox(item.id, { status: 'converted', linkedTaskId: task.id })
     await svc.updateConversation(conv.id, {
-      status: 'closed',
+      status: 'decided',
       decisionSummary: `Converted to ${task.id}`,
-      closedAt: new Date().toISOString()
+      decidedAt: new Date().toISOString()
     })
 
     const final = await svc.getInbox(item.id)!
@@ -96,29 +96,29 @@ describe('inbox: state machine', () => {
     expect(final.linkedTaskId).toBe(task.id)
 
     const closedConv = await svc.getConversation(conv.id)!
-    expect(closedConv.status).toBe('closed')
+    expect(closedConv.status).toBe('decided')
     expect(closedConv.decisionSummary).toContain(task.id)
   })
 
-  it('archive closes linked conversation', async () => {
+  it('archive drives linked conversation to decided', async () => {
     const item = await svc.createInbox({ projectId: 'proj-i', content: 'reject' })
     const conv = await svc.createConversation({
       projectId: 'proj-i',
       title: `Research: ${item.content}`,
       createdBy: 'Claude',
       status: 'open',
-      participants: [{ name: 'Claude', type: 'agent' as const }]
+      participants: [{ name: 'Claude' }]
     })
     await svc.linkConversation(conv.id, 'inbox', item.id)
     await svc.updateInbox(item.id, { status: 'archived' })
     await svc.updateConversation(conv.id, {
-      status: 'closed',
+      status: 'decided',
       decisionSummary: 'Archived',
-      closedAt: new Date().toISOString()
+      decidedAt: new Date().toISOString()
     })
 
     expect((await svc.getInbox(item.id))!.status).toBe('archived')
-    expect((await svc.getConversation(conv.id))!.status).toBe('closed')
+    expect((await svc.getConversation(conv.id))!.status).toBe('decided')
   })
 })
 
@@ -139,7 +139,7 @@ describe('inbox: convert atomicity', () => {
       title: `Research: ${item.content}`,
       createdBy: 'Claude',
       status: 'open',
-      participants: [{ name: 'Claude', type: 'agent' as const }]
+      participants: [{ name: 'Claude' }]
     })
     await svc.linkConversation(conv.id, 'inbox', item.id)
     await svc.updateInbox(item.id, { status: 'researching' })
@@ -148,9 +148,9 @@ describe('inbox: convert atomicity', () => {
     const task = await svc.createTask({ projectId: 'proj-i', title: 'Atomic', status: 'TODO' })
     await svc.updateInbox(item.id, { status: 'converted', linkedTaskId: task.id })
     await svc.updateConversation(conv.id, {
-      status: 'closed',
+      status: 'decided',
       decisionSummary: `Converted to ${task.id}`,
-      closedAt: new Date().toISOString()
+      decidedAt: new Date().toISOString()
     })
 
     const finalInbox = await svc.getInbox(item.id)!
@@ -160,7 +160,7 @@ describe('inbox: convert atomicity', () => {
     expect(finalInbox.status).toBe('converted')
     expect(finalInbox.linkedTaskId).toBe(task.id)
     expect(finalTask.id).toBe(task.id)
-    expect(finalConv.status).toBe('closed')
+    expect(finalConv.status).toBe('decided')
     expect(finalConv.decisionSummary).toContain(task.id)
   })
 
@@ -177,7 +177,7 @@ describe('inbox: research guards', () => {
       title: `Research: ${item.content}`,
       createdBy: 'Claude',
       status: 'open',
-      participants: [{ name: 'Claude', type: 'agent' as const }]
+      participants: [{ name: 'Claude' }]
     })
     await svc.linkConversation(conv1.id, 'inbox', item.id)
     await svc.updateInbox(item.id, { status: 'researching' })
@@ -196,7 +196,7 @@ describe('inbox: archive guards', () => {
       title: `Research: ${item.content}`,
       createdBy: 'Claude',
       status: 'open',
-      participants: [{ name: 'Claude', type: 'agent' as const }]
+      participants: [{ name: 'Claude' }]
     })
     await svc.linkConversation(conv.id, 'inbox', item.id)
     await svc.updateInbox(item.id, { status: 'researching' })
@@ -204,14 +204,14 @@ describe('inbox: archive guards', () => {
     const reason = 'duplicate of INBOX-001'
     await svc.updateInbox(item.id, { status: 'archived' })
     await svc.updateConversation(conv.id, {
-      status: 'closed',
+      status: 'decided',
       decisionSummary: `Archived: ${reason}`,
-      closedAt: new Date().toISOString()
+      decidedAt: new Date().toISOString()
     })
 
     const closed = (await svc.getConversation(conv.id))!
     expect((await svc.getInbox(item.id))!.status).toBe('archived')
-    expect(closed.status).toBe('closed')
+    expect(closed.status).toBe('decided')
     expect(closed.decisionSummary).toContain(reason)
   })
 })

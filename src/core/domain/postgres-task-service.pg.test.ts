@@ -147,8 +147,8 @@ describeIfDocker('PostgresTaskService — RemoteOperations smoke', () => {
        VALUES ('CONV-1', 'inbox', 'INBOX-001')`
     )
     await env.conn.query(
-      `INSERT INTO conversation_messages (id, conversation_id, author_name, content, message_type)
-       VALUES ('MSG-1', 'CONV-1', 'butter', 'hello', 'comment')`
+      `INSERT INTO conversation_messages (id, conversation_id, author_name, content)
+       VALUES ('MSG-1', 'CONV-1', 'butter', 'hello')`
     )
     await env.conn.query(
       `INSERT INTO conversation_actions (id, conversation_id, assignee, description, status, linked_task_id)

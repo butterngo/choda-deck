@@ -163,11 +163,8 @@ Stored payload `filesChanged` ends up `["src/core/domain/lifecycle/session-lifec
 
 ## On conversation_read
 
-Discussion etiquette (advisory, injected only when `conv.status` is `open` or `discussing`; skipped for `decided`/`closed`/`stale`):
-
-- Read the full thread first. Don't restate prior points unless correcting them.
-- Address the latest unresolved point. If you disagree, challenge it directly — don't add parallel views.
-- When you see convergence, propose a decision and name any remaining risk briefly.
-- Keep it proportional. Small threads stay short.
-
-Reviewer turns (`type='review'`) are gated by the `conversation_add` schema — pass `verdict` + `topConcern` + `asks` (+ optional `notes`) as structured fields; the server composes the canonical content. The schema enforces brevity (topConcern ≤200 chars, ≤5 asks, each ≤120 chars). Non-review types stay free-text.
+- Read first. If your name is missing from `readBy` on any message, process those messages and reflect them in your reply.
+- State a position. Each turn must be one of: `signoff`, `propose_rewrite` (and rewrite the summary), `abstain_blocked` (name the blocker), `needs_clarification` (ask the question).
+- One live position. Your latest message supersedes your earlier ones — don't argue across messages; rewrite the summary.
+- Stay short. 1500-char cap is enforced. Long content goes to `decisionSummary`, a knowledge entry, or a linked artifact.
+- Decisions own actions. If follow-up work exists, add it to `actions[]` with `assignee` and `linkedTaskId`.

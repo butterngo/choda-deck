@@ -98,7 +98,7 @@ export const register = (server: InstrumentedServer, svc: InboxToolsDeps): void 
             id: m.id,
             authorName: m.authorName,
             content: m.content,
-            messageType: m.messageType,
+            readBy: m.readBy,
             createdAt: m.createdAt
           }))
         }))

@@ -36,10 +36,7 @@ export class InboxLifecycleService implements InboxLifecycleOperations {
         title: `Research: ${item.content.slice(0, 80)}`,
         createdBy: researcher,
         status: 'open',
-        participants: [
-          { name: 'Butter', type: 'human' },
-          { name: researcher, type: 'agent' }
-        ]
+        participants: [{ name: 'Butter' }, { name: researcher }]
       })
       this.conversations.link(conv.id, 'inbox', id)
       this.inbox.update(id, { status: 'researching' })
@@ -91,13 +88,16 @@ export class InboxLifecycleService implements InboxLifecycleOperations {
     return tx()
   }
 
+  // Status enum narrowed to {open,decided} — driving the linked conversation to
+  // its terminal state means flipping to `decided` with the close reason as the
+  // decisionSummary. Idempotent when status is already `decided`.
   private closeLinkedConversations(inboxId: string, decisionSummary: string): void {
     const convs = this.conversations.findByLink('inbox', inboxId)
     if (convs.length === 0) return
-    const closedAt = new Date().toISOString()
+    const decidedAt = new Date().toISOString()
     for (const c of convs) {
-      if (c.status !== 'closed') {
-        this.conversations.update(c.id, { status: 'closed', decisionSummary, closedAt })
+      if (c.status !== 'decided') {
+        this.conversations.update(c.id, { status: 'decided', decisionSummary, decidedAt })
       }
     }
   }

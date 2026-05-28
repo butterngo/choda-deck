@@ -1,15 +1,14 @@
-import type { Conversation, ConversationParticipantType } from '../task-types'
+import type { Conversation } from '../task-types'
 
 export interface OpenConversationInput {
   projectId: string
   title: string
   createdBy: string
-  participants?: Array<{ name: string; type: ConversationParticipantType; role?: string }>
+  participants?: Array<{ name: string }>
   linkedTasks?: string[]
   sessionId?: string
   initialMessage: {
     content: string
-    type: 'question' | 'proposal' | 'review'
   }
 }
 
@@ -40,9 +39,15 @@ export interface DecideConversationResult {
   actions: DecideConversationResultAction[]
 }
 
+export interface SignoffConversationResult {
+  conversation: Conversation
+  signedOff: string[]
+  /** True when this signoff completed consensus and flipped status to decided. */
+  decided: boolean
+}
+
 export interface ConversationLifecycleOperations {
   openConversation(input: OpenConversationInput): Promise<Conversation>
   decideConversation(id: string, input: DecideConversationInput): Promise<DecideConversationResult>
-  closeConversation(id: string): Promise<Conversation>
-  reopenConversation(id: string): Promise<Conversation>
+  signoffConversation(id: string, name: string): Promise<SignoffConversationResult>
 }

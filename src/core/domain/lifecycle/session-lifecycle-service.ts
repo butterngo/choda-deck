@@ -109,11 +109,11 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
       const closedConversationIds: string[] = []
       const linkedConvs = this.conversations.findByLink('session', id)
       for (const conv of linkedConvs) {
-        if (conv.status === 'closed') continue
+        if (conv.status === 'decided') continue
         this.conversations.update(conv.id, {
-          status: 'closed',
+          status: 'decided',
           decisionSummary,
-          closedAt: endedAt
+          decidedAt: endedAt
         })
         closedConversationIds.push(conv.id)
       }
@@ -165,11 +165,11 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
       const closedConversationIds: string[] = []
       const linkedConvs = this.conversations.findByLink('session', id)
       for (const conv of linkedConvs) {
-        if (conv.status === 'closed') continue
+        if (conv.status === 'decided') continue
         this.conversations.update(conv.id, {
-          status: 'closed',
+          status: 'decided',
           decisionSummary,
-          closedAt: endedAt
+          decidedAt: endedAt
         })
         closedConversationIds.push(conv.id)
       }

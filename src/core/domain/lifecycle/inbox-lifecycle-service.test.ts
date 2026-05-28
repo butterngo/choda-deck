@@ -78,7 +78,7 @@ describe('convertInboxToTask', () => {
     expect(inbox?.linkedTaskId).toBe(r.taskId)
 
     const convs = await svc.findConversationsByLink('inbox', item.id)
-    expect(convs[0].status).toBe('closed')
+    expect(convs[0].status).toBe('decided')
     expect(convs[0].decisionSummary).toContain(r.taskId)
   })
 
@@ -105,7 +105,7 @@ describe('archiveInbox', () => {
 
     expect(r.status).toBe('archived')
     const convs = await svc.findConversationsByLink('inbox', item.id)
-    expect(convs[0].status).toBe('closed')
+    expect(convs[0].status).toBe('decided')
     expect(convs[0].decisionSummary).toBe('Archived: duplicate')
   })
 

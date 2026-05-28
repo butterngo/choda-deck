@@ -19,7 +19,7 @@
 | [cross-device-sync-export-import-spec](./cross-device-sync-export-import-spec.md) | evaluation | Cross-device sync export/import — sequential dual-machine sync without duplicating project knowledge | 2026-05-18 |  |
 | [auto-safe-label-spec](./auto-safe-label-spec.md) | decision | auto-safe label — task contract for autonomous execution | 2026-05-18 | ✱ |
 | [ADR-022-workspace-scoped-knowledge](./ADR-022-workspace-scoped-knowledge.md) | decision | ADR-022: Workspace-scoped knowledge — multi-repo project support | 2026-05-18 | ✱ |
-| [ADR-021-cross-project-event-routing](./ADR-021-cross-project-event-routing.md) | decision | ADR-021: Cross-Project Event Routing — Phase 3 | 2026-05-18 |  |
+| [ADR-021-cross-project-event-routing](./ADR-021-cross-project-event-routing.md) | decision | ADR-021: Cross-Project Event Routing — Phase 3 (superseded 2026-05-28) | 2026-05-28 |  |
 | [ADR-020-embedding-architecture](./ADR-020-embedding-architecture.md) | decision | ADR-020: Embedding Architecture — local default with provider abstraction for semantic search | 2026-05-18 | ✱ |
 | [pure-heuristic-core-thin-git-wrapper-for-stubbability](./pure-heuristic-core-thin-git-wrapper-for-stubbability.md) | decision | Pure heuristic core, thin git wrapper for stubbability | 2026-05-18 |  |
 | [ADR-019-adr-numbering-convention](./ADR-019-adr-numbering-convention.md) | decision | ADR-019: ADR Numbering Convention — keep ADR-NNN prefix in slug | 2026-05-18 | ✱ |
@@ -28,10 +28,10 @@
 | [ADR-016-graphify-integration](./ADR-016-graphify-integration.md) | decision | ADR-016: Graphify Integration — Query-Only Phase 1, Manual Refresh | 2026-05-18 |  |
 | [ADR-015-lifecycle-service-pattern](./ADR-015-lifecycle-service-pattern.md) | decision | ADR-015: Lifecycle Service Pattern (Composite Transactional Ops) | 2026-05-18 |  |
 | [ADR-014-harness-engine-architecture](./ADR-014-harness-engine-architecture.md) | decision | ADR-014: Staged Pipeline Harness — Planner → Generator → Evaluator with Approval Gates | 2026-05-18 |  |
-| [ADR-013-session-rules-injection](./ADR-013-session-rules-injection.md) | decision | ADR-013: Session rules injected via MCP response — compliance through prompt, not validation | 2026-05-18 |  |
+| [ADR-013-session-rules-injection](./ADR-013-session-rules-injection.md) | decision | ADR-013: Session rules injected via MCP response — compliance through prompt, not validation | 2026-05-28 |  |
 | [ADR-012-sqlite-backup-restore](./ADR-012-sqlite-backup-restore.md) | decision | ADR-012: SQLite daily backup + restore — atomic, retained 7 days | 2026-05-18 |  |
 | [ADR-011-inbox-pipeline](./ADR-011-inbox-pipeline.md) | decision | ADR-011: Inbox Pipeline — raw idea → research → task | 2026-05-18 |  |
-| [ADR-010-conversation-protocol](./ADR-010-conversation-protocol.md) | decision | ADR-010: Conversation Protocol — SQLite-only, no .md export | 2026-05-18 |  |
+| [ADR-010-conversation-protocol](./ADR-010-conversation-protocol.md) | decision | ADR-010: Conversation Protocol — SQLite-only, no .md export | 2026-05-28 |  |
 | [ADR-009-session-lifecycle](./ADR-009-session-lifecycle.md) | decision | ADR-009: Session Lifecycle — workspace-scoped, task-bound sessions | 2026-05-18 |  |
 | [ADR-008-ai-workflow-engine-pivot](./ADR-008-ai-workflow-engine-pivot.md) | decision | ADR-008: Pivot — Choda Deck as AI Development Workflow Engine | 2026-05-18 |  |
 | [ADR-007-choda-deck-replaces-obsidian](./ADR-007-choda-deck-replaces-obsidian.md) | decision | ADR-007: Choda Deck — comprehensive AI workspace replacing Obsidian | 2026-05-18 |  |

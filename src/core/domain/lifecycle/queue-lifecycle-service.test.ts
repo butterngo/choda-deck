@@ -576,7 +576,7 @@ describe('runQueue — FAILURE flow (halt-on-fail)', () => {
       projectId: 'proj-q',
       title: 'Discussing the task',
       createdBy: 'Butter',
-      initialMessage: { content: 'plan?', type: 'question' }
+      initialMessage: { content: 'plan?' }
     })
     // Link to the task
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

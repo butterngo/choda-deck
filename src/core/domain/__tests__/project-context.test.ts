@@ -25,20 +25,18 @@ describe('project_context openConversations', () => {
       projectId: 'proj-ctx',
       title: 'Open thread with messages',
       createdBy: 'Butter',
-      participants: [{ name: 'Butter', type: 'human' as const }]
+      participants: [{ name: 'Butter' }]
     })
 
     await svc.addConversationMessage({
       conversationId: conv.id,
       authorName: 'Butter',
-      content: 'first message',
-      messageType: 'question'
+      content: 'first message'
     })
     await svc.addConversationMessage({
       conversationId: conv.id,
       authorName: 'Claude',
-      content: 'second message',
-      messageType: 'answer'
+      content: 'second message'
     })
 
     const bundle = await buildProjectContext(svc, 'proj-ctx', 'summary')
@@ -57,8 +55,7 @@ describe('project_context openConversations', () => {
       await svc.addConversationMessage({
         conversationId: 'CONV-CTX-1',
         authorName: `User${i}`,
-        content: `msg ${i}`,
-        messageType: 'comment'
+        content: `msg ${i}`
       })
     }
 
@@ -73,19 +70,17 @@ describe('project_context openConversations', () => {
       projectId: 'proj-ctx',
       title: 'Long message test',
       createdBy: 'Butter',
-      participants: [{ name: 'Butter', type: 'human' as const }]
+      participants: [{ name: 'Butter' }]
     })
 
-    // close first conv so we can open new one
+    // drive the first conv to its terminal state so the next one is the open thread
     await svc.updateConversation('CONV-CTX-1', { status: 'decided', decisionSummary: 'done' })
-    await svc.updateConversation('CONV-CTX-1', { status: 'closed', closedAt: new Date().toISOString() })
 
     const longContent = 'A'.repeat(500)
     await svc.addConversationMessage({
       conversationId: 'CONV-CTX-2',
       authorName: 'Butter',
-      content: longContent,
-      messageType: 'question'
+      content: longContent
     })
 
     const bundle = await buildProjectContext(svc, 'proj-ctx', 'summary')
