@@ -164,6 +164,19 @@ V1 bearer / OAuth gives a hold-token-or-nothing model: any holder can call any r
 - OAuth token scopes go live (follow-up to ADR-027) → migrate from a single allowlist to per-scope subsets
 - An audit/rate-limit story lands for `inbox_research` → consider promoting it onto the remote allowlist
 
+### Standing rule (2026-05-28) — PG surface = allowlist call graph
+
+The Postgres adapter implements only `RemoteOperations` (strict subset of `BackendTaskService` — methods reachable from the call graph of every tool in `REMOTE_TOOL_ALLOWLIST`, plus OAuth validation). The full 16-repository PG adapter shipped in TASK-934 was over-built — the HTTP-only surface never reaches sessions, conversation writes, knowledge, memory, embeddings, session events, agent memories, tool invocations, or documents, so those repos + their migrations were deleted on 2026-05-28. PG can no longer back stdio; `requireBackendForTransport` rejects that combination at boot.
+
+When the allowlist grows, three edits must land in the same PR:
+1. Add the tool name to `REMOTE_TOOL_ALLOWLIST` in [[server-bootstrap.ts]].
+2. Add the service methods it calls to `RemoteOperations` in [[remote-operations.interface.ts]].
+3. Implement those methods on `PostgresTaskService` — restore the corresponding `.pg.ts` repo from git history if needed, add its `migrations.ts` entry, write a smoke test.
+
+Missing step 2/3 → the tool registers fine over HTTP but throws on first invocation (no method on the PG facade). The discipline keeps PG from carrying dead code that nobody can reach but everyone has to maintain.
+
+Restoration cost is real but bounded: each deleted repo is `git show <pre-cleanup-sha>:src/core/domain/repositories/postgres/<name>.pg.ts` away, and the matching migration block can be lifted from the same commit. Treat the deletions as "rolled back to a smaller working set", not "lost forever".
+
 ### k8s shape (out of scope for this ADR, captured for context)
 
 - Single replica, RWO PVC for `CHODA_DATA_DIR`

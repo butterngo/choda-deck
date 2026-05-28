@@ -1,14 +1,16 @@
-﻿// ADR-030 — Postgres sibling of InboxRepository. Status stays TEXT (no CHECK;
-// matches SQLite — typed at TS boundary). project_id is nullable for unscoped
-// scratch items. id-mint uses the shared counter (slice-1 PG counter repo).
+// ADR-030 / 2026-05-28 narrowing — Postgres inbox repo. Read + create only.
+//
+// Kept: find (inbox_list), get (inbox_get), create (inbox_add). Drops
+// update/delete — remote callers cannot mutate or delete inbox items, only
+// add raw captures. ID mint still goes through the shared counter repo so
+// INBOX-NNN sequencing matches the stdio path.
 
 import type { Queryable, SqlValue } from './connection'
 import type {
   CreateInboxInput,
   InboxFilter,
   InboxItem,
-  InboxStatus,
-  UpdateInboxInput
+  InboxStatus
 } from '../../task-types'
 import { now } from '../shared'
 import type { PostgresCounterRepository } from './counter-repository.pg'
@@ -60,38 +62,6 @@ export class PostgresInboxRepository {
     const got = await this.get(id)
     if (!got) throw new Error(`Inbox item disappeared after insert: ${id}`)
     return got
-  }
-
-  async update(id: string, input: UpdateInboxInput): Promise<InboxItem> {
-    const sets: string[] = ['updated_at = $1']
-    const params: SqlValue[] = [now()]
-    let n = 2
-
-    if (input.content !== undefined) {
-      sets.push(`content = $${n++}`)
-      params.push(input.content)
-    }
-    if (input.status !== undefined) {
-      sets.push(`status = $${n++}`)
-      params.push(input.status)
-    }
-    if (input.linkedTaskId !== undefined) {
-      sets.push(`linked_task_id = $${n++}`)
-      params.push(input.linkedTaskId)
-    }
-
-    params.push(id)
-    await this.conn.query(
-      `UPDATE inbox_items SET ${sets.join(', ')} WHERE id = $${n}`,
-      params
-    )
-    const item = await this.get(id)
-    if (!item) throw new Error(`Inbox item not found: ${id}`)
-    return item
-  }
-
-  async delete(id: string): Promise<void> {
-    await this.conn.query('DELETE FROM inbox_items WHERE id = $1', [id])
   }
 
   async get(id: string): Promise<InboxItem | null> {

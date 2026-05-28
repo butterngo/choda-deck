@@ -156,6 +156,12 @@ HTTP mode exposes a narrowed surface — the **6-tool read + capture allowlist**
 
 Everything else (`task_create`, `task_update`, `session_*`, `backup_*`, `cleanup_*`, `workspace_*`, `conversation_*`, `memory_*`, `knowledge_*`, `inbox_update|convert|archive|ready|research`, `stats_report`) stays **stdio-only**. Non-allowlisted tools are not registered at all — they never appear in `tools/list` and respond `MCP error -32602: Tool <name> not found` if called by name. Stdio mode keeps every tool (local trust contract, unchanged). See ADR-026 §Per-tool scoping for rationale.
 
+### Backend surface for HTTP mode (2026-05-28 narrowing)
+
+Stdio uses SQLite with the full `BackendTaskService` surface. HTTP uses either SQLite or Postgres, but only via the narrow `RemoteOperations` port (`src/core/domain/remote-operations.interface.ts`) — strict subset of the methods reachable from `REMOTE_TOOL_ALLOWLIST`'s call graph. `MCP_TRANSPORT=stdio CHODA_BACKEND=postgres` is **rejected at boot** (`requireBackendForTransport`); the narrow PG facade is missing every stdio-only method, so pairing them would fail at first tool call.
+
+Standing rule: PG surface = remote allowlist's call graph + OAuth. Expanding the allowlist requires three coordinated edits in the same PR — (1) add the tool name to `REMOTE_TOOL_ALLOWLIST`, (2) add the methods it calls to `RemoteOperations`, (3) implement those methods on `PostgresTaskService` + any missing repos/migrations. Adding a tool without (2)+(3) → tool registers but throws at runtime when called over HTTP. See ADR-026 §Per-tool scoping standing rule.
+
 ## MCP OAuth Mode (ADR-027)
 
 When `claude.ai`'s connector UI is the target client, static bearer is unsupported — flip on OAuth instead. Adds five endpoints (`/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`, `POST /register`, `GET|POST /authorize`, `POST /token`) and makes `/mcp` validate against the `oauth_tokens` SQLite table instead of `MCP_HTTP_TOKEN`. 401 responses include `WWW-Authenticate: Bearer resource_metadata="<issuer>/.well-known/oauth-protected-resource"`.

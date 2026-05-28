@@ -22,6 +22,18 @@ lastVerifiedAt: 2026-05-25
 
 > **AI-Context:** Two storage backends behind one driver port. Local MCP (stdio) drives SQLite; remote MCP (http, k8s) drives Postgres. The laptop syncs to remote via a **pending-ops queue + LWW reconciliation** built on top of the existing `src/core/sync/` snapshot machinery. Remote Postgres is **canonical when reachable**; local SQLite is a working copy that can write offline and drain on reconnect. Op-log-per-tool-call is rejected — the existing export/import + a small pending queue covers single-user multi-device without it.
 
+## Update 2026-05-28 — adapter narrowed to remote-allowlist call graph
+
+The full 16-repository `PostgresTaskService` shipped in TASK-934 was over-built for the actual deployment: HTTP transport exposes only 6 tools via `REMOTE_TOOL_ALLOWLIST` (see [[ADR-026-dual-transport-mcp-server]] §Per-tool scoping) and Butter is solo — multi-replica scale was never load-driven. The unreachable repos (sessions, conversation writes, knowledge, memory, embeddings, session events, agent memories, tool invocations, documents) have been deleted, along with their migrations, tests, and the `pgvector` extension dependency.
+
+PG now implements only `RemoteOperations` (`src/core/domain/remote-operations.interface.ts`) — 15 service methods + 2 lifecycle hooks, strict subset of `BackendTaskService`. The split is enforced two ways:
+- `requireBackendForTransport(backend, transport)` in [[task-service-factory.ts]] rejects `CHODA_BACKEND=postgres` + `MCP_TRANSPORT=stdio` at boot (the stdio surface would call deleted methods on the first tool invocation).
+- The standing rule in [[ADR-026-dual-transport-mcp-server]] §Per-tool scoping: when the allowlist grows, `RemoteOperations` and the PG facade grow in lockstep — same PR, no preemptive build-out.
+
+Code reduction: `postgres-task-service.ts` 1208 → ~150 lines; 8 `.pg.ts` repo files + the pgvector store deleted; 11 `.pg.test.ts` files deleted; migrations 11 → 6 entries.
+
+The **sync engine** (open in §Status table below) is unaffected by this narrowing — it remains future work, gated on a real concurrent-write incident or a daily-driver claude.ai connector. If/when sync lands, the methods needed for drain/reconcile would expand `RemoteOperations` (or graduate to a different port).
+
 ## Status (2026-05-25)
 
 | Component | State | Where it landed |

@@ -5,14 +5,20 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
 import type { BackendConfig } from '../../core/backend-config'
-import { createTaskService } from '../../core/domain/task-service-factory'
+import {
+  createTaskService,
+  requireBackendForTransport
+} from '../../core/domain/task-service-factory'
 import { OAuthRepository } from '../../core/domain/repositories/oauth-repository'
 import { PostgresOAuthRepository } from '../../core/domain/repositories/postgres/oauth-repository.pg'
 import { PgConnection } from '../../core/domain/repositories/postgres/connection'
 import { migrate } from '../../core/domain/repositories/postgres/migrations'
 import type { OAuthOperations } from '../../core/domain/interfaces/oauth-repository.interface'
 import { resolveBackendConfig, resolveDataPaths } from '../../core/paths'
-import { createInstrumentedServer } from './instrumented-server'
+import {
+  createInstrumentedServer,
+  type ToolInvocationSink
+} from './instrumented-server'
 import { startHttpTransport, type OAuthConfig } from './http-transport'
 import * as taskTools from './mcp-tools/task-tools'
 import * as conversationTools from './mcp-tools/conversation-tools'
@@ -41,11 +47,15 @@ interface BuildDeps {
   dbPath: string
 }
 
-// TASK-903: tools exposed when MCP_TRANSPORT=http. Stdio keeps all tools
-// (local trust). HTTP is network-exposed, so the surface is narrowed to
-// read + capture: enough for a mobile/remote client to browse state and
-// drop new inbox items, nothing that mutates lifecycle or touches the
-// knowledge / memory / research layers. See ADR-026 §Per-tool scoping.
+// Tools exposed when MCP_TRANSPORT=http. Stdio keeps the full surface (local
+// trust). HTTP is network-exposed and the PG backend implements only
+// RemoteOperations — methods outside this set would throw at runtime if
+// invoked. See ADR-026 §Per-tool scoping standing rule (2026-05-28).
+//
+// Expanding the allowlist requires three coordinated edits in the same PR:
+//   1. add the tool name here
+//   2. add the methods it calls to src/core/domain/remote-operations.interface.ts
+//   3. implement those methods on PostgresTaskService + add any missing repos/migrations
 export const REMOTE_TOOL_ALLOWLIST: ReadonlySet<string> = new Set([
   'project_list',
   'task_list',
@@ -55,15 +65,22 @@ export const REMOTE_TOOL_ALLOWLIST: ReadonlySet<string> = new Set([
   'inbox_add'
 ])
 
+// HTTP mode skips tool-invocation telemetry — the table doesn't exist on the
+// PG schema (deleted with the rest of the stdio-only surface) and per-tool
+// stats are a local-development concern. Stdio passes the svc itself as the
+// sink (SqliteTaskService implements recordToolInvocation).
+const noopSink: ToolInvocationSink = { recordToolInvocation: (): void => {} }
+
 function buildMcpServer(
   deps: BuildDeps,
-  toolAllowlist?: ReadonlySet<string>
+  toolAllowlist?: ReadonlySet<string>,
+  sink?: ToolInvocationSink
 ): { server: McpServer; toolCount: number } {
   const server = new McpServer(
     { name: 'choda-tasks', version: '0.2.0' },
     { capabilities: { tools: {} } }
   )
-  const instrumented = createInstrumentedServer(server, deps.svc, toolAllowlist)
+  const instrumented = createInstrumentedServer(server, sink ?? deps.svc, toolAllowlist)
 
   taskTools.register(instrumented, deps.svc)
   conversationTools.register(instrumented, deps.svc)
@@ -91,6 +108,15 @@ function buildMcpServer(
 export async function startMcpServer(): Promise<void> {
   const dataPaths = resolveDataPaths()
   const backend = resolveBackendConfig(dataPaths)
+  const mode = (process.env.MCP_TRANSPORT ?? 'stdio').toLowerCase()
+
+  if (mode !== 'stdio' && mode !== 'http') {
+    process.stderr.write(`[choda-deck] unknown MCP_TRANSPORT="${mode}" — expected stdio|http\n`)
+    process.exit(2)
+  }
+
+  requireBackendForTransport(backend, mode)
+
   const svc = createTaskService(backend)
   await svc.initializeAsync()
   const deps: BuildDeps = {
@@ -99,8 +125,6 @@ export async function startMcpServer(): Promise<void> {
     artifactsDir: dataPaths.artifactsDir,
     dbPath: dataPaths.dbPath
   }
-
-  const mode = (process.env.MCP_TRANSPORT ?? 'stdio').toLowerCase()
 
   if (mode === 'http') {
     const oauth = await buildOAuthConfig(backend)
@@ -113,27 +137,24 @@ export async function startMcpServer(): Promise<void> {
     }
     const port = Number.parseInt(process.env.MCP_HTTP_PORT ?? '7337', 10)
     const bind = process.env.MCP_HTTP_BIND ?? '0.0.0.0'
-    // Log tool count once at startup to keep parity with stdio mode logging.
-    // Compute total (unfiltered) for the "X of Y" suffix so a misconfigured
-    // allowlist is obvious in the boot log.
+    // Compute total (unfiltered) for the "X of Y" boot log so a misconfigured
+    // allowlist is obvious in startup output.
     const { toolCount: totalToolCount } = buildMcpServer(deps)
-    const { toolCount: allowedToolCount } = buildMcpServer(deps, REMOTE_TOOL_ALLOWLIST)
+    const { toolCount: allowedToolCount } = buildMcpServer(deps, REMOTE_TOOL_ALLOWLIST, noopSink)
     console.error(
       `[choda-deck] registered ${allowedToolCount} MCP tools ` +
         `(remote allowlist: ${REMOTE_TOOL_ALLOWLIST.size} of ${totalToolCount})`
     )
-    await startHttpTransport(() => buildMcpServer(deps, REMOTE_TOOL_ALLOWLIST).server, {
-      port,
-      bind,
-      token,
-      oauth
-    })
+    await startHttpTransport(
+      () => buildMcpServer(deps, REMOTE_TOOL_ALLOWLIST, noopSink).server,
+      {
+        port,
+        bind,
+        token,
+        oauth
+      }
+    )
     return
-  }
-
-  if (mode !== 'stdio') {
-    process.stderr.write(`[choda-deck] unknown MCP_TRANSPORT="${mode}" — expected stdio|http\n`)
-    process.exit(2)
   }
 
   const { server, toolCount } = buildMcpServer(deps)
@@ -200,8 +221,7 @@ async function buildPostgresOAuthRepo(
   const poolMax = Number.parseInt(process.env.CHODA_PG_POOL_SIZE ?? '10', 10)
   const conn = new PgConnection({ connectionString, max: poolMax })
   // Idempotent — task-service-factory already ran the same migrations on its
-  // own pool, but the _migrations gate makes the second run a no-op. Belt-and-
-  // braces in case the OAuth process boots before / without the facade init.
+  // own pool, but the _migrations gate makes the second run a no-op.
   await migrate(conn)
   return new PostgresOAuthRepository(conn)
 }

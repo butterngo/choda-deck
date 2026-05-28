@@ -1,24 +1,22 @@
 /**
- * ADR-030 — one-shot, best-effort SQLite → Postgres data migration.
+ * ADR-030 / 2026-05-28 narrowing — one-shot, best-effort SQLite → Postgres
+ * data migration for the *remote-reachable* subset only.
  *
- * Walks a known list of migratable tables in FK-safe order. For each table:
+ * The PG adapter implements RemoteOperations (subset of BackendTaskService);
+ * tables backing the stdio-only surface (sessions, session_events,
+ * agent_memories, context_sources, knowledge_*, tool_invocations, documents)
+ * no longer exist on the PG schema and are not migrated. If you need a
+ * full round-trip in the future, restore the deleted repos from git history
+ * and re-add the tables to MIGRATABLE_TABLES below.
+ *
+ * Walks the table list in FK-safe order. For each table:
  *   1. Introspect column names on both sides; intersect them. Mismatched
- *      shape → log a warning, skip the column (data loss flagged in stdout).
+ *      shape → log a warning, skip the column.
  *   2. If Postgres already has rows in the target table → skip (idempotency
  *      guard: re-running the script is a no-op unless --force is passed).
- *   3. Copy in batches of 500 rows, using parameterized INSERT. Pg-node
- *      coerces JS types (numbers, strings, booleans, nulls) to PG types
- *      automatically; sqlite's 0/1 boolean columns are accepted by PG's
- *      boolean cast.
- *   4. Reset `global_counters.last_number` per entity_type to MAX(numeric
- *      id-suffix) over the freshly-loaded data so new IDs minted post-
- *      migration don't collide.
- *
- * Embedding vectors (knowledge_vec → knowledge_embeddings) are NOT copied —
- * the storage shape differs (sqlite-vec virtual table vs pgvector typed
- * column) and the embedding dimensions may differ between providers. Re-run
- * `scripts/backfill-embeddings.mjs` against the Postgres backend after this
- * script lands the knowledge_index rows.
+ *   3. Copy in batches of 500 rows via parameterized INSERT.
+ *   4. Reset `global_counters.last_number` for entity types the PG side
+ *      actually mints (inbox only — task/conv/act/etc. have no PG writers).
  *
  * Usage:
  *   CHODA_PG_URL="postgres://..." node scripts/migrate-sqlite-to-postgres.mjs \
@@ -37,42 +35,31 @@ import { argv, exit, env } from 'node:process'
 import Database from 'better-sqlite3'
 import pg from 'pg'
 
-/* Tables to migrate, ordered to satisfy FK dependencies. embeddings + the
- * sqlite-vec virtual table are intentionally absent — see header. */
+/* Tables to migrate, ordered to satisfy FK dependencies. Strict subset of
+ * the SQLite schema — anything outside the remote allowlist's call graph
+ * has been dropped from the PG side (ADR-026 §Per-tool scoping). */
 const MIGRATABLE_TABLES = [
   'projects',
   'workspaces',
   'tasks',
   'tags',
   'relationships',
-  'documents',
-  'sessions',
-  'context_sources',
   'conversations',
   'conversation_participants',
   'conversation_messages',
   'conversation_links',
   'conversation_actions',
   'inbox_items',
-  'knowledge_index',
-  'tool_invocations',
-  'session_events',
-  'agent_memories',
   'oauth_clients',
   'oauth_auth_codes',
   'oauth_tokens'
 ]
 
-/* Maps entity_type counter key → table that holds the corresponding ID suffix
- * to reset `global_counters.last_number` after the bulk copy. Anything not
- * listed keeps its sqlite counter value (carried over verbatim below). */
+/* Counters the PG side actually mints. The narrow facade exposes only
+ * createInbox as a write — every other ID space is mint-only on stdio.
+ * Migrating non-`inbox` counters serves no PG-side purpose (no writer
+ * would ever consume them); kept-out for clarity. */
 const COUNTER_RESET_PLAN = [
-  { entityType: 'task', table: 'tasks', idColumn: 'id', prefix: 'TASK-' },
-  { entityType: 'session', table: 'sessions', idColumn: 'id', prefix: 'SESSION-' },
-  { entityType: 'conv', table: 'conversations', idColumn: 'id', prefix: 'CONV-' },
-  { entityType: 'act', table: 'conversation_actions', idColumn: 'id', prefix: 'ACT-' },
-  { entityType: 'evt', table: 'session_events', idColumn: 'id', prefix: 'EVT-' },
-  { entityType: 'mem', table: 'agent_memories', idColumn: 'id', prefix: 'MEM-' },
   { entityType: 'inbox', table: 'inbox_items', idColumn: 'id', prefix: 'INBOX-' }
 ]
 
@@ -210,7 +197,7 @@ async function migrateTable(sqliteDb, pgClient, table, opts) {
 async function resetCounters(pgClient, opts) {
   console.log('\n--- global_counters reset ---')
   for (const plan of COUNTER_RESET_PLAN) {
-    /* IDs are stored as `${prefix}<digits>` (e.g. TASK-123). Strip the prefix,
+    /* IDs are stored as `${prefix}<digits>` (e.g. INBOX-123). Strip the prefix,
      * take MAX, that's the highest issued counter; next mint = that + 1. */
     const r = await pgClient.query(
       `SELECT COALESCE(MAX(
@@ -270,7 +257,6 @@ async function main() {
 
   console.log('')
   console.log(`done: ${totalCopied} rows ${opts.dryRun ? 'planned' : 'migrated'}`)
-  console.log('next: re-run scripts/backfill-embeddings.mjs against the Postgres backend')
 }
 
 main().catch((err) => {
