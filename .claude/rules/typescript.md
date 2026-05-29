@@ -118,9 +118,9 @@ import { splitLines } from '../utils/lines'
 const lines = splitLines(content) // splits on /\r?\n/
 ```
 
-Choda-deck ships Windows-first. Artifact files (`queue-run.json` neighbors, `ac-log.txt`, captured stdout) frequently carry CRLF endings, and `git checkout` with `core.autocrlf=true` rewrites LF → CRLF on the working copy. A naive `split('\n')` leaves a trailing `\r` on every line; strict equality checks (`line === '--- stdout ---'`) silently fail.
+Choda-deck ships Windows-first. Files touched via `fs.readFile` (markdown bodies, captured stdout, log lines) frequently carry CRLF endings, and `git checkout` with `core.autocrlf=true` rewrites LF → CRLF on the working copy. A naive `split('\n')` leaves a trailing `\r` on every line; strict equality checks (`line === '--- stdout ---'`) silently fail.
 
-Origin: TASK-726 PR #95 commit `50ac5ae` — a CRLF blind spot in `queue-report.ts` parsers passed unit tests on Ubuntu CI but produced empty stdout columns on Windows CI. ADR-023 Fix 3 promotes the rule.
+Origin: TASK-726 PR #95 commit `50ac5ae` (queue-runner subsystem since removed in TASK-982) — a CRLF blind spot in line-based parsers passed unit tests on Ubuntu CI but produced empty stdout columns on Windows CI. The rule outlived the subsystem.
 
 In-memory string splits (e.g. sorting lines of a single composed string, asserting on test fixtures with hard-coded `\n`) may stay on `'\n'` **with a justification comment**.
 

@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 /**
- * choda-deck CLI — MCP server + autonomous queue runner.
+ * choda-deck CLI — MCP server.
  *
  * Subcommands:
  *   mcp serve     Start MCP server (stdio by default; HTTP via MCP_TRANSPORT=http)
- *   run-queue     Run autonomous queue of READY auto-safe tasks (ADR-019)
  *
  * Env vars (forwarded to service factory):
  *   CHODA_DATA_DIR     — data root (database/, artifacts/, backups/ derived)
@@ -18,10 +17,6 @@
  *   MCP_HTTP_TOKEN     — bearer token; REQUIRED when MCP_TRANSPORT=http
  */
 
-import { runRunQueueCommand } from './commands/run-queue'
-import { runQueueReportCommand } from './commands/queue-report'
-import { runQueueStartCommand } from './commands/queue-start'
-
 const VERSION = '0.2.0'
 
 const ROOT_HELP = `choda-deck v${VERSION}
@@ -29,10 +24,7 @@ const ROOT_HELP = `choda-deck v${VERSION}
 Usage: choda-deck <command> [options]
 
 Commands:
-  mcp serve           Start MCP server (set MCP_TRANSPORT=http for Streamable HTTP)
-  run-queue           Run autonomous queue (deprecated; superseded by \`queue start\`)
-  queue start         Batch trigger READY auto-safe tasks with per-task worktrees
-  queue report <id>   Regenerate report.md for an existing artifact directory
+  mcp serve     Start MCP server (set MCP_TRANSPORT=http for Streamable HTTP)
 
 Meta:
   --help        Show this help
@@ -51,28 +43,15 @@ async function main(): Promise<number> {
     return 0
   }
 
-  const [group, sub, ...rest] = argv
+  const [group, sub] = argv
 
   switch (group) {
-    case 'run-queue':
-      return runRunQueueCommand(sub === undefined ? [] : [sub, ...rest])
     case 'mcp':
       return dispatchMcp(sub)
-    case 'queue':
-      return dispatchQueue(sub, rest)
     default:
       process.stderr.write(`error: unknown command "${group}"\n\n${ROOT_HELP}`)
       return 2
   }
-}
-
-async function dispatchQueue(sub: string | undefined, rest: string[]): Promise<number> {
-  if (sub === 'report') return runQueueReportCommand(rest)
-  if (sub === 'start') return runQueueStartCommand(rest)
-  process.stderr.write(
-    `error: only "queue start" and "queue report" are supported (got "${sub ?? ''}")\n`
-  )
-  return 2
 }
 
 async function dispatchMcp(sub: string | undefined): Promise<number> {
@@ -88,8 +67,7 @@ async function dispatchMcp(sub: string | undefined): Promise<number> {
 main()
   .then((code) => {
     // Use exitCode (not process.exit) so `mcp serve` can keep the event loop
-    // alive via active stdin handles. run-queue has no lingering handles and
-    // Node exits naturally with this code.
+    // alive via active stdin handles.
     process.exitCode = code
   })
   .catch((err) => {

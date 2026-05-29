@@ -1,6 +1,0 @@
-$ node -e "process.stdout.write('ok')"
-exit 0
---- stdout ---
-ok
---- stderr ---
-

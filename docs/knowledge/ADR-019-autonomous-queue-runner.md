@@ -13,10 +13,18 @@ refs:
   - path: src/core/paths.ts
     commitSha: cedaeb56f023acd0fecfd6ceeaae65a7f1becfd8
 createdAt: 2026-05-10
-lastVerifiedAt: 2026-05-11
+lastVerifiedAt: 2026-05-29
+status: superseded
 ---
 
 # ADR-019: Autonomous Queue Runner — sequential `auto-safe` task executor
+
+> **Status (2026-05-29): SUPERSEDED by TASK-982 — queue runner subsystem removed.**
+> The `run-queue` + `queue start` CLI, `QueueLifecycleService`, `auto-safe` validator,
+> `task_approve`/`task_reject` MCP tools, and the `REVIEW` task status were all deleted.
+> Postgres queue composite (TASK-934 19/N) reverted. Backup branch: `origin/archive/queue-runner`
+> at `45ef97c`. Reinstating the subsystem means resurrecting that branch, not iterating from
+> this ADR. See INBOX-395 + CONV-1780022899678-9 for the removal rationale.
 
 > **Status:** ✅ Accepted (v2)
 > **Trigger:** INBOX-139 — Butter wants `1 lệnh chạy hết list task READY tự động qua đêm`. Conversation CONV-1778403102806-1 (multi-instance research, v1 had 5 design issues caught by review MSG-1778417920748-19; v2 lock-ins below).

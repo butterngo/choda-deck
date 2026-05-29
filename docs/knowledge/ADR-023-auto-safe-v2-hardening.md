@@ -11,8 +11,15 @@ refs:
   - path: .claude/rules/typescript.md
     commitSha: 6ed604e21cf15bfa75daf282b42f8387db73f812
 createdAt: 2026-05-13
-lastVerifiedAt: 2026-05-13
+lastVerifiedAt: 2026-05-29
+status: superseded
 ---
+
+> **Status (2026-05-29): SUPERSEDED by TASK-982 — queue runner subsystem removed.**
+> The `auto-safe` validator that this ADR hardened was deleted along with the rest of the
+> queue runner. The 3 trust fixes documented here no longer apply because the contract they
+> protected is gone. Backup branch: `origin/archive/queue-runner` at `45ef97c`. See ADR-019
+> supersession note for the wider rationale.
 
 # ADR-023: auto-safe v2 hardening — 3 trust fixes từ TASK-726 retro
 
