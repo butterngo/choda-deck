@@ -39,16 +39,6 @@ import { ConversationLifecycleService } from './lifecycle/conversation-lifecycle
 import { SessionLifecycleService } from './lifecycle/session-lifecycle-service'
 import { flipAcCheckbox, type CheckAcItemInput, type CheckAcItemResult } from './lifecycle/ac-check'
 import { NoActiveSessionError, TaskNotFoundError } from './lifecycle/errors'
-import { TaskReviewLifecycleService } from './lifecycle/task-review-lifecycle-service'
-import type {
-  ApproveTaskResult,
-  RejectTaskResult,
-  TaskReviewLifecycleOperations
-} from './interfaces/task-review-lifecycle.interface'
-import {
-  QueueLifecycleService,
-  type QueueRuntime
-} from './lifecycle/queue-lifecycle-service'
 import { KnowledgeService } from './knowledge-service'
 import { KnowledgeRepository } from './repositories/knowledge-repository'
 import type { KnowledgeOperations } from './interfaces/knowledge-operations.interface'
@@ -136,7 +126,6 @@ export class SqliteTaskService
     InboxLifecycleOperations,
     ConversationLifecycleOperations,
     SessionLifecycleOperations,
-    TaskReviewLifecycleOperations,
     KnowledgeOperations,
     SessionEventOperations,
     AgentMemoryOperations
@@ -159,7 +148,6 @@ export class SqliteTaskService
   private readonly inboxLifecycle: InboxLifecycleService
   private readonly conversationLifecycle: ConversationLifecycleService
   private readonly sessionLifecycle: SessionLifecycleService
-  private readonly taskReviewLifecycle: TaskReviewLifecycleService
   private readonly knowledgeRepo: KnowledgeRepository
   private readonly knowledgeService: KnowledgeService
   private readonly embeddingStore: EmbeddingStore
@@ -212,12 +200,6 @@ export class SqliteTaskService
       this.tasks,
       this.sessionEvents,
       (input) => this.recallMemoriesSync(input)
-    )
-    this.taskReviewLifecycle = new TaskReviewLifecycleService(
-      this.db,
-      this.tasks,
-      this.sessions,
-      this.sessionLifecycle
     )
     this.knowledgeRepo = new KnowledgeRepository(this.db)
     this.knowledgeService = new KnowledgeService({
@@ -537,25 +519,6 @@ export class SqliteTaskService
   }
   async resumeSession(id: string): Promise<ResumeSessionResult> {
     return this.sessionLifecycle.resumeSession(id)
-  }
-
-  // ── Task review lifecycle (ADR-024) ───────────────────────────────────────
-  async approveTask(taskId: string, note?: string): Promise<ApproveTaskResult> {
-    return this.taskReviewLifecycle.approveTask(taskId, note)
-  }
-  async rejectTask(taskId: string, reason: string): Promise<RejectTaskResult> {
-    return this.taskReviewLifecycle.rejectTask(taskId, reason)
-  }
-
-  // ── Queue lifecycle (autonomous queue runner per ADR-019) ─────────────────
-  createQueueLifecycle(runtime: QueueRuntime): QueueLifecycleService {
-    return new QueueLifecycleService(
-      this.tasks,
-      this.workspaces,
-      this.conversations,
-      this.sessionLifecycle,
-      runtime
-    )
   }
 
   // ── Knowledge ─────────────────────────────────────────────────────────────

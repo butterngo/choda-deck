@@ -61,25 +61,16 @@ function runCli(args, { expectExit = 0, expectOutput = [] } = {}) {
   check(label, true)
 }
 
-// Case 1: top-level --help exit 0, all subcommands mentioned
+// Case 1: top-level --help exit 0, mcp serve subcommand mentioned
 runCli(['--help'], {
   expectExit: 0,
-  expectOutput: ['mcp serve', 'run-queue', 'queue start', 'queue report'],
+  expectOutput: ['mcp serve'],
 })
 
-// Case 2: run-queue --help exit 0, key flags present
-runCli(['run-queue', '--help'], {
-  expectExit: 0,
-  expectOutput: ['--workspace', '--dry-run'],
-})
+// Case 2: unknown subcommand → exit 2
+runCli(['queue'], { expectExit: 2 })
 
-// Case 3: workspace not found → exit 3
-runCli(['run-queue', '--workspace', 'nonexistent', '--dry-run'], { expectExit: 3 })
-
-// Case 4: queue report with nonexistent id → exit 1 (artifact dir not found)
-runCli(['queue', 'report', 'nonexistent'], { expectExit: 1 })
-
-// Case 5 (optional): MCP server responds to JSON-RPC initialize
+// Case 3: MCP server responds to JSON-RPC initialize
 await smokeMcp()
 
 // Cleanup temp dir

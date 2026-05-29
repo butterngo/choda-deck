@@ -16,11 +16,19 @@ refs:
     commitSha: 43ec7295d81aab5dbf1394838b238badd3a4d921
   - path: docs/knowledge/ADR-019-autonomous-queue-runner.md
     commitSha: 43ec7295d81aab5dbf1394838b238badd3a4d921
+status: superseded
 createdAt: 2026-05-17
-lastVerifiedAt: 2026-05-17
+lastVerifiedAt: 2026-05-29
 ---
 
 # ADR-024: REVIEW task status + session checkpoint-on-finish cho queue runner
+
+> **Status (2026-05-29): SUPERSEDED by TASK-982 — queue runner subsystem removed.**
+> The `REVIEW` task status was removed from the `TaskStatus` union; `task_approve`/`task_reject`
+> MCP tools, `TaskReviewLifecycleService`, and the queue-runner checkpoint fields
+> (`outcome`, `diffPath`, `claudeJsonPath`, `acLogPath`, `costUsd`, `numTurns`, `awaitingReview`,
+> `reviewOutcome`, `reviewReason`) were all deleted. Backup branch: `origin/archive/queue-runner`
+> at `45ef97c`. See ADR-019 supersession note for the wider rationale.
 
 > AI-Context: Thêm status `REVIEW` giữa `IN-PROGRESS` và `DONE`. Queue runner kết thúc một task không còn `endSession` — chuyển sang `checkpointSession` và đẩy task sang `REVIEW` (cả pass lẫn fail). Session chỉ thật sự `endSession` khi reviewer approve (→ `DONE`) hoặc reject (→ `IN-PROGRESS`). Reviewer recall session qua link `task.id ↔ session.taskId` sẵn có.
 

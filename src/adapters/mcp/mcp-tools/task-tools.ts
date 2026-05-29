@@ -8,12 +8,7 @@ import type { RelationshipOperations } from '../../../core/domain/interfaces/rel
 import type { ProjectOperations } from '../../../core/domain/interfaces/project-repository.interface'
 import type { WorkspaceOperations } from '../../../core/domain/interfaces/workspace-repository.interface'
 import { buildGraphifyContext } from './task-context-graphify'
-import {
-  AUTO_SAFE_LABEL,
-  suggestFixesFor,
-  validateAutoSafeTask
-} from '../../../core/domain/auto-safe-validator'
-import type { Task, UpdateTaskInput } from '../../../core/domain/task-types'
+import type { UpdateTaskInput } from '../../../core/domain/task-types'
 
 export type TaskToolsDeps = TaskOperations &
   ConversationOperations &
@@ -48,7 +43,7 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
     'task_context',
     {
       description:
-        'Get full context for a task: task details + dependencies + body + `auto_safe` block. Body follows template with ## Context / ## Acceptance / ## Test Plan / ## Related sections — read ## Acceptance for done criteria (tick each item before marking DONE); if empty, ask user to define before starting work. The `auto_safe` field reports `{ labeled, valid, errors, suggestions }` — when `valid: false`, `errors[i]` ↔ `suggestions[i]` give actionable fixes to make the task queue-eligible.',
+        'Get full context for a task: task details + dependencies + body. Body follows template with ## Context / ## Acceptance / ## Test Plan / ## Related sections — read ## Acceptance for done criteria (tick each item before marking DONE); if empty, ask user to define before starting work.',
       inputSchema: { id: z.string().describe('Task ID (e.g. TASK-401)') }
     },
     async ({ id }) => {
@@ -78,14 +73,6 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
 
       const graphify_context = await buildGraphifyContext(task, svc)
 
-      const validation = validateAutoSafeTask(task)
-      const auto_safe = {
-        labeled: task.labels.includes(AUTO_SAFE_LABEL),
-        valid: validation.valid,
-        errors: validation.errors,
-        suggestions: suggestFixesFor(validation.errors)
-      }
-
       return textResponse({
         task,
         dependencies: deps,
@@ -94,8 +81,7 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
         relationships: rels,
         conversations,
         body: task.body,
-        graphify_context,
-        auto_safe
+        graphify_context
       })
     }
   )
@@ -150,7 +136,7 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
         id: z.string().optional().describe('Task ID (auto-generated if omitted)'),
         projectId: z.string().describe('Project ID'),
         title: z.string().describe('Task title'),
-        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'REVIEW', 'DONE', 'CANCELLED']).optional(),
+        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED']).optional(),
         priority: z.enum(['critical', 'high', 'medium', 'low']).optional(),
         parentTaskId: z.string().optional().describe('Parent task for subtasks'),
         labels: z.array(z.string()).optional(),
@@ -181,7 +167,7 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
       inputSchema: {
         id: z.string().describe('Task ID'),
         title: z.string().optional(),
-        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'REVIEW', 'DONE', 'CANCELLED']).optional(),
+        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED']).optional(),
         priority: z.enum(['critical', 'high', 'medium', 'low']).nullable().optional(),
         parentTaskId: z.string().nullable().optional(),
         labels: z.array(z.string()).optional(),
@@ -196,13 +182,12 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
     },
     async ({ id, ...input }) => {
       await enforceBodyTitleLock(svc, id, input)
-      await enforceAutoSafe(svc, id, input)
       return textResponse(await svc.updateTask(id, input))
     }
   )
 }
 
-const LOCKED_STATUSES = ['IN-PROGRESS', 'REVIEW', 'DONE', 'CANCELLED'] as const
+const LOCKED_STATUSES = ['IN-PROGRESS', 'DONE', 'CANCELLED'] as const
 
 async function enforceBodyTitleLock(svc: TaskToolsDeps, id: string, input: UpdateTaskInput): Promise<void> {
   const touchingBody = 'body' in input
@@ -218,22 +203,4 @@ async function enforceBodyTitleLock(svc: TaskToolsDeps, id: string, input: Updat
       `drift between code and intent.\n` +
       `To update: reset status to TODO or READY first, update ${field}, then resume.`
   )
-}
-
-async function enforceAutoSafe(svc: TaskToolsDeps, id: string, input: UpdateTaskInput): Promise<void> {
-  if (!input.labels?.includes(AUTO_SAFE_LABEL)) return
-  const current = await svc.getTask(id)
-  if (!current) return
-  if (current.labels.includes(AUTO_SAFE_LABEL)) return
-  const probe: Task = {
-    ...current,
-    body: input.body !== undefined ? input.body : current.body
-  }
-  const result = validateAutoSafeTask(probe)
-  if (!result.valid) {
-    throw new Error(
-      `Cannot add 'auto-safe' label to ${id} — task body fails contract:\n` +
-        result.errors.map((e) => `  - ${e}`).join('\n')
-    )
-  }
 }

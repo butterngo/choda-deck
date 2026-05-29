@@ -36,8 +36,6 @@ import * as sessionEventListTools from './mcp-tools/session-event-list'
 import * as memoryWriteTools from './mcp-tools/memory-write'
 import * as memoryRecallTools from './mcp-tools/memory-recall'
 import * as memoryPromoteTools from './mcp-tools/memory-promote-to-knowledge'
-import * as taskApproveTools from './mcp-tools/task-approve'
-import * as taskRejectTools from './mcp-tools/task-reject'
 import * as acCheckTools from './mcp-tools/ac-check'
 
 interface BuildDeps {
@@ -98,8 +96,6 @@ function buildMcpServer(
   memoryWriteTools.register(instrumented, deps.svc)
   memoryRecallTools.register(instrumented, deps.svc)
   memoryPromoteTools.register(instrumented, deps.svc)
-  taskApproveTools.register(instrumented, deps.svc)
-  taskRejectTools.register(instrumented, deps.svc)
   acCheckTools.register(instrumented, deps.svc)
 
   return { server, toolCount: instrumented.registeredToolNames.length }

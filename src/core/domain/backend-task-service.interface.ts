@@ -17,7 +17,6 @@ import type { InboxOperations } from './interfaces/inbox-repository.interface'
 import type { InboxLifecycleOperations } from './interfaces/inbox-lifecycle.interface'
 import type { ConversationLifecycleOperations } from './interfaces/conversation-lifecycle.interface'
 import type { SessionLifecycleOperations } from './interfaces/session-lifecycle.interface'
-import type { TaskReviewLifecycleOperations } from './interfaces/task-review-lifecycle.interface'
 import type { KnowledgeOperations } from './interfaces/knowledge-operations.interface'
 import type { SessionEventOperations } from './interfaces/session-event-operations.interface'
 import type { AgentMemoryOperations } from './interfaces/agent-memory-operations.interface'
@@ -27,10 +26,6 @@ import type {
   ToolInvocationWindow
 } from './interfaces/tool-invocations-repository.interface'
 import type { CheckAcItemInput, CheckAcItemResult } from './lifecycle/ac-check'
-import type {
-  QueueLifecycleService,
-  QueueRuntime
-} from './lifecycle/queue-lifecycle-service'
 
 export interface BackendTaskService
   extends TaskService,
@@ -43,7 +38,6 @@ export interface BackendTaskService
     InboxLifecycleOperations,
     ConversationLifecycleOperations,
     SessionLifecycleOperations,
-    TaskReviewLifecycleOperations,
     KnowledgeOperations,
     SessionEventOperations,
     AgentMemoryOperations {
@@ -53,5 +47,4 @@ export interface BackendTaskService
   countToolInvocations(): Promise<number>
   queryToolInvocations(window: ToolInvocationWindow): Promise<ToolInvocationAggregate[]>
   checkAcItem(input: CheckAcItemInput): Promise<CheckAcItemResult>
-  createQueueLifecycle(runtime: QueueRuntime): QueueLifecycleService
 }
