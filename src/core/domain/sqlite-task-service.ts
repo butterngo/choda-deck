@@ -216,7 +216,8 @@ export class SqliteTaskService
       projects: this.projects,
       workspaces: this.workspaces,
       embeddingStore: this.embeddingStore,
-      embeddingProvider: () => this.embeddingProviderPromise
+      embeddingProvider: () => this.embeddingProviderPromise,
+      edges: this.relationships
     })
     this.codeRefs = new CodeRefRepository(this.db)
   }
@@ -368,6 +369,9 @@ export class SqliteTaskService
   }
   async getRelationshipsFrom(itemId: string, type?: RelationType): Promise<Relationship[]> {
     return this.relationships.getFrom(itemId, type)
+  }
+  async getRelationshipsTo(itemId: string, type?: RelationType): Promise<Relationship[]> {
+    return this.relationships.getTo(itemId, type)
   }
 
   // ── Session operations (M1) ────────────────────────────────────────────────

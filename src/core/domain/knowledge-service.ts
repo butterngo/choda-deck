@@ -23,6 +23,7 @@ import type {
 } from './knowledge-types'
 import type { KnowledgeOperations } from './interfaces/knowledge-operations.interface'
 import type { EmbeddingProvider } from './embedding/embedding-provider.interface'
+import type { RelationType } from './task-types'
 
 type Awaitable<T> = T | Promise<T>
 
@@ -47,6 +48,17 @@ export interface KnowledgeProjectPort {
 
 export interface KnowledgeWorkspacePort {
   get(id: string): Awaitable<WorkspaceRow | null>
+}
+
+/**
+ * TASK-992 — write-path edge sync. When a feature/gotcha entry is created with
+ * structured frontmatter, derive its ADR-NNN graph edges (REALIZES / IN / ABOUT)
+ * so the relationships table tracks new entries without a migration re-run. The
+ * SQLite `RelationshipRepository.add` (INSERT OR IGNORE) satisfies this; the port
+ * is optional so the stdio-only graph stays absent from the PG knowledge path.
+ */
+export interface KnowledgeEdgePort {
+  add(fromId: string, toId: string, type: RelationType): Awaitable<void>
 }
 
 /**
@@ -104,6 +116,7 @@ export interface KnowledgeServiceDeps {
   now?: () => Date
   embeddingStore?: EmbeddingStorePort
   embeddingProvider?: () => Promise<EmbeddingProvider>
+  edges?: KnowledgeEdgePort
 }
 
 export class KnowledgeService implements KnowledgeOperations {
@@ -115,6 +128,7 @@ export class KnowledgeService implements KnowledgeOperations {
   private readonly now: () => Date
   private readonly embeddingStore: EmbeddingStorePort | null
   private readonly embeddingProvider: (() => Promise<EmbeddingProvider>) | null
+  private readonly edges: KnowledgeEdgePort | null
 
   constructor(deps: KnowledgeServiceDeps) {
     this.knowledge = deps.knowledge
@@ -125,6 +139,7 @@ export class KnowledgeService implements KnowledgeOperations {
     this.now = deps.now ?? ((): Date => new Date())
     this.embeddingStore = deps.embeddingStore ?? null
     this.embeddingProvider = deps.embeddingProvider ?? null
+    this.edges = deps.edges ?? null
   }
 
   async createKnowledge(input: CreateKnowledgeInput): Promise<KnowledgeEntry> {
@@ -192,6 +207,8 @@ export class KnowledgeService implements KnowledgeOperations {
       }
     }
 
+    await this.syncEdgesOnCreate(slug, input.type, input.structured)
+
     this.scheduleEmbed(slug, input.body)
 
     const staleness = this.computeStaleness(refs, stalenessCwd, input.scope)
@@ -202,6 +219,30 @@ export class KnowledgeService implements KnowledgeOperations {
       filePath,
       staleness,
       isStale: staleness.some((s) => s.commitsSince > 0)
+    }
+  }
+
+  // TASK-992: derive ADR-NNN Pillar 3 edges from a new entry's structured
+  // frontmatter so the relationships table stays current without re-running the
+  // migration. feature → REALIZES (task→feature) + IN (feature→workspace);
+  // gotcha → ABOUT (gotcha→feature). Edges are idempotent (INSERT OR IGNORE).
+  // Only createKnowledge calls this — updateKnowledge cannot change structured
+  // fields (it spreads the existing frontmatter), so there is nothing to re-sync.
+  private async syncEdgesOnCreate(
+    slug: string,
+    type: CreateKnowledgeInput['type'],
+    structured: CreateKnowledgeInput['structured']
+  ): Promise<void> {
+    if (!this.edges || !structured) return
+    if (type === 'feature') {
+      for (const taskId of structured.realizesTasks ?? []) {
+        await this.edges.add(taskId, slug, 'REALIZES')
+      }
+      for (const ws of structured.inWorkspaces ?? []) {
+        await this.edges.add(slug, ws, 'IN')
+      }
+    } else if (type === 'gotcha' && structured.affectedFeatureId) {
+      await this.edges.add(slug, structured.affectedFeatureId, 'ABOUT')
     }
   }
 
