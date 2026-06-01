@@ -4,6 +4,7 @@ import type { ContextSourceRepository } from '../repositories/context-source-rep
 import type { ConversationRepository } from '../repositories/conversation-repository'
 import type { TaskRepository } from '../repositories/task-repository'
 import type { SessionEventRepository } from '../repositories/session-event-repository'
+import type { RelationshipRepository } from '../repositories/relationship-repository'
 import type { AgentMemory, SessionEvent } from '../task-types'
 import type { MemoryRecallInput } from '../interfaces/agent-memory-operations.interface'
 import type {
@@ -38,6 +39,7 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
     private readonly conversations: ConversationRepository,
     private readonly tasks: TaskRepository,
     private readonly sessionEvents: SessionEventRepository,
+    private readonly relationships: RelationshipRepository,
     private readonly recallMemoriesFn: RecallMemoriesFn
   ) {}
 
@@ -143,6 +145,24 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
         })
       }
 
+      // TASK-998 (GOTCHA-AUTO): draft one candidate gotcha per handoff decision.
+      // Emitted as memory_candidate observation rows (kind='gotcha_draft') — they
+      // surface in `memoryCandidates` for the agent to refine and the human to
+      // confirm. Nothing persists as a real gotcha here (no silent writes).
+      // affectedFeatureId is inferred deterministically from the bound task's
+      // REALIZES edge (task → feature); null → draft flags `needsFeature` so the
+      // agent asks the human which feature it belongs to.
+      const featureId = session.taskId ? this.inferFeatureForTask(session.taskId) : null
+      for (const decision of input.handoff.decisions ?? []) {
+        const draft = draftGotchaFromDecision(decision, featureId)
+        this.sessionEvents.create({
+          sessionId: id,
+          eventType: 'observation',
+          payloadJson: JSON.stringify({ kind: 'gotcha_draft', ...draft }),
+          memoryCandidate: true
+        })
+      }
+
       const memoryCandidates = this.sessionEvents.listMemoryCandidates(id)
       const selfEditPrompt = buildSelfEditPrompt(memoryCandidates)
 
@@ -199,6 +219,14 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
       checkpointAt: now()
     })
     return { session: updated }
+  }
+
+  // TASK-998: the feature a task REALIZES (task → feature edge, TASK-992). A task
+  // normally realizes one feature; if several, the first by edge order is used.
+  // Returns null when the task has no REALIZES edge.
+  private inferFeatureForTask(taskId: string): string | null {
+    const edges = this.relationships.getFrom(taskId, 'REALIZES')
+    return edges.length > 0 ? edges[0].toId : null
   }
 
   async resumeSession(id: string): Promise<ResumeSessionResult> {
@@ -301,13 +329,77 @@ function parseObservationPayload(json: string | null): Record<string, unknown> |
 
 export function buildSelfEditPrompt(candidates: SessionEvent[]): string {
   if (candidates.length === 0) return ''
-  const n = candidates.length
-  const word = n === 1 ? 'event' : 'events'
-  return (
-    `Review these ${n} candidate ${word} from the session. ` +
-    `Call memory_write for 1-3 entries worth remembering across sessions — ` +
-    `use type='episodic' with scope='task' for task-specific learnings, ` +
-    `or type='procedural' with scope='project' or 'workspace' for reusable patterns. ` +
-    `Skip entirely if nothing here is worth keeping.`
-  )
+  const gotchaDrafts = candidates.filter((c) => {
+    const p = parseObservationPayload(c.payloadJson)
+    return p?.kind === 'gotcha_draft'
+  })
+  const memN = candidates.length - gotchaDrafts.length
+
+  const parts: string[] = []
+  if (memN > 0) {
+    const word = memN === 1 ? 'event' : 'events'
+    parts.push(
+      `Review ${memN} candidate ${word} from the session. ` +
+        `Call memory_write for 1-3 entries worth remembering across sessions — ` +
+        `use type='episodic' with scope='task' for task-specific learnings, ` +
+        `or type='procedural' with scope='project' or 'workspace' for reusable patterns.`
+    )
+  }
+  if (gotchaDrafts.length > 0) {
+    // TASK-998: route gotcha drafts to knowledge_create(type='gotcha'), not memory_write.
+    const word = gotchaDrafts.length === 1 ? 'gotcha draft' : 'gotcha drafts'
+    const needFeature = gotchaDrafts.some((c) => {
+      const p = parseObservationPayload(c.payloadJson)
+      return p?.needsFeature === true
+    })
+    parts.push(
+      `${gotchaDrafts.length} ${word} (kind='gotcha_draft') were proposed from the session's decisions. ` +
+        `Review each, refine the structured fields (trigger / context / business_rule / resolution), ` +
+        `and call knowledge_create(type='gotcha') for ones worth keeping.` +
+        (needFeature
+          ? ` Some have no affectedFeatureId (the task has no REALIZES edge) — ask the human which feature before creating those.`
+          : '')
+    )
+  }
+  parts.push('Skip entirely if nothing here is worth keeping.')
+  return parts.join(' ')
+}
+
+/**
+ * TASK-998 — heuristic scaffold of a gotcha from one handoff decision string.
+ * Deterministic, no LLM (the domain layer runs inside a sync DB transaction): it
+ * splits the decision into a rule vs. resolution on the first rationale marker
+ * ("because", "rationale:", a dash, or a colon) and carries the raw text so the
+ * agent can refine the fields before the human confirms. `affectedFeatureId` is
+ * supplied by the caller from the REALIZES edge; null sets `needsFeature`.
+ */
+export function draftGotchaFromDecision(
+  decision: string,
+  featureId: string | null
+): {
+  trigger: string
+  context: string
+  businessRule: string
+  resolution: string
+  affectedFeatureId: string | null
+  needsFeature: boolean
+  sourceDecision: string
+} {
+  const text = decision.trim()
+  const marker = text.match(/\b(because|rationale:|so that)\b|[—:-]/i)
+  let businessRule = text
+  let resolution = ''
+  if (marker && marker.index !== undefined && marker.index > 0) {
+    businessRule = text.slice(0, marker.index).trim()
+    resolution = text.slice(marker.index + marker[0].length).trim()
+  }
+  return {
+    trigger: '',
+    context: text,
+    businessRule,
+    resolution,
+    affectedFeatureId: featureId,
+    needsFeature: featureId === null,
+    sourceDecision: text
+  }
 }
