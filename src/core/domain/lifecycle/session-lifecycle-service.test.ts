@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import { SqliteTaskService } from '../sqlite-task-service'
+import { draftGotchaFromDecision } from './session-lifecycle-service'
 import {
   SessionNotFoundError,
   SessionStatusError,
@@ -887,5 +888,95 @@ describe('transaction rollback (atomicity)', () => {
     expect((await svc.getSession(started.session.id))?.status).toBe('active')
     expect((await svc.getConversation(conv.id))?.status).toBe('open')
     expect((await svc.getTask(task.id))?.status).not.toBe('DONE')
+  })
+})
+
+describe('endSession gotcha-auto drafts (TASK-998)', () => {
+  // Parse the gotcha_draft payloads out of the returned memory candidates.
+  function gotchaDrafts(candidates: Array<{ payloadJson: string | null }>): Array<Record<string, unknown>> {
+    return candidates
+      .map((c) => JSON.parse(c.payloadJson ?? '{}') as Record<string, unknown>)
+      .filter((p) => p.kind === 'gotcha_draft')
+  }
+
+  it('drafts one candidate gotcha per handoff decision, surfaced as memory candidates', async () => {
+    const task = await svc.createTask({ projectId: 'proj-s', title: 'realize work' })
+    const started = await svc.startSession({ projectId: 'proj-s', taskId: task.id })
+
+    const r = await svc.endSession(started.session.id, {
+      handoff: { resumePoint: 'done', decisions: ['chose option A', 'cache TTL is 5m because of WAL'] }
+    })
+
+    const drafts = gotchaDrafts(r.memoryCandidates)
+    expect(drafts).toHaveLength(2)
+    expect(r.memoryCandidates.every((c) => c.memoryCandidate)).toBe(true)
+    expect(r.selfEditPrompt).toContain('gotcha draft')
+    expect(r.selfEditPrompt).toContain("knowledge_create(type='gotcha')")
+  })
+
+  it('infers affectedFeatureId from the task REALIZES edge', async () => {
+    const task = await svc.createTask({ projectId: 'proj-s', title: 'feature work' })
+    await svc.addRelationship(task.id, 'feature-x', 'REALIZES')
+    const started = await svc.startSession({ projectId: 'proj-s', taskId: task.id })
+
+    const r = await svc.endSession(started.session.id, {
+      handoff: { resumePoint: 'done', decisions: ['store logo via FE static map'] }
+    })
+
+    const [draft] = gotchaDrafts(r.memoryCandidates)
+    expect(draft.affectedFeatureId).toBe('feature-x')
+    expect(draft.needsFeature).toBe(false)
+  })
+
+  it('flags needsFeature when the task has no REALIZES edge', async () => {
+    const task = await svc.createTask({ projectId: 'proj-s', title: 'edgeless work' })
+    const started = await svc.startSession({ projectId: 'proj-s', taskId: task.id })
+
+    const r = await svc.endSession(started.session.id, {
+      handoff: { resumePoint: 'done', decisions: ['some decision'] }
+    })
+
+    const [draft] = gotchaDrafts(r.memoryCandidates)
+    expect(draft.affectedFeatureId).toBeNull()
+    expect(draft.needsFeature).toBe(true)
+    expect(r.selfEditPrompt).toContain('ask the human which feature')
+  })
+
+  it('emits no gotcha drafts when the handoff has no decisions', async () => {
+    const task = await svc.createTask({ projectId: 'proj-s', title: 'no decisions' })
+    const started = await svc.startSession({ projectId: 'proj-s', taskId: task.id })
+
+    const r = await svc.endSession(started.session.id, { handoff: { resumePoint: 'done' } })
+    expect(gotchaDrafts(r.memoryCandidates)).toHaveLength(0)
+  })
+
+  it('does NOT persist a real gotcha — drafts are human-gated', async () => {
+    const task = await svc.createTask({ projectId: 'proj-s', title: 'gated' })
+    await svc.addRelationship(task.id, 'feature-x', 'REALIZES')
+    const started = await svc.startSession({ projectId: 'proj-s', taskId: task.id })
+
+    await svc.endSession(started.session.id, {
+      handoff: { resumePoint: 'done', decisions: ['a decision worth a gotcha'] }
+    })
+
+    expect(await svc.listKnowledge({ projectId: 'proj-s', type: 'gotcha' })).toEqual([])
+  })
+})
+
+describe('draftGotchaFromDecision (TASK-998 unit)', () => {
+  it('splits rule vs resolution on a rationale marker and carries raw text', () => {
+    const d = draftGotchaFromDecision('use FE static map because BE iconUrl is unreliable', 'feature-x')
+    expect(d.businessRule).toBe('use FE static map')
+    expect(d.resolution).toBe('BE iconUrl is unreliable')
+    expect(d.affectedFeatureId).toBe('feature-x')
+    expect(d.needsFeature).toBe(false)
+    expect(d.sourceDecision).toBe('use FE static map because BE iconUrl is unreliable')
+  })
+
+  it('keeps the whole text as businessRule when there is no marker, and flags needsFeature on null', () => {
+    const d = draftGotchaFromDecision('a flat statement', null)
+    expect(d.businessRule).toBe('a flat statement')
+    expect(d.resolution).toBe('')
+    expect(d.needsFeature).toBe(true)
   })
 })

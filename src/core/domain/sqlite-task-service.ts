@@ -208,6 +208,7 @@ export class SqliteTaskService
       this.conversations,
       this.tasks,
       this.sessionEvents,
+      this.relationships,
       (input) => this.recallMemoriesSync(input)
     )
     this.knowledgeRepo = new KnowledgeRepository(this.db)
