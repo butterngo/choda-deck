@@ -979,4 +979,19 @@ describe('draftGotchaFromDecision (TASK-998 unit)', () => {
     expect(d.resolution).toBe('')
     expect(d.needsFeature).toBe(true)
   })
+
+  it('does NOT split on an in-word hyphen — splits on the rationale word instead', () => {
+    const d = draftGotchaFromDecision(
+      'Source logo source-of-truth is the FE static map, not BE iconUrl, because coverage is unreliable',
+      'feature-x'
+    )
+    expect(d.businessRule).toBe('Source logo source-of-truth is the FE static map, not BE iconUrl')
+    expect(d.resolution).toBe('coverage is unreliable')
+  })
+
+  it('splits on a space-flanked hyphen but not a bare/in-word one', () => {
+    const d = draftGotchaFromDecision('cap page-size at 10 - clamp server-side', null)
+    expect(d.businessRule).toBe('cap page-size at 10')
+    expect(d.resolution).toBe('clamp server-side')
+  })
 })

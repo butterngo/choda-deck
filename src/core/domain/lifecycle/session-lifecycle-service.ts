@@ -386,11 +386,15 @@ export function draftGotchaFromDecision(
   sourceDecision: string
 } {
   const text = decision.trim()
-  const marker = text.match(/\b(because|rationale:|so that)\b|[—:-]/i)
+  // Rationale markers separating the rule from its resolution: the words
+  // because / so that, an em/en dash, a SPACE-flanked hyphen (" - "), or a colon.
+  // The hyphen must be space-flanked so in-word hyphens ("source-of-truth") do
+  // NOT trigger a split — the bug the bare `-` character class caused before.
+  const marker = text.match(/\bbecause\b|\bso that\b|[—–]| - |:/i)
   let businessRule = text
   let resolution = ''
   if (marker && marker.index !== undefined && marker.index > 0) {
-    businessRule = text.slice(0, marker.index).trim()
+    businessRule = text.slice(0, marker.index).replace(/[\s,;:—–-]+$/, '').trim()
     resolution = text.slice(marker.index + marker[0].length).trim()
   }
   return {
