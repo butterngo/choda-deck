@@ -2,7 +2,21 @@
 
 export type TaskStatus = 'TODO' | 'READY' | 'IN-PROGRESS' | 'DONE' | 'CANCELLED'
 export type TaskPriority = 'critical' | 'high' | 'medium' | 'low'
-export type RelationType = 'DEPENDS_ON' | 'IMPLEMENTS' | 'USES_TECH' | 'DECIDED_BY'
+// ADR-NNN Pillar 3 graph edges. The first four are the original task/tech edges;
+// the last five are TASK-992's first-class knowledge-graph edges, all stored in
+// the generic `relationships` table (from_id, to_id, type) which carries no `type`
+// CHECK — so adding a future edge type needs no DB migration, only a widening here.
+// (TOUCHES lives in its own table, TASK-988, because it carries a relation attribute.)
+export type RelationType =
+  | 'DEPENDS_ON'
+  | 'IMPLEMENTS'
+  | 'USES_TECH'
+  | 'DECIDED_BY'
+  | 'REALIZES'
+  | 'ABOUT'
+  | 'PINS'
+  | 'IN'
+  | 'INTEGRATES_WITH'
 export type DocumentType = 'adr' | 'guide' | 'spec' | 'note' | 'research'
 
 export const TASK_STATUSES: TaskStatus[] = ['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED']

@@ -7,6 +7,7 @@ import { initSchema } from './repositories/schema'
 import { ProjectRepository } from './repositories/project-repository'
 import { WorkspaceRepository } from './repositories/workspace-repository'
 import { KnowledgeRepository } from './repositories/knowledge-repository'
+import { RelationshipRepository } from './repositories/relationship-repository'
 import {
   KnowledgeService,
   KnowledgeConflictError,
@@ -580,5 +581,79 @@ describe('workspace-scoped knowledge', () => {
     // workspace_id column still queryable
     const cols = db.pragma('table_info(knowledge_index)') as Array<{ name: string }>
     expect(cols.some((c) => c.name === 'workspace_id')).toBe(true)
+  })
+
+  // TASK-992 — feature/gotcha create derives ADR-NNN graph edges via the edge port.
+  describe('write-path edge sync', () => {
+    let edges: RelationshipRepository
+    let edgeSvc: KnowledgeService
+
+    beforeEach(() => {
+      edges = new RelationshipRepository(db)
+      edgeSvc = new KnowledgeService({
+        knowledge: repo,
+        projects,
+        git,
+        contentRoot: path.join(tmpDir, 'vault'),
+        now: () => new Date('2026-04-29T00:00:00Z'),
+        edges
+      })
+    })
+
+    it('creating a feature derives REALIZES (task→feature) + IN (feature→workspace)', async () => {
+      const f = await edgeSvc.createKnowledge({
+        projectId: 'proj-k',
+        type: 'feature',
+        scope: 'project',
+        title: 'Sync Feature',
+        body: 'b',
+        refs: [],
+        structured: {
+          realizesTasks: ['TASK-101', 'TASK-102'],
+          inWorkspaces: ['ws-api', 'ws-portal']
+        }
+      })
+
+      expect(edges.getTo(f.slug, 'REALIZES').map((e) => e.fromId).sort()).toEqual([
+        'TASK-101',
+        'TASK-102'
+      ])
+      expect(edges.getFrom(f.slug, 'IN').map((e) => e.toId).sort()).toEqual(['ws-api', 'ws-portal'])
+    })
+
+    it('creating a gotcha derives ABOUT (gotcha→feature)', async () => {
+      const f = await edgeSvc.createKnowledge({
+        projectId: 'proj-k',
+        type: 'feature',
+        scope: 'project',
+        title: 'Host Feature',
+        body: 'b',
+        refs: []
+      })
+      const g = await edgeSvc.createKnowledge({
+        projectId: 'proj-k',
+        type: 'gotcha',
+        scope: 'project',
+        title: 'A Gotcha',
+        body: 'b',
+        refs: [],
+        structured: { affectedFeatureId: f.slug }
+      })
+
+      expect(edges.getTo(f.slug, 'ABOUT').map((e) => e.fromId)).toEqual([g.slug])
+    })
+
+    it('a feature with no structured frontmatter creates no edges', async () => {
+      const f = await edgeSvc.createKnowledge({
+        projectId: 'proj-k',
+        type: 'feature',
+        scope: 'project',
+        title: 'Bare Feature',
+        body: 'b',
+        refs: []
+      })
+      expect(edges.getFrom(f.slug)).toHaveLength(0)
+      expect(edges.getTo(f.slug)).toHaveLength(0)
+    })
   })
 })

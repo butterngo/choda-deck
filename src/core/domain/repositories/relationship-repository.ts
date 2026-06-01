@@ -39,4 +39,21 @@ export class RelationshipRepository {
         }>)
     return rows.map(rowToRelationship)
   }
+
+  // Inbound counterpart to getFrom — edges pointing AT itemId. Needed for the
+  // ADR-NNN graph queries whose answer is the source node: "which tasks REALIZE
+  // this feature?" = getTo(featureSlug, 'REALIZES') → from_ids; "which gotchas
+  // are ABOUT it?" = getTo(featureSlug, 'ABOUT').
+  getTo(itemId: string, type?: RelationType): Relationship[] {
+    const rows = type
+      ? (this.db
+          .prepare('SELECT * FROM relationships WHERE to_id = ? AND type = ?')
+          .all(itemId, type) as Array<{ from_id: string; to_id: string; type: string }>)
+      : (this.db.prepare('SELECT * FROM relationships WHERE to_id = ?').all(itemId) as Array<{
+          from_id: string
+          to_id: string
+          type: string
+        }>)
+    return rows.map(rowToRelationship)
+  }
 }

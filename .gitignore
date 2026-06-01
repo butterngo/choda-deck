@@ -25,6 +25,7 @@ graphify-out/*
 !graphify-out/cache/
 src/graphify-out/
 .graphify_python
+knowledge-graph-out/
 tsconfig.node.tsbuildinfo
 tsconfig.web.tsbuildinfo
 .claude.json
