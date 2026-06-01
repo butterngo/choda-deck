@@ -28,6 +28,7 @@ import * as sessionTools from './mcp-tools/session-tools'
 import * as inboxTools from './mcp-tools/inbox-tools'
 import * as backupTools from './mcp-tools/backup-tools'
 import * as knowledgeTools from './mcp-tools/knowledge-tools'
+import * as codeRefTools from './mcp-tools/code-ref-tools'
 import * as statsTools from './mcp-tools/stats-tools'
 import * as cleanupTools from './mcp-tools/cleanup-tools'
 import * as cleanupArtifacts from './mcp-tools/cleanup-artifacts'
@@ -88,6 +89,7 @@ function buildMcpServer(
   inboxTools.register(instrumented, deps.svc)
   backupTools.register(instrumented, deps.svc, deps.dataDir, deps.dbPath)
   knowledgeTools.register(instrumented, deps.svc)
+  codeRefTools.register(instrumented, deps.svc)
   statsTools.register(instrumented, deps.svc)
   cleanupTools.register(instrumented, deps.svc)
   cleanupArtifacts.register(instrumented, deps.artifactsDir)

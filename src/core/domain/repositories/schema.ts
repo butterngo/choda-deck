@@ -243,6 +243,43 @@ function migrateSessionsStatus(db: Database.Database): void {
   db.exec('ALTER TABLE sessions_new RENAME TO sessions')
 }
 
+// TASK-988: rebuild knowledge_index when its live CHECK predates the
+// feature/code_ref/gotcha types. Idempotent — skipped once the widened CHECK is
+// present. Copies every column the live table has (embedding_* and workspace_id
+// arrived via ALTER, so the column set varies by DB age) into a fresh table.
+function migrateKnowledgeTypeCheck(db: Database.Database): void {
+  const row = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='knowledge_index'")
+    .get() as { sql?: string } | undefined
+  if (!row?.sql) return // table not created yet
+  if (row.sql.includes("'feature'")) return // already widened
+
+  const cols = (db.pragma('table_info(knowledge_index)') as Array<{ name: string }>).map(
+    (c) => c.name
+  )
+  const colList = cols.join(', ')
+
+  db.exec(`
+    CREATE TABLE knowledge_index_new (
+      slug TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      scope TEXT NOT NULL CHECK (scope IN ('project','cross')),
+      type TEXT NOT NULL CHECK (type IN ('spike','decision','postmortem','learning','evaluation','feature','code_ref','gotcha')),
+      title TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      last_verified_at TEXT NOT NULL,
+      embedding_provider_id TEXT,
+      embedding_dims INTEGER,
+      workspace_id TEXT REFERENCES workspaces(id),
+      FOREIGN KEY (project_id) REFERENCES projects(id)
+    )
+  `)
+  db.exec(`INSERT INTO knowledge_index_new (${colList}) SELECT ${colList} FROM knowledge_index`)
+  db.exec('DROP TABLE knowledge_index')
+  db.exec('ALTER TABLE knowledge_index_new RENAME TO knowledge_index')
+}
+
 // Any parsed ID above this is assumed to be a legacy timestamp-style ID
 // (Date.now() ~ 1.7e12) rather than a real counter value. Seeding from such
 // IDs poisons the counter permanently — every new ID becomes timestamp+1.
@@ -541,7 +578,7 @@ function createM1Tables(db: Database.Database): void {
       slug TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
       scope TEXT NOT NULL CHECK (scope IN ('project','cross')),
-      type TEXT NOT NULL CHECK (type IN ('spike','decision','postmortem','learning','evaluation')),
+      type TEXT NOT NULL CHECK (type IN ('spike','decision','postmortem','learning','evaluation','feature','code_ref','gotcha')),
       title TEXT NOT NULL,
       file_path TEXT NOT NULL,
       created_at TEXT NOT NULL,
@@ -572,6 +609,56 @@ function createM1Tables(db: Database.Database): void {
   } catch {
     /* exists */
   }
+
+  // TASK-988: widen the knowledge type CHECK to add feature / code_ref / gotcha.
+  // Fresh DBs already get the widened CHECK from the CREATE TABLE above; existing
+  // DBs carry the old 5-type CHECK baked into their table definition, which
+  // CREATE TABLE IF NOT EXISTS cannot alter — recreate following the
+  // migrateSessionsStatus pattern.
+  migrateKnowledgeTypeCheck(db)
+
+  // TASK-988: code_ref first-class graph node (ADR-NNN unified knowledge graph).
+  // Structured projection of a code anchor — identity is (project_id, path, symbol),
+  // NOT the slug. SHA is a re-pin attribute, not identity (ADR Pillar 2c): a dup
+  // identity write UPDATEs commit_sha rather than inserting a new row. symbol is
+  // NULLABLE for file-level refs (.tsx/.md/migrations); the identity index folds
+  // NULL → '' via COALESCE so two file-level refs to one path collide as intended.
+  // The matching slug also lives in knowledge_index as the human-readable .md note.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS code_refs (
+      slug TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      workspace_id TEXT,
+      path TEXT NOT NULL,
+      symbol TEXT,
+      line_hint INTEGER,
+      commit_sha TEXT,
+      created_at TEXT NOT NULL,
+      last_verified_at TEXT NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id)
+    )
+  `)
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_code_refs_identity ON code_refs(project_id, path, COALESCE(symbol, ''))"
+  )
+  db.exec('CREATE INDEX IF NOT EXISTS idx_code_refs_symbol ON code_refs(project_id, symbol)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_code_refs_path ON code_refs(project_id, path)')
+
+  // TASK-988: TOUCHES edge — task → code_ref carrying a required relation. This is
+  // the load-bearing B1 finding: 'modifies' (the task edits the anchor) vs
+  // 'reference' (the task reads it as a pattern). No nullable default — every edge
+  // declares its relation.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_code_refs (
+      task_id TEXT NOT NULL,
+      code_ref_slug TEXT NOT NULL,
+      relation TEXT NOT NULL CHECK (relation IN ('modifies','reference')),
+      PRIMARY KEY (task_id, code_ref_slug),
+      FOREIGN KEY (code_ref_slug) REFERENCES code_refs(slug)
+    )
+  `)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_task_code_refs_task ON task_code_refs(task_id)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_task_code_refs_slug ON task_code_refs(code_ref_slug)')
 
   // TASK-681: MCP tool usage stats (V0). Append-only invocation log.
   // No project/session/args/response/error-message columns by design (privacy + size).
