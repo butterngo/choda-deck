@@ -15,7 +15,9 @@
 // offline on Windows (file:// blocks fetch() of a sibling .json).
 //
 // Usage:
-//   node scripts/export-graph.mjs [--out <dir>]
+//   node scripts/export-graph.mjs [--out <dir>] [--project <id>]
+// --project scopes the graph to one project (nodes owned by it + edges whose
+// both endpoints are in it). Omit for the global, all-projects graph.
 // Reads CHODA_DB_PATH / CHODA_DATA_DIR for the DB (same resolution as the
 // migrate-*.mjs scripts). No shebang (Windows autocrlf breaks the ESM loader).
 
@@ -25,6 +27,7 @@ import fs from 'fs'
 
 const args = process.argv.slice(2)
 const outDir = argValue('--out') ?? path.join(process.cwd(), 'knowledge-graph-out')
+const projectFilter = argValue('--project') // optional — scope to one project
 const dbPath = resolveDbPath()
 
 function argValue(flag) {
@@ -53,6 +56,7 @@ function main() {
     process.exit(1)
   }
   console.log(`[graph] DB:  ${dbPath}`)
+  console.log(`[graph] scope: ${projectFilter ? `project=${projectFilter}` : 'global (all projects)'}`)
   const db = new Database(dbPath, { readonly: true })
 
   // ── Node label/kind sources ────────────────────────────────────────────────
@@ -68,6 +72,27 @@ function main() {
   const codeRefs = new Map(
     safeAll(db, 'SELECT slug, path, symbol FROM code_refs').map((r) => [r.slug, r])
   )
+
+  // --project <id>: the relationships table has no project_id, so scope by NODE
+  // membership — collect every raw id owned by the project across the four node
+  // tables, then keep only edges with BOTH endpoints in that set (cross-project
+  // edges are dropped in project mode). Null when unscoped (global graph).
+  let inProject = null
+  if (projectFilter) {
+    inProject = new Set()
+    const add = (sql) => {
+      try {
+        for (const r of db.prepare(sql).all(projectFilter)) inProject.add(r.id)
+      } catch {
+        /* table absent */
+      }
+    }
+    add('SELECT id FROM tasks WHERE project_id = ?')
+    add('SELECT slug AS id FROM knowledge_index WHERE project_id = ?')
+    add('SELECT id FROM workspaces WHERE project_id = ?')
+    add('SELECT slug AS id FROM code_refs WHERE project_id = ?')
+  }
+  const edgeInScope = (a, b) => !inProject || (inProject.has(a) && inProject.has(b))
 
   // Resolve a raw id (as stored in the edge tables) to {kind, label, extra...}.
   // Order matters only where id spaces could overlap; in practice they're
@@ -107,6 +132,7 @@ function main() {
   const nodeKey = (rawId, kind) => `${kind}:${rawId}`
 
   for (const r of relRows) {
+    if (!edgeInScope(r.from_id, r.to_id)) continue
     const fk = resolve(r.from_id)
     const tk = resolve(r.to_id)
     const sid = nodeKey(r.from_id, fk.kind)
@@ -116,6 +142,7 @@ function main() {
     edges.push({ source: sid, target: tid, type: r.type, relation: null })
   }
   for (const t of touchRows) {
+    if (!edgeInScope(t.task_id, t.code_ref_slug)) continue
     const sid = nodeKey(t.task_id, resolve(t.task_id).kind)
     const tid = nodeKey(t.code_ref_slug, resolve(t.code_ref_slug).kind)
     nodeIds.add(sid)
@@ -151,6 +178,7 @@ function main() {
 
   const graph = {
     generatedAt: new Date().toISOString(),
+    project: projectFilter ?? null,
     counts: { nodes: nodes.length, edges: edges.length, byKind: kindCounts, byEdgeType: edgeTypeCounts },
     nodes,
     edges
@@ -227,6 +255,7 @@ function renderHtml(graph) {
 <div id="sidebar">
   <div class="sec"><h1>choda graph <small>· ADR-NNN</small></h1>
     <div style="font-size:12px;color:#8a8aae;margin-top:4px" id="meta"></div>
+    <div style="font-size:11px;color:#6a6a8e;margin-top:2px">scroll zoom · drag node/bg · click to focus</div>
     <div style="margin-top:8px"><button class="mini" id="reset">reset view</button> <button class="mini" id="clear">clear focus</button></div>
   </div>
   <div class="sec"><h3>Selection</h3><div id="info"><div class="empty">click a node</div></div></div>
@@ -343,7 +372,7 @@ function esc(s){ return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','
 
 // ── sidebar: legend + filters + meta ──
 function buildSidebar(){
-  document.getElementById('meta').textContent = DATA.counts.nodes+' nodes · '+DATA.counts.edges+' edges · '+new Date(DATA.generatedAt).toLocaleString();
+  document.getElementById('meta').textContent = (DATA.project?('project: '+DATA.project+' · '):'all projects · ')+DATA.counts.nodes+' nodes · '+DATA.counts.edges+' edges · '+new Date(DATA.generatedAt).toLocaleString();
   const leg=document.getElementById('legend');
   Object.entries(DATA.counts.byKind).sort((a,b)=>b[1]-a[1]).forEach(([k,v])=>{
     const d=document.createElement('div'); d.className='legend-item';
