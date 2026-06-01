@@ -154,7 +154,7 @@ HTTP mode exposes a narrowed surface — the **6-tool read + capture allowlist**
 - `inbox_get`
 - `inbox_add`
 
-Everything else (`task_create`, `task_update`, `session_*`, `backup_*`, `cleanup_*`, `workspace_*`, `conversation_*`, `memory_*`, `knowledge_*`, `inbox_update|convert|archive|ready|research`, `stats_report`) stays **stdio-only**. Non-allowlisted tools are not registered at all — they never appear in `tools/list` and respond `MCP error -32602: Tool <name> not found` if called by name. Stdio mode keeps every tool (local trust contract, unchanged). See ADR-026 §Per-tool scoping for rationale.
+Everything else (`task_create`, `task_update`, `session_*`, `backup_*`, `cleanup_*`, `workspace_*`, `conversation_*`, `memory_*`, `knowledge_*`, `code_ref_*`, `touches_*`, `task_touches`, `graph_edges`, `inbox_update|convert|archive|ready|research`, `stats_report`) stays **stdio-only**. Non-allowlisted tools are not registered at all — they never appear in `tools/list` and respond `MCP error -32602: Tool <name> not found` if called by name. Stdio mode keeps every tool (local trust contract, unchanged). See ADR-026 §Per-tool scoping for rationale.
 
 ### Backend surface for HTTP mode (2026-05-28 narrowing)
 
