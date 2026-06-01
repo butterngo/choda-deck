@@ -132,6 +132,8 @@ export class KnowledgeService implements KnowledgeOperations {
     const project = await this.projects.get(input.projectId)
     if (!project) throw new KnowledgeValidationError(`unknown projectId: ${input.projectId}`)
 
+    await this.validateStructured(input)
+
     const workspaceCwd = await this.resolveWorkspaceCwd(input.projectId, input.workspaceId)
 
     const slug = input.slug ?? slugify(input.title)
@@ -161,7 +163,8 @@ export class KnowledgeService implements KnowledgeOperations {
       scope: input.scope,
       refs,
       createdAt: isoDate,
-      lastVerifiedAt: isoDate
+      lastVerifiedAt: isoDate,
+      structured: input.structured
     }
     const content = serializeFrontmatter(frontmatter, input.body)
 
@@ -443,6 +446,26 @@ export class KnowledgeService implements KnowledgeOperations {
       commitsSince: 0
     }))
     return { slug, refs: staleness, isStale: false, lastVerifiedAt: isoDate }
+  }
+
+  // TASK-988: structured-field validation for the first-class types. A gotcha's
+  // affectedFeatureId must resolve to an existing `feature` entry — otherwise the
+  // ABOUT edge dangles. Other structured fields (effortBand/status enums) are
+  // validated in the frontmatter layer.
+  private async validateStructured(input: CreateKnowledgeInput): Promise<void> {
+    const featureId = input.structured?.affectedFeatureId
+    if (!featureId) return
+    const target = await this.knowledge.get(featureId)
+    if (!target) {
+      throw new KnowledgeValidationError(
+        `affectedFeatureId "${featureId}" does not resolve to a known knowledge entry`
+      )
+    }
+    if (target.type !== 'feature') {
+      throw new KnowledgeValidationError(
+        `affectedFeatureId "${featureId}" is a ${target.type}, expected a feature`
+      )
+    }
   }
 
   private validateInput(input: CreateKnowledgeInput): void {

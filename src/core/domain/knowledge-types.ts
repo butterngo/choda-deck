@@ -1,4 +1,12 @@
-export type KnowledgeType = 'spike' | 'decision' | 'postmortem' | 'learning' | 'evaluation'
+export type KnowledgeType =
+  | 'spike'
+  | 'decision'
+  | 'postmortem'
+  | 'learning'
+  | 'evaluation'
+  | 'feature'
+  | 'code_ref'
+  | 'gotcha'
 export type KnowledgeScope = 'project' | 'cross'
 
 export const KNOWLEDGE_TYPES: readonly KnowledgeType[] = [
@@ -6,7 +14,10 @@ export const KNOWLEDGE_TYPES: readonly KnowledgeType[] = [
   'decision',
   'postmortem',
   'learning',
-  'evaluation'
+  'evaluation',
+  'feature',
+  'code_ref',
+  'gotcha'
 ]
 
 export const KNOWLEDGE_SCOPES: readonly KnowledgeScope[] = ['project', 'cross']
@@ -14,6 +25,33 @@ export const KNOWLEDGE_SCOPES: readonly KnowledgeScope[] = ['project', 'cross']
 export interface KnowledgeRef {
   path: string
   commitSha: string
+}
+
+export type EffortBand = 'S' | 'M' | 'L' | 'XL'
+
+export const EFFORT_BANDS: readonly EffortBand[] = ['S', 'M', 'L', 'XL']
+
+export type FeatureStatus = 'planned' | 'in-progress' | 'shipped' | 'blocked'
+
+export const FEATURE_STATUSES: readonly FeatureStatus[] = [
+  'planned',
+  'in-progress',
+  'shipped',
+  'blocked'
+]
+
+// TASK-988: optional structured frontmatter for the first-class graph types.
+// All fields are optional so the 5 original types (spike/decision/…) keep their
+// existing two-line frontmatter unchanged. feature uses anchorTaskId /
+// realizesTasks / inWorkspaces / effortBand / status; gotcha uses
+// affectedFeatureId. The serializer only emits keys that are set.
+export interface KnowledgeStructured {
+  anchorTaskId?: string
+  realizesTasks?: string[]
+  inWorkspaces?: string[]
+  effortBand?: EffortBand
+  status?: FeatureStatus
+  affectedFeatureId?: string
 }
 
 export interface KnowledgeFrontmatter {
@@ -25,6 +63,7 @@ export interface KnowledgeFrontmatter {
   refs: KnowledgeRef[]
   createdAt: string
   lastVerifiedAt: string
+  structured?: KnowledgeStructured
 }
 
 export interface KnowledgeIndexRow {
@@ -80,6 +119,7 @@ export interface CreateKnowledgeInput {
   body: string
   refs: CreateKnowledgeRefInput[]
   slug?: string
+  structured?: KnowledgeStructured
 }
 
 export interface RegisterExistingKnowledgeInput {

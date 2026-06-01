@@ -41,7 +41,15 @@ import { flipAcCheckbox, type CheckAcItemInput, type CheckAcItemResult } from '.
 import { NoActiveSessionError, TaskNotFoundError } from './lifecycle/errors'
 import { KnowledgeService } from './knowledge-service'
 import { KnowledgeRepository } from './repositories/knowledge-repository'
+import { CodeRefRepository } from './repositories/code-ref-repository'
 import type { KnowledgeOperations } from './interfaces/knowledge-operations.interface'
+import type {
+  CodeRefPrefixFilter,
+  CodeRefRow,
+  TouchesEdge,
+  TouchesRelation,
+  UpsertCodeRefInput
+} from './code-ref-types'
 import type {
   CreateKnowledgeInput,
   KnowledgeEntry,
@@ -150,6 +158,7 @@ export class SqliteTaskService
   private readonly sessionLifecycle: SessionLifecycleService
   private readonly knowledgeRepo: KnowledgeRepository
   private readonly knowledgeService: KnowledgeService
+  private readonly codeRefs: CodeRefRepository
   private readonly embeddingStore: EmbeddingStore
   private readonly embeddingProviderPromise: Promise<EmbeddingProvider>
   private embeddingReadyPromise: Promise<void> | null = null
@@ -209,6 +218,7 @@ export class SqliteTaskService
       embeddingStore: this.embeddingStore,
       embeddingProvider: () => this.embeddingProviderPromise
     })
+    this.codeRefs = new CodeRefRepository(this.db)
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -545,6 +555,32 @@ export class SqliteTaskService
   }
   searchKnowledge(query: string, k?: number): Promise<KnowledgeSearchResult> {
     return this.knowledgeService.searchKnowledge(query, k)
+  }
+
+  // ── Code refs + TOUCHES edges (TASK-988) ────────────────────────────────────
+  async upsertCodeRef(input: UpsertCodeRefInput): Promise<CodeRefRow> {
+    return this.codeRefs.upsert(input, new Date().toISOString().slice(0, 10))
+  }
+  async getCodeRef(slug: string): Promise<CodeRefRow | null> {
+    return this.codeRefs.get(slug)
+  }
+  async listCodeRefsByPrefix(filter: CodeRefPrefixFilter): Promise<CodeRefRow[]> {
+    return this.codeRefs.listByPrefix(filter)
+  }
+  async deleteCodeRef(slug: string): Promise<void> {
+    this.codeRefs.delete(slug)
+  }
+  async addTouches(taskId: string, codeRefSlug: string, relation: TouchesRelation): Promise<void> {
+    this.codeRefs.addTouches(taskId, codeRefSlug, relation)
+  }
+  async removeTouches(taskId: string, codeRefSlug: string): Promise<void> {
+    this.codeRefs.removeTouches(taskId, codeRefSlug)
+  }
+  async getTouchesForTask(taskId: string): Promise<TouchesEdge[]> {
+    return this.codeRefs.getTouchesForTask(taskId)
+  }
+  async getTouchesForCodeRef(codeRefSlug: string): Promise<TouchesEdge[]> {
+    return this.codeRefs.getTouchesForCodeRef(codeRefSlug)
   }
 
   // ── Session Events ─────────────────────────────────────────────────────────

@@ -18,6 +18,7 @@ import type { InboxLifecycleOperations } from './interfaces/inbox-lifecycle.inte
 import type { ConversationLifecycleOperations } from './interfaces/conversation-lifecycle.interface'
 import type { SessionLifecycleOperations } from './interfaces/session-lifecycle.interface'
 import type { KnowledgeOperations } from './interfaces/knowledge-operations.interface'
+import type { CodeRefOperations } from './interfaces/code-ref-operations.interface'
 import type { SessionEventOperations } from './interfaces/session-event-operations.interface'
 import type { AgentMemoryOperations } from './interfaces/agent-memory-operations.interface'
 import type {
@@ -39,6 +40,7 @@ export interface BackendTaskService
     ConversationLifecycleOperations,
     SessionLifecycleOperations,
     KnowledgeOperations,
+    CodeRefOperations,
     SessionEventOperations,
     AgentMemoryOperations {
   initializeAsync(): Promise<void>

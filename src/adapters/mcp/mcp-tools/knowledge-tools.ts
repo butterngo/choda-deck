@@ -4,15 +4,26 @@ import { textResponse } from './types'
 import type { KnowledgeOperations } from '../../../core/domain/interfaces/knowledge-operations.interface'
 import type { KnowledgeScope, KnowledgeType } from '../../../core/domain/knowledge-types'
 
-const TYPE_ENUM = ['spike', 'decision', 'postmortem', 'learning', 'evaluation'] as const
+const TYPE_ENUM = [
+  'spike',
+  'decision',
+  'postmortem',
+  'learning',
+  'evaluation',
+  'feature',
+  'code_ref',
+  'gotcha'
+] as const
 const SCOPE_ENUM = ['project', 'cross'] as const
+const EFFORT_BAND_ENUM = ['S', 'M', 'L', 'XL'] as const
+const FEATURE_STATUS_ENUM = ['planned', 'in-progress', 'shipped', 'blocked'] as const
 
 export const register = (server: InstrumentedServer, svc: KnowledgeOperations): void => {
   server.registerTool(
     'knowledge_create',
     {
       description:
-        'Create a knowledge entry (ADR, spike finding, postmortem, learning, evaluation). Project-scope writes to <projectCwd>/docs/knowledge/<slug>.md and tracks staleness against refs[]. When workspaceId is provided, the file is written to <workspaceCwd>/docs/knowledge/<slug>.md instead (workspace must belong to projectId). Cross-scope writes to vault/30-Knowledge/<slug>.md (no staleness).',
+        'Create a knowledge entry. Original types (spike/decision/postmortem/learning/evaluation) capture findings/ADRs. First-class graph types (TASK-988): feature (a user-perceivable outcome — set structured.anchorTaskId/realizesTasks/inWorkspaces/effortBand/status), code_ref (a code anchor note — pair with the code_ref_upsert tool for the queryable identity row), gotcha (a concern — set structured.affectedFeatureId pointing at an existing feature slug). Project-scope writes to <projectCwd>/docs/knowledge/<slug>.md and tracks staleness against refs[]. When workspaceId is provided, the file is written to <workspaceCwd>/docs/knowledge/<slug>.md instead (workspace must belong to projectId). Cross-scope writes to vault/30-Knowledge/<slug>.md (no staleness).',
       inputSchema: {
         projectId: z.string().describe('Project ID'),
         workspaceId: z
@@ -37,10 +48,33 @@ export const register = (server: InstrumentedServer, svc: KnowledgeOperations): 
           )
           .optional()
           .describe('Code references for staleness tracking. Empty/omitted = no tracking.'),
-        slug: z.string().optional().describe('Override auto-derived slug')
+        slug: z.string().optional().describe('Override auto-derived slug'),
+        structured: z
+          .object({
+            anchorTaskId: z.string().optional().describe('feature: epic-shape task it was promoted from'),
+            realizesTasks: z
+              .array(z.string())
+              .optional()
+              .describe('feature: task ids that implement/modify it'),
+            inWorkspaces: z.array(z.string()).optional().describe('feature: workspaces it touches'),
+            effortBand: z
+              .enum(EFFORT_BAND_ENUM)
+              .optional()
+              .describe('feature: S|M|L|XL band (NOT a day count)'),
+            status: z
+              .enum(FEATURE_STATUS_ENUM)
+              .optional()
+              .describe('feature: planned|in-progress|shipped|blocked'),
+            affectedFeatureId: z
+              .string()
+              .optional()
+              .describe('gotcha: slug of the feature this concern is about (must exist)')
+          })
+          .optional()
+          .describe('Structured fields for feature / gotcha first-class types (TASK-988).')
       }
     },
-    async ({ projectId, workspaceId, type, scope, title, body, refs, slug }) =>
+    async ({ projectId, workspaceId, type, scope, title, body, refs, slug, structured }) =>
       textResponse(
         svc.createKnowledge({
           projectId,
@@ -50,7 +84,8 @@ export const register = (server: InstrumentedServer, svc: KnowledgeOperations): 
           title,
           body,
           refs: refs ?? [],
-          slug
+          slug,
+          structured
         })
       )
   )
