@@ -18,10 +18,10 @@ export const register = (server: InstrumentedServer, svc: FeatureProjectionDeps)
     'feature_projection',
     {
       description:
-        'Project a feature knowledge node to a role-appropriate answer. role="ceo-po" → business description + apps + effort BAND (never number-of-days) + blockers; role="dev" → module + code_ref pointers with modifies/reference relation + gotchas recalled before the first question. Each bundle includes an honesty section (what the projection used vs. lacked). featureId is the feature slug (e.g. feature-crawler-list-ui-enhancements).',
+        'Project a feature knowledge node to a role-appropriate answer. role="ceo-po" → business description + apps + effort BAND (never number-of-days) + blockers; role="dev" → module + code_ref pointers with modifies/reference relation + gotchas recalled before the first question; role="tester" → acceptance criteria collated per realized task + edge cases derived from gotcha trigger/context + regression scope (shipped tasks that must not break). Each bundle includes an honesty section (what the projection used vs. lacked). featureId is the feature slug (e.g. feature-crawler-list-ui-enhancements).',
       inputSchema: {
         featureId: z.string().describe('Feature knowledge slug'),
-        role: z.enum(['ceo-po', 'dev']).describe('Asker role: ceo-po | dev')
+        role: z.enum(['ceo-po', 'dev', 'tester']).describe('Asker role: ceo-po | dev | tester')
       }
     },
     async ({ featureId, role }) => {

@@ -5,8 +5,11 @@ import { resolveDataPaths } from '../../../../core/paths'
 import { buildFeatureProjection } from '../feature-projection-builder'
 import {
   assertNoNumberOfDays,
+  assertNoSymbolBleed,
+  assertNoDeploymentDate,
   type CeoView,
   type DevView,
+  type TesterView,
   type FeatureProjectionBundle
 } from '../../../../core/domain/services/feature-projection'
 
@@ -111,5 +114,45 @@ describe('B4 replay on live pim data (self-skips when absent)', () => {
 
     // M4: no number-of-days anywhere in the CEO-visible strings.
     expect(() => assertNoNumberOfDays('replay-ceo', ...ceoStrings(ceo))).not.toThrow()
+  })
+
+  // TASK-995 AC #4 — tester role replay on the same live feature.
+  it('tester: AC from all 7 realized tasks, seller edge case, Source column in regression scope', async () => {
+    if (!live || !svc) {
+      console.warn('[replay] live pim feature not present — skipping tester replay')
+      return
+    }
+
+    const tester = await buildFeatureProjection(svc, FEATURE_ID, 'tester')
+    const view = tester.view as TesterView
+    const acTaskIds = view.acceptanceCriteria.map((t) => t.taskId)
+
+    console.log('\n=== tester replay scorecard (live pim) ===')
+    console.log(`  AC tasks collated: ${acTaskIds.join(', ')}`)
+    console.log(`  edge cases: ${view.edgeCases.length}`)
+    console.log(`  regression scope: ${view.regressionScope.join(' | ')}`)
+
+    // AC from all 7 realized tasks of the pilot feature.
+    for (const id of ['909', '910', '914', '915', '916', '917', '918']) {
+      expect(acTaskIds).toContain(`TASK-${id}`)
+    }
+
+    // Edge case derived from the seller-name gotcha (trigger/context).
+    expect(view.edgeCases.length).toBeGreaterThanOrEqual(1)
+    expect(view.edgeCases.some((e) => /seller/i.test(e))).toBe(true)
+
+    // Regression scope includes the shipped FE Source column (TASK-917).
+    expect(view.regressionScope.some((t) => /source/i.test(t))).toBe(true)
+
+    // M3: no dotted symbols / deployment dates in the DERIVED surfaces (edge
+    // cases, regression scope, task titles). Verbatim AC items are source
+    // material and are intentionally not guarded — see projectFeature tester.
+    const derived = [
+      ...view.edgeCases,
+      ...view.regressionScope,
+      ...view.acceptanceCriteria.map((t) => t.title)
+    ]
+    expect(() => assertNoSymbolBleed('replay-tester', ...derived)).not.toThrow()
+    expect(() => assertNoDeploymentDate('replay-tester', ...derived)).not.toThrow()
   })
 })

@@ -6,9 +6,13 @@ import {
   type FeatureProjectionDeps
 } from '../feature-projection-builder'
 import type { KnowledgeEntry } from '../../../../core/domain/knowledge-types'
-import type { Relationship } from '../../../../core/domain/task-types'
+import type { Relationship, Task } from '../../../../core/domain/task-types'
 import type { CodeRefRow, TouchesEdge } from '../../../../core/domain/code-ref-types'
-import type { CeoView, DevView } from '../../../../core/domain/services/feature-projection'
+import type {
+  CeoView,
+  DevView,
+  TesterView
+} from '../../../../core/domain/services/feature-projection'
 
 const FEATURE_BODY = `## Description
 
@@ -21,12 +25,36 @@ Hold until upstream capture work lands and the FE owner accepts v1.
 
 const GOTCHA_BODY = `## Trigger
 
-You are about to ship the Store column.
+Crawler fills seller_name for only 26% of rows.
+
+## Context
+
+Verify both empty and populated seller rows render correctly.
 
 ## Resolution
 
 Hold delivery until seller name is captured.
 `
+
+function taskRow(overrides: Partial<Task> = {}): Task {
+  return {
+    id: 'TASK-0',
+    projectId: 'pim',
+    parentTaskId: null,
+    title: 'task',
+    status: 'TODO',
+    priority: 'medium',
+    labels: [],
+    dueDate: null,
+    pinned: false,
+    filePath: null,
+    body: null,
+    blockedBy: [],
+    createdAt: '2026-05-29',
+    updatedAt: '2026-05-29',
+    ...overrides
+  }
+}
 
 function featureEntry(): KnowledgeEntry {
   return {
@@ -78,6 +106,7 @@ interface FakeData {
   edges: Relationship[]
   touches: Record<string, TouchesEdge[]>
   codeRefs: Record<string, CodeRefRow>
+  tasks: Record<string, Task>
 }
 
 function makeDeps(data: FakeData): FeatureProjectionDeps {
@@ -92,7 +121,18 @@ function makeDeps(data: FakeData): FeatureProjectionDeps {
       data.edges.filter((e) => e.toId === id && (!type || e.type === type)),
     getTouchesForTask: async (taskId: string) => data.touches[taskId] ?? [],
     getCodeRef: async (slug: string) => data.codeRefs[slug] ?? null,
+    getTask: async (id: string) => data.tasks[id] ?? null,
     // unused by the builder
+    createTask: notImpl,
+    updateTask: notImpl,
+    deleteTask: notImpl,
+    findTasks: notImpl,
+    getSubtasks: notImpl,
+    getPinnedTasks: notImpl,
+    getDueTasks: notImpl,
+    addDependency: notImpl,
+    removeDependency: notImpl,
+    getDependencies: notImpl,
     createKnowledge: notImpl,
     registerExistingKnowledge: notImpl,
     listKnowledge: notImpl,
@@ -152,6 +192,20 @@ function pilotData(): FakeData {
         createdAt: '2026-05-29',
         lastVerifiedAt: '2026-05-29'
       }
+    },
+    tasks: {
+      'TASK-909': taskRow({
+        id: 'TASK-909',
+        title: 'BE: expose seller_name in product list response',
+        status: 'DONE',
+        body: '## Acceptance\n\n- [x] Response carries seller_name\n- [x] Null when not crawled\n'
+      }),
+      'TASK-914': taskRow({
+        id: 'TASK-914',
+        title: 'FE: add Source column to crawler list',
+        status: 'DONE',
+        body: '## Acceptance\n\n- [ ] Source column renders for every row\n'
+      })
     }
   }
 }
@@ -201,5 +255,28 @@ describe('buildFeatureProjection', () => {
     expect(entity?.symbol).toBe('Ichiba.Pim.Domain.Product')
     expect(bundle.recall).toHaveLength(1)
     expect(bundle.honesty.used).toContain('code-refs')
+  })
+
+  it('tester bundle: AC collated per realized task, edge case from gotcha, regression = DONE tasks', async () => {
+    const bundle = await buildFeatureProjection(makeDeps(pilotData()), 'feature-x', 'tester')
+    const view = bundle.view as TesterView
+
+    // AC collated from each realized task (REALIZES → getTask → findAcItems).
+    expect(view.acceptanceCriteria.map((t) => t.taskId)).toEqual(['TASK-909', 'TASK-914'])
+    expect(view.acceptanceCriteria[0].acItems).toEqual([
+      'Response carries seller_name',
+      'Null when not crawled'
+    ])
+
+    // Edge case derived from gotcha trigger (26%) + context (empty/populated rows).
+    expect(view.edgeCases).toHaveLength(1)
+    expect(view.edgeCases[0]).toContain('26%')
+    expect(view.edgeCases[0]).toContain('empty and populated')
+
+    // Regression scope = shipped (DONE) realized tasks, incl. the FE Source column.
+    expect(view.regressionScope).toContain('FE: add Source column to crawler list')
+    expect(bundle.honesty.used).toEqual(
+      expect.arrayContaining(['acceptance-criteria', 'edge-cases', 'regression-scope'])
+    )
   })
 })
