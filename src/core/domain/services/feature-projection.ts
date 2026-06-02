@@ -7,17 +7,28 @@ import type { TouchesRelation } from '../code-ref-types'
 // the deterministic guards that make role bleed (M3) and effort-band leakage
 // (M4) structurally impossible. No DB, no fs — fully unit-testable.
 
-export type ProjectionRole = 'ceo-po' | 'dev'
+export type ProjectionRole = 'ceo-po' | 'dev' | 'tester'
 
-export const PROJECTION_ROLES: readonly ProjectionRole[] = ['ceo-po', 'dev']
+export const PROJECTION_ROLES: readonly ProjectionRole[] = ['ceo-po', 'dev', 'tester']
 
 // A gotcha surfaced via the ABOUT edge. CEO sees title only (business voice);
-// dev sees the full structured fields (symbols/SQL allowed).
+// dev sees the full structured fields (symbols/SQL allowed); tester derives
+// edge cases from `trigger` + `context` (TASK-995).
 export interface GotchaSummary {
   slug: string
   title: string
   trigger?: string
+  context?: string
   resolution?: string
+}
+
+// One realized task's acceptance criteria, collated for the tester view
+// (REALIZES edge → getTask → findAcItems). Tester-only.
+export interface RealizedTaskAc {
+  taskId: string
+  title: string
+  status: string
+  acItems: string[]
 }
 
 // A code anchor resolved through REALIZES → TOUCHES → code_ref, carrying the
@@ -43,6 +54,7 @@ export interface FeatureProjectionInput {
   gotchas: GotchaSummary[] // ABOUT edges (computed once, sliced per role)
   codeRefs: CodeRefPointer[] // dev only: REALIZES → TOUCHES → code_ref
   realizesTasksHaveTouches: boolean // true if any REALIZES task has ≥1 TOUCHES edge
+  realizesTasks: RealizedTaskAc[] // tester only: REALIZES → task AC, collated
   isStale: boolean
 }
 
@@ -63,6 +75,16 @@ export interface DevView {
   breakingChangeNote: string | null
 }
 
+export interface TesterView {
+  // AC from each realized task, collated + attributed (not a flat dump).
+  acceptanceCriteria: RealizedTaskAc[]
+  // One tester-actionable line per gotcha, derived from trigger + context.
+  edgeCases: string[]
+  // Titles of realized tasks already shipped (status DONE) — regression surface
+  // a tester must verify still works.
+  regressionScope: string[]
+}
+
 export interface Honesty {
   used: string[]
   lacked: string[]
@@ -74,7 +96,7 @@ export type SliceAnswer = 'yes' | 'partial' | 'no'
 export interface FeatureProjectionBundle {
   featureId: string
   role: ProjectionRole
-  view: CeoView | DevView
+  view: CeoView | DevView | TesterView
   recall: GotchaSummary[] // gotchas surfaced BEFORE the first question (M2)
   honesty: Honesty
 }
@@ -95,6 +117,19 @@ const DAY_NUMBER_RE = /\b\d+(?:\s*[-–]\s*\d+)?\s*(?:d|days?|hrs?|hours?|h|wks?
 const FILE_PATH_RE = /\b[\w/\\.-]+\.(?:cs|ts|tsx|js|mjs|sql|md)\b/i
 const DOTTED_SYMBOL_RE = /\b[A-Z][A-Za-z0-9]+(?:\.[A-Z][A-Za-z0-9]+){2,}\b/
 const SQL_RE = /\b(?:SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|JOIN|jsonb)\b/
+
+// M3 (tester): a DEPLOYMENT date — an ISO date adjacent (within a short window,
+// either order) to a deploy/ship/release verb. This is the CEO/PO release-tracking
+// dimension; it must not leak into a behavioral tester answer. Deliberately
+// narrow: a bare diagnostic date ("data inspection on dev DB (2026-05-22)") is
+// legitimate technical context a tester needs, NOT a deployment date, so it
+// passes. Task IDs (TASK-917) and bare years never match (no full YYYY-MM-DD).
+const DEPLOY_VERB = 'deploy(?:ed|ment)?|releas(?:e|ed|es)|ship(?:ped|s)?|rollout|roll(?:ed)? ?out|launch(?:ed)?|go[- ]?live'
+const ISO_DATE = '\\d{4}-\\d{2}-\\d{2}(?:[T ]\\d{2}:\\d{2})?'
+const DEPLOY_DATE_RE = new RegExp(
+  `(?:\\b(?:${DEPLOY_VERB})\\b[^.\\n]{0,30}?${ISO_DATE})|(?:${ISO_DATE}[^.\\n]{0,20}?\\b(?:${DEPLOY_VERB})\\b)`,
+  'i'
+)
 
 export function assertNoNumberOfDays(label: string, ...texts: Array<string | null>): void {
   for (const text of texts) {
@@ -127,6 +162,28 @@ export function assertHasCodeRefs(label: string, view: DevView, expectRefs: bool
     throw new RoleBleedError(
       `${label}: role bleed (M3) — dev answer missing code_refs though REALIZES tasks TOUCH code`
     )
+  }
+}
+
+// M3 (tester): a tester answer is behavioral — no dotted Namespace.Class.Method
+// symbols. File paths are allowed (a tester needs to know which areas to exercise),
+// so this is narrower than assertNoCodeBleed by design (TASK-995 AC #5).
+export function assertNoSymbolBleed(label: string, ...texts: Array<string | null>): void {
+  for (const text of texts) {
+    if (!text) continue
+    const sym = text.match(DOTTED_SYMBOL_RE)
+    if (sym) throw new RoleBleedError(`${label}: role bleed (M3) — dotted symbol "${sym[0]}"`)
+  }
+}
+
+// M3 (tester): no deployment/release date leaks into a behavioral answer.
+export function assertNoDeploymentDate(label: string, ...texts: Array<string | null>): void {
+  for (const text of texts) {
+    if (!text) continue
+    const m = text.match(DEPLOY_DATE_RE)
+    if (m) {
+      throw new RoleBleedError(`${label}: role bleed (M3) — deployment date "${m[0]}"`)
+    }
   }
 }
 
@@ -164,6 +221,24 @@ function projectDev(input: FeatureProjectionInput): DevView {
   }
 }
 
+// Derive one tester-actionable edge case per gotcha from its trigger + context.
+// Falls back gracefully when either field is absent so any gotcha yields a line
+// (AC #1: useful answer for any feature with ≥1 gotcha).
+function deriveEdgeCase(g: GotchaSummary): string {
+  const detail = [g.trigger, g.context].filter((s) => s && s.trim().length > 0).join(' — ')
+  return detail ? `${g.title}: ${detail}` : g.title
+}
+
+function projectTester(input: FeatureProjectionInput): TesterView {
+  return {
+    acceptanceCriteria: input.realizesTasks,
+    edgeCases: input.gotchas.map(deriveEdgeCase),
+    regressionScope: input.realizesTasks
+      .filter((t) => t.status === 'DONE')
+      .map((t) => t.title)
+  }
+}
+
 function computeHonesty(input: FeatureProjectionInput, role: ProjectionRole): Honesty {
   const used: string[] = []
   const lacked: string[] = []
@@ -188,6 +263,15 @@ function computeHonesty(input: FeatureProjectionInput, role: ProjectionRole): Ho
     else if (input.realizesTasksHaveTouches) lacked.push('code-refs')
   }
 
+  if (role === 'tester') {
+    if (input.realizesTasks.some((t) => t.acItems.length > 0)) used.push('acceptance-criteria')
+    else lacked.push('acceptance-criteria')
+    if (input.gotchas.length > 0) used.push('edge-cases')
+    else lacked.push('edge-cases')
+    if (input.realizesTasks.some((t) => t.status === 'DONE')) used.push('regression-scope')
+    else lacked.push('regression-scope')
+  }
+
   if (input.isStale) lacked.push('stale-refs')
 
   return { used, lacked }
@@ -203,6 +287,19 @@ export function projectFeature(
     const view = projectCeo(input)
     assertNoCodeBleed('ceo-po', view.description, ...view.blockers.map((b) => b.title))
     assertNoNumberOfDays('ceo-po', view.description, view.effortBand, ...view.blockers.map((b) => b.title))
+    return { featureId: input.featureId, role, view, recall: input.gotchas, honesty }
+  }
+
+  if (role === 'tester') {
+    const view = projectTester(input)
+    // Guard the projection's DERIVED surfaces (edge cases, regression scope, task
+    // titles) — these are where dev symbols or release dates would bleed in via
+    // our derivation logic. Verbatim AC items are the tester's source material
+    // (AC #2/#4): a date or symbol the task author wrote into their own AC is
+    // faithful relay, not cross-role bleed, so it passes through untouched.
+    const derived = [...view.edgeCases, ...view.regressionScope, ...view.acceptanceCriteria.map((t) => t.title)]
+    assertNoSymbolBleed('tester', ...derived)
+    assertNoDeploymentDate('tester', ...derived)
     return { featureId: input.featureId, role, view, recall: input.gotchas, honesty }
   }
 

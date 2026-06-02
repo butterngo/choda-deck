@@ -1,23 +1,28 @@
 import type { KnowledgeOperations } from '../../../core/domain/interfaces/knowledge-operations.interface'
 import type { RelationshipOperations } from '../../../core/domain/interfaces/relationship-repository.interface'
 import type { CodeRefOperations } from '../../../core/domain/interfaces/code-ref-operations.interface'
+import type { TaskOperations } from '../../../core/domain/interfaces/task-repository.interface'
 import { splitLines } from '../../../core/utils/lines'
+import { findAcItems } from '../../../core/domain/lifecycle/ac-check'
 import {
   projectFeature,
   type CodeRefPointer,
   type FeatureProjectionBundle,
   type FeatureProjectionInput,
   type GotchaSummary,
-  type ProjectionRole
+  type ProjectionRole,
+  type RealizedTaskAc
 } from '../../../core/domain/services/feature-projection'
 
-// ADR-NNN Pillar 5 (TASK-994). I/O layer: gather the feature's graph slice once
-// from the three first-class repos, then hand it to the pure projectFeature().
-// Mirrors project-context-builder.ts (builder composes a typed bundle from
-// repos; thin MCP tool wraps it).
+// ADR-NNN Pillar 5 (TASK-994, TASK-995). I/O layer: gather the feature's graph
+// slice once from the first-class repos, then hand it to the pure
+// projectFeature(). Mirrors project-context-builder.ts (builder composes a typed
+// bundle from repos; thin MCP tool wraps it). TaskOperations is the tester role's
+// AC source (REALIZES → getTask → findAcItems).
 export type FeatureProjectionDeps = KnowledgeOperations &
   RelationshipOperations &
-  CodeRefOperations
+  CodeRefOperations &
+  TaskOperations
 
 export class FeatureNotFoundError extends Error {
   constructor(featureId: string) {
@@ -66,10 +71,31 @@ async function gatherGotchas(
       slug: entry.slug,
       title: entry.frontmatter.title,
       trigger: sections['trigger'],
+      context: sections['context'],
       resolution: sections['resolution']
     })
   }
   return gotchas
+}
+
+// Tester role: collate each REALIZES task's acceptance criteria. A missing task
+// (dangling edge) is skipped rather than fabricated.
+async function gatherRealizesTasks(
+  svc: FeatureProjectionDeps,
+  taskIds: string[]
+): Promise<RealizedTaskAc[]> {
+  const tasks: RealizedTaskAc[] = []
+  for (const taskId of taskIds) {
+    const task = await svc.getTask(taskId)
+    if (!task) continue
+    tasks.push({
+      taskId,
+      title: task.title,
+      status: task.status,
+      acItems: findAcItems(task.body ?? '').map((i) => i.text)
+    })
+  }
+  return tasks
 }
 
 async function gatherCodeRefs(
@@ -110,8 +136,11 @@ export async function buildFeatureProjection(
   const gotchas = await gatherGotchas(svc, featureId)
 
   // Dev needs the code_ref pointers; CEO never does (and must not — M3). Skip the
-  // TOUCHES walk entirely for CEO.
+  // TOUCHES walk entirely for CEO. Tester needs the realized-task AC instead, so
+  // only it pays the getTask walk.
   const dev = role === 'dev' ? await gatherCodeRefs(svc, realizesTaskIds) : null
+  const realizesTasks =
+    role === 'tester' ? await gatherRealizesTasks(svc, realizesTaskIds) : []
 
   const input: FeatureProjectionInput = {
     featureId,
@@ -124,6 +153,7 @@ export async function buildFeatureProjection(
     gotchas,
     codeRefs: dev?.pointers ?? [],
     realizesTasksHaveTouches: dev?.hasTouches ?? false,
+    realizesTasks,
     isStale: entry.isStale
   }
 

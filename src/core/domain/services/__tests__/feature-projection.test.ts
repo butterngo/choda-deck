@@ -3,9 +3,12 @@ import {
   assertNoNumberOfDays,
   assertNoCodeBleed,
   assertHasCodeRefs,
+  assertNoSymbolBleed,
+  assertNoDeploymentDate,
   projectFeature,
   RoleBleedError,
   type DevView,
+  type TesterView,
   type FeatureProjectionInput
 } from '../feature-projection'
 
@@ -34,6 +37,10 @@ function makeInput(overrides: Partial<FeatureProjectionInput> = {}): FeatureProj
       }
     ],
     realizesTasksHaveTouches: true,
+    realizesTasks: [
+      { taskId: 'TASK-100', title: 'Add Store column to list', status: 'DONE', acItems: ['Column renders for every row'] },
+      { taskId: 'TASK-101', title: 'Add store filter dropdown', status: 'TODO', acItems: ['Filter narrows the list'] }
+    ],
     isStale: false,
     ...overrides
   }
@@ -170,5 +177,110 @@ describe('projectFeature dev', () => {
   it('flags stale refs in honesty', () => {
     const bundle = projectFeature(makeInput({ isStale: true }), 'dev')
     expect(bundle.honesty.lacked).toContain('stale-refs')
+  })
+})
+
+describe('assertNoSymbolBleed (M3 tester)', () => {
+  it('passes on a file path (tester needs to know which area to exercise)', () => {
+    expect(() => assertNoSymbolBleed('tester', 'verify the Source column in list-page.tsx')).not.toThrow()
+  })
+
+  it('catches a dotted Namespace.Class.Method symbol', () => {
+    expect(() => assertNoSymbolBleed('tester', 'calls Ichiba.Pim.Domain.Product')).toThrow(RoleBleedError)
+  })
+})
+
+describe('assertNoDeploymentDate (M3 tester)', () => {
+  it('passes on a task ID', () => {
+    expect(() => assertNoDeploymentDate('tester', 'shipped in TASK-917')).not.toThrow()
+  })
+
+  it('catches an ISO date', () => {
+    expect(() => assertNoDeploymentDate('tester', 'deployed 2026-05-13 to qc')).toThrow(RoleBleedError)
+  })
+
+  it('catches an ISO datetime', () => {
+    expect(() => assertNoDeploymentDate('tester', 'released 2026-05-13T09:18')).toThrow(RoleBleedError)
+  })
+})
+
+describe('projectFeature tester', () => {
+  it('collates AC from each realized task, attributed', () => {
+    const bundle = projectFeature(makeInput(), 'tester')
+    const view = bundle.view as TesterView
+    expect(view.acceptanceCriteria).toHaveLength(2)
+    expect(view.acceptanceCriteria.map((t) => t.taskId)).toEqual(['TASK-100', 'TASK-101'])
+    expect(view.acceptanceCriteria[0].acItems).toEqual(['Column renders for every row'])
+  })
+
+  it('derives edge cases from gotcha trigger + context', () => {
+    const input = makeInput({
+      gotchas: [
+        {
+          slug: 'gotcha-seller-name-not-captured',
+          title: 'seller name not captured',
+          trigger: 'crawler fills seller_name for only 26% of rows',
+          context: 'verify both empty and populated rows'
+        }
+      ]
+    })
+    const view = projectFeature(input, 'tester').view as TesterView
+    expect(view.edgeCases).toHaveLength(1)
+    expect(view.edgeCases[0]).toContain('seller name not captured')
+    expect(view.edgeCases[0]).toContain('26%')
+    expect(view.edgeCases[0]).toContain('both empty and populated rows')
+  })
+
+  it('still yields an edge-case line when a gotcha has no trigger/context', () => {
+    const input = makeInput({ gotchas: [{ slug: 'g', title: 'bare gotcha' }] })
+    const view = projectFeature(input, 'tester').view as TesterView
+    expect(view.edgeCases).toEqual(['bare gotcha'])
+  })
+
+  it('regression scope = only shipped (DONE) realized tasks', () => {
+    const view = projectFeature(makeInput(), 'tester').view as TesterView
+    expect(view.regressionScope).toEqual(['Add Store column to list'])
+  })
+
+  it('relays a dotted symbol verbatim inside an AC item (source material, not bleed)', () => {
+    const input = makeInput({
+      realizesTasks: [
+        { taskId: 'TASK-1', title: 'clean title', status: 'DONE', acItems: ['calls Ichiba.Pim.Domain.Product'] }
+      ]
+    })
+    const view = projectFeature(input, 'tester').view as TesterView
+    expect(view.acceptanceCriteria[0].acItems[0]).toContain('Ichiba.Pim.Domain.Product')
+  })
+
+  it('throws symbol bleed when a realized TASK TITLE carries a dotted symbol', () => {
+    const input = makeInput({
+      realizesTasks: [
+        { taskId: 'TASK-1', title: 'refactor Ichiba.Pim.Domain.Product', status: 'DONE', acItems: [] }
+      ]
+    })
+    expect(() => projectFeature(input, 'tester')).toThrow(RoleBleedError)
+  })
+
+  it('throws deployment-date bleed when an edge case carries an ISO date', () => {
+    const input = makeInput({
+      gotchas: [{ slug: 'g', title: 'g', trigger: 'regressed after 2026-05-13 deploy' }]
+    })
+    expect(() => projectFeature(input, 'tester')).toThrow(RoleBleedError)
+  })
+
+  it('reports honesty used/lacked for the tester slices', () => {
+    const bundle = projectFeature(makeInput(), 'tester')
+    expect(bundle.honesty.used).toEqual(
+      expect.arrayContaining(['acceptance-criteria', 'edge-cases', 'regression-scope'])
+    )
+  })
+
+  it('lacks regression-scope when no realized task is DONE', () => {
+    const input = makeInput({
+      realizesTasks: [{ taskId: 'TASK-1', title: 't', status: 'TODO', acItems: [] }]
+    })
+    const bundle = projectFeature(input, 'tester')
+    expect(bundle.honesty.lacked).toContain('regression-scope')
+    expect((bundle.view as TesterView).regressionScope).toEqual([])
   })
 })
