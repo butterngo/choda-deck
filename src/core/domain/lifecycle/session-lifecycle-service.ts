@@ -66,7 +66,8 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
         workspaceId: input.workspaceId,
         taskId: input.taskId,
         startedAt: now(),
-        status: 'active'
+        status: 'active',
+        ccSessionId: input.ccSessionId
       })
 
       if (input.taskId) {

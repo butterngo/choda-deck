@@ -12,6 +12,14 @@ export interface GitOps {
   countCommitsSince(cwd: string, sinceSha: string, filePath: string): number
   isAncestor(cwd: string, sha: string): boolean
   filesInCommit(cwd: string, sha: string): string[]
+  /**
+   * TASK-985 (ADR-031 Tier 1) — commits authored in a time window, newest-first,
+   * each formatted `"<short-sha> <subject>"`. When `grepTaskId` is set, restricts
+   * to commits whose subject/body mentions that task id — disambiguates parallel
+   * sessions sharing a cwd (ADR-009 allows N active sessions per workspace).
+   * Returns [] on any git failure (a missing repo must never break session_end).
+   */
+  commitsInWindow(cwd: string, sinceIso: string, grepTaskId?: string): string[]
 }
 
 export class GitOpsImpl implements GitOps {
@@ -44,6 +52,23 @@ export class GitOpsImpl implements GitOps {
       .split(/\r?\n/)
       .map((s) => s.trim())
       .filter((s) => s.length > 0)
+  }
+
+  commitsInWindow(cwd: string, sinceIso: string, grepTaskId?: string): string[] {
+    const args = ['log', `--since=${sinceIso}`, '--format=%h %s']
+    if (grepTaskId) args.push(`--grep=${grepTaskId}`)
+    try {
+      const out = runGit(cwd, args).trim()
+      if (out === '') return []
+      return out
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+    } catch {
+      // Missing repo / detached worktree / no commits — derivation is best-effort,
+      // never fatal to session close. AI-supplied commits are unaffected.
+      return []
+    }
   }
 }
 

@@ -20,6 +20,7 @@ import {
   suggestKnowledge,
   type SuggestedKnowledge
 } from '../../../core/domain/knowledge-suggestions'
+import { TranscriptOpsImpl, type TranscriptOps } from '../../../core/domain/session-transcript'
 
 // Workspaces support N parallel active sessions (TASK-526).
 // Status set: 'active' | 'completed' — no auto-abandon on session_start.
@@ -79,9 +80,19 @@ const sessionSummarySchema = z.object({
 
 const handoffInputSchema = {
   sessionId: z.string(),
-  commits: z.array(z.string()).optional(),
+  commits: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Format: "<short-sha> <subject>". Optional (ADR-031) — when omitted, the server derives commits from the session time window (filtered by the bound task id). Any value you provide wins; derivation only fills the gap.'
+    ),
   decisions: z.array(z.string()).optional(),
-  resumePoint: z.string(),
+  resumePoint: z
+    .string()
+    .optional()
+    .describe(
+      'One sentence: where you stopped + what to pick up next. Optional (ADR-031) — when omitted, the server derives it from the last text-bearing assistant turn in the session transcript. Best-effort; any value you provide wins.'
+    ),
   looseEnds: z.array(z.string()).optional(),
   notes: z.string().optional(),
   testResults: z
@@ -111,7 +122,12 @@ async function tryLifecycle<T>(
   }
 }
 
-export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git: GitOps = new GitOpsImpl()): void => {
+export const register = (
+  server: InstrumentedServer,
+  svc: SessionToolsDeps,
+  git: GitOps = new GitOpsImpl(),
+  transcript: TranscriptOps = new TranscriptOpsImpl()
+): void => {
   server.registerTool(
     'session_start',
     {
@@ -129,10 +145,16 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
           .optional()
           .describe(
             'Current working directory — used to auto-detect workspaceId when not passed explicitly'
+          ),
+        ccSessionId: z
+          .string()
+          .optional()
+          .describe(
+            'Claude Code session UUID (the transcript .jsonl filename under ~/.claude/projects/). Pass it so session_end can derive resumePoint from the transcript (ADR-031). Optional — omitted falls back to heuristic correlation.'
           )
       }
     },
-    async ({ projectId, taskId, workspaceId, cwd }) =>
+    async ({ projectId, taskId, workspaceId, cwd, ccSessionId }) =>
       tryLifecycle(async () => {
         const project = await svc.getProject(projectId)
         if (!project) throw new Error(`Project ${projectId} not found`)
@@ -148,7 +170,8 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
           await svc.startSession({
             projectId,
             taskId,
-            workspaceId: resolvedWorkspaceId
+            workspaceId: resolvedWorkspaceId,
+            ccSessionId
           })
         const lastSession = await loadLastSession(svc, projectId, resolvedWorkspaceId)
         const bundle = await buildProjectContext(svc, projectId, 'summary')
@@ -280,10 +303,12 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
     },
     async (input) =>
       tryLifecycle(async () => {
+        const commits = await resolveCommits(svc, git, input.sessionId, input.commits)
+        const resumePoint = await resolveResumePoint(svc, transcript, input.sessionId, input.resumePoint)
         const handoff: SessionHandoff = {
-          commits: input.commits,
+          commits,
           decisions: input.decisions,
-          resumePoint: input.resumePoint,
+          resumePoint,
           looseEnds: input.looseEnds,
           tasksUpdated: [],
           testResults: input.testResults
@@ -308,6 +333,51 @@ export const register = (server: InstrumentedServer, svc: SessionToolsDeps, git:
         }
       })
   )
+}
+
+// TASK-985 (ADR-031 Tier 1) — auto-derive handoff.commits from the session window
+// when the caller omits them. AI-supplied commits always win (ADR-029 merge rule);
+// derivation only fills the gap. Runs here in the async handler because git is async
+// I/O — the sync endSession transaction stays pure.
+export async function resolveCommits(
+  svc: SessionOperations & ProjectOperations,
+  git: GitOps,
+  sessionId: string,
+  provided: string[] | undefined
+): Promise<string[] | undefined> {
+  if (provided && provided.length > 0) return provided
+  const session = await svc.getSession(sessionId)
+  if (!session) return provided
+  const project = await svc.getProject(session.projectId)
+  const cwd = project?.cwd
+  if (!cwd) return provided
+  const derived = git.commitsInWindow(cwd, session.startedAt, session.taskId ?? undefined)
+  return derived.length > 0 ? derived : provided
+}
+
+// TASK-985 (ADR-031 Tier 2) — auto-derive handoff.resumePoint from the session
+// transcript when the caller omits it. AI-supplied value always wins; derivation
+// only fills the gap. Best-effort: a transcript miss leaves resumePoint undefined
+// (today's behaviour), never a wrong value.
+export async function resolveResumePoint(
+  svc: SessionOperations & ProjectOperations,
+  transcript: TranscriptOps,
+  sessionId: string,
+  provided: string | undefined
+): Promise<string | undefined> {
+  if (provided && provided.trim()) return provided
+  const session = await svc.getSession(sessionId)
+  if (!session) return provided
+  const project = await svc.getProject(session.projectId)
+  const cwd = project?.cwd
+  if (!cwd) return provided
+  const derived = transcript.readResumePoint({
+    cwd,
+    ccSessionId: session.ccSessionId,
+    startedAt: session.startedAt,
+    endedAt: session.endedAt
+  })
+  return derived ?? provided
 }
 
 export async function buildSuggestedKnowledge(
