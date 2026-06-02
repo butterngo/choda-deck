@@ -2,177 +2,195 @@
 
 ## Overview
 
-Electron-based desktop application with three standard processes — main (Node.js), preload (context bridge), renderer (React). The unique piece is the PTY layer: each project tab hosts a live `node-pty` process spawned in that project's cwd, piped bidirectionally through IPC into an `xterm.js` instance in the renderer. Session state lives in the main process (process handles + IPC event streams); the renderer only holds the visual terminal and forwards user input.
+Choda Deck is a **pure Node MCP server** — no UI, no Electron, no PTY, no renderer. It is a
+SQLite-backed task / session / conversation / inbox / knowledge orchestration layer exposed to
+Claude Code over the Model Context Protocol. One TypeScript binary serves two transports (stdio for
+local Claude Code, HTTP for remote / k8s) and two storage backends (SQLite locally, an optional
+narrowed Postgres facade for the remote surface).
 
-Architecture style: **process-isolated, IPC-mediated, session-as-entity**. The unit of state is a `Session` (one pty + one xterm instance + one project cwd).
+Architecture style: **single-source-of-truth datastore + thin MCP adapter**. SQLite
+(`better-sqlite3`, direct file access — never an in-memory copy) is the only authoritative state;
+the MCP layer is a stateless translation of tool calls into repository operations. The unit of work
+is a **task**; the unit of activity is a **session** bound to a task + workspace.
+
+> **Historical note.** Earlier revisions of this document described an Electron desktop app
+> (main/preload/renderer processes, `node-pty` + `xterm.js`, `pty:*` IPC) and a Neo4j graph layer
+> (`vault-parser`, `neo4j-import`, `Neo4jGraphService`). **All of that is gone** — `src/main/`,
+> `src/preload/`, `src/renderer/`, `src/graph/`, `electron.vite.config.ts`, and `scripts/spike-pty.mjs`
+> no longer exist. The graph now lives inside SQLite (see [Knowledge-graph model](#knowledge-graph-model)).
 
 ## Layers / Components
 
-| Component                              | Role                                                                                                          |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `src/main/index.ts`                    | Main process. Electron lifecycle, BrowserWindow, PTY session map, IPC handlers                                |
-| `src/preload/index.ts`                 | Preload script. Exposes `window.api.pty.{spawn,input,resize,kill,onData,onExit}` via contextBridge            |
-| `src/renderer/src/App.tsx`             | Renderer orchestrator. Holds project list + active ID, keyboard shortcuts                                     |
-| `src/renderer/src/Sidebar.tsx`         | Project sidebar. Add/remove projects, help overlay                                                            |
-| `src/renderer/src/TerminalView.tsx`    | Per-project terminal. xterm.js + FitAddon + restart banner                                                    |
-| `src/graph/graph-types.ts`             | Graph types: NodeType, RelationType, GraphNode, GraphEdge, buildUid()                                         |
-| `src/graph/graph-service.interface.ts` | GraphService interface — provider-agnostic contract                                                           |
-| `src/graph/neo4j-graph-service.ts`     | Neo4j implementation of GraphService                                                                          |
-| `src/graph/vault-parser.ts`            | Parse vault markdown → JSON (nodes + edges)                                                                   |
-| `src/graph/neo4j-import.ts`            | Import vault-graph.json → Neo4j (idempotent MERGE)                                                            |
-| `src/graph/graph-cli.ts`               | CLI for graph queries + workspace management                                                                  |
-| `src/graph/mcp-graph-server.ts`        | MCP server — 5 graph tools for Claude sessions                                                                |
-| `scripts/spike-pty.mjs`                | Plain-Node PTY validation harness (no Electron) — diagnostic tool for native-module / PTY issues              |
-| `scripts/dev.mjs`                      | Dev wrapper that unsets `ELECTRON_RUN_AS_NODE` before invoking `electron-vite dev` (fix for commit `7187791`) |
-| `electron.vite.config.ts`              | Build pipeline config for main/preload/renderer                                                               |
+| Component | Role |
+| --- | --- |
+| `src/adapters/mcp/server-bootstrap.ts` | Entry point. `startMcpServer()` resolves data paths + backend, builds the service, selects transport via `MCP_TRANSPORT`. Defines `REMOTE_TOOL_ALLOWLIST`. |
+| `src/adapters/mcp/server.ts` | Deprecated alias kept for backward-compatible imports. |
+| `src/adapters/mcp/instrumented-server.ts` | Tool-registration facade. Wraps the MCP server with telemetry and enforces the per-transport tool allowlist. |
+| `src/adapters/mcp/http-transport.ts` | Streamable HTTP transport (stateless). Routes `/mcp`, `/healthz`, and the OAuth endpoints. |
+| `src/adapters/mcp/oauth/` | OAuth 2.0 DCR endpoints (`discovery.ts`, `register.ts`, `authorize.ts`, `token.ts`, `pkce.ts`, `consent-template.ts`) — see ADR-027. |
+| `src/adapters/mcp/mcp-tools/` | Per-domain MCP tool handlers (project, task, session, inbox, conversation, knowledge, code-ref, graph, memory, backup, cleanup, stats). |
+| `src/core/domain/task-service-factory.ts` | Single construction point. Picks the backend (`CHODA_BACKEND` = `sqlite` \| `postgres`) and composes it. |
+| `src/core/domain/sqlite-task-service.ts` | The SQLite facade (top god-node). Implements the full `TaskService` interface by composing every per-domain repository. |
+| `src/core/domain/postgres-task-service.ts` | Narrow Postgres facade. Implements **only** `RemoteOperations` — the strict subset the HTTP allowlist needs (ADR-030). |
+| `src/core/domain/remote-operations.interface.ts` | The narrow port that bounds the HTTP/Postgres surface. |
+| `src/core/domain/repositories/` | One repository per table family (see [Data model](#data-model)). `schema.ts` holds the DDL (`initSchema`, `SCHEMA_VERSION`). |
+| `src/core/domain/lifecycle/` | Transactional lifecycle services (session, conversation, inbox, AC-check) — ADR-015. |
+| `src/core/domain/task-types.ts` | Pure type definitions, zero runtime deps — incl. the `RelationType` graph-edge enum. |
+| `src/core/paths.ts` | `resolveDataPaths()` / `resolveBackendConfig()` — single source for DB / artifacts / backups paths and backend selection. |
+| `src/core/backup-service.ts` | Daily SQLite snapshot + prune + restore (ADR-012). |
 
-## Key flows
+## Transports
 
-### Session spawn (first click on a project)
+The server supports two transports from one binary, selected at startup via `MCP_TRANSPORT`
+(default `stdio`). See **ADR-026** for the full rationale; operational env vars are tabulated in
+`CLAUDE.md` (§MCP Transport Modes).
 
-```
-Renderer click
-  → window.api.pty.spawn(id, cwd, cols, rows)
-  → ipcRenderer.invoke('pty:spawn', ...)
-  → main createPtySession(id, cwd, cols, rows, webContents)
-  → pty.spawn('claude.cmd', [], { cols, rows, cwd, env })
-  → sessions.set(id, ptyProcess)
-  → ptyProcess.onData → webContents.send(`pty:data:${id}`, data)
-  → renderer ipcRenderer.on(`pty:data:${id}`) → term.write(data)
-```
+### Stdio (default — local Claude Code)
 
-### User keystroke
+`StdioServerTransport` over stdin/stdout. **Full tool surface** — local trust contract, every
+domain tool registered. This is what `.claude.json` registrations use against the bundled
+`dist/mcp-server.cjs`.
 
-```
-xterm.onData(data)
-  → window.api.pty.input(id, data)
-  → ipcRenderer.send('pty:input', id, data)
-  → main sessions.get(id).write(data)
-  → claude stdin
-```
+### HTTP (remote / k8s)
 
-### Resize
+Streamable HTTP transport in **stateless** mode, bound to `MCP_HTTP_BIND:MCP_HTTP_PORT`
+(default `0.0.0.0:7337`).
 
-```
-ResizeObserver fires
-  → fitAddon.fit()
-  → term.cols / term.rows updated
-  → window.api.pty.resize(id, cols, rows)
-  → main sessions.get(id).resize(cols, rows)
-  → ConPTY SIGWINCH-equivalent
-```
+| Endpoint | Auth | Purpose |
+| --- | --- | --- |
+| `POST /mcp` | Bearer or OAuth | Tool invocations (JSON, 4 MB body cap) |
+| `GET /healthz` | none | k8s liveness/readiness — `{"ok":true}` |
+| `/.well-known/*`, `/register`, `/authorize`, `/token` | none | OAuth 2.0 DCR flow (ADR-027), active only when `MCP_OAUTH_MODE=1` |
 
-### Session exit
+**Narrowed surface.** HTTP exposes only the **6-tool read + capture allowlist**
+(`REMOTE_TOOL_ALLOWLIST` in `server-bootstrap.ts`): `project_list`, `task_list`, `task_context`,
+`inbox_list`, `inbox_get`, `inbox_add`. Non-allowlisted tools are not registered at all — they never
+appear in `tools/list` and return `-32602 Tool not found` if called by name. Auth is a static bearer
+(`MCP_HTTP_TOKEN`) by default, or OAuth 2.0 against the `oauth_*` tables when `MCP_OAUTH_MODE=1`.
 
-```
-pty onExit({ exitCode })
-  → webContents.send(`pty:exit:${id}`, exitCode)
-  → sessions.delete(id)
-  → renderer shows exited banner
-```
+## Backend split (ADR-030)
 
-### App quit
+| | Stdio | HTTP |
+| --- | --- | --- |
+| Backend | SQLite (`SqliteTaskService`) | SQLite **or** Postgres (`PostgresTaskService`) |
+| Surface | Full `TaskService` | Narrow `RemoteOperations` only |
+| Trust | Local | Network-exposed |
 
-```
-window-all-closed
-  → for each session: session.kill()
-  → sessions.clear()
-  → app.quit() (non-darwin)
-```
+`MCP_TRANSPORT=stdio` + `CHODA_BACKEND=postgres` is **rejected at boot** (`requireBackendForTransport`):
+the narrow PG facade is missing every stdio-only method, so the pairing would fail at first tool call.
 
-## Integration points
-
-| System                               | Direction     | Protocol                        | Purpose                                      |
-| ------------------------------------ | ------------- | ------------------------------- | -------------------------------------------- |
-| `claude.cmd` CLI                     | out (spawn)   | ConPTY on Windows, pty on POSIX | Interactive Claude Code session per project  |
-| Electron main ↔ renderer             | bidirectional | IPC via contextBridge           | `pty:*` channels for stream + control        |
-| OS filesystem                        | read          | fs (indirect via claude)        | Claude accesses project cwd                  |
-| `%APPDATA%/choda-deck/projects.json` | read (future) | JSON                            | User project list (V2 — MVP still hardcoded) |
+**Standing rule** — the PG surface = the remote allowlist's call graph + OAuth. Expanding the allowlist
+requires three coordinated edits in one PR: (1) add the tool to `REMOTE_TOOL_ALLOWLIST`, (2) add the
+methods it calls to `RemoteOperations`, (3) implement them on `PostgresTaskService` + any missing
+repos/migrations.
 
 ## Data model
 
-| Entity                           | Description                                                                      |
-| -------------------------------- | -------------------------------------------------------------------------------- |
-| `Session` (implicit)             | `{ id, cwd, pty, cols, rows }` held in `sessions: Map<string, pty.IPty>` in main |
-| `ProjectConfig` (preload type)   | `{ id, name, workspaces: WorkspaceConfig[] }` loaded from `projects.json`        |
-| `WorkspaceConfig` (preload type) | `{ id, label, cwd, shell? }` — per-project terminal config                       |
+SQLite is the single source of truth. DDL lives in `src/core/domain/repositories/schema.ts`
+(`initSchema`, `SCHEMA_VERSION`), applied on MCP-server boot. Standalone migration scripts that open
+the DB directly must self-apply their DDL — `initSchema` does not run from uncommitted `src/`.
 
-## IPC contract
+Each table family has a dedicated repository under `src/core/domain/repositories/`; the
+`SqliteTaskService` facade composes them (SRP — one repository owns one table family).
 
-Channel naming: `pty:<verb>` for commands, `pty:<verb>:<sessionId>` for per-session event streams.
+| Repository | Owns |
+| --- | --- |
+| `task-repository.ts` | Tasks — CRUD, dependencies, body content |
+| `inbox-repository.ts` | Inbox items — raw idea → triage pipeline |
+| `knowledge-repository.ts` | Knowledge entries (spike / decision / postmortem / learning / evaluation / feature / code_ref / gotcha) + refs |
+| `session-repository.ts` | Work sessions — lifecycle, handoff snapshots, checkpoints |
+| `session-event-repository.ts` | Append-only session activity log (crash recovery) |
+| `conversation-repository.ts` | Conversations — participants, messages, decisions, read-tracking |
+| `workspace-repository.ts` | Workspaces — project scope + cwd binding, soft-delete |
+| `project-repository.ts` | Projects |
+| `agent-memory-repository.ts` | Agent memories — scoped recall (ADR-023) |
+| `relationship-repository.ts` | Knowledge-graph edges (generic `relationships` table) |
+| `code-ref-repository.ts` | Code anchors + `task_code_refs` (TOUCHES) edges |
+| `document-repository.ts` | Documents (adr / guide / spec / note / research) |
+| `tag-repository.ts` | Tags |
+| `context-source-repository.ts` | Files/dirs to preload into a project's sessions |
+| `counter-repository.ts` | Global ID counters (TASK-NNN, INBOX-NNN — single-writer safe) |
 
-| Channel             | Kind   | Direction | Payload                                                                  |
-| ------------------- | ------ | --------- | ------------------------------------------------------------------------ |
-| `pty:spawn`         | invoke | R→M       | `(id, cwd, cols, rows)` → `{ ok, id }`                                   |
-| `pty:input`         | send   | R→M       | `(id, data: string)`                                                     |
-| `pty:resize`        | send   | R→M       | `(id, cols, rows)`                                                       |
-| `pty:kill`          | send   | R→M       | `(id)`                                                                   |
-| `pty:data:${id}`    | on     | M→R       | `data: string` (stream)                                                  |
-| `pty:exit:${id}`    | on     | M→R       | `exitCode: number`                                                       |
-| `vault:tree`        | invoke | R→M       | `(rootPath)` → `FileNode[]`                                              |
-| `vault:read`        | invoke | R→M       | `(filePath)` → `{ content, size, mtime }`                                |
-| `vault:search`      | invoke | R→M       | `(query, rootPath)` → `SearchResult[]`                                   |
-| `vault:resolve`     | invoke | R→M       | `(wikilink, rootPath)` → `string \| null`                                |
-| `vault:contentRoot` | invoke | R→M       | `()` → `string`                                                          |
-| `project:list`      | invoke | R→M       | `()` → `ProjectConfig[]`                                                 |
-| `project:add`       | invoke | R→M       | `(id, cwd)` → `{ ok, error?, project? }`                                 |
-| `project:remove`    | invoke | R→M       | `(id)` → `{ ok, error? }`                                                |
-| `inbox:list`        | invoke | R→M       | `(filter?: { projectId?, status? })` → `InboxItem[]`                     |
-| `inbox:get`         | invoke | R→M       | `(id)` → `{ item, conversations }`                                       |
-| `inbox:add`         | invoke | R→M       | `({ projectId?, content })` → `InboxItem`                                |
-| `inbox:update`      | invoke | R→M       | `(id, content)` → `{ ok, error?, item? }`                                |
-| `inbox:research`    | invoke | R→M       | `(id, researcher?)` → `{ ok, error?, conversationId?, status? }`         |
-| `inbox:ready`       | invoke | R→M       | `(id)` → `{ ok, error?, item? }`                                         |
-| `inbox:archive`     | invoke | R→M       | `(id, reason?)` → `InboxItem \| null`                                    |
-| `inbox:convert`     | invoke | R→M       | `(id, { title, priority?, labels?, body? })` → `{ ok, taskId?, error? }` |
-| `inbox:delete`      | invoke | R→M       | `(id)` → `{ ok, error? }`                                                |
+OAuth state (`oauth_clients`, `oauth_access_tokens`, `oauth_refresh_tokens`) and embedding storage
+(vector index, ADR-020) also live in the same DB.
 
-## Quality attributes
+## Knowledge-graph model
 
-| Attribute                     | How it is ensured                                                                                                                          |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------- | --------- | --------------------------------------------------- |
-| Responsiveness                | xterm.js renders direct on canvas; IPC batches data chunks; FitAddon debounce (50ms)                                                       |
-| Session persistence           | Sessions live in main process `Map`; xterm instances mounted once in renderer, never disposed on tab switch                                |
-| Graceful shutdown             | `window-all-closed` sends Ctrl+C, waits 2s, then force kills. Sessions cleaned up before `app.quit()`                                      |
-| Crash resilience              | Per-tab state machine `idle                                                                                                                | running | exited-ok | crashed`; banner + manual restart button on failure |
-| Cross-environment reliability | PATH augmented at startup with common CLI install dirs (npm global, homebrew, etc.)                                                        |
-| Security                      | `contextIsolation: true`, `sandbox: false` (required for preload Node APIs); renderer has no direct Node access, only `window.api` surface |
+The graph is **not** a separate store — it is two SQLite tables plus a query tool. This is the
+subject of the still-PROPOSED **ADR-NNN (unified knowledge graph)**, whose §6 open questions are
+being frozen by **TASK-999** before it gets a real number; treat the code as the source of truth
+until then.
 
-## Graph layer
+### Generic edges — `relationships` table
 
-Data flow:
+A single `(from_id, to_id, type)` table with **no `type` CHECK constraint** — adding a future edge
+type needs only a widening of the `RelationType` enum in `task-types.ts`, no DB migration. Current
+edge types (`task-types.ts:10-19`):
 
-```text
-vault (.md files)
-  → vault-parser.ts → vault-graph.json (nodes + edges)
-  → neo4j-import.ts → Neo4j (idempotent MERGE)
-  → Neo4jGraphService (implements GraphService interface)
-  → Consumers: CLI, MCP server, future UI
+- **Original task/tech edges:** `DEPENDS_ON`, `IMPLEMENTS`, `USES_TECH`, `DECIDED_BY`
+- **First-class graph edges (TASK-992):** `REALIZES` (task → feature), `ABOUT` (knowledge/gotcha → feature), `PINS` (task/feature → knowledge), `IN` (feature/gotcha → workspace), `INTEGRATES_WITH` (feature ↔ feature)
+
+### Attributed edges — `task_code_refs` table (TOUCHES, TASK-988)
+
+TOUCHES carries an attribute, so it lives in its own table rather than `relationships`:
+`(task_id, code_ref_slug, relation)` where `relation ∈ {modifies, reference}` — `modifies` = the task
+edits the anchor, `reference` = it reads it as a pattern. Code anchors (file + symbol + workspace
+identity, git-pinned) are owned by `code-ref-repository.ts`.
+
+### Query surface — `graph_edges`
+
+The `graph_edges` MCP tool (`src/adapters/mcp/mcp-tools/graph-tools.ts`) reads
+`RelationshipRepository` and returns `{ fromId, toId, type }` edges for a node, filterable by `type`
+and `direction` (`out` / `in` / `both`). **Stdio-only** — not in the HTTP allowlist.
+
+## Lifecycle services (ADR-015)
+
+Transactional coordinators in `src/core/domain/lifecycle/`, composed by the MCP tools — they own
+multi-step state transitions so individual tool handlers stay thin.
+
+| Service | Drives |
+| --- | --- |
+| `session-lifecycle-service.ts` | Session start / end / checkpoint / resume; task lock-out, workspace binding, status `TODO→IN-PROGRESS→DONE/CANCELLED`. Structured `session_end` summary (ADR-028). |
+| `conversation-lifecycle-service.ts` | Conversation open / decide / signoff; participant consensus, decision summaries. |
+| `inbox-lifecycle-service.ts` | Inbox triage `raw → researching → ready → converted`; links items to task IDs, auto-closes linked conversations. |
+| `ac-check.ts` | Acceptance-criteria checkbox flips — pure helpers (`flipAcCheckbox`, `findAcItem`), composed inside transactions (ADR-029 narrow bypass). |
+
+## Backup + data layout (ADR-012)
+
+`backup-service.ts` runs a daily atomic SQLite snapshot (`shouldRunDailyBackup` → `runBackup`),
+pruning to the 7 newest (`pruneOld`). Paths come from `resolveDataPaths()` under `CHODA_DATA_DIR`:
+
+```
+data/
+├── database/choda-deck.db
+├── artifacts/<sessionId>/
+└── backups/choda-deck-<date>.db
 ```
 
-Design: files = content store, Neo4j = relationship store. GraphService interface abstracts the backend — consumers code to interface, not implementation. SQLite backend can be added by implementing the same interface.
+`CHODA_DB_PATH` is still accepted as a legacy override (logs a warning).
 
-UID scheme: `{type}:{project}/{id}` (e.g. `task:task-management/TASK-130`)
+## God-nodes (sanity check vs `graphify-out/GRAPH_REPORT.md`)
 
-Node types: Task, Decision, Project.
-Relation types: DependsOn, Blocks, PartOf, RelatesTo, Implements, DecidedBy.
+The code graph's most-connected abstractions match the components named above: `SqliteTaskService`
+(the facade, by far the highest degree), `KnowledgeService`, `ConversationRepository`,
+`PostgresTaskService` (narrowed), `TaskRepository`, `CodeRefRepository`, and `initSchema`. If a
+future rewrite names components the graph report doesn't recognise, regenerate it with
+`/graphify update ./src` and reconcile.
 
-### Known limitations (Phase 1)
+## ADR cross-reference
 
-- One-way sync only (vault → graph). No file → graph watcher yet (TASK-207)
-- No UI for graph — CLI + MCP only
-- No SQLite implementation yet
-- Content search is title-match only, no full-text index
-- 2 duplicate ADR UIDs in vault data (ADR-010, ADR-011 each have 2 files)
+This document summarises; the ADRs in `docs/knowledge/` decide. Do not duplicate their content here.
 
-## Architectural note — polymorphic view container (MVP target, not yet implemented)
-
-Main pane must be a **polymorphic view container**, not hardcoded single xterm. `<ProjectWorkspace>` hosts `<ViewRouter>` choosing between registered view types. MVP implements `terminal`; V2+ adds `note`, `tasks`, `adr`, `memory`, `graph` without rewriting the shell. Current `App.tsx` is a single-terminal spike — to be refactored during MVP build.
-
-## Open research questions affecting architecture
-
-- R1 — xterm.js TUI fidelity (alt-screen, mouse, bracketed paste, Cascadia)
-- R3 — Graceful pty shutdown sequence (Ctrl+C twice dance vs force-kill)
-- R4 — Resize propagation correctness under ConPTY
-- R6 — React state management choice (affects ViewRouter + session map refactor)
-- R11 — PATH handling for OSS users across install methods
+| ADR | Topic |
+| --- | --- |
+| ADR-012 | Daily backup + restore |
+| ADR-015 | Lifecycle-service pattern |
+| ADR-018 | Knowledge layer (entry types, frontmatter, staleness) |
+| ADR-020 | Embedding architecture (sqlite-vec) |
+| ADR-023 | Agent-memory layer |
+| ADR-026 | Dual-transport MCP server (stdio + HTTP, per-tool scoping) |
+| ADR-027 | Self-hosted OAuth 2.0 DCR for the claude.ai connector |
+| ADR-028 | Structured `session_end` summary |
+| ADR-029 | Session activity visibility |
+| ADR-030 | Dual-backend split (SQLite + narrow Postgres) |
+| ADR-NNN | Unified knowledge graph — PROPOSED, frozen by TASK-999 |
