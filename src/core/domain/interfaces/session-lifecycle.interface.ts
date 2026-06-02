@@ -12,6 +12,8 @@ export interface StartSessionInput {
   projectId: string
   workspaceId?: string
   taskId?: string
+  /** TASK-985 (ADR-031) — Claude Code transcript session UUID, for resumePoint derivation at session_end. */
+  ccSessionId?: string
 }
 
 export interface StartSessionResult {

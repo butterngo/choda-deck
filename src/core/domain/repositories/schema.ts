@@ -175,6 +175,13 @@ function runLegacyMigrations(db: Database.Database): void {
     /* exists */
   }
 
+  // TASK-985 (ADR-031): Claude Code transcript session UUID for resumePoint derivation
+  try {
+    db.exec('ALTER TABLE sessions ADD COLUMN cc_session_id TEXT')
+  } catch {
+    /* exists */
+  }
+
   // TASK-552: soft-delete for workspaces
   try {
     db.exec('ALTER TABLE workspaces ADD COLUMN archived_at TEXT')
@@ -479,6 +486,7 @@ function createM1Tables(db: Database.Database): void {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       checkpoint TEXT,
       checkpoint_at TEXT,
+      cc_session_id TEXT,
       FOREIGN KEY (project_id) REFERENCES projects(id)
     )
   `)

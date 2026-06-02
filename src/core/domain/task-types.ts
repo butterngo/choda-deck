@@ -178,6 +178,13 @@ export interface Session {
   startedAt: string
   endedAt: string | null
   status: SessionStatus
+  /**
+   * TASK-985 (ADR-031) — Claude Code transcript session UUID, captured at
+   * session_start. Used at session_end to locate `~/.claude/projects/<cwd-slug>/<id>.jsonl`
+   * for deterministic resumePoint derivation. null when the caller did not supply it
+   * (falls back to heuristic correlation by cwd-slug + time window).
+   */
+  ccSessionId: string | null
   handoff: SessionHandoff | null
   checkpoint: SessionCheckpoint | null
   checkpointAt: string | null
@@ -192,6 +199,7 @@ export interface CreateSessionInput {
   startedAt?: string
   status?: SessionStatus
   handoff?: SessionHandoff
+  ccSessionId?: string
 }
 
 export interface UpdateSessionInput {

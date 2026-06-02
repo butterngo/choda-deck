@@ -28,7 +28,11 @@ function makeServerStub(): {
 const TEST_DB = path.join(__dirname, '__test-session-tools-rules__.db')
 
 const noopGit: GitOps = {
-  filesChangedAtCommit: () => []
+  getHeadSha: () => '',
+  countCommitsSince: () => 0,
+  isAncestor: () => false,
+  filesInCommit: () => [],
+  commitsInWindow: () => []
 }
 
 describe('session-tools — B+ rule injection contract', () => {

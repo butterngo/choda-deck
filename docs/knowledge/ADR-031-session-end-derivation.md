@@ -80,6 +80,23 @@ session_end handler (async):
 
 The domain layer never gains async dependencies; the handler owns all I/O; the single atomic write is preserved (rejecting Option D's post-close rewrite). `filesChanged[]` continues to derive *inside* the txn from already-persisted channel-1 rows — only git/transcript reads move to the handler.
 
+### Transcript ↔ session correlation (decided after TASK-985 AC #1 spike)
+
+The AC #1 spike (`docs/knowledge/spike-session-end-derivation-2026-06-02.md`) found a gap that blocks `resumePoint` derivation: the choda `sessions` row stores `startedAt`/`endedAt` but **no Claude Code `sessionId` and no transcript path**, so the server cannot deterministically locate "this session's" `.jsonl`. Transcripts live at `~/.claude/projects/<cwd-slug>/<ccSessionId>.jsonl` (cwd-slugged, so worktrees get separate dirs).
+
+**Decision: capture at `session_start` (primary) + heuristic correlate (fallback).**
+
+1. **Primary — capture.** `session_start` accepts an optional `ccSessionId` (or `transcriptPath`) the caller passes through; it is persisted on the session row. At `session_end` the transcript is located deterministically. This pushes exactly **one stable id** back onto the protocol — acceptable, and categorically different from the per-close handoff fields this ADR removes (an id set once at start vs. judgement re-entered every close).
+2. **Fallback — correlate.** When the id is absent, pick the newest `.jsonl` under the session's cwd-slug dir whose row `timestamp` range overlaps `[startedAt, endedAt]` and whose `gitBranch` matches. Fragile under multiple active sessions in one cwd (ADR-009 permits them) — so it is a fallback, not the contract.
+
+**Why a missed correlation is safe:** `resumePoint` is Tier 2 best-effort. If neither path resolves a transcript, the field is simply left for the AI to supply (or omitted) — no incorrect data is ever written. Correlation failure degrades to today's behaviour, never to a wrong handoff.
+
+`commits[]` / `filesChanged[]` (Tier 1) do **not** depend on this — git window + channel-1 rows need no transcript — so AC #3 is unblocked regardless of how correlation lands.
+
+### Scope of "derives the rest" (`session_end({ sessionId })`)
+
+"Derives the rest" means the **handoff** fields — `commits[]` (Tier 1) and `resumePoint` (Tier 2). `filesChanged[]` is a **summary** field (ADR-028), not a handoff field, and stays opt-in: a bare `session_end({ sessionId })` with no `summary` does **not** synthesize a summary row. This preserves ADR-028's deliberate "coverage stays AI-opt-in" stance — when the agent does pass a `summary`, `aggregateSessionSummary` (ADR-029) still auto-fills `filesChanged` from channel-1 events as before. No bare-session summary fabrication.
+
 ### Override contract
 
 Reuse ADR-029 verbatim: **AI input wins; derivation fills gaps only.** `session_end({ sessionId })` with no other fields yields a complete handoff; `session_end({ sessionId, resumePoint })` lets the AI override the heuristic while still auto-filling `commits[]`/`filesChanged[]`. No new merge semantics.
@@ -114,7 +131,8 @@ Reuse ADR-029 verbatim: **AI input wins; derivation fills gaps only.** `session_
 | 2 | This ADR | TASK-985 AC #2 |
 | 3 | `commits[]` derivation in handler (git log, session window) + AI-wins merge | AC #3 |
 | 4 | `filesChanged[]` handoff-path extension (reuse `aggregateSessionSummary`) | AC #3 |
-| 5 | `resumePoint` transcript heuristic in handler | AC #4 (note: `decisions[]` half of AC #4 is **rejected** by this ADR — update the task AC) |
+| 4.5 | `session_start` accepts + persists optional `ccSessionId`/`transcriptPath` (correlation primary path) | prereq for AC #4 |
+| 5 | `resumePoint` transcript heuristic in handler (capture → fallback correlate → last text-bearing assistant turn) | AC #4 (note: `decisions[]` half of AC #4 is **rejected** by this ADR — update the task AC) |
 | 6 | `session_end({ sessionId })` end-to-end + override preserved | AC #5, #6 |
 | 7 | vitest per-derivation + integration (start → 2 commits + 3 edits → `session_end({sessionId})` → assert handoff) | AC #7 |
 
@@ -126,6 +144,7 @@ Reuse ADR-029 verbatim: **AI input wins; derivation fills gaps only.** `session_
 - [[ADR-029-session-activity-visibility]] — the `aggregateSessionSummary` AI-wins merge + channel-1 `file_modified` source this ADR reuses
 - [[ADR-009-session-lifecycle]] — `session_end` semantics + workspace ↔ active-session resolution
 - [[ADR-024-review-status-and-session-checkpoint]] — body-lock context for the broader session-flow family
+- `docs/knowledge/spike-session-end-derivation-2026-06-02.md` — AC #1 data-source catalog; surfaced the correlation gap decided above
 - TASK-985 — implementation of this ADR
 - TASK-998 — downstream consumer of `decisions[]` (the reason Tier 3 keeps it AI-authored)
 

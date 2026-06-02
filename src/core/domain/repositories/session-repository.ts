@@ -18,6 +18,7 @@ function rowToSession(row: Record<string, unknown>): Session {
     startedAt: row.started_at as string,
     endedAt: (row.ended_at as string) || null,
     status: row.status as SessionStatus,
+    ccSessionId: (row.cc_session_id as string) || null,
     handoff: row.handoff_json ? (JSON.parse(row.handoff_json as string) as SessionHandoff) : null,
     checkpoint: row.checkpoint
       ? (JSON.parse(row.checkpoint as string) as SessionCheckpoint)
@@ -36,8 +37,8 @@ export class SessionRepository {
     const startedAt = input.startedAt || ts
     this.db
       .prepare(
-        `INSERT INTO sessions (id, project_id, workspace_id, task_id, started_at, status, handoff_json, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO sessions (id, project_id, workspace_id, task_id, started_at, status, cc_session_id, handoff_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -46,6 +47,7 @@ export class SessionRepository {
         input.taskId || null,
         startedAt,
         input.status || 'active',
+        input.ccSessionId || null,
         input.handoff ? JSON.stringify(input.handoff) : null,
         ts
       )
