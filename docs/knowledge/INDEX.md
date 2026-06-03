@@ -2,6 +2,8 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
+| [ADR-032-unified-knowledge-graph-v2](./ADR-032-unified-knowledge-graph-v2.md) | decision | ADR-032: Unified Knowledge Graph v2 — program consolidation, §6 resolutions, ACCEPTED | 2026-06-03 |  |
+| [ADR-031-session-end-derivation](./ADR-031-session-end-derivation.md) | decision | ADR-031: session_end field derivation — deterministic auto-fill, heuristic candidates, AI-wins override | 2026-06-02 |  |
 | [gotcha-tester-guards-spare-verbatim-ac](./gotcha-tester-guards-spare-verbatim-ac.md) | gotcha | Gotcha: tester guards must not reject verbatim AC | 2026-06-02 |  |
 | [gotcha-projection-guards-rendered-not-fields](./gotcha-projection-guards-rendered-not-fields.md) | gotcha | Gotcha: role guards operate on rendered output, not fields | 2026-06-02 |  |
 | [feature-readtime-role-projection](./feature-readtime-role-projection.md) | feature | Feature: Read-time role projection (Pillar 5) | 2026-06-02 |  |
