@@ -7,6 +7,7 @@ import { findAcItems } from '../../../core/domain/lifecycle/ac-check'
 import {
   projectFeature,
   type CodeRefPointer,
+  type EffortTaskSignal,
   type FeatureProjectionBundle,
   type FeatureProjectionInput,
   type GotchaSummary,
@@ -98,6 +99,28 @@ async function gatherRealizesTasks(
   return tasks
 }
 
+// CEO role: collect band-derivation evidence per realized task — label set, AC
+// item count, and immediate blocked-by count. No titles/bodies are carried out,
+// so the derived reasoning cannot leak symbols or durations. A missing task
+// (dangling REALIZES edge) is skipped, never fabricated.
+async function gatherEffortSignal(
+  svc: FeatureProjectionDeps,
+  taskIds: string[]
+): Promise<EffortTaskSignal[]> {
+  const signal: EffortTaskSignal[] = []
+  for (const taskId of taskIds) {
+    const task = await svc.getTask(taskId)
+    if (!task) continue
+    signal.push({
+      taskId,
+      labels: task.labels,
+      acItemCount: findAcItems(task.body ?? '').length,
+      blockedByCount: task.blockedBy.length
+    })
+  }
+  return signal
+}
+
 async function gatherCodeRefs(
   svc: FeatureProjectionDeps,
   taskIds: string[]
@@ -141,6 +164,11 @@ export async function buildFeatureProjection(
   const dev = role === 'dev' ? await gatherCodeRefs(svc, realizesTaskIds) : null
   const realizesTasks =
     role === 'tester' ? await gatherRealizesTasks(svc, realizesTaskIds) : []
+  // CEO derives its effort band from realized-task signal when none is authored.
+  const effortSignal =
+    role === 'ceo-po' && !structured.effortBand
+      ? await gatherEffortSignal(svc, realizesTaskIds)
+      : []
 
   const input: FeatureProjectionInput = {
     featureId,
@@ -150,6 +178,7 @@ export async function buildFeatureProjection(
     sections: parseSections(entry.body),
     workspaces: inEdges.map((e) => e.toId),
     realizesTaskIds,
+    effortSignal,
     gotchas,
     codeRefs: dev?.pointers ?? [],
     realizesTasksHaveTouches: dev?.hasTouches ?? false,

@@ -5,9 +5,12 @@ import {
   assertHasCodeRefs,
   assertNoSymbolBleed,
   assertNoDeploymentDate,
+  deriveEffortBand,
   projectFeature,
   RoleBleedError,
+  type CeoView,
   type DevView,
+  type EffortTaskSignal,
   type TesterView,
   type FeatureProjectionInput
 } from '../feature-projection'
@@ -24,6 +27,7 @@ function makeInput(overrides: Partial<FeatureProjectionInput> = {}): FeatureProj
     },
     workspaces: ['app-api', 'app-portal'],
     realizesTaskIds: ['TASK-100', 'TASK-101'],
+    effortSignal: [],
     gotchas: [
       { slug: 'gotcha-a', title: 'seller name not captured', trigger: 't', resolution: 'r' }
     ],
@@ -282,5 +286,88 @@ describe('projectFeature tester', () => {
     const bundle = projectFeature(input, 'tester')
     expect(bundle.honesty.lacked).toContain('regression-scope')
     expect((bundle.view as TesterView).regressionScope).toEqual([])
+  })
+})
+
+// TASK-1025 — read-time effort-band derivation (close the PILOT-2 band gap).
+function sig(overrides: Partial<EffortTaskSignal> = {}): EffortTaskSignal {
+  return { taskId: 'TASK-0', labels: [], acItemCount: 0, blockedByCount: 0, ...overrides }
+}
+
+describe('deriveEffortBand (TASK-1025)', () => {
+  it('returns null on zero evidence (fails safe, never fabricates)', () => {
+    expect(deriveEffortBand([])).toBeNull()
+  })
+
+  it('maps task count to a base band: 1→S, 2-3→M, 4-6→L, 7+→XL', () => {
+    expect(deriveEffortBand(Array.from({ length: 1 }, () => sig()))?.band).toBe('S')
+    expect(deriveEffortBand(Array.from({ length: 2 }, () => sig()))?.band).toBe('M')
+    expect(deriveEffortBand(Array.from({ length: 4 }, () => sig()))?.band).toBe('L')
+    expect(deriveEffortBand(Array.from({ length: 8 }, () => sig()))?.band).toBe('XL')
+  })
+
+  it('bumps one band when any realized task is an epic', () => {
+    const base = Array.from({ length: 2 }, () => sig()) // base M
+    base[0] = sig({ labels: ['epic'] })
+    const out = deriveEffortBand(base)
+    expect(out?.band).toBe('L')
+    expect(out?.reasoning).toContain('+1 epic task')
+  })
+
+  it('bumps one band on a heavy spec surface (>=15 AC items total)', () => {
+    const out = deriveEffortBand([sig({ acItemCount: 9 }), sig({ acItemCount: 6 })]) // base M, +1
+    expect(out?.band).toBe('L')
+    expect(out?.reasoning).toContain('15 AC items')
+  })
+
+  it('bumps one band when work is blocked (max blockedBy >= 2)', () => {
+    const out = deriveEffortBand([sig({ blockedByCount: 2 }), sig()]) // base M, +1
+    expect(out?.band).toBe('L')
+    expect(out?.reasoning).toContain('2 blockers')
+  })
+
+  it('clamps at XL when modifiers stack past the top band', () => {
+    const tasks = Array.from({ length: 8 }, () => sig({ labels: ['epic'], blockedByCount: 3 }))
+    expect(deriveEffortBand(tasks)?.band).toBe('XL') // base XL + 2 bumps, clamped
+  })
+
+  it('reasoning carries counts only — passes assertNoNumberOfDays (M4)', () => {
+    const out = deriveEffortBand(
+      Array.from({ length: 8 }, () => sig({ labels: ['epic'], acItemCount: 3, blockedByCount: 2 }))
+    )
+    expect(out).not.toBeNull()
+    expect(() => assertNoNumberOfDays('derived', out!.reasoning)).not.toThrow()
+  })
+})
+
+describe('projectFeature ceo-po — band source (TASK-1025)', () => {
+  it('authored band wins over derivation (human override, AC #3)', () => {
+    const view = projectFeature(makeInput({ effortBand: 'S', effortSignal: [sig(), sig(), sig(), sig()] }), 'ceo-po')
+      .view as CeoView
+    expect(view.effortBand).toBe('S')
+    expect(view.effortBandSource).toBe('authored')
+    expect(view.effortBandReasoning).toBeNull()
+  })
+
+  it('derives a band with reasoning when none is authored', () => {
+    const bundle = projectFeature(
+      makeInput({ effortBand: undefined, effortSignal: [sig(), sig(), sig(), sig()] }),
+      'ceo-po'
+    )
+    const view = bundle.view as CeoView
+    expect(view.effortBand).toBe('L')
+    expect(view.effortBandSource).toBe('derived')
+    expect(view.effortBandReasoning).toContain('4 realized tasks')
+    expect(bundle.honesty.used).toContain('effort-band (derived)')
+  })
+
+  it('honesty distinguishes authored vs derived vs lacked (AC #4)', () => {
+    const authored = projectFeature(makeInput({ effortBand: 'M', effortSignal: [] }), 'ceo-po')
+    expect(authored.honesty.used).toContain('effort-band (authored)')
+
+    const lacked = projectFeature(makeInput({ effortBand: undefined, effortSignal: [] }), 'ceo-po')
+    expect(lacked.honesty.lacked).toContain('effort-band')
+    expect((lacked.view as CeoView).effortBand).toBeNull()
+    expect((lacked.view as CeoView).effortBandSource).toBeNull()
   })
 })

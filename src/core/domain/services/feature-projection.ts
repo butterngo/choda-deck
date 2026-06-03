@@ -1,4 +1,4 @@
-import type { EffortBand, FeatureStatus } from '../knowledge-types'
+import { EFFORT_BANDS, type EffortBand, type FeatureStatus } from '../knowledge-types'
 import type { TouchesRelation } from '../code-ref-types'
 
 // ADR-NNN Pillar 5 — read-time role projection (TASK-994). Pure functions only:
@@ -31,6 +31,24 @@ export interface RealizedTaskAc {
   acItems: string[]
 }
 
+// Per-realized-task size evidence used to DERIVE a CEO effort band when none was
+// pre-authored (TASK-1025). CEO-only: gathered on the ceo-po path so dev/tester
+// don't pay the getTask walk. No task titles/bodies here — only counts/labels —
+// so the derived reasoning can never carry code symbols or a number-of-days.
+export interface EffortTaskSignal {
+  taskId: string
+  labels: string[]
+  acItemCount: number
+  blockedByCount: number
+}
+
+// Output of deriveEffortBand: the band letter plus a human-readable audit trail
+// of which signals produced it (shown in the CEO view — AC #2).
+export interface DerivedEffortBand {
+  band: EffortBand
+  reasoning: string
+}
+
 // A code anchor resolved through REALIZES → TOUCHES → code_ref, carrying the
 // load-bearing relation (B1 finding). Dev-only.
 export interface CodeRefPointer {
@@ -51,6 +69,9 @@ export interface FeatureProjectionInput {
   sections: Record<string, string>
   workspaces: string[] // IN edges
   realizesTaskIds: string[] // REALIZES edges
+  // CEO-only band-derivation evidence (one entry per realized task). Empty for
+  // dev/tester and for features with zero realized tasks (→ band stays null).
+  effortSignal: EffortTaskSignal[]
   gotchas: GotchaSummary[] // ABOUT edges (computed once, sliced per role)
   codeRefs: CodeRefPointer[] // dev only: REALIZES → TOUCHES → code_ref
   realizesTasksHaveTouches: boolean // true if any REALIZES task has ≥1 TOUCHES edge
@@ -63,6 +84,12 @@ export interface CeoView {
   apps: string[]
   teams: null // never in the graph — honest gap, never fabricated
   effortBand: EffortBand | null // band letter ONLY, never a number-of-days (M4)
+  // Where the band came from: a human-authored field wins; else derived from
+  // realized-task signal; else null (no evidence — fails safe, never fabricated).
+  effortBandSource: 'authored' | 'derived' | null
+  // Audit trail for a DERIVED band ("4 realized tasks (base L); +1 epic task").
+  // null when authored or absent. Passes assertNoNumberOfDays (counts, not durations).
+  effortBandReasoning: string | null
   status: FeatureStatus | null
   blockers: Array<{ slug: string; title: string }> // titles only — no symbol bleed
 }
@@ -195,12 +222,52 @@ function sectionFor(input: FeatureProjectionInput, ...names: string[]): string |
   return null
 }
 
+// Derive an effort band (S/M/L/XL) from realized-task signal when no band was
+// pre-authored (TASK-1025). Deterministic + explainable: a base band from task
+// COUNT, then bounded +1 bumps for an epic, a heavy spec surface, or blocked
+// work — clamped at XL. Returns null on zero evidence so the band fails SAFE
+// (honesty.lacked) rather than fabricating a size. The reasoning enumerates
+// counts only (tasks / AC items / blockers), never a duration, so it survives
+// assertNoNumberOfDays (M4).
+export function deriveEffortBand(signal: EffortTaskSignal[]): DerivedEffortBand | null {
+  if (signal.length === 0) return null
+
+  const taskCount = signal.length
+  const baseIndex = taskCount >= 7 ? 3 : taskCount >= 4 ? 2 : taskCount >= 2 ? 1 : 0
+  const totalAc = signal.reduce((sum, t) => sum + t.acItemCount, 0)
+  const hasEpic = signal.some((t) => t.labels.includes('epic'))
+  const maxBlocked = signal.reduce((max, t) => Math.max(max, t.blockedByCount), 0)
+
+  const reasons = [`${taskCount} realized task${taskCount === 1 ? '' : 's'} (base ${EFFORT_BANDS[baseIndex]})`]
+  let index = baseIndex
+  if (hasEpic) {
+    index += 1
+    reasons.push('+1 epic task')
+  }
+  if (totalAc >= 15) {
+    index += 1
+    reasons.push(`+1 heavy spec (${totalAc} AC items)`)
+  }
+  if (maxBlocked >= 2) {
+    index += 1
+    reasons.push(`+1 blocked work (${maxBlocked} blockers)`)
+  }
+  index = Math.min(index, EFFORT_BANDS.length - 1)
+
+  return { band: EFFORT_BANDS[index], reasoning: reasons.join('; ') }
+}
+
 function projectCeo(input: FeatureProjectionInput): CeoView {
+  // Human-authored band wins (AC #3); only derive when none was pre-authored.
+  const authored = input.effortBand ?? null
+  const derived = authored ? null : deriveEffortBand(input.effortSignal)
   return {
     description: sectionFor(input, 'description'),
     apps: input.workspaces,
     teams: null,
-    effortBand: input.effortBand ?? null,
+    effortBand: authored ?? derived?.band ?? null,
+    effortBandSource: authored ? 'authored' : derived ? 'derived' : null,
+    effortBandReasoning: derived?.reasoning ?? null,
     status: input.status ?? null,
     // Titles only: gotcha bodies carry symbols/SQL and would bleed into the
     // CEO voice. The agent verbalizes business prose from these clean slices.
@@ -254,7 +321,10 @@ function computeHonesty(input: FeatureProjectionInput, role: ProjectionRole): Ho
   lacked.push('team-boundaries')
 
   if (role === 'ceo-po') {
-    if (input.effortBand) used.push('effort-band')
+    // Distinguish a human-authored band from one derived at read-time from
+    // realized-task signal, vs. genuinely absent (no tasks → no evidence).
+    if (input.effortBand) used.push('effort-band (authored)')
+    else if (input.effortSignal.length > 0) used.push('effort-band (derived)')
     else lacked.push('effort-band')
   }
 
@@ -285,8 +355,8 @@ export function projectFeature(
 
   if (role === 'ceo-po') {
     const view = projectCeo(input)
-    assertNoCodeBleed('ceo-po', view.description, ...view.blockers.map((b) => b.title))
-    assertNoNumberOfDays('ceo-po', view.description, view.effortBand, ...view.blockers.map((b) => b.title))
+    assertNoCodeBleed('ceo-po', view.description, view.effortBandReasoning, ...view.blockers.map((b) => b.title))
+    assertNoNumberOfDays('ceo-po', view.description, view.effortBand, view.effortBandReasoning, ...view.blockers.map((b) => b.title))
     return { featureId: input.featureId, role, view, recall: input.gotchas, honesty }
   }
 
