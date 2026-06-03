@@ -50,6 +50,9 @@ the effort question when nothing is pre-authored?
 | **M3** | CEO view exposes no `codeRefs` and no symbols; dev view carries 5 TOUCHES pointers; tester derived surfaces threw no guard error | ✅ 0 bleed |
 | **M4** | CEO `effortBand: null` — no day-count anywhere | ✅ (band absent, not fabricated) |
 
+> **Re-run after TASK-1025 (2026-06-03):** with read-time derivation shipped, the same
+> no-band cluster now answers CEO Q3 — **M1 rises to 7/7**. See "Re-run" below.
+
 ### Key finding 1 — the band fails *safe*, not *silent*
 
 With no pre-authored band the projection returns:
@@ -69,6 +72,29 @@ good as what a human pre-authored on the feature node. `feature-projection.ts:20
 unanswerable from raw task-body evidence today. Closing that gap is a *separate, scoped feature*
 (see follow-up), not part of this honesty pilot.
 
+> **CLOSED by TASK-1025 (2026-06-03).** `projectCeo` now calls `deriveEffortBand()` when no band
+> is pre-authored: a base band from realized-task **count**, bumped one notch for an epic label, a
+> heavy spec surface (≥15 AC items), or blocked work (max `blockedBy` ≥ 2), clamped at XL. The
+> CEO view carries `effortBandSource: 'authored' | 'derived' | null` and a counts-only
+> `effortBandReasoning` string (passes `assertNoNumberOfDays`, so M4 still holds). A human-authored
+> band still wins (override); zero realized tasks still returns `null` (fails safe, not fabricated).
+
+## Re-run — PILOT-2 with derivation (2026-06-03, live choda-deck graph)
+
+Post-`build:mcp` stdio smoke against the same `feature-readtime-role-projection` node (still no
+authored band):
+
+```json
+"effortBand": "L",
+"effortBandSource": "derived",
+"effortBandReasoning": "2 realized tasks (base M); +1 blocked work (2 blockers)",
+"honesty": { "used": ["…", "effort-band (derived)"], "lacked": ["team-boundaries"] }
+```
+
+CEO Q3 flips **NO → YES**: a derived band **L** with shown reasoning, and `effort-band` is no
+longer under `honesty.lacked`. **M1 = 7/7.** M3 still 0 (CEO view exposes no `codeRefs` field);
+M4 still 0 day-counts (reasoning is counts of tasks/AC/blockers, never a duration).
+
 ### Key finding 2 — gotchas are mislabeled as "blockers" in the CEO view
 
 `projectCeo` maps **every** gotcha into the CEO `blockers` field
@@ -82,9 +108,13 @@ follow-up.
 
 - **Honesty mechanism: HIGH.** Across two independent clusters the projection never fabricated a
   missing field; the `honesty.used/lacked` contract held and correctly flagged the absent band.
-- **Effort-band coverage: LOW.** The band is a pre-authored field, not a read-time derivation.
-  Without it the CEO's single most business-relevant question is unanswerable. This is the honest
-  ceiling of Pillar 5 as built.
+- **Effort-band coverage: ~~LOW~~ → MEDIUM (TASK-1025, 2026-06-03).** No longer a pure
+  pre-authored field — `deriveEffortBand()` answers CEO Q3 at read-time from realized-task signal
+  with shown reasoning, and flags the band as `derived` vs `authored` so the estimate is never
+  passed off as human judgment. Coverage is MEDIUM not HIGH because the heuristic is a structural
+  proxy (count + labels + AC volume + blocker breadth), not a calibrated estimate; a wrong derived
+  band is now possible and is itself a documentable limit, but it fails *visibly* (source +
+  reasoning shown), not silently.
 - **Role isolation (M3): HIGH.** CEO never sees code; dev gets pointers; tester guards spared
   verbatim AC. Structural guards held on a second cluster.
 

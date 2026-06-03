@@ -245,6 +245,19 @@ describe('buildFeatureProjection', () => {
     expect(bundle.honesty.lacked).toContain('team-boundaries')
   })
 
+  it('CEO bundle: derives a band + reasoning when none is authored (TASK-1025)', async () => {
+    const data = pilotData()
+    // PILOT-2 condition: no pre-authored band on the feature node.
+    delete data.entries['feature-x'].frontmatter.structured!.effortBand
+    const bundle = await buildFeatureProjection(makeDeps(data), 'feature-x', 'ceo-po')
+    const view = bundle.view as CeoView
+    // 2 realized tasks (TASK-909, TASK-914), no epic / <15 AC / no blockers → base M.
+    expect(view.effortBand).toBe('M')
+    expect(view.effortBandSource).toBe('derived')
+    expect(view.effortBandReasoning).toContain('2 realized tasks')
+    expect(bundle.honesty.used).toContain('effort-band (derived)')
+  })
+
   it('dev bundle: code_refs resolved with relation (modifies + reference)', async () => {
     const bundle = await buildFeatureProjection(makeDeps(pilotData()), 'feature-x', 'dev')
     const view = bundle.view as DevView
