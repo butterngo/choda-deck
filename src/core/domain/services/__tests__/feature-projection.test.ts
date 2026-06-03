@@ -139,10 +139,11 @@ describe('projectFeature CEO', () => {
     expect(bundle.honesty.lacked).toContain('team-boundaries')
   })
 
-  it('blockers carry only slug + title, never gotcha bodies', () => {
-    const bundle = projectFeature(makeInput(), 'ceo-po')
-    const view = bundle.view as { blockers: Array<Record<string, unknown>> }
-    expect(view.blockers[0]).toEqual({ slug: 'gotcha-a', title: 'seller name not captured' })
+  it('gotchas surface as concerns (slug + title), not blockers (TASK-1026)', () => {
+    const view = projectFeature(makeInput(), 'ceo-po').view as CeoView
+    expect(view.concerns[0]).toEqual({ slug: 'gotcha-a', title: 'seller name not captured' })
+    // blockers come from the `## Currently blocking` section, not the gotcha.
+    expect(view.blockers.every((b) => b.slug !== 'gotcha-a')).toBe(true)
   })
 
   it('throws if a gotcha title smuggles a symbol path into the CEO view', () => {
@@ -369,5 +370,50 @@ describe('projectFeature ceo-po — band source (TASK-1025)', () => {
     expect(lacked.honesty.lacked).toContain('effort-band')
     expect((lacked.view as CeoView).effortBand).toBeNull()
     expect((lacked.view as CeoView).effortBandSource).toBeNull()
+  })
+})
+
+describe('projectFeature ceo-po — blockers vs concerns (TASK-1026)', () => {
+  it('blocked feature: blockers come from the `## Currently blocking` lead-in line', () => {
+    const view = projectFeature(
+      makeInput({
+        status: 'blocked',
+        sections: { 'currently blocking': 'Waiting on upstream capture work.\nDetail line two.' },
+        gotchas: [{ slug: 'g1', title: 'concern one' }, { slug: 'g2', title: 'concern two' }]
+      }),
+      'ceo-po'
+    ).view as CeoView
+    expect(view.blockers).toEqual([{ slug: 'currently-blocking', title: 'Waiting on upstream capture work.' }])
+    expect(view.concerns.map((c) => c.slug)).toEqual(['g1', 'g2'])
+  })
+
+  it('shipped feature reports NO blockers even with gotchas — the PILOT-2 bug', () => {
+    const view = projectFeature(
+      makeInput({
+        status: 'shipped',
+        sections: { description: 'A shipped feature.' },
+        gotchas: [{ slug: 'g1', title: 'concern one' }, { slug: 'g2', title: 'concern two' }]
+      }),
+      'ceo-po'
+    ).view as CeoView
+    expect(view.blockers).toEqual([])
+    expect(view.concerns).toHaveLength(2)
+  })
+
+  it('shipped feature drops a stale `## Currently blocking` section (status wins)', () => {
+    const view = projectFeature(
+      makeInput({ status: 'shipped', sections: { 'currently blocking': 'stale text' }, gotchas: [] }),
+      'ceo-po'
+    ).view as CeoView
+    expect(view.blockers).toEqual([])
+  })
+
+  it('non-shipped feature with no blocking section has no blockers', () => {
+    const view = projectFeature(
+      makeInput({ status: 'planned', sections: { description: 'Planned.' }, gotchas: [{ slug: 'g', title: 'c' }] }),
+      'ceo-po'
+    ).view as CeoView
+    expect(view.blockers).toEqual([])
+    expect(view.concerns).toHaveLength(1)
   })
 })
