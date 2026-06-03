@@ -91,7 +91,14 @@ export interface CeoView {
   // null when authored or absent. Passes assertNoNumberOfDays (counts, not durations).
   effortBandReasoning: string | null
   status: FeatureStatus | null
-  blockers: Array<{ slug: string; title: string }> // titles only — no symbol bleed
+  // REAL blockers only: derived from the `## Currently blocking` section and
+  // gated by status (a `shipped` feature reports none). NOT a blanket map of
+  // gotchas (TASK-1026). Titles only — no symbol bleed.
+  blockers: Array<{ slug: string; title: string }>
+  // Gotchas surfaced to the CEO under an HONEST label — a concern is not a
+  // blocker. Titles only (gotcha bodies carry symbols/SQL). Was conflated into
+  // `blockers` before TASK-1026.
+  concerns: Array<{ slug: string; title: string }>
 }
 
 export interface DevView {
@@ -257,6 +264,30 @@ export function deriveEffortBand(signal: EffortTaskSignal[]): DerivedEffortBand 
   return { band: EFFORT_BANDS[index], reasoning: reasons.join('; ') }
 }
 
+// First non-empty line of a section — the CEO-facing summary line. The `##
+// Currently blocking` body carries technical detail (symbols/SQL) in later
+// lines; the lead-in line is the business summary. assertNoCodeBleed is the
+// backstop — if an author writes code into this first line it throws, enforcing
+// a code-free CEO blocker. In-memory split on '\n' (parseSections joins with '\n').
+function firstLine(text: string): string {
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed.length > 0) return trimmed
+  }
+  return text.trim()
+}
+
+// CEO blockers are REAL blockers, not gotchas (TASK-1026). Source: the `##
+// Currently blocking` section, gated by status — a `shipped` feature reports
+// none, even if a stale blocking section lingers. Other statuses surface a
+// single blocker summarising the section's lead-in line.
+function deriveCeoBlockers(input: FeatureProjectionInput): Array<{ slug: string; title: string }> {
+  if (input.status === 'shipped') return []
+  const blocking = sectionFor(input, 'currently blocking')
+  if (!blocking) return []
+  return [{ slug: 'currently-blocking', title: firstLine(blocking) }]
+}
+
 function projectCeo(input: FeatureProjectionInput): CeoView {
   // Human-authored band wins (AC #3); only derive when none was pre-authored.
   const authored = input.effortBand ?? null
@@ -269,9 +300,9 @@ function projectCeo(input: FeatureProjectionInput): CeoView {
     effortBandSource: authored ? 'authored' : derived ? 'derived' : null,
     effortBandReasoning: derived?.reasoning ?? null,
     status: input.status ?? null,
-    // Titles only: gotcha bodies carry symbols/SQL and would bleed into the
-    // CEO voice. The agent verbalizes business prose from these clean slices.
-    blockers: input.gotchas.map((g) => ({ slug: g.slug, title: g.title }))
+    blockers: deriveCeoBlockers(input),
+    // Gotchas are concerns, not blockers. Titles only — bodies carry symbols/SQL.
+    concerns: input.gotchas.map((g) => ({ slug: g.slug, title: g.title }))
   }
 }
 
@@ -355,8 +386,9 @@ export function projectFeature(
 
   if (role === 'ceo-po') {
     const view = projectCeo(input)
-    assertNoCodeBleed('ceo-po', view.description, view.effortBandReasoning, ...view.blockers.map((b) => b.title))
-    assertNoNumberOfDays('ceo-po', view.description, view.effortBand, view.effortBandReasoning, ...view.blockers.map((b) => b.title))
+    const ceoTitles = [...view.blockers, ...view.concerns].map((b) => b.title)
+    assertNoCodeBleed('ceo-po', view.description, view.effortBandReasoning, ...ceoTitles)
+    assertNoNumberOfDays('ceo-po', view.description, view.effortBand, view.effortBandReasoning, ...ceoTitles)
     return { featureId: input.featureId, role, view, recall: input.gotchas, honesty }
   }
 

@@ -239,8 +239,11 @@ describe('buildFeatureProjection', () => {
     expect(view.apps).toEqual(['pim-trading-api', 'remote-pim-portal'])
     expect(view.effortBand).toBe('L')
     expect(view.teams).toBeNull()
+    // TASK-1026: blocked feature → blockers from the `## Currently blocking`
+    // section (not the gotcha); the gotcha surfaces as a concern instead.
     expect(view.blockers).toHaveLength(1)
-    expect(view.blockers[0].slug).toBe('gotcha-seller')
+    expect(view.blockers[0].slug).toBe('currently-blocking')
+    expect(view.concerns).toEqual([{ slug: 'gotcha-seller', title: 'Gotcha: seller_name not captured (26% data)' }])
     expect(bundle.recall).toHaveLength(1)
     expect(bundle.honesty.lacked).toContain('team-boundaries')
   })

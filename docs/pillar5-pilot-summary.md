@@ -104,6 +104,12 @@ shipped feature is blocked. Titles-only, so no M3 symbol bleed — but a semanti
 a *concern* is not a *blocker*, and a `shipped` feature should report no blockers. Filed as a
 follow-up.
 
+> **CLOSED by TASK-1026 (2026-06-03).** `projectCeo` no longer maps gotchas into `blockers`.
+> Gotchas now surface under a distinct `concerns` field; `blockers` derives from the `##
+> Currently blocking` section's lead-in line, gated by status (a `shipped` feature reports
+> `blockers: []`). Live re-run: the shipped PILOT-2 feature returns `blockers: []` with the two
+> gotchas under `concerns`; the blocked PILOT-1 feature returns one code-free blocker.
+
 ## Confidence (for TASK-999 to fold into ADR-NNN §6)
 
 - **Honesty mechanism: HIGH.** Across two independent clusters the projection never fabricated a
