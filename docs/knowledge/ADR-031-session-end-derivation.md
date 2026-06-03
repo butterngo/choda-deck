@@ -150,4 +150,4 @@ Reuse ADR-029 verbatim: **AI input wins; derivation fills gaps only.** `session_
 
 ---
 
-**Status: DRAFT — proposed ADR-031.** Number is provisional: TASK-999 has not yet frozen the in-flight ADR-NNN number, so reconcile before registering via `knowledge_create`. Not yet indexed in the knowledge layer.
+**Status: DRAFT — ADR-031 (number frozen).** TASK-999 froze the numbering: the unified-knowledge-graph ADR took **ADR-032**, so ADR-031 stands as-is — no rename needed (collision risk resolved). Registered in the knowledge index. Acceptance (DRAFT → ACCEPTED) remains TASK-985's call.
