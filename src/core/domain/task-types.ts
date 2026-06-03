@@ -359,6 +359,7 @@ export interface InboxItem {
 export interface CreateInboxInput {
   projectId: string
   content: string
+  linkedTaskId?: string
 }
 
 export interface UpdateInboxInput {

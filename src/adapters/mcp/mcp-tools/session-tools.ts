@@ -482,7 +482,8 @@ export async function createLooseEndInboxes(
   for (const content of looseEnds) {
     const item = await svc.createInbox({
       projectId: session.projectId,
-      content: `${content}\n\n— from session ${tag}`
+      content: `${content}\n\n— from session ${tag}`,
+      ...(session.taskId ? { linkedTaskId: session.taskId } : {})
     })
     ids.push(item.id)
   }
