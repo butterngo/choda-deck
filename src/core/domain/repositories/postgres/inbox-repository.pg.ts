@@ -55,9 +55,9 @@ export class PostgresInboxRepository {
     const ts = now()
     const id = await this.nextInboxId()
     await this.conn.query(
-      `INSERT INTO inbox_items (id, project_id, content, status, created_at, updated_at)
-       VALUES ($1, $2, $3, 'raw', $4, $4)`,
-      [id, input.projectId ?? null, input.content, ts]
+      `INSERT INTO inbox_items (id, project_id, content, status, linked_task_id, created_at, updated_at)
+       VALUES ($1, $2, $3, 'raw', $4, $5, $5)`,
+      [id, input.projectId ?? null, input.content, input.linkedTaskId ?? null, ts]
     )
     const got = await this.get(id)
     if (!got) throw new Error(`Inbox item disappeared after insert: ${id}`)

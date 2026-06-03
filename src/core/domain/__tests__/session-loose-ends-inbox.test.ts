@@ -42,6 +42,7 @@ describe('createLooseEndInboxes', () => {
       expect(item).not.toBeNull()
       expect(item!.projectId).toBe('le')
       expect(item!.status).toBe('raw')
+      expect(item!.linkedTaskId).toBe('TASK-X')
     }
   })
 
@@ -61,5 +62,6 @@ describe('createLooseEndInboxes', () => {
     expect(item!.content).toContain('observation')
     expect(item!.content).toContain(session.id)
     expect(item!.content).not.toMatch(/\(TASK-/)
+    expect(item!.linkedTaskId).toBeNull()
   })
 })

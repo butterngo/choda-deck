@@ -37,10 +37,10 @@ export class InboxRepository {
     const id = this.nextInboxId()
     this.db
       .prepare(
-        `INSERT INTO inbox_items (id, project_id, content, status, created_at, updated_at)
-         VALUES (?, ?, ?, 'raw', ?, ?)`
+        `INSERT INTO inbox_items (id, project_id, content, status, linked_task_id, created_at, updated_at)
+         VALUES (?, ?, ?, 'raw', ?, ?, ?)`
       )
-      .run(id, projectId, input.content, ts, ts)
+      .run(id, projectId, input.content, input.linkedTaskId ?? null, ts, ts)
     return this.get(id)!
   }
 
