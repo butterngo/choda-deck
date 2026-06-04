@@ -5,13 +5,13 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/domain/knowledge-types.ts
-    commitSha: HEAD
+    commitSha: aea86b1042a01d5ea75a5db8f1ec41e966e02cae
   - path: src/core/domain/task-types.ts
-    commitSha: HEAD
+    commitSha: aea86b1042a01d5ea75a5db8f1ec41e966e02cae
   - path: src/core/domain/services/feature-projection.ts
-    commitSha: HEAD
+    commitSha: aea86b1042a01d5ea75a5db8f1ec41e966e02cae
   - path: docs/pillar5-pilot-summary.md
-    commitSha: HEAD
+    commitSha: aea86b1042a01d5ea75a5db8f1ec41e966e02cae
 createdAt: 2026-06-03
 lastVerifiedAt: 2026-06-03
 ---
