@@ -21,7 +21,7 @@ Use `choda-tasks` MCP `project_context` / `roadmap` / `task_list` for live state
 - Vault context: read `vault/10-Projects/choda-deck/context.md`
 - Architecture decisions: `docs/knowledge/` (code-coupled, frontmatter + staleness tracking — see ADR-018). Discover via MCP `knowledge_list` / `knowledge_get`.
 - In-repo architecture: `docs/architecture.md`
-- **Code graph: `graphify-out/GRAPH_REPORT.md`** — navigable map of nodes, communities, god-nodes, surprising connections. May drift from `main` — regenerate with `/graphify update ./src` when stale.
+- Code coupling: use the `code_ref` / `TOUCHES` layer via `task_touches` (the graphify code-graph was retired — see ADR-033).
 
 Use `choda-tasks` MCP tools (`task_context`, `task_list`) for task details.
 

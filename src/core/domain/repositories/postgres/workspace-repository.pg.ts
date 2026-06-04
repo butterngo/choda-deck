@@ -1,7 +1,7 @@
 // ADR-030 / 2026-05-28 narrowing — Postgres workspace repo, read-only.
 //
 // Only the read methods needed by the HTTP remote surface are kept:
-// findByProject (called by task_context's graphify block) and get (used
+// findByProject (called by project_list to attach workspaces[]) and get (used
 // internally by the stdio facade tests; harmless to keep). Writes
 // (add/archive/unarchive/delete/countReferences) deleted because no remote
 // tool can author/archive workspaces. countReferences also queried the

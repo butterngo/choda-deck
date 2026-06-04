@@ -169,13 +169,13 @@ data/
 
 `CHODA_DB_PATH` is still accepted as a legacy override (logs a warning).
 
-## God-nodes (sanity check vs `graphify-out/GRAPH_REPORT.md`)
+## God-nodes (most-connected abstractions)
 
-The code graph's most-connected abstractions match the components named above: `SqliteTaskService`
-(the facade, by far the highest degree), `KnowledgeService`, `ConversationRepository`,
-`PostgresTaskService` (narrowed), `TaskRepository`, `CodeRefRepository`, and `initSchema`. If a
-future rewrite names components the graph report doesn't recognise, regenerate it with
-`/graphify update ./src` and reconcile.
+The system's most-connected abstractions are: `SqliteTaskService` (the facade, by far the highest
+degree), `KnowledgeService`, `ConversationRepository`, `PostgresTaskService` (narrowed),
+`TaskRepository`, `CodeRefRepository`, and `initSchema`. These are the highest-blast-radius
+components — change them deliberately. (The graphify code-graph that previously cross-checked this
+list was retired in ADR-033; the `code_ref` / `TOUCHES` layer is the current coupling source.)
 
 ## ADR cross-reference
 
