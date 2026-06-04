@@ -10,7 +10,7 @@ lastVerifiedAt: 2026-05-18
 
 # ADR-016: Graphify Integration — Query-Only Phase 1, Manual Refresh
 
-> **Status:** ✅ Accepted
+> **Status:** ⛔ SUPERSEDED by [[ADR-033-deprecate-graphify]] (2026-06-04, TASK-991) — graphify retired; the `task_context` enrichment, `graphify-out/` artifacts, and the manual-refresh path described below were removed. Kept for historical context. Code coupling is now served by the `code_ref` / `TOUCHES` layer.
 > **Trigger:** TASK-607 Spike 2 — pick update strategy for `graphify-out/graph.json` before implementing `task_context` graphify injection.
 
 ---

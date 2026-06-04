@@ -31,11 +31,13 @@ export interface RemoteOperations {
   initializeAsync(): Promise<void>
   close(): Promise<void>
 
-  // Project — project_list + task_context's graphify block
+  // Project — project_list (listProjects). getProject is retained for PG/stdio
+  // parity + the PG service test; no remote-allowlisted tool hits it since
+  // ADR-033 removed task_context's graphify block (candidate to re-narrow).
   getProject(id: string): Promise<ProjectRow | null>
   listProjects(): Promise<ProjectRow[]>
 
-  // Workspace (read-only) — task_context's graphify block
+  // Workspace (read-only) — project_list (project-tools.ts attaches workspaces[])
   findWorkspaces(projectId: string, includeArchived?: boolean): Promise<WorkspaceRow[]>
 
   // Task — task_list + task_context

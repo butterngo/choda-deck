@@ -5,17 +5,12 @@ import type { TaskOperations } from '../../../core/domain/interfaces/task-reposi
 import type { ConversationOperations } from '../../../core/domain/interfaces/conversation-repository.interface'
 import type { TagOperations } from '../../../core/domain/interfaces/tag-repository.interface'
 import type { RelationshipOperations } from '../../../core/domain/interfaces/relationship-repository.interface'
-import type { ProjectOperations } from '../../../core/domain/interfaces/project-repository.interface'
-import type { WorkspaceOperations } from '../../../core/domain/interfaces/workspace-repository.interface'
-import { buildGraphifyContext } from './task-context-graphify'
 import type { UpdateTaskInput } from '../../../core/domain/task-types'
 
 export type TaskToolsDeps = TaskOperations &
   ConversationOperations &
   TagOperations &
-  RelationshipOperations &
-  ProjectOperations &
-  WorkspaceOperations
+  RelationshipOperations
 
 export function defaultBody(id: string, title: string): string {
   return `# ${id}: ${title}
@@ -71,8 +66,6 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
         }))
       )
 
-      const graphify_context = await buildGraphifyContext(task, svc)
-
       return textResponse({
         task,
         dependencies: deps,
@@ -80,8 +73,7 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
         tags,
         relationships: rels,
         conversations,
-        body: task.body,
-        graphify_context
+        body: task.body
       })
     }
   )
