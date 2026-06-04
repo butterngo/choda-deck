@@ -41,7 +41,7 @@ Edges are auto-wired by `knowledge_create` from structured frontmatter (the migr
 
 | Pillar | What it is | Status | Authoritative detail |
 |---|---|---|---|
-| **P1 — Unified store** | One SQLite graph; deprecate graphify's separate `graph.json` | Decided; execution open | TASK-989 (deprecation ADR), TASK-991 (execute) — label `p1-unified-store` |
+| **P1 — Unified store** | One SQLite graph; deprecate graphify's separate `graph.json` | Decided (ADR-033); execution open | ADR-033 (deprecation decision), TASK-991 (execute) — label `p1-unified-store` |
 | **P2 — code_ref / TOUCHES** | Code anchors via REALIZES → TOUCHES → `code_ref`; full-dotted-symbol rule (Pillar 2c) for deep namespaces; line-drift tolerance | Shipped + pilot-confirmed | `code-ref-tools.ts`; B1 claim confirmed on live PIM data |
 | **P5 — Read-time role projection** | One feature node → CEO/dev/tester views with structural M3/M4 guards + honesty section | Shipped | ADR Pillar-5 in `feature-projection.ts`; TASK-994/995/996/1025; `docs/pillar5-pilot-summary.md` |
 | **P6 — Inbox** | Workspace-nullable inbox + progressive localization | Open | TASK-993 — label `p6-inbox` |
@@ -54,7 +54,7 @@ Carried from the TASK-999 body (the authoritative verdict table), with pilot evi
 
 | §6 question | Resolution | Carried into |
 |---|---|---|
-| Deprecate graphify — split or fold? | **Split** — no consumer needed graphify during the B0–B4 pilots | TASK-989 (P1-DEP), TASK-991 (P1-EXEC) |
+| Deprecate graphify — split or fold? | **Split + retire** — answered in ADR-033 (no consumer needed graphify during the B0–B4 pilots; unified store has no AST layer to fold into) | ADR-033; TASK-989 (P1-DEP), TASK-991 (P1-EXEC) |
 | `feature` granularity (is an epic a feature?) | **Accept "smallest user-perceivable outcome"** — a feature node bundles multiple epics; adopt this definition in the model | This ADR (definition above) |
 | gotcha promote: manual vs. auto? | **Auto-draft with manual confirm** — server emits `gotcha_draft` candidates; human gates | TASK-998 (GOTCHA-AUTO) |
 | Non-tech entry point: Teams (M365) or dedicated UI? | **Undecided** — untested in pilot; defer the call | TASK-997 (NON-TECH-ENTRY) |
