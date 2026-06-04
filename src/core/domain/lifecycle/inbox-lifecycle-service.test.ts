@@ -94,6 +94,25 @@ describe('convertInboxToTask', () => {
     const item = await svc.createInbox({ projectId: undefined, content: 'orphan' })
     await expect(svc.convertInboxToTask(item.id, { title: 'x' })).rejects.toThrow(InboxConflictError)
   })
+
+  // P6 (ADR-032 Pillar 6, TASK-993): progressive localization is a soft-warn, never a gate.
+  it('soft-warns (does not throw) when workspaceId is null at convert', async () => {
+    const item = await svc.createInbox({ projectId: 'proj-l', content: 'unlocalized idea' })
+    const r = await svc.convertInboxToTask(item.id, { title: 'unlocalized task' })
+    expect(r.taskId).toMatch(/^TASK-/)
+    expect(r.localizationWarning).toContain('no workspaceId')
+    expect((await svc.getInbox(item.id))?.status).toBe('converted')
+  })
+
+  it('no localizationWarning when the item was localized before convert', async () => {
+    const item = await svc.createInbox({
+      projectId: 'proj-l',
+      content: 'localized idea',
+      workspaceId: 'ws-l'
+    })
+    const r = await svc.convertInboxToTask(item.id, { title: 'localized task' })
+    expect(r.localizationWarning).toBeUndefined()
+  })
 })
 
 describe('archiveInbox', () => {

@@ -188,6 +188,15 @@ export const MIGRATIONS: readonly Migration[] = [
     `
   },
   {
+    // P6 (ADR-032 Pillar 6, TASK-993): nullable workspace scope on inbox, filled
+    // progressively. inbox_add is remote-allowlisted, so the PG path must persist it.
+    name: '009_inbox_workspace',
+    sql: `
+      ALTER TABLE inbox_items ADD COLUMN IF NOT EXISTS workspace_id TEXT;
+      CREATE INDEX IF NOT EXISTS inbox_workspace_idx ON inbox_items (workspace_id);
+    `
+  },
+  {
     // TASK-972 Phase 1 (additive) — signed_off_json column + conversation_message_reads
     // side-table. PG equivalents of SQLite's INSERT OR IGNORE = ON CONFLICT DO NOTHING;
     // SQLite's GROUP_CONCAT = array_agg.
