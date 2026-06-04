@@ -76,7 +76,7 @@ export const register = (server: InstrumentedServer, svc: KnowledgeOperations): 
     },
     async ({ projectId, workspaceId, type, scope, title, body, refs, slug, structured }) =>
       textResponse(
-        svc.createKnowledge({
+        await svc.createKnowledge({
           projectId,
           workspaceId,
           type: type as KnowledgeType,
@@ -109,7 +109,7 @@ export const register = (server: InstrumentedServer, svc: KnowledgeOperations): 
       }
     },
     async ({ filePath, projectId, workspaceId }) =>
-      textResponse(svc.registerExistingKnowledge({ filePath, projectId, workspaceId }))
+      textResponse(await svc.registerExistingKnowledge({ filePath, projectId, workspaceId }))
   )
 
   server.registerTool(
@@ -122,7 +122,7 @@ export const register = (server: InstrumentedServer, svc: KnowledgeOperations): 
       }
     },
     async ({ slug }) => {
-      const entry = svc.getKnowledge(slug)
+      const entry = await svc.getKnowledge(slug)
       if (!entry) return textResponse(`Knowledge ${slug} not found`)
       return textResponse(entry)
     }
@@ -147,7 +147,7 @@ export const register = (server: InstrumentedServer, svc: KnowledgeOperations): 
     },
     async ({ projectId, workspaceId, scope, type }) =>
       textResponse(
-        svc.listKnowledge({
+        await svc.listKnowledge({
           projectId,
           workspaceId: workspaceId === '' ? null : workspaceId,
           scope: scope as KnowledgeScope | undefined,
@@ -179,7 +179,7 @@ export const register = (server: InstrumentedServer, svc: KnowledgeOperations): 
       }
     },
     async ({ slug, body, refs }) =>
-      textResponse(svc.updateKnowledge({ slug, body, refs }))
+      textResponse(await svc.updateKnowledge({ slug, body, refs }))
   )
 
   server.registerTool(
@@ -191,7 +191,7 @@ export const register = (server: InstrumentedServer, svc: KnowledgeOperations): 
         slug: z.string().describe('Slug of the entry')
       }
     },
-    async ({ slug }) => textResponse(svc.verifyKnowledge(slug))
+    async ({ slug }) => textResponse(await svc.verifyKnowledge(slug))
   )
 
   server.registerTool(
@@ -203,7 +203,7 @@ export const register = (server: InstrumentedServer, svc: KnowledgeOperations): 
         slug: z.string().describe('Slug of the entry to delete')
       }
     },
-    async ({ slug }) => textResponse(svc.deleteKnowledge(slug))
+    async ({ slug }) => textResponse(await svc.deleteKnowledge(slug))
   )
 
   server.registerTool(
