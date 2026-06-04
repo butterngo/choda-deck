@@ -18,6 +18,7 @@ import type { PostgresCounterRepository } from './counter-repository.pg'
 interface InboxDbRow {
   id: string
   project_id: string | null
+  workspace_id: string | null
   content: string
   status: string
   linked_task_id: string | null
@@ -29,6 +30,7 @@ function mapRow(row: InboxDbRow): InboxItem {
   return {
     id: row.id,
     projectId: row.project_id,
+    workspaceId: row.workspace_id,
     content: row.content,
     status: row.status as InboxStatus,
     linkedTaskId: row.linked_task_id,
@@ -38,7 +40,7 @@ function mapRow(row: InboxDbRow): InboxItem {
 }
 
 const SELECT_COLS =
-  'id, project_id, content, status, linked_task_id, created_at, updated_at'
+  'id, project_id, workspace_id, content, status, linked_task_id, created_at, updated_at'
 
 export class PostgresInboxRepository {
   constructor(
@@ -55,9 +57,9 @@ export class PostgresInboxRepository {
     const ts = now()
     const id = await this.nextInboxId()
     await this.conn.query(
-      `INSERT INTO inbox_items (id, project_id, content, status, linked_task_id, created_at, updated_at)
-       VALUES ($1, $2, $3, 'raw', $4, $5, $5)`,
-      [id, input.projectId ?? null, input.content, input.linkedTaskId ?? null, ts]
+      `INSERT INTO inbox_items (id, project_id, workspace_id, content, status, linked_task_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, 'raw', $5, $6, $6)`,
+      [id, input.projectId ?? null, input.workspaceId ?? null, input.content, input.linkedTaskId ?? null, ts]
     )
     const got = await this.get(id)
     if (!got) throw new Error(`Inbox item disappeared after insert: ${id}`)
@@ -84,6 +86,14 @@ export class PostgresInboxRepository {
       } else {
         wheres.push(`project_id = $${n++}`)
         params.push(filter.projectId)
+      }
+    }
+    if (filter.workspaceId !== undefined) {
+      if (filter.workspaceId === null) {
+        wheres.push('workspace_id IS NULL')
+      } else {
+        wheres.push(`workspace_id = $${n++}`)
+        params.push(filter.workspaceId)
       }
     }
     if (filter.status) {

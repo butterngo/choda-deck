@@ -26,10 +26,17 @@ export const register = (server: InstrumentedServer, svc: InboxToolsDeps): void 
       description: 'Add a raw idea to inbox. Returns INBOX-NNN with status=raw.',
       inputSchema: {
         projectId: z.string().describe('Project ID (required)'),
-        content: z.string().describe('Raw idea content')
+        content: z.string().describe('Raw idea content'),
+        workspaceId: z
+          .string()
+          .optional()
+          .describe(
+            'App/workspace scope, if already clear. Omit to leave domain-level (null) — research fills it later via inbox_ready.'
+          )
       }
     },
-    async ({ projectId, content }) => textResponse(await svc.createInbox({ projectId, content }))
+    async ({ projectId, content, workspaceId }) =>
+      textResponse(await svc.createInbox({ projectId, content, workspaceId }))
   )
 
   server.registerTool(
@@ -127,16 +134,28 @@ export const register = (server: InstrumentedServer, svc: InboxToolsDeps): void 
   server.registerTool(
     'inbox_ready',
     {
-      description: 'Mark research complete. Transitions researching → ready.',
-      inputSchema: { id: z.string().describe('Inbox item ID') }
+      description:
+        'Mark research complete. Transitions researching → ready. Pass workspaceId to localize the item to the app research identified (ADR-032 Pillar 6).',
+      inputSchema: {
+        id: z.string().describe('Inbox item ID'),
+        workspaceId: z
+          .string()
+          .optional()
+          .describe('App/workspace identified during research — localizes the item before convert.')
+      }
     },
-    async ({ id }) => {
+    async ({ id, workspaceId }) => {
       const item = await svc.getInbox(id)
       if (!item) return textResponse(`Inbox ${id} not found`)
       if (item.status !== 'researching') {
         return textResponse(`Inbox ${id} is ${item.status}, not researching`)
       }
-      return textResponse(await svc.updateInbox(id, { status: 'ready' }))
+      return textResponse(
+        await svc.updateInbox(
+          id,
+          workspaceId !== undefined ? { status: 'ready', workspaceId } : { status: 'ready' }
+        )
+      )
     }
   )
 

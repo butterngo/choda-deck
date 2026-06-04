@@ -574,6 +574,7 @@ function createM1Tables(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS inbox_items (
       id TEXT PRIMARY KEY,
       project_id TEXT,
+      workspace_id TEXT,
       content TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'raw',
       linked_task_id TEXT,
@@ -581,6 +582,13 @@ function createM1Tables(db: Database.Database): void {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `)
+  // P6 (ADR-032 Pillar 6): nullable workspace scope on inbox, filled progressively.
+  // Idempotent ALTER for DBs created before this column existed.
+  try {
+    db.exec('ALTER TABLE inbox_items ADD COLUMN workspace_id TEXT')
+  } catch {
+    /* exists */
+  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS knowledge_index (
       slug TEXT PRIMARY KEY,
@@ -770,6 +778,7 @@ function createIndexes(db: Database.Database): void {
   )
   db.exec('CREATE INDEX IF NOT EXISTS idx_inbox_project ON inbox_items(project_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_inbox_status ON inbox_items(project_id, status)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_inbox_workspace ON inbox_items(workspace_id)')
   db.exec(
     'CREATE INDEX IF NOT EXISTS idx_conversations_owner_session ON conversations(owner_session_id)'
   )

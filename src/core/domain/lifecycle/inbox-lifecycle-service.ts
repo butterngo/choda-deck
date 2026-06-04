@@ -67,7 +67,13 @@ export class InboxLifecycleService implements InboxLifecycleOperations {
       this.closeLinkedConversations(id, `Converted to ${task.id}: ${input.title}`)
       const final = this.tasks.get(task.id)
       if (!final) throw new Error(`Task ${task.id} disappeared mid-transaction`)
-      return { inboxId: id, taskId: task.id, task: final }
+      // Progressive localization (ADR-032 Pillar 6): soft-warn, never gate. If the
+      // idea was never localized to a workspace, the converted task carries no
+      // app scope — surface a nudge rather than blocking the conversion.
+      const localizationWarning = item.workspaceId
+        ? undefined
+        : `${id} had no workspaceId — converted ${task.id} is not localized to an app. Set it during research (inbox_ready) next time, or scope the task via its worker session.`
+      return { inboxId: id, taskId: task.id, task: final, localizationWarning }
     })
     return tx()
   }

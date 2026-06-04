@@ -17,6 +17,9 @@ export interface InboxConvertResult {
   inboxId: string
   taskId: string
   task: Task
+  // Set when the inbox item had no workspaceId at convert time (ADR-032 Pillar 6
+  // progressive localization) — nudge to localize, not a hard gate.
+  localizationWarning?: string
 }
 
 export interface InboxLifecycleOperations {

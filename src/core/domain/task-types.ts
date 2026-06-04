@@ -349,6 +349,9 @@ export const INBOX_STATUSES: InboxStatus[] = [
 export interface InboxItem {
   id: string
   projectId: string | null
+  // Nullable app-level scope (ADR-032 Pillar 6). null = domain-level (not yet
+  // localized); filled progressively as research identifies the app.
+  workspaceId: string | null
   content: string
   status: InboxStatus
   linkedTaskId: string | null
@@ -359,17 +362,20 @@ export interface InboxItem {
 export interface CreateInboxInput {
   projectId: string
   content: string
+  workspaceId?: string | null
   linkedTaskId?: string
 }
 
 export interface UpdateInboxInput {
   content?: string
   status?: InboxStatus
+  workspaceId?: string | null
   linkedTaskId?: string | null
 }
 
 export interface InboxFilter {
   projectId?: string | null
+  workspaceId?: string | null
   status?: InboxStatus
 }
 

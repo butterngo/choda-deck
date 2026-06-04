@@ -13,6 +13,7 @@ function rowToInbox(row: Record<string, unknown>): InboxItem {
   return {
     id: row.id as string,
     projectId: (row.project_id as string) || null,
+    workspaceId: (row.workspace_id as string) || null,
     content: row.content as string,
     status: row.status as InboxStatus,
     linkedTaskId: (row.linked_task_id as string) || null,
@@ -37,10 +38,10 @@ export class InboxRepository {
     const id = this.nextInboxId()
     this.db
       .prepare(
-        `INSERT INTO inbox_items (id, project_id, content, status, linked_task_id, created_at, updated_at)
-         VALUES (?, ?, ?, 'raw', ?, ?, ?)`
+        `INSERT INTO inbox_items (id, project_id, workspace_id, content, status, linked_task_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'raw', ?, ?, ?)`
       )
-      .run(id, projectId, input.content, input.linkedTaskId ?? null, ts, ts)
+      .run(id, projectId, input.workspaceId ?? null, input.content, input.linkedTaskId ?? null, ts, ts)
     return this.get(id)!
   }
 
@@ -55,6 +56,10 @@ export class InboxRepository {
     if (input.status !== undefined) {
       sets.push('status = ?')
       params.push(input.status)
+    }
+    if (input.workspaceId !== undefined) {
+      sets.push('workspace_id = ?')
+      params.push(input.workspaceId)
     }
     if (input.linkedTaskId !== undefined) {
       sets.push('linked_task_id = ?')
@@ -91,6 +96,14 @@ export class InboxRepository {
       } else {
         wheres.push('project_id = ?')
         params.push(filter.projectId)
+      }
+    }
+    if (filter.workspaceId !== undefined) {
+      if (filter.workspaceId === null) {
+        wheres.push('workspace_id IS NULL')
+      } else {
+        wheres.push('workspace_id = ?')
+        params.push(filter.workspaceId)
       }
     }
     if (filter.status) {

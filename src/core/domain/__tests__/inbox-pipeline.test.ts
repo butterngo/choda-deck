@@ -216,6 +216,41 @@ describe('inbox: archive guards', () => {
   })
 })
 
+describe('inbox: workspaceId (P6 — ADR-032 Pillar 6, TASK-993)', () => {
+  it('defaults to null when omitted (existing rows / domain-level captures)', async () => {
+    const item = await svc.createInbox({ projectId: 'proj-i', content: 'no workspace yet' })
+    expect(item.workspaceId).toBeNull()
+  })
+
+  it('persists workspaceId when supplied at create', async () => {
+    const item = await svc.createInbox({
+      projectId: 'proj-i',
+      content: 'born localized',
+      workspaceId: 'ws-main'
+    })
+    expect(item.workspaceId).toBe('ws-main')
+    expect((await svc.getInbox(item.id))?.workspaceId).toBe('ws-main')
+  })
+
+  it('localizes progressively via updateInbox (research → ready path)', async () => {
+    const item = await svc.createInbox({ projectId: 'proj-i', content: 'localize me later' })
+    expect(item.workspaceId).toBeNull()
+    const updated = await svc.updateInbox(item.id, { status: 'ready', workspaceId: 'ws-late' })
+    expect(updated.workspaceId).toBe('ws-late')
+    expect(updated.status).toBe('ready')
+  })
+
+  it('filters by workspaceId — value and IS NULL', async () => {
+    await svc.createInbox({ projectId: 'proj-i', content: 'ws-x item', workspaceId: 'ws-x' })
+    const scoped = await svc.findInbox({ projectId: 'proj-i', workspaceId: 'ws-x' })
+    expect(scoped.length).toBeGreaterThanOrEqual(1)
+    expect(scoped.every((r) => r.workspaceId === 'ws-x')).toBe(true)
+
+    const unlocalized = await svc.findInbox({ projectId: 'proj-i', workspaceId: null })
+    expect(unlocalized.every((r) => r.workspaceId === null)).toBe(true)
+  })
+})
+
 describe('inbox: cancel flow (per ADR-011)', () => {
   it.todo('researching → raw via inbox_cancel — tool not yet implemented (tracked in INBOX research)')
 })
