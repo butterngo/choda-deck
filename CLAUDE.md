@@ -126,9 +126,12 @@ The server supports two transports from a single binary, selected at startup via
 | `MCP_HTTP_PORT` | `7337` | `MCP_TRANSPORT=http` | Listen port |
 | `MCP_HTTP_BIND` | `0.0.0.0` | `MCP_TRANSPORT=http` | Bind address (`127.0.0.1` for local dev) |
 | `MCP_HTTP_TOKEN` | — | `MCP_TRANSPORT=http` without OAuth | Bearer token — full DB access on match. Ignored when `MCP_OAUTH_MODE=1` |
-| `MCP_OAUTH_MODE` | unset | — | Set to `1` to switch `/mcp` from bearer to OAuth (ADR-027) |
-| `MCP_OAUTH_ISSUER` | — | `MCP_OAUTH_MODE=1` | Public origin (e.g. `https://mcp.choda.dev`, no trailing slash) — used in `/.well-known/*` metadata + `WWW-Authenticate` |
-| `MCP_OAUTH_CONSENT_PASSWORD_FILE` | `sensitive_information/oauth-consent-password.txt` | `MCP_OAUTH_MODE=1` | Path to file containing the 64-char hex SHA-256 hash of the consent password |
+| `MCP_OAUTH_MODE` | unset | — | Set to `1` to switch `/mcp` from bearer to Keycloak-backed OAuth (ADR-034) |
+| `MCP_OAUTH_ISSUER` | — | `MCP_OAUTH_MODE=1` | Public origin of THIS server (e.g. `https://mcp.choda.dev`, no trailing slash) — used in `/.well-known/*` metadata + `WWW-Authenticate` |
+| `MCP_OIDC_ISSUER` | — | `MCP_OAUTH_MODE=1` | Keycloak realm issuer (e.g. `https://id.choda.dev/realms/choda`) — auth/token/JWKS endpoints derived from it |
+| `MCP_OIDC_CLIENT_ID` | — | `MCP_OAUTH_MODE=1` | Pinned Keycloak public client id the connector registers as |
+| `MCP_OIDC_AUDIENCE` | = `MCP_OIDC_CLIENT_ID` | — | Expected token `aud`/`azp` checked on `/mcp` |
+| `MCP_OIDC_CLIENT_SECRET_FILE` | — | only if pinned client is confidential | Path to the Keycloak client secret (gitignored under `sensitive_information/`) |
 
 **Stdio (default)** — unchanged behavior, what `.claude.json` registrations use today.
 
@@ -162,16 +165,22 @@ Stdio uses SQLite with the full `BackendTaskService` surface. HTTP uses either S
 
 Standing rule: PG surface = remote allowlist's call graph + OAuth. Expanding the allowlist requires three coordinated edits in the same PR — (1) add the tool name to `REMOTE_TOOL_ALLOWLIST`, (2) add the methods it calls to `RemoteOperations`, (3) implement those methods on `PostgresTaskService` + any missing repos/migrations. Adding a tool without (2)+(3) → tool registers but throws at runtime when called over HTTP. See ADR-026 §Per-tool scoping standing rule.
 
-## MCP OAuth Mode (ADR-027)
+## MCP OAuth Mode (ADR-034 — supersedes ADR-027)
 
-When `claude.ai`'s connector UI is the target client, static bearer is unsupported — flip on OAuth instead. Adds five endpoints (`/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`, `POST /register`, `GET|POST /authorize`, `POST /token`) and makes `/mcp` validate against the `oauth_tokens` SQLite table instead of `MCP_HTTP_TOKEN`. 401 responses include `WWW-Authenticate: Bearer resource_metadata="<issuer>/.well-known/oauth-protected-resource"`.
+When `claude.ai`'s connector UI is the target client, static bearer is unsupported — flip on `MCP_OAUTH_MODE=1`. Identity, login, consent, and token issuance live in **Keycloak** (`https://id.choda.dev`); choda-deck is a thin proxy + resource server. It no longer mints or stores tokens (ADR-027's `oauth_*` tables are gone).
 
-Consent password generation:
-```bash
-read -rs PASS && printf '%s' "$PASS" | node -e "process.stdin.on('data',d=>process.stdout.write(require('crypto').createHash('sha256').update(d.toString().trim()).digest('hex')))" > sensitive_information/oauth-consent-password.txt
-```
+**Why proxy, not a clean external AS:** the claude.ai *web* connector ignores external `authorization_endpoint`/`token_endpoint`/`registration_endpoint` from metadata and hardcodes them on the MCP origin ([anthropics/claude-ai-mcp#82](https://github.com/anthropics/claude-ai-mcp/issues/82), closed not-planned). So the endpoints stay on-origin and proxy to Keycloak:
+- `GET /authorize` → 302 to Keycloak `…/protocol/openid-connect/auth` (browser logs in + consents at Keycloak)
+- `POST /token` → forwards the grant to Keycloak `…/protocol/openid-connect/token`, returns its response verbatim
+- `POST /register` → returns the pinned Keycloak public client (no live DCR — Keycloak's anonymous DCR is off by default)
+- `POST /mcp` → validates the Keycloak JWT (JWKS signature from `…/protocol/openid-connect/certs`, `iss`/`aud`/`azp`/`exp`); 401 → `WWW-Authenticate: Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource"`
+
+Keycloak setup (one-time, per realm):
+- Register a **public** client (`token_endpoint_auth_method=none`, PKCE S256) → its id is `MCP_OIDC_CLIENT_ID`.
+- Add `https://claude.ai/api/mcp/auth_callback` to the client's Valid Redirect URIs.
+- Confirm the issued access token's `aud`/`azp` matches `MCP_OIDC_AUDIENCE` (Keycloak lacks full RFC 8707 — map an audience client-scope if needed).
 
 Operational notes:
 - **CF WAF allowlist `160.79.104.0/21` applies to `/mcp` path ONLY.** `/authorize`, `/token`, `/register`, `/.well-known/*` must stay globally reachable — they're hit by the user's browser, not the broker.
-- **Password rotation:** rewrite the file + restart the pod. Rotating revokes nothing; old `oauth_tokens` rows stay valid until their `access_expires_at` (1h) / `refresh_expires_at` (30d).
-- **Replayed refresh token → entire chain revoked** for that `client_id` (OAuth 2.1 §4.13.2).
+- **`id.choda.dev` is on the `/mcp` hot path** — JWKS is cached (refresh-on-unknown-kid), so brief Keycloak downtime tolerates existing tokens, but a sustained outage blocks new token validation.
+- **Collapses to a pure resource server** (drop the proxy routes, keep JWT validation) the day claude.ai web honors external authorization servers (#82).

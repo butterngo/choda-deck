@@ -7,7 +7,7 @@ export function initSchema(db: Database.Database): void {
   runLegacyMigrations(db)
   createM1Tables(db)
   createM2Tables(db)
-  createOAuthTables(db)
+  dropLegacyOAuthTables(db)
   createIndexes(db)
   cleanupPoisonedTaskIds(db)
   seedSchemaVersion(db)
@@ -711,39 +711,14 @@ function createM2Tables(db: Database.Database): void {
   `)
 }
 
-// ADR-027: minimal self-hosted OAuth 2.0 + DCR tables. All TEXT for timestamps
-// to match existing schema convention; expiry comparisons happen in JS via Date.
-function createOAuthTables(db: Database.Database): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS oauth_clients (
-      client_id TEXT PRIMARY KEY,
-      client_name TEXT NOT NULL,
-      redirect_uris TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS oauth_auth_codes (
-      code TEXT PRIMARY KEY,
-      client_id TEXT NOT NULL REFERENCES oauth_clients(client_id),
-      code_challenge TEXT NOT NULL,
-      code_challenge_method TEXT NOT NULL CHECK (code_challenge_method = 'S256'),
-      redirect_uri TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS oauth_tokens (
-      access_token TEXT PRIMARY KEY,
-      refresh_token TEXT UNIQUE NOT NULL,
-      client_id TEXT NOT NULL REFERENCES oauth_clients(client_id),
-      access_expires_at TEXT NOT NULL,
-      refresh_expires_at TEXT NOT NULL,
-      revoked INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `)
+// ADR-034: the ADR-027 self-issued OAuth store is gone — Keycloak issues and
+// stores tokens now; choda-deck only validates Keycloak JWTs. Drop the legacy
+// tables (idempotent) so existing local DBs are cleaned on next boot. Drop the
+// referencing tables before oauth_clients to respect the FKs.
+function dropLegacyOAuthTables(db: Database.Database): void {
+  db.exec('DROP TABLE IF EXISTS oauth_auth_codes')
+  db.exec('DROP TABLE IF EXISTS oauth_tokens')
+  db.exec('DROP TABLE IF EXISTS oauth_clients')
 }
 
 function createIndexes(db: Database.Database): void {
@@ -788,16 +763,6 @@ function createIndexes(db: Database.Database): void {
   )
   db.exec(
     'CREATE INDEX IF NOT EXISTS idx_agent_memories_recall ON agent_memories(importance DESC, recall_count DESC)'
-  )
-  db.exec(
-    'CREATE INDEX IF NOT EXISTS idx_oauth_auth_codes_client ON oauth_auth_codes(client_id)'
-  )
-  db.exec(
-    'CREATE INDEX IF NOT EXISTS idx_oauth_auth_codes_expires ON oauth_auth_codes(expires_at)'
-  )
-  db.exec('CREATE INDEX IF NOT EXISTS idx_oauth_tokens_client ON oauth_tokens(client_id)')
-  db.exec(
-    'CREATE INDEX IF NOT EXISTS idx_oauth_tokens_access_expires ON oauth_tokens(access_expires_at)'
   )
 }
 

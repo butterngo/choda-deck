@@ -2,7 +2,8 @@
 // subset only.
 //
 // Retained tables: global_counters, projects, workspaces, tasks, tags,
-// relationships, inbox_items, conversations + 4 sub-tables, oauth_* (3).
+// relationships, inbox_items, conversations + 4 sub-tables. (oauth_* were added
+// in 010 and dropped in 011 — ADR-034 moved token storage to Keycloak.)
 // Dropped (no remote tool reaches them): documents, sessions, session_events,
 // context_sources, agent_memories, knowledge_index, knowledge_embeddings,
 // tool_invocations. The `vector` extension is no longer installed.
@@ -266,6 +267,17 @@ export const MIGRATIONS: readonly Migration[] = [
 
       CREATE INDEX IF NOT EXISTS oauth_tokens_client_idx ON oauth_tokens (client_id);
       CREATE INDEX IF NOT EXISTS oauth_tokens_access_expires_idx ON oauth_tokens (access_expires_at);
+    `
+  },
+  {
+    // ADR-034: drop the ADR-027 self-issued OAuth store. Keycloak now issues and
+    // stores tokens; choda-deck only validates Keycloak JWTs. 010_oauth stays in
+    // history (already applied on existing deploys) — this migration removes it.
+    name: '011_drop_oauth',
+    sql: `
+      DROP TABLE IF EXISTS oauth_auth_codes;
+      DROP TABLE IF EXISTS oauth_tokens;
+      DROP TABLE IF EXISTS oauth_clients;
     `
   }
 ]
