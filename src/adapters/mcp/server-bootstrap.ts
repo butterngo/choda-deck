@@ -1,25 +1,18 @@
 import * as fs from 'fs'
-import * as path from 'path'
-import Database from 'better-sqlite3'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
-import type { BackendConfig } from '../../core/backend-config'
 import {
   createTaskService,
   requireBackendForTransport
 } from '../../core/domain/task-service-factory'
-import { OAuthRepository } from '../../core/domain/repositories/oauth-repository'
-import { PostgresOAuthRepository } from '../../core/domain/repositories/postgres/oauth-repository.pg'
-import { PgConnection } from '../../core/domain/repositories/postgres/connection'
-import { migrate } from '../../core/domain/repositories/postgres/migrations'
-import type { OAuthOperations } from '../../core/domain/interfaces/oauth-repository.interface'
 import { resolveBackendConfig, resolveDataPaths } from '../../core/paths'
 import {
   createInstrumentedServer,
   type ToolInvocationSink
 } from './instrumented-server'
 import { startHttpTransport, type OAuthConfig } from './http-transport'
+import { createKeycloakVerifier } from './oauth/jwt-verifier'
 import * as taskTools from './mcp-tools/task-tools'
 import * as conversationTools from './mcp-tools/conversation-tools'
 import * as projectTools from './mcp-tools/project-tools'
@@ -129,11 +122,11 @@ export async function startMcpServer(): Promise<void> {
   }
 
   if (mode === 'http') {
-    const oauth = await buildOAuthConfig(backend)
+    const oauth = buildOAuthConfig()
     const token = process.env.MCP_HTTP_TOKEN ?? ''
     if (!oauth && token.length === 0) {
       process.stderr.write(
-        '[choda-deck] MCP_TRANSPORT=http requires MCP_HTTP_TOKEN (or MCP_OAUTH_MODE=1 + MCP_OAUTH_ISSUER) — refusing to expose unauthenticated\n'
+        '[choda-deck] MCP_TRANSPORT=http requires MCP_HTTP_TOKEN (or MCP_OAUTH_MODE=1 + Keycloak config) — refusing to expose unauthenticated\n'
       )
       process.exit(2)
     }
@@ -167,63 +160,58 @@ export async function startMcpServer(): Promise<void> {
   await server.connect(transport)
 }
 
-// ADR-027 + ADR-030: when MCP_OAUTH_MODE=1, build an OAuthConfig from env +
-// consent password file. The repo is constructed against whatever backend the
-// rest of the process is using (CHODA_BACKEND), so HTTP transport stays
-// uniform across SQLite and Postgres deploys.
+// ADR-034: when MCP_OAUTH_MODE=1, build a Keycloak-backed OAuthConfig from env.
+// choda-deck proxies /authorize, /token, /register to Keycloak and validates
+// Keycloak-issued JWTs on /mcp — no local token store (ADR-027's oauth_* is gone).
 //
-// Both backends use a dedicated connection/pool for OAuth (separate from the
-// TaskService) — matches the original ADR-027 "SqliteTaskService stays
-// untouched" decoupling and keeps OAuth writes off the hot path.
-async function buildOAuthConfig(backend: BackendConfig): Promise<OAuthConfig | undefined> {
+// Required env:
+//   MCP_OAUTH_ISSUER          public origin of THIS server (metadata + WWW-Authenticate)
+//   MCP_OIDC_ISSUER           Keycloak realm issuer, e.g. https://id.choda.dev/realms/<realm>
+//   MCP_OIDC_CLIENT_ID        pinned Keycloak public client for the connector
+// Optional:
+//   MCP_OIDC_AUDIENCE         expected token aud/azp (defaults to MCP_OIDC_CLIENT_ID)
+//   MCP_OIDC_CLIENT_SECRET_FILE  only if the pinned client is confidential
+function buildOAuthConfig(): OAuthConfig | undefined {
   if (process.env.MCP_OAUTH_MODE !== '1') return undefined
 
-  const issuer = (process.env.MCP_OAUTH_ISSUER ?? '').replace(/\/$/, '')
-  if (issuer.length === 0) {
-    process.stderr.write(
-      '[choda-deck] MCP_OAUTH_MODE=1 requires MCP_OAUTH_ISSUER (e.g. https://mcp.choda.dev)\n'
-    )
-    process.exit(2)
-  }
+  const origin = requireEnv('MCP_OAUTH_ISSUER', 'public origin e.g. https://mcp.choda.dev').replace(
+    /\/$/,
+    ''
+  )
+  const realmIssuer = requireEnv(
+    'MCP_OIDC_ISSUER',
+    'Keycloak realm issuer e.g. https://id.choda.dev/realms/choda'
+  ).replace(/\/$/, '')
+  const clientId = requireEnv('MCP_OIDC_CLIENT_ID', 'pinned Keycloak public client id')
+  const audience = process.env.MCP_OIDC_AUDIENCE ?? clientId
 
-  const passwordFile =
-    process.env.MCP_OAUTH_CONSENT_PASSWORD_FILE ??
-    path.join(process.cwd(), 'sensitive_information', 'oauth-consent-password.txt')
-  if (!fs.existsSync(passwordFile)) {
-    process.stderr.write(
-      `[choda-deck] MCP_OAUTH_MODE=1 needs consent password file at ${passwordFile}\n`
-    )
-    process.exit(2)
-  }
-  const hash = fs.readFileSync(passwordFile, 'utf8').trim()
-  if (!/^[0-9a-f]{64}$/i.test(hash)) {
-    process.stderr.write(
-      `[choda-deck] consent password file must contain a 64-char hex SHA-256 hash (got ${hash.length} chars)\n`
-    )
-    process.exit(2)
-  }
+  const secretFile = process.env.MCP_OIDC_CLIENT_SECRET_FILE
+  const clientSecret =
+    secretFile && fs.existsSync(secretFile) ? fs.readFileSync(secretFile, 'utf8').trim() : undefined
 
-  const repo: OAuthOperations =
-    backend.kind === 'postgres'
-      ? await buildPostgresOAuthRepo(backend.connectionString)
-      : buildSqliteOAuthRepo(backend.dbPath)
+  const verifier = createKeycloakVerifier({
+    issuer: realmIssuer,
+    audience,
+    jwksUri: `${realmIssuer}/protocol/openid-connect/certs`
+  })
 
-  return { repo, issuer, consentPasswordHashHex: hash }
+  return {
+    origin,
+    keycloak: {
+      authorizationEndpoint: `${realmIssuer}/protocol/openid-connect/auth`,
+      tokenEndpoint: `${realmIssuer}/protocol/openid-connect/token`,
+      clientId,
+      clientSecret
+    },
+    verifier
+  }
 }
 
-function buildSqliteOAuthRepo(dbPath: string): OAuthRepository {
-  const oauthDb = new Database(dbPath)
-  oauthDb.pragma('foreign_keys = ON')
-  return new OAuthRepository(oauthDb)
-}
-
-async function buildPostgresOAuthRepo(
-  connectionString: string
-): Promise<PostgresOAuthRepository> {
-  const poolMax = Number.parseInt(process.env.CHODA_PG_POOL_SIZE ?? '10', 10)
-  const conn = new PgConnection({ connectionString, max: poolMax })
-  // Idempotent — task-service-factory already ran the same migrations on its
-  // own pool, but the _migrations gate makes the second run a no-op.
-  await migrate(conn)
-  return new PostgresOAuthRepository(conn)
+function requireEnv(name: string, hint: string): string {
+  const value = (process.env[name] ?? '').trim()
+  if (value.length === 0) {
+    process.stderr.write(`[choda-deck] MCP_OAUTH_MODE=1 requires ${name} (${hint})\n`)
+    process.exit(2)
+  }
+  return value
 }

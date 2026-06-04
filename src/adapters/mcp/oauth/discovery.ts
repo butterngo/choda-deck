@@ -1,16 +1,13 @@
-// ADR-027: OAuth metadata documents. Both are pure functions of `issuer` so
-// they're trivially testable and the HTTP layer just serializes the result.
+// ADR-034: OAuth metadata documents. The AS endpoints live on choda-deck's
+// origin (they proxy to Keycloak — see keycloak-proxy.ts) because the claude.ai
+// web connector hardcodes them on the MCP origin (anthropics/claude-ai-mcp#82).
+// So `authorization_servers` and the AS-metadata endpoints all point at the
+// public origin, not directly at Keycloak. `realmIssuer` is surfaced only for
+// reference / debugging — well-behaved clients (CLI/ChatGPT) still work because
+// the origin endpoints proxy through.
 //
-// `issuer` is the public origin the server is reachable at — e.g.
+// `origin` is the public origin the server is reachable at — e.g.
 // `https://mcp.choda.dev`. No trailing slash (RFC 8414 §2 forbids it).
-//
-// We advertise:
-//   - response_types: ['code']                — only auth-code flow
-//   - grant_types:    ['authorization_code', 'refresh_token']
-//   - PKCE method:    S256 only               — matches the schema CHECK
-//   - token auth:     'none'                  — public clients, no secret;
-//                                               PKCE replaces the secret
-//   - DCR endpoint:   /register               — RFC 7591
 
 export interface AuthServerMetadata {
   issuer: string
@@ -29,8 +26,8 @@ export interface ProtectedResourceMetadata {
   bearer_methods_supported: string[]
 }
 
-export function authServerMetadata(issuer: string): AuthServerMetadata {
-  const base = stripTrailingSlash(issuer)
+export function authServerMetadata(origin: string): AuthServerMetadata {
+  const base = stripTrailingSlash(origin)
   return {
     issuer: base,
     authorization_endpoint: `${base}/authorize`,
@@ -43,8 +40,8 @@ export function authServerMetadata(issuer: string): AuthServerMetadata {
   }
 }
 
-export function protectedResourceMetadata(issuer: string): ProtectedResourceMetadata {
-  const base = stripTrailingSlash(issuer)
+export function protectedResourceMetadata(origin: string): ProtectedResourceMetadata {
+  const base = stripTrailingSlash(origin)
   return {
     resource: `${base}/mcp`,
     authorization_servers: [base],

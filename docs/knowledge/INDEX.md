@@ -2,7 +2,8 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
-| [ADR-033-deprecate-graphify](./ADR-033-deprecate-graphify.md) | decision | ADR-033: Deprecate graphify — retire the AST code-graph enrichment, do not fold into the unified store | 2026-06-04 |  |
+| [ADR-034-keycloak-backed-http-auth-via-on-origin-proxy](./ADR-034-keycloak-backed-http-auth-via-on-origin-proxy.md) | decision | ADR-034: Keycloak-backed HTTP auth via on-origin OAuth proxy (supersedes ADR-027) | 2026-06-04 |  |
+| [ADR-033-deprecate-graphify](./ADR-033-deprecate-graphify.md) | decision | ADR-033: Deprecate graphify — retire the AST code-graph enrichment, do not fold into the unified store | 2026-06-04 | ✱ |
 | [ADR-032-unified-knowledge-graph-v2](./ADR-032-unified-knowledge-graph-v2.md) | decision | ADR-032: Unified Knowledge Graph v2 — program consolidation, §6 resolutions, ACCEPTED | 2026-06-03 | ✱ |
 | [ADR-031-session-end-derivation](./ADR-031-session-end-derivation.md) | decision | ADR-031: session_end field derivation — deterministic auto-fill, heuristic candidates, AI-wins override | 2026-06-02 |  |
 | [gotcha-tester-guards-spare-verbatim-ac](./gotcha-tester-guards-spare-verbatim-ac.md) | gotcha | Gotcha: tester guards must not reject verbatim AC | 2026-06-02 |  |

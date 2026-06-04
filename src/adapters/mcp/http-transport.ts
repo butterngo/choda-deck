@@ -3,11 +3,14 @@ import { Buffer } from 'buffer'
 import { timingSafeEqual } from 'crypto'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import type { OAuthOperations } from '../../core/domain/interfaces/oauth-repository.interface'
 import { authServerMetadata, protectedResourceMetadata } from './oauth/discovery'
-import { handleRegister } from './oauth/register'
-import { handleAuthorizeGet, handleAuthorizePost, type AuthorizeResult } from './oauth/authorize'
-import { handleToken } from './oauth/token'
+import {
+  handleAuthorizeRedirect,
+  handleRegisterStatic,
+  handleTokenProxy,
+  type KeycloakProxyConfig
+} from './oauth/keycloak-proxy'
+import type { JwtVerifier } from './oauth/jwt-verifier'
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024
 
@@ -18,10 +21,13 @@ const MAX_BODY_BYTES = 4 * 1024 * 1024
 // time. See SDK example simpleStatelessStreamableHttp.js.
 export type McpServerFactory = () => Promise<McpServer> | McpServer
 
+// ADR-034: Keycloak-backed auth. choda-deck proxies the OAuth endpoints to
+// Keycloak and validates Keycloak-issued JWTs on /mcp — it no longer mints or
+// stores tokens (ADR-027's oauth_* store is gone).
 export interface OAuthConfig {
-  repo: OAuthOperations
-  issuer: string // e.g. https://mcp.choda.dev — no trailing slash
-  consentPasswordHashHex: string
+  origin: string // public origin, e.g. https://mcp.choda.dev — no trailing slash
+  keycloak: KeycloakProxyConfig
+  verifier: JwtVerifier
 }
 
 export interface HttpTransportOptions {
@@ -115,11 +121,11 @@ async function tryHandleOAuthRoute(
   oauth: OAuthConfig
 ): Promise<boolean> {
   if (pathname === '/.well-known/oauth-authorization-server' && method === 'GET') {
-    sendJson(res, 200, authServerMetadata(oauth.issuer))
+    sendJson(res, 200, authServerMetadata(oauth.origin))
     return true
   }
   if (pathname === '/.well-known/oauth-protected-resource' && method === 'GET') {
-    sendJson(res, 200, protectedResourceMetadata(oauth.issuer))
+    sendJson(res, 200, protectedResourceMetadata(oauth.origin))
     return true
   }
   if (pathname === '/register' && method === 'POST') {
@@ -130,26 +136,16 @@ async function tryHandleOAuthRoute(
       writeBodyError(res, err)
       return true
     }
-    const result = await handleRegister(oauth.repo, parsed)
+    // No live DCR — return the pinned Keycloak public client.
+    const result = handleRegisterStatic(oauth.keycloak, parsed)
     sendJson(res, result.status, result.body)
     return true
   }
   if (pathname === '/authorize' && method === 'GET') {
-    sendAuthorizeResult(res, await handleAuthorizeGet(oauth.repo, parsedUrl.searchParams))
-    return true
-  }
-  if (pathname === '/authorize' && method === 'POST') {
-    let form: URLSearchParams
-    try {
-      form = await readForm(req)
-    } catch (err) {
-      writeBodyError(res, err)
-      return true
-    }
-    sendAuthorizeResult(
-      res,
-      await handleAuthorizePost(oauth.repo, form, oauth.consentPasswordHashHex)
-    )
+    // Redirect the browser to Keycloak — login + consent happen there.
+    const { location } = handleAuthorizeRedirect(oauth.keycloak, parsedUrl.searchParams)
+    res.writeHead(302, { location })
+    res.end()
     return true
   }
   if (pathname === '/token' && method === 'POST') {
@@ -160,7 +156,7 @@ async function tryHandleOAuthRoute(
       writeBodyError(res, err)
       return true
     }
-    const result = await handleToken(oauth.repo, form)
+    const result = await handleTokenProxy(oauth.keycloak, form)
     // RFC 6749 §5.1: token endpoint MUST send Cache-Control: no-store
     res.setHeader('Cache-Control', 'no-store')
     sendJson(res, result.status, result.body)
@@ -178,11 +174,11 @@ async function handleMcp(
 ): Promise<void> {
   const authHeader = req.headers.authorization ?? ''
   const authorized = oauth
-    ? await verifyOAuthBearer(authHeader, oauth.repo)
+    ? await verifyOAuthBearer(authHeader, oauth.verifier)
     : verifyBearer(authHeader, tokenBuf)
   if (!authorized) {
     if (oauth) {
-      const resourceMetadataUrl = `${oauth.issuer}/.well-known/oauth-protected-resource`
+      const resourceMetadataUrl = `${oauth.origin}/.well-known/oauth-protected-resource`
       res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}"`)
     }
     res.writeHead(401)
@@ -244,14 +240,14 @@ function verifyBearer(authHeader: string, tokenBuf: Buffer): boolean {
   return timingSafeEqual(provided, tokenBuf)
 }
 
-async function verifyOAuthBearer(
-  authHeader: string,
-  repo: OAuthOperations
-): Promise<boolean> {
+async function verifyOAuthBearer(authHeader: string, verifier: JwtVerifier): Promise<boolean> {
   const prefix = 'Bearer '
   if (!authHeader.startsWith(prefix)) return false
   const token = authHeader.slice(prefix.length)
-  return (await repo.validateAccessToken(token)) !== null
+  const claims = await verifier.verify(token)
+  // v1: any valid Keycloak token grants the full REMOTE_TOOL_ALLOWLIST surface.
+  // TODO(ADR-034): map claims.realm_access.roles / scope → per-tool scoping here.
+  return claims !== null
 }
 
 function sendJson(res: ServerResponse, status: number, body: object): void {
@@ -261,16 +257,6 @@ function sendJson(res: ServerResponse, status: number, body: object): void {
     'content-length': Buffer.byteLength(payload).toString()
   })
   res.end(payload)
-}
-
-function sendAuthorizeResult(res: ServerResponse, result: AuthorizeResult): void {
-  if (result.kind === 'redirect') {
-    res.writeHead(302, { location: result.location })
-    res.end()
-    return
-  }
-  res.writeHead(result.status, { 'content-type': 'text/html; charset=utf-8' })
-  res.end(result.html)
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown> {

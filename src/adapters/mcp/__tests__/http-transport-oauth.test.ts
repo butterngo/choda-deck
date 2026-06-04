@@ -1,22 +1,28 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import Database from 'better-sqlite3'
-import * as fs from 'fs'
-import * as path from 'path'
-import * as os from 'os'
-import { createHash } from 'crypto'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { startHttpTransport, type HttpTransportHandle } from '../http-transport'
-import { initSchema } from '../../../core/domain/repositories/schema'
-import { OAuthRepository } from '../../../core/domain/repositories/oauth-repository'
-import { computeChallengeS256 } from '../oauth/pkce'
+import type { JwtClaims, JwtVerifier } from '../oauth/jwt-verifier'
 
-const ISSUER = 'https://test.local'
-const PASSWORD = 'super-secret'
-const PASSWORD_HASH_HEX = createHash('sha256').update(PASSWORD, 'utf8').digest('hex')
+// ADR-034: choda-deck proxies the OAuth endpoints to Keycloak and validates
+// Keycloak-issued JWTs. These tests exercise the on-origin surface (metadata,
+// /authorize redirect, /register pinned client, /mcp bearer gate) with a stub
+// verifier — Keycloak itself is not contacted. Token-proxy network behavior is
+// covered in keycloak-proxy.test.ts; JWT validation in jwt-verifier.test.ts.
 
-const VERIFIER = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'
-const CHALLENGE = computeChallengeS256(VERIFIER)
+const ORIGIN = 'https://mcp.choda.dev'
+const REALM = 'https://id.choda.dev/realms/choda'
+const CLIENT_ID = 'choda-connector'
 const REDIRECT = 'https://claude.ai/api/mcp/auth_callback'
+const GOOD_TOKEN = 'good.keycloak.jwt'
+
+// Accept only GOOD_TOKEN; everything else is rejected (null) — mirrors the real
+// verifier's null-on-failure contract without needing a signed JWT here.
+const stubVerifier: JwtVerifier = {
+  verify: async (token: string): Promise<JwtClaims | null> =>
+    token === GOOD_TOKEN
+      ? { sub: 'butter', iss: REALM, exp: Math.floor(Date.now() / 1000) + 600, azp: CLIENT_ID }
+      : null
+}
 
 function buildServerFactory(): () => McpServer {
   return (): McpServer => {
@@ -33,31 +39,30 @@ function buildServerFactory(): () => McpServer {
   }
 }
 
-describe('startHttpTransport — OAuth mode (ADR-027)', () => {
+describe('startHttpTransport — Keycloak-backed OAuth (ADR-034)', () => {
   let handle: HttpTransportHandle
   let baseUrl: string
-  let tmpDir: string
-  let db: Database.Database
-  let repo: OAuthRepository
 
   beforeAll(async () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'http-oauth-'))
-    db = new Database(path.join(tmpDir, 'test.db'))
-    initSchema(db)
-    repo = new OAuthRepository(db)
     handle = await startHttpTransport(buildServerFactory(), {
       port: 0,
       bind: '127.0.0.1',
       token: 'legacy-ignored',
-      oauth: { repo, issuer: ISSUER, consentPasswordHashHex: PASSWORD_HASH_HEX }
+      oauth: {
+        origin: ORIGIN,
+        keycloak: {
+          authorizationEndpoint: `${REALM}/protocol/openid-connect/auth`,
+          tokenEndpoint: `${REALM}/protocol/openid-connect/token`,
+          clientId: CLIENT_ID
+        },
+        verifier: stubVerifier
+      }
     })
     baseUrl = `http://127.0.0.1:${handle.address.port}`
   })
 
   afterAll(async () => {
     await handle.close()
-    db.close()
-    fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
   it('GET /healthz still works without auth', async () => {
@@ -65,25 +70,56 @@ describe('startHttpTransport — OAuth mode (ADR-027)', () => {
     expect(res.status).toBe(200)
   })
 
-  it('GET /.well-known/oauth-authorization-server → RFC 8414 metadata', async () => {
+  it('GET /.well-known/oauth-authorization-server → on-origin endpoints (claude.ai web hardcodes these)', async () => {
     const res = await fetch(`${baseUrl}/.well-known/oauth-authorization-server`)
     expect(res.status).toBe(200)
-    expect(res.headers.get('content-type')).toMatch(/application\/json/)
     const body = (await res.json()) as Record<string, unknown>
-    expect(body.issuer).toBe(ISSUER)
-    expect(body.authorization_endpoint).toBe(`${ISSUER}/authorize`)
-    expect(body.token_endpoint).toBe(`${ISSUER}/token`)
-    expect(body.registration_endpoint).toBe(`${ISSUER}/register`)
+    expect(body.issuer).toBe(ORIGIN)
+    expect(body.authorization_endpoint).toBe(`${ORIGIN}/authorize`)
+    expect(body.token_endpoint).toBe(`${ORIGIN}/token`)
     expect(body.code_challenge_methods_supported).toEqual(['S256'])
   })
 
-  it('GET /.well-known/oauth-protected-resource → RFC 9728 metadata', async () => {
+  it('GET /.well-known/oauth-protected-resource → RFC 9728 metadata on origin', async () => {
     const res = await fetch(`${baseUrl}/.well-known/oauth-protected-resource`)
     expect(res.status).toBe(200)
-    expect(((await res.json()) as { resource: string }).resource).toBe(`${ISSUER}/mcp`)
+    const body = (await res.json()) as { resource: string; authorization_servers: string[] }
+    expect(body.resource).toBe(`${ORIGIN}/mcp`)
+    expect(body.authorization_servers).toEqual([ORIGIN])
   })
 
-  it('POST /mcp without bearer → 401 with WWW-Authenticate pointing at the metadata URL', async () => {
+  it('GET /authorize → 302 to Keycloak with PKCE params forwarded', async () => {
+    const qs = new URLSearchParams({
+      response_type: 'code',
+      client_id: CLIENT_ID,
+      redirect_uri: REDIRECT,
+      code_challenge: 'abc123',
+      code_challenge_method: 'S256',
+      state: 'opaque-state'
+    })
+    const res = await fetch(`${baseUrl}/authorize?${qs.toString()}`, { redirect: 'manual' })
+    expect(res.status).toBe(302)
+    const loc = new URL(res.headers.get('location') ?? '')
+    expect(loc.origin + loc.pathname).toBe(`${REALM}/protocol/openid-connect/auth`)
+    expect(loc.searchParams.get('code_challenge')).toBe('abc123')
+    expect(loc.searchParams.get('code_challenge_method')).toBe('S256')
+    expect(loc.searchParams.get('state')).toBe('opaque-state')
+    expect(loc.searchParams.get('redirect_uri')).toBe(REDIRECT)
+  })
+
+  it('POST /register → 201 with the pinned public client_id', async () => {
+    const res = await fetch(`${baseUrl}/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ client_name: 'claude.ai', redirect_uris: [REDIRECT] })
+    })
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as { client_id: string; token_endpoint_auth_method: string }
+    expect(body.client_id).toBe(CLIENT_ID)
+    expect(body.token_endpoint_auth_method).toBe('none')
+  })
+
+  it('POST /mcp without bearer → 401 with WWW-Authenticate → protected-resource metadata', async () => {
     const res = await fetch(`${baseUrl}/mcp`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -91,113 +127,31 @@ describe('startHttpTransport — OAuth mode (ADR-027)', () => {
     })
     expect(res.status).toBe(401)
     expect(res.headers.get('www-authenticate')).toBe(
-      `Bearer resource_metadata="${ISSUER}/.well-known/oauth-protected-resource"`
+      `Bearer resource_metadata="${ORIGIN}/.well-known/oauth-protected-resource"`
     )
   })
 
-  it('POST /mcp with the legacy MCP_HTTP_TOKEN value → 401 (OAuth mode ignores it)', async () => {
+  it('POST /mcp with an invalid token → 401', async () => {
     const res = await fetch(`${baseUrl}/mcp`, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: 'Bearer legacy-ignored'
-      },
+      headers: { 'content-type': 'application/json', authorization: 'Bearer nope' },
       body: '{}'
     })
     expect(res.status).toBe(401)
   })
 
-  it('end-to-end: /register → /authorize → /token → POST /mcp with the access token', async () => {
-    // 1. /register
-    const regRes = await fetch(`${baseUrl}/register`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ client_name: 'claude.ai', redirect_uris: [REDIRECT] })
-    })
-    expect(regRes.status).toBe(201)
-    const reg = (await regRes.json()) as { client_id: string }
-
-    // 2. GET /authorize → form HTML
-    const authQs = new URLSearchParams({
-      response_type: 'code',
-      client_id: reg.client_id,
-      redirect_uri: REDIRECT,
-      code_challenge: CHALLENGE,
-      code_challenge_method: 'S256',
-      state: 'opaque-state-123'
-    })
-    const authGet = await fetch(`${baseUrl}/authorize?${authQs.toString()}`)
-    expect(authGet.status).toBe(200)
-    expect(await authGet.text()).toContain('consent_password')
-
-    // 3. POST /authorize with the password → 302 to redirect_uri?code=...&state=...
-    const authForm = new URLSearchParams(authQs)
-    authForm.set('consent_password', PASSWORD)
-    const authPost = await fetch(`${baseUrl}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: authForm.toString(),
-      redirect: 'manual'
-    })
-    expect(authPost.status).toBe(302)
-    const location = authPost.headers.get('location') ?? ''
-    const locUrl = new URL(location)
-    expect(locUrl.origin + locUrl.pathname).toBe(REDIRECT)
-    expect(locUrl.searchParams.get('state')).toBe('opaque-state-123')
-    const code = locUrl.searchParams.get('code') ?? ''
-    expect(code).toMatch(/^cdck_code_/)
-
-    // 4. POST /token (authorization_code grant) → access+refresh
-    const tokenForm = new URLSearchParams({
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: REDIRECT,
-      client_id: reg.client_id,
-      code_verifier: VERIFIER
-    })
-    const tokenRes = await fetch(`${baseUrl}/token`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: tokenForm.toString()
-    })
-    expect(tokenRes.status).toBe(200)
-    expect(tokenRes.headers.get('cache-control')).toBe('no-store')
-    const tokens = (await tokenRes.json()) as {
-      access_token: string
-      refresh_token: string
-      token_type: string
-    }
-    expect(tokens.token_type).toBe('Bearer')
-
-    // 5. Call /mcp with the access token — MCP responds.
-    const mcpRes = await fetch(`${baseUrl}/mcp`, {
+  it('POST /mcp with a valid Keycloak token → MCP responds', async () => {
+    const res = await fetch(`${baseUrl}/mcp`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         accept: 'application/json, text/event-stream',
-        authorization: `Bearer ${tokens.access_token}`
+        authorization: `Bearer ${GOOD_TOKEN}`
       },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
     })
-    expect(mcpRes.status).toBe(200)
-    const mcpBody = (await mcpRes.json()) as { result?: { tools: Array<{ name: string }> } }
-    expect(mcpBody.result?.tools.map((t) => t.name)).toContain('ping')
-
-    // 6. Refresh rotation works.
-    const refreshRes = await fetch(`${baseUrl}/token`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'refresh_token',
-        refresh_token: tokens.refresh_token
-      }).toString()
-    })
-    expect(refreshRes.status).toBe(200)
-    const refreshed = (await refreshRes.json()) as {
-      access_token: string
-      refresh_token: string
-    }
-    expect(refreshed.access_token).not.toBe(tokens.access_token)
-    expect(refreshed.refresh_token).not.toBe(tokens.refresh_token)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { result?: { tools: Array<{ name: string }> } }
+    expect(body.result?.tools.map((t) => t.name)).toContain('ping')
   })
 })
