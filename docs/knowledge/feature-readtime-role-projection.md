@@ -3,9 +3,15 @@ type: feature
 title: "Feature: Read-time role projection (Pillar 5)"
 projectId: choda-deck
 scope: project
-refs: []
+refs:
+  - path: src/core/domain/services/feature-projection.ts
+    commitSha: 0f5b7660cf547efd5ccae6461a83c30f35c23dc3
+  - path: src/adapters/mcp/mcp-tools/feature-projection-builder.ts
+    commitSha: 0f5b7660cf547efd5ccae6461a83c30f35c23dc3
+  - path: src/adapters/mcp/mcp-tools/feature-projection-tools.ts
+    commitSha: 0f5b7660cf547efd5ccae6461a83c30f35c23dc3
 createdAt: 2026-06-02
-lastVerifiedAt: 2026-06-02
+lastVerifiedAt: 2026-06-04
 anchorTaskId: TASK-994
 realizesTasks: ["TASK-994","TASK-995"]
 inWorkspaces: ["main"]
