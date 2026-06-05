@@ -80,7 +80,15 @@ export async function startHttpTransport(
     address: bound,
     close: () =>
       new Promise<void>((resolve, reject) => {
+        // close() resolves only once every existing connection is gone. HTTP
+        // keep-alive sockets (e.g. undici's global fetch pool used by the tests,
+        // or a long-lived client in prod) sit idle for ~5s before they close on
+        // their own — long enough that in the full vitest run the callback fires
+        // after suite teardown, surfacing as a non-deterministic late error and
+        // a dangling 127.0.0.1:xxxxx listener (TASK-1033). Drop idle sockets now
+        // so the callback fires promptly; any in-flight request still finishes.
         httpServer.close((err) => (err ? reject(err) : resolve()))
+        httpServer.closeIdleConnections()
       })
   }
 }
