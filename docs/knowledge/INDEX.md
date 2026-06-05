@@ -2,13 +2,30 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
+| [mcp-tool-handlers-must-await-the-async-service-facade-an-un-awaited-promise-stri](./mcp-tool-handlers-must-await-the-async-service-facade-an-un-awaited-promise-stri.md) | gotcha | MCP tool handlers must await the async service facade — an un-awaited Promise stringifies to "{}" | 2026-06-05 |  |
+| [feature-choda-gateway](./feature-choda-gateway.md) | feature | Choda gateway (OpenAPI ingestion + credential profiles) | 2026-06-04 |  |
+| [feature-companion-ui](./feature-companion-ui.md) | feature | Companion UI (web + mobile) | 2026-06-04 |  |
+| [feature-autonomous-queue-runner](./feature-autonomous-queue-runner.md) | feature | Autonomous queue runner + auto-safe harness (partially deprecated) | 2026-06-04 |  |
+| [feature-backup-restore](./feature-backup-restore.md) | feature | Daily SQLite backup + restore | 2026-06-04 |  |
+| [feature-embedding-search](./feature-embedding-search.md) | feature | Embedding-backed semantic search | 2026-06-04 |  |
+| [feature-agent-memory](./feature-agent-memory.md) | feature | Agent memory layer (scoped recall) | 2026-06-04 |  |
+| [feature-knowledge-graph](./feature-knowledge-graph.md) | feature | Knowledge graph (edges + TOUCHES + feature projection) | 2026-06-04 |  |
+| [feature-knowledge-layer](./feature-knowledge-layer.md) | feature | Knowledge layer (typed entries + staleness) | 2026-06-04 |  |
+| [feature-inbox-pipeline](./feature-inbox-pipeline.md) | feature | Inbox triage pipeline (raw idea → converted task) | 2026-06-04 |  |
+| [feature-conversation-protocol](./feature-conversation-protocol.md) | feature | Conversation protocol + review cycle | 2026-06-04 |  |
+| [feature-session-lifecycle](./feature-session-lifecycle.md) | feature | Session lifecycle (work sessions bound to task + workspace) | 2026-06-04 |  |
+| [feature-cross-device-sync](./feature-cross-device-sync.md) | feature | Cross-device sync (canonical export / import) | 2026-06-04 |  |
+| [feature-postgres-remote-backend](./feature-postgres-remote-backend.md) | feature | Narrow Postgres backend for the remote surface | 2026-06-04 |  |
+| [feature-oauth-dcr](./feature-oauth-dcr.md) | feature | Self-hosted OAuth 2.0 DCR for the claude.ai connector | 2026-06-04 |  |
+| [feature-dual-transport-mcp-server](./feature-dual-transport-mcp-server.md) | feature | Dual-transport MCP server (stdio + HTTP) | 2026-06-04 |  |
+| [feature-task-management-core](./feature-task-management-core.md) | feature | Task management core (the unit of work) | 2026-06-04 |  |
 | [ADR-034-keycloak-backed-http-auth-via-on-origin-proxy](./ADR-034-keycloak-backed-http-auth-via-on-origin-proxy.md) | decision | ADR-034: Keycloak-backed HTTP auth via on-origin OAuth proxy (supersedes ADR-027) | 2026-06-04 |  |
 | [ADR-033-deprecate-graphify](./ADR-033-deprecate-graphify.md) | decision | ADR-033: Deprecate graphify — retire the AST code-graph enrichment, do not fold into the unified store | 2026-06-04 | ✱ |
 | [ADR-032-unified-knowledge-graph-v2](./ADR-032-unified-knowledge-graph-v2.md) | decision | ADR-032: Unified Knowledge Graph v2 — program consolidation, §6 resolutions, ACCEPTED | 2026-06-03 | ✱ |
 | [ADR-031-session-end-derivation](./ADR-031-session-end-derivation.md) | decision | ADR-031: session_end field derivation — deterministic auto-fill, heuristic candidates, AI-wins override | 2026-06-02 |  |
 | [gotcha-tester-guards-spare-verbatim-ac](./gotcha-tester-guards-spare-verbatim-ac.md) | gotcha | Gotcha: tester guards must not reject verbatim AC | 2026-06-02 |  |
 | [gotcha-projection-guards-rendered-not-fields](./gotcha-projection-guards-rendered-not-fields.md) | gotcha | Gotcha: role guards operate on rendered output, not fields | 2026-06-02 |  |
-| [feature-readtime-role-projection](./feature-readtime-role-projection.md) | feature | Feature: Read-time role projection (Pillar 5) | 2026-06-02 |  |
+| [feature-readtime-role-projection](./feature-readtime-role-projection.md) | feature | Feature: Read-time role projection (Pillar 5) | 2026-06-04 |  |
 | [ADR-030-dual-backend-sync](./ADR-030-dual-backend-sync.md) | decision | ADR-030: Dual-backend storage (SQLite local + Postgres remote) with pending-ops sync | 2026-05-22 | ✱ |
 | [ADR-029-session-activity-visibility](./ADR-029-session-activity-visibility.md) | decision | ADR-029: Session activity visibility — file edits, AC verification, end-of-session summary | 2026-06-01 |  |
 | [ADR-028-session-end-structured-summary](./ADR-028-session-end-structured-summary.md) | decision | ADR-028: Structured session-summary observation at session_end | 2026-06-01 |  |
