@@ -44,11 +44,12 @@ The **sync engine** (open in §Status table below) is unaffected by this narrowi
 | Factory wiring via `CHODA_BACKEND` env | **Done** | TASK-934 slice 11 |
 | One-shot SQLite → Postgres data migration script | **Done** | TASK-934 slice 21 (`scripts/migrate-sqlite-to-postgres.mjs`) |
 | docker-compose + README k8s recipe | **Done** | TASK-934 slice 21 |
-| **Sync engine — `pending_ops` queue, Lamport clocks, LWW reconcile, `sync_conflicts` table, `CHODA_BACKEND=sync` mode** | **Open** | not started |
+| **Sync engine Phase 1+2 — additive `sync_*` columns + Lamport clock + read-only pull (`GET /sync/since`, `choda-deck sync pull`)** | **Done** | TASK-978 (PRs #178 schema, #179 pull) |
+| **Sync engine Phase 3-6 — write-through, `pending_ops` queue, LWW drain, `sync_conflicts` surfacing, `CHODA_BACKEND=sync` mode** | **Open** | parked (TASK-979) |
 
-The driver/adapter half of this ADR shipped; the cross-device sync half did not. Today the deployment model is **one backend per process** — pick `sqlite` for local stdio, `postgres` for remote HTTP, no automatic drain between them. Same machine can absolutely run both with separate data, but a single logical "my tasks" view that follows you across devices via offline-tolerant sync is still future work. Use the existing manual export/import (`src/core/sync/`, [[cross-device-sync-export-import-spec]]) when you need to round-trip between devices.
+Phase 1+2 shipped (TASK-978): both backends carry namespaced `sync_updated_at`/`sync_deleted_at`/`sync_origin` columns; the remote `inbox_add` stamps a server-side Lamport tick; the laptop drains remote → local SQLite read-only via `GET /sync/since` + `choda-deck sync pull` with per-row LWW + tombstone propagation. **No write-through yet** — Phases 3-6 (offline `pending_ops` queue, drain-on-reconnect, `sync_conflicts` + inbox surfacing) are parked in TASK-979. Today only `inbox_add` is remotely writable, so pull catches remote-added inbox items; task/conversation rows are stdio-only and never diverge. Local stdio writes do not yet stamp `sync_updated_at` (that's write-through). The ULID PK swap from §Schema additions is also deferred (rewrites every FK target — separate slice).
 
-Revisit the sync engine when: (a) the claude.ai remote connector becomes day-to-day and a second device starts writing concurrently, OR (b) a concrete data-loss incident from manual export/import makes the case for automatic drain.
+Revisit write-through (Phase 3-6) when: (a) the claude.ai remote connector becomes day-to-day and a second device starts writing concurrently, OR (b) a concrete data-loss incident from manual export/import makes the case for automatic drain.
 
 ## Context
 
