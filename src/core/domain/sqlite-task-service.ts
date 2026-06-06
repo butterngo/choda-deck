@@ -1,6 +1,8 @@
 import Database from 'better-sqlite3'
 import * as sqliteVec from 'sqlite-vec'
 import type { TaskService } from './task-service.interface'
+import { fetchSinceFromSqlite } from '../sync/sync-source'
+import type { TableDelta } from '../sync/sync-pull'
 import { EmbeddingStore } from './embedding/embedding-store'
 import { loadEmbeddingProvider } from './embedding/embedding-provider-factory'
 import type { EmbeddingProvider } from './embedding/embedding-provider.interface'
@@ -482,6 +484,10 @@ export class SqliteTaskService
   }
 
   // ── Inbox ──────────────────────────────────────────────────────────────────
+  async fetchSince(since: number): Promise<TableDelta[]> {
+    return fetchSinceFromSqlite(this.db, since)
+  }
+
   async createInbox(input: CreateInboxInput): Promise<InboxItem> {
     return this.inbox.create(input)
   }

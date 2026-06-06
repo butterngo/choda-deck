@@ -311,6 +311,20 @@ export const MIGRATIONS: readonly Migration[] = [
     // canonical and stamps updated_at server-side in Phase 2+).
     name: '012_sync_columns',
     sql: buildSyncColumnsSql()
+  },
+  {
+    // ADR-030 Phase 2 (TASK-978) — server-side Lamport clock for the remote
+    // (Postgres canonical) writer. inbox_add stamps sync_updated_at from this
+    // counter so the local pull can order remote changes. Singleton row pinned
+    // at id = 0 (mirrors SQLite's _sync_clock).
+    name: '013_sync_clock',
+    sql: `
+      CREATE TABLE IF NOT EXISTS _sync_clock (
+        id INTEGER PRIMARY KEY CHECK (id = 0),
+        counter BIGINT NOT NULL DEFAULT 0
+      );
+      INSERT INTO _sync_clock (id, counter) VALUES (0, 0) ON CONFLICT (id) DO NOTHING;
+    `
   }
 ]
 

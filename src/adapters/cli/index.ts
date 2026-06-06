@@ -25,10 +25,16 @@ Usage: choda-deck <command> [options]
 
 Commands:
   mcp serve     Start MCP server (set MCP_TRANSPORT=http for Streamable HTTP)
+  sync pull     Pull remote changes into the local SQLite DB (ADR-030 Phase 2)
 
 Meta:
   --help        Show this help
   --version     Print version
+
+sync pull env:
+  CHODA_PULL_REMOTE_URL    Remote MCP origin, e.g. https://mcp.choda.dev (required)
+  CHODA_PULL_REMOTE_TOKEN  Bearer token (falls back to MCP_HTTP_TOKEN)
+  CHODA_DATA_DIR           Local data root (database/ derived)
 `
 
 async function main(): Promise<number> {
@@ -48,10 +54,50 @@ async function main(): Promise<number> {
   switch (group) {
     case 'mcp':
       return dispatchMcp(sub)
+    case 'sync':
+      return dispatchSync(sub)
     default:
       process.stderr.write(`error: unknown command "${group}"\n\n${ROOT_HELP}`)
       return 2
   }
+}
+
+// ADR-030 Phase 2 — `sync pull`: read-only drain of remote changes into the
+// local SQLite working copy. No write-through (that's parked Phases 3-6).
+async function dispatchSync(sub: string | undefined): Promise<number> {
+  if (sub !== 'pull') {
+    process.stderr.write(`error: only "sync pull" is supported (got "${sub ?? ''}")\n`)
+    return 2
+  }
+  const remoteUrl = process.env.CHODA_PULL_REMOTE_URL
+  if (!remoteUrl) {
+    process.stderr.write('error: sync pull requires CHODA_PULL_REMOTE_URL\n')
+    return 2
+  }
+  const token = process.env.CHODA_PULL_REMOTE_TOKEN ?? process.env.MCP_HTTP_TOKEN ?? ''
+
+  const { resolveDataPaths } = await import('../../core/paths')
+  const { default: Database } = await import('better-sqlite3')
+  const { initSchema } = await import('../../core/domain/repositories/schema')
+  const { pull } = await import('../../core/sync/sync-pull')
+  const { HttpPullSource } = await import('../../core/sync/http-pull-source')
+
+  const { dbPath } = resolveDataPaths()
+  const db = new Database(dbPath)
+  try {
+    initSchema(db) // idempotent — guarantees the sync columns + _sync_clock exist
+    const source = new HttpPullSource({ remoteUrl, token })
+    const result = await pull(db, source)
+    const upserted = result.counts.reduce((n, c) => n + c.upserted, 0)
+    const tombstoned = result.counts.reduce((n, c) => n + c.tombstoned, 0)
+    process.stdout.write(
+      `sync pull: ${upserted} upserted, ${tombstoned} tombstoned ` +
+        `(cursor ${result.since} -> ${result.newCursor})\n`
+    )
+  } finally {
+    db.close()
+  }
+  return 0
 }
 
 async function dispatchMcp(sub: string | undefined): Promise<number> {

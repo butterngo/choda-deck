@@ -15,6 +15,8 @@
 import type { RemoteOperations } from './remote-operations.interface'
 import { PgConnection } from './repositories/postgres/connection'
 import { migrate } from './repositories/postgres/migrations'
+import { fetchSinceFromPg } from '../sync/sync-source'
+import type { TableDelta } from '../sync/sync-pull'
 import { PostgresProjectRepository } from './repositories/postgres/project-repository.pg'
 import { PostgresWorkspaceRepository } from './repositories/postgres/workspace-repository.pg'
 import { PostgresTaskRepository } from './repositories/postgres/task-repository.pg'
@@ -136,5 +138,9 @@ export class PostgresTaskService implements RemoteOperations {
 
   async getConversationActions(conversationId: string): Promise<ConversationAction[]> {
     return this.conversations.getActions(conversationId)
+  }
+
+  async fetchSince(since: number): Promise<TableDelta[]> {
+    return fetchSinceFromPg(this.conn, since)
   }
 }

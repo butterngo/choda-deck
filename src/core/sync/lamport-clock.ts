@@ -43,6 +43,14 @@ export function tick(db: Database.Database): number {
   return row.counter
 }
 
+// Lamport merge on receive: advance the local counter to at least `value` so any
+// subsequent local write is stamped higher than anything just pulled from a
+// remote clock. Without this, the local and remote counters are independent and
+// a later local edit could be assigned a value below a pulled row's, losing LWW.
+export function mergeClock(db: Database.Database, value: number): void {
+  db.prepare('UPDATE _sync_clock SET counter = MAX(counter, ?) WHERE id = 0').run(value)
+}
+
 // Read the current counter without advancing it.
 export function peek(db: Database.Database): number {
   const row = db.prepare('SELECT counter FROM _sync_clock WHERE id = 0').get() as
