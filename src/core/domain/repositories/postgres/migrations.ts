@@ -17,10 +17,24 @@
 // table, but defense in depth is cheap.
 
 import type { PgConnection } from './connection'
+import { SYNCABLE_TABLES, SYNC_COLUMNS } from '../../../sync/syncable-tables'
 
 export interface Migration {
   name: string
   sql: string
+}
+
+// ADR-030 Phase 1 (TASK-978) — additive sync metadata, generated from the shared
+// table/column list so it cannot drift from the SQLite side. `ADD COLUMN IF NOT
+// EXISTS` makes it idempotent at the SQL level on top of the `_migrations` gate.
+function buildSyncColumnsSql(): string {
+  const lines: string[] = []
+  for (const table of SYNCABLE_TABLES) {
+    for (const col of SYNC_COLUMNS) {
+      lines.push(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${col.name} ${col.pgType};`)
+    }
+  }
+  return lines.join('\n')
 }
 
 export const MIGRATIONS: readonly Migration[] = [
@@ -288,6 +302,15 @@ export const MIGRATIONS: readonly Migration[] = [
       DROP TABLE IF EXISTS oauth_tokens;
       DROP TABLE IF EXISTS oauth_clients;
     `
+  },
+  {
+    // ADR-030 Phase 1 (TASK-978) — additive sync metadata (updated_at / deleted_at
+    // / origin) on every syncable entity table. Mirrors schema.ts addSyncColumns;
+    // both generate from src/core/sync/syncable-tables.ts. No _sync_clock/_sync_state
+    // singletons here — the Lamport clock is a local-SQLite concern (Postgres is
+    // canonical and stamps updated_at server-side in Phase 2+).
+    name: '012_sync_columns',
+    sql: buildSyncColumnsSql()
   }
 ]
 

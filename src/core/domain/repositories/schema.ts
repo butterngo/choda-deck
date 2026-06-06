@@ -1,6 +1,8 @@
 import type Database from 'better-sqlite3'
+import { createSyncClockTables } from '../../sync/lamport-clock'
+import { SYNCABLE_TABLES, SYNC_COLUMNS } from '../../sync/syncable-tables'
 
-const SCHEMA_VERSION = 4
+const SCHEMA_VERSION = 5
 
 export function initSchema(db: Database.Database): void {
   createCoreTables(db)
@@ -8,9 +10,29 @@ export function initSchema(db: Database.Database): void {
   createM1Tables(db)
   createM2Tables(db)
   dropLegacyOAuthTables(db)
+  addSyncColumns(db)
+  createSyncClockTables(db)
   createIndexes(db)
   cleanupPoisonedTaskIds(db)
   seedSchemaVersion(db)
+}
+
+// ADR-030 Phase 1 (TASK-978) — additive sync metadata on every syncable table.
+// updated_at/deleted_at/origin are added with NULL defaults; nothing writes them
+// yet (zero behavior change). SQLite has no `ADD COLUMN IF NOT EXISTS`, so each
+// ALTER is wrapped in try/catch — the established idempotency pattern in this file.
+// The table + column lists live in src/core/sync/syncable-tables.ts, shared with
+// the Postgres migration so the two backends cannot drift.
+function addSyncColumns(db: Database.Database): void {
+  for (const table of SYNCABLE_TABLES) {
+    for (const col of SYNC_COLUMNS) {
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${col.name} ${col.sqliteType}`)
+      } catch {
+        /* column exists */
+      }
+    }
+  }
 }
 
 function seedSchemaVersion(db: Database.Database): void {
