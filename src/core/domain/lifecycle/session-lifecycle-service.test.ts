@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import { SqliteTaskService } from '../sqlite-task-service'
-import { draftGotchaFromDecision } from './session-lifecycle-service'
+import { draftGotchaFromDecision, fileRefSlug } from './session-lifecycle-service'
 import {
   SessionNotFoundError,
   SessionStatusError,
@@ -569,6 +569,75 @@ describe('endSession aggregator (ADR-029 step 4 / TASK-913)', () => {
 
     expect((await svc.getSession(started.session.id))?.status).toBe('active')
     expect(await svc.listSessionEvents(started.session.id, 'observation')).toEqual([])
+  })
+})
+
+describe('endSession TOUCHES derivation (INBOX-424 / TASK-1051)', () => {
+  async function seedFileModified(sessionId: string, path: string): Promise<void> {
+    await svc.createSessionEvent({
+      sessionId,
+      eventType: 'observation',
+      payloadJson: JSON.stringify({ kind: 'file_modified', path, linesAdded: 1, linesRemoved: 0 }),
+      memoryCandidate: false
+    })
+  }
+
+  it('derives one modifies TOUCHES edge per distinct file_modified path on a task-bound session', async () => {
+    const task = await svc.createTask({ projectId: 'proj-s', title: 'edits work' })
+    const started = await svc.startSession({ projectId: 'proj-s', taskId: task.id })
+    await seedFileModified(started.session.id, 'src/a.ts')
+    await seedFileModified(started.session.id, 'src/a.ts') // duplicate path → one edge
+    await seedFileModified(started.session.id, 'src/sub/b.ts')
+
+    await svc.endSession(started.session.id, { handoff: { resumePoint: 'shipped' } })
+
+    const edges = await svc.getTouchesForTask(task.id)
+    expect(edges).toHaveLength(2)
+    expect(edges.every((e) => e.relation === 'modifies')).toBe(true)
+    expect(edges.map((e) => e.codeRefSlug).sort()).toEqual(
+      [fileRefSlug('src/a.ts'), fileRefSlug('src/sub/b.ts')].sort()
+    )
+
+    const ref = await svc.getCodeRef(fileRefSlug('src/a.ts'))
+    expect(ref?.path).toBe('src/a.ts')
+    expect(ref?.symbol).toBeNull()
+  })
+
+  it('is idempotent across re-derivation — one edge per (task, file)', async () => {
+    const task = await svc.createTask({ projectId: 'proj-s', title: 'idempotent' })
+    const first = await svc.startSession({ projectId: 'proj-s', taskId: task.id })
+    await seedFileModified(first.session.id, 'src/a.ts')
+    await svc.endSession(first.session.id, { handoff: { resumePoint: 'r1' } })
+
+    // re-open the same task in a second session that touches the same file again
+    await svc.updateTask(task.id, { status: 'READY' })
+    const second = await svc.startSession({ projectId: 'proj-s', taskId: task.id })
+    await seedFileModified(second.session.id, 'src/a.ts')
+    await svc.endSession(second.session.id, { handoff: { resumePoint: 'r2' } })
+
+    const edges = await svc.getTouchesForTask(task.id)
+    expect(edges).toHaveLength(1)
+  })
+
+  it('derives nothing and does not throw for a taskless session', async () => {
+    const started = await svc.startSession({ projectId: 'proj-s' })
+    await seedFileModified(started.session.id, 'src/c.ts')
+
+    await expect(
+      svc.endSession(started.session.id, { handoff: { resumePoint: 'r' } })
+    ).resolves.toBeDefined()
+    expect(await svc.getCodeRef(fileRefSlug('src/c.ts'))).toBeNull()
+  })
+})
+
+describe('fileRefSlug (TASK-1051 unit)', () => {
+  it('builds a collision-free path-based slug, lowercased, no leading/trailing dashes', () => {
+    expect(fileRefSlug('src/sub/b.ts')).toBe('code-ref-src-sub-b-ts')
+    expect(fileRefSlug('src/Foo.TSX')).toBe('code-ref-src-foo-tsx')
+  })
+
+  it('distinguishes same basename in different directories', () => {
+    expect(fileRefSlug('a/index.ts')).not.toBe(fileRefSlug('b/index.ts'))
   })
 })
 

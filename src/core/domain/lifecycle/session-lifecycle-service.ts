@@ -5,6 +5,7 @@ import type { ConversationRepository } from '../repositories/conversation-reposi
 import type { TaskRepository } from '../repositories/task-repository'
 import type { SessionEventRepository } from '../repositories/session-event-repository'
 import type { RelationshipRepository } from '../repositories/relationship-repository'
+import type { CodeRefRepository } from '../repositories/code-ref-repository'
 import type { AgentMemory, SessionEvent } from '../task-types'
 import type { MemoryRecallInput } from '../interfaces/agent-memory-operations.interface'
 import type {
@@ -40,6 +41,7 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
     private readonly tasks: TaskRepository,
     private readonly sessionEvents: SessionEventRepository,
     private readonly relationships: RelationshipRepository,
+    private readonly codeRefs: CodeRefRepository,
     private readonly recallMemoriesFn: RecallMemoriesFn
   ) {}
 
@@ -146,6 +148,17 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
         })
       }
 
+      // INBOX-424: derive durable `modifies` TOUCHES edges from this session's
+      // channel-1 `file_modified` events — same scan the summary aggregator runs,
+      // one projection. The hook only fires on Edit|Write|MultiEdit so relation is
+      // unconditionally `modifies`; `reference` edges stay manual (the hook can't
+      // see reads). file_modified carries no taskId — attribution is the bound
+      // session's task, so a taskless session derives nothing. addTouches dedupes
+      // per (task, file), making this idempotent across checkpoints + re-ends.
+      if (session.taskId) {
+        this.deriveTouchesFromFileEdits(id, session.taskId, session.projectId, endedAt)
+      }
+
       // TASK-998 (GOTCHA-AUTO): draft one candidate gotcha per handoff decision.
       // Emitted as memory_candidate observation rows (kind='gotcha_draft') — they
       // surface in `memoryCandidates` for the agent to refine and the human to
@@ -228,6 +241,29 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
   private inferFeatureForTask(taskId: string): string | null {
     const edges = this.relationships.getFrom(taskId, 'REALIZES')
     return edges.length > 0 ? edges[0].toId : null
+  }
+
+  // INBOX-424: upsert a file-level code_ref (symbol=null — the sanctioned
+  // convention for non-symbol refs) + a `modifies` TOUCHES edge for each DISTINCT
+  // path the session edited. Pure-derivation: reads channel-1 events, writes the
+  // graph projection; no AC / summary side effects.
+  private deriveTouchesFromFileEdits(
+    sessionId: string,
+    taskId: string,
+    projectId: string,
+    nowIso: string
+  ): void {
+    const paths = new Set<string>()
+    for (const evt of this.sessionEvents.listBySession(sessionId, 'observation')) {
+      const payload = parseObservationPayload(evt.payloadJson)
+      if (payload?.kind === 'file_modified' && typeof payload.path === 'string') {
+        paths.add(payload.path)
+      }
+    }
+    for (const path of paths) {
+      const ref = this.codeRefs.upsert({ slug: fileRefSlug(path), projectId, path, symbol: null }, nowIso)
+      this.codeRefs.addTouches(taskId, ref.slug, 'modifies')
+    }
   }
 
   async resumeSession(id: string): Promise<ResumeSessionResult> {
@@ -315,6 +351,14 @@ export function aggregateSessionSummary(
     filesChanged: mergedFilesChanged,
     acCoverage: mergedAcCoverage
   }
+}
+
+// Deterministic slug for an auto-derived file-level code_ref. Only consumed when
+// the (projectId, path, symbol=null) identity is NEW — an existing ref re-pins its
+// own slug on upsert (code-ref-repository.ts:31). Path-based → collision-free per
+// path (basename alone would collide across directories).
+export function fileRefSlug(path: string): string {
+  return `code-ref-${path.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase()}`
 }
 
 function parseObservationPayload(json: string | null): Record<string, unknown> | null {
