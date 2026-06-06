@@ -26,10 +26,15 @@ export const SYNCABLE_TABLES: readonly string[] = [
   'conversation_actions'
 ]
 
-// The three sync-metadata columns, per ADR-030:
-// - updated_at: Lamport-logical timestamp (monotonic counter), NOT wall-clock.
-// - deleted_at: tombstone (NULL = live row), retention via CHODA_TOMBSTONE_TTL_DAYS.
-// - origin: device that wrote the row ('laptop' | 'remote'); diagnostic + LWW tie-break.
+// The three sync-metadata columns, per ADR-030. They are prefixed `sync_` to
+// stay in their own namespace: `tasks` and `inbox_items` already carry a
+// wall-clock `updated_at TEXT`, so an unprefixed Lamport `updated_at INTEGER`
+// would collide (the additive ALTER would silently no-op and the wall-clock
+// column would be mistaken for the Lamport one — a type/semantic drift). The
+// ADR's logical names map to these physical columns:
+// - sync_updated_at: Lamport-logical timestamp (monotonic counter), NOT wall-clock.
+// - sync_deleted_at: tombstone (NULL = live row), retention via CHODA_TOMBSTONE_TTL_DAYS.
+// - sync_origin: device that wrote the row ('laptop' | 'remote'); diagnostic + LWW tie-break.
 export interface SyncColumn {
   name: string
   // SQLite type used in the additive ALTER. Postgres uses the mapped type below.
@@ -38,7 +43,7 @@ export interface SyncColumn {
 }
 
 export const SYNC_COLUMNS: readonly SyncColumn[] = [
-  { name: 'updated_at', sqliteType: 'INTEGER', pgType: 'BIGINT' },
-  { name: 'deleted_at', sqliteType: 'INTEGER', pgType: 'BIGINT' },
-  { name: 'origin', sqliteType: 'TEXT', pgType: 'TEXT' }
+  { name: 'sync_updated_at', sqliteType: 'INTEGER', pgType: 'BIGINT' },
+  { name: 'sync_deleted_at', sqliteType: 'INTEGER', pgType: 'BIGINT' },
+  { name: 'sync_origin', sqliteType: 'TEXT', pgType: 'TEXT' }
 ]
