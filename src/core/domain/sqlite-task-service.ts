@@ -201,6 +201,7 @@ export class SqliteTaskService
       this.tasks,
       this.sessions
     )
+    this.codeRefs = new CodeRefRepository(this.db)
     this.sessionLifecycle = new SessionLifecycleService(
       this.db,
       this.sessions,
@@ -209,6 +210,7 @@ export class SqliteTaskService
       this.tasks,
       this.sessionEvents,
       this.relationships,
+      this.codeRefs,
       (input) => this.recallMemoriesSync(input)
     )
     this.knowledgeRepo = new KnowledgeRepository(this.db)
@@ -220,7 +222,6 @@ export class SqliteTaskService
       embeddingProvider: () => this.embeddingProviderPromise,
       edges: this.relationships
     })
-    this.codeRefs = new CodeRefRepository(this.db)
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
