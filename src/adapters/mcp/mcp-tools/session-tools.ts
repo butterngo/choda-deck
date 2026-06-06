@@ -333,6 +333,38 @@ export const register = (
         }
       })
   )
+
+  server.registerTool(
+    'session_cancel',
+    {
+      description:
+        'Cancel (retire) an active session WITHOUT marking its task DONE. Use for an empty or abandoned session — an orphaned session_start where no real work followed, or a session you want to drop without completing the task. Marks the session completed with a failureReason, closes any linked conversations, and intentionally leaves the bound task status untouched (stays IN-PROGRESS for human review). Distinct from session_end, which marks the task DONE.',
+      inputSchema: {
+        sessionId: z.string(),
+        reason: z
+          .string()
+          .optional()
+          .describe(
+            'Why the session is being cancelled (e.g. "empty session — no work recorded"). Defaults to "cancelled — no work recorded".'
+          )
+      }
+    },
+    async ({ sessionId, reason }) =>
+      tryLifecycle(async () => {
+        const result = await svc.abandonSession(
+          sessionId,
+          reason ?? 'cancelled — no work recorded'
+        )
+        return {
+          sessionId: result.session.id,
+          status: result.session.status,
+          endedAt: result.session.endedAt,
+          taskId: result.session.taskId,
+          taskUntouched: true,
+          closedConversationIds: result.closedConversationIds
+        }
+      })
+  )
 }
 
 // TASK-985 (ADR-031 Tier 1) — auto-derive handoff.commits from the session window
