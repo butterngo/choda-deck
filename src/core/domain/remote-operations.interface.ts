@@ -13,6 +13,7 @@
 
 import type { ProjectRow } from './repositories/project-repository'
 import type { WorkspaceRow } from './repositories/workspace-repository'
+import type { TableDelta } from '../sync/sync-pull'
 import type {
   Task,
   TaskFilter,
@@ -64,4 +65,11 @@ export interface RemoteOperations {
   ): Promise<Conversation[]>
   getConversationMessages(conversationId: string): Promise<ConversationMessage[]>
   getConversationActions(conversationId: string): Promise<ConversationAction[]>
+
+  // ADR-030 Phase 2 — read-only pull source. Backs GET /sync/since on the HTTP
+  // transport; the signature matches the PullSource port (sync-pull.ts) so a
+  // service is directly usable as a pull source. Not a REMOTE_TOOL_ALLOWLIST
+  // tool — a transport endpoint — but it expands the PG surface, so the standing
+  // rule still applies: implemented on PostgresTaskService in the same change.
+  fetchSince(since: number): Promise<TableDelta[]>
 }

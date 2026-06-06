@@ -13,7 +13,7 @@
 
 import type Database from 'better-sqlite3'
 import { SYNCABLE_TABLES } from './syncable-tables'
-import { getLastPullAt, setLastPullAt } from './lamport-clock'
+import { getLastPullAt, setLastPullAt, mergeClock } from './lamport-clock'
 
 export interface PulledRow {
   id: string
@@ -105,7 +105,12 @@ export async function pull(db: Database.Database, source: PullSource): Promise<P
   })
   apply()
 
-  if (maxCursor > since) setLastPullAt(db, maxCursor)
+  if (maxCursor > since) {
+    setLastPullAt(db, maxCursor)
+    // Merge the remote clock into the local one so later local writes outrank
+    // anything just pulled (the two clocks are otherwise independent counters).
+    mergeClock(db, maxCursor)
+  }
 
   return { since, newCursor: maxCursor, counts: [...counts.values()] }
 }

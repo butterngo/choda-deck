@@ -5,7 +5,7 @@
 // add raw captures. ID mint still goes through the shared counter repo so
 // INBOX-NNN sequencing matches the stdio path.
 
-import type { Queryable, SqlValue } from './connection'
+import { runInTx, type Queryable, type SqlValue } from './connection'
 import type {
   CreateInboxInput,
   InboxFilter,
@@ -56,11 +56,28 @@ export class PostgresInboxRepository {
   async create(input: CreateInboxInput): Promise<InboxItem> {
     const ts = now()
     const id = await this.nextInboxId()
-    await this.conn.query(
-      `INSERT INTO inbox_items (id, project_id, workspace_id, content, status, linked_task_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, 'raw', $5, $6, $6)`,
-      [id, input.projectId ?? null, input.workspaceId ?? null, input.content, input.linkedTaskId ?? null, ts]
-    )
+    // ADR-030 Phase 2: stamp the row with a Lamport tick + origin='remote' so the
+    // local pull can order it. Clock bump + insert share one transaction so the
+    // stamped value is unique and monotonic even under concurrent adds.
+    await runInTx(this.conn, async (tx) => {
+      const clk = await tx.query<{ counter: string }>(
+        'UPDATE _sync_clock SET counter = counter + 1 WHERE id = 0 RETURNING counter'
+      )
+      const lamport = Number(clk.rows[0].counter)
+      await tx.query(
+        `INSERT INTO inbox_items (id, project_id, workspace_id, content, status, linked_task_id, created_at, updated_at, sync_updated_at, sync_origin)
+         VALUES ($1, $2, $3, $4, 'raw', $5, $6, $6, $7, 'remote')`,
+        [
+          id,
+          input.projectId ?? null,
+          input.workspaceId ?? null,
+          input.content,
+          input.linkedTaskId ?? null,
+          ts,
+          lamport
+        ]
+      )
+    })
     const got = await this.get(id)
     if (!got) throw new Error(`Inbox item disappeared after insert: ${id}`)
     return got

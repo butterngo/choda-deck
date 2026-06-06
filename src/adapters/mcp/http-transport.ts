@@ -11,6 +11,7 @@ import {
   type KeycloakProxyConfig
 } from './oauth/keycloak-proxy'
 import type { JwtVerifier } from './oauth/jwt-verifier'
+import type { PullSource } from '../../core/sync/sync-pull'
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024
 
@@ -35,6 +36,9 @@ export interface HttpTransportOptions {
   bind: string
   token: string // legacy bearer — ignored when `oauth` is set
   oauth?: OAuthConfig
+  // ADR-030 Phase 2 — read-only pull source backing GET /sync/since. Omitted
+  // when the backend can't produce deltas; the route then 404s.
+  syncSource?: PullSource
 }
 
 export interface HttpTransportHandle {
@@ -57,7 +61,7 @@ export async function startHttpTransport(
   const oauth = opts.oauth
 
   const httpServer = createServer((req, res) => {
-    handle(req, res, serverFactory, tokenBuf, oauth).catch((err) => {
+    handle(req, res, serverFactory, tokenBuf, oauth, opts.syncSource).catch((err) => {
       console.error('[choda-deck] http handler error', err)
       if (!res.headersSent) {
         res.writeHead(500)
@@ -98,7 +102,8 @@ async function handle(
   res: ServerResponse,
   serverFactory: McpServerFactory,
   tokenBuf: Buffer,
-  oauth: OAuthConfig | undefined
+  oauth: OAuthConfig | undefined,
+  syncSource: PullSource | undefined
 ): Promise<void> {
   const parsedUrl = new URL(req.url ?? '/', 'http://placeholder')
   const pathname = parsedUrl.pathname
@@ -112,12 +117,47 @@ async function handle(
     return
   }
 
+  if (pathname === '/sync/since' && method === 'GET') {
+    return handleSyncSince(req, res, tokenBuf, oauth, syncSource, parsedUrl)
+  }
+
   if (pathname === '/mcp' && method === 'POST') {
     return handleMcp(req, res, serverFactory, tokenBuf, oauth)
   }
 
   res.writeHead(404)
   res.end()
+}
+
+// ADR-030 Phase 2 — read-only pull endpoint. Auth-gated exactly like /mcp.
+// `since` is the caller's Lamport cursor (default 0). Returns the canonical
+// row deltas the local reconcile core applies.
+async function handleSyncSince(
+  req: IncomingMessage,
+  res: ServerResponse,
+  tokenBuf: Buffer,
+  oauth: OAuthConfig | undefined,
+  syncSource: PullSource | undefined,
+  parsedUrl: URL
+): Promise<void> {
+  if (!syncSource) {
+    res.writeHead(404)
+    res.end()
+    return
+  }
+  if (!(await isAuthorized(req.headers.authorization ?? '', tokenBuf, oauth))) {
+    sendUnauthorized(res, oauth)
+    return
+  }
+  const sinceRaw = parsedUrl.searchParams.get('since')
+  const since = Number.parseInt(sinceRaw ?? '0', 10)
+  if (!Number.isFinite(since) || since < 0) {
+    res.writeHead(400)
+    res.end()
+    return
+  }
+  const deltas = await syncSource.fetchSince(since)
+  sendJson(res, 200, { since, deltas })
 }
 
 async function tryHandleOAuthRoute(
@@ -180,17 +220,8 @@ async function handleMcp(
   tokenBuf: Buffer,
   oauth: OAuthConfig | undefined
 ): Promise<void> {
-  const authHeader = req.headers.authorization ?? ''
-  const authorized = oauth
-    ? await verifyOAuthBearer(authHeader, oauth.verifier)
-    : verifyBearer(authHeader, tokenBuf)
-  if (!authorized) {
-    if (oauth) {
-      const resourceMetadataUrl = `${oauth.origin}/.well-known/oauth-protected-resource`
-      res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}"`)
-    }
-    res.writeHead(401)
-    res.end()
+  if (!(await isAuthorized(req.headers.authorization ?? '', tokenBuf, oauth))) {
+    sendUnauthorized(res, oauth)
     return
   }
 
@@ -238,6 +269,25 @@ async function handleMcp(
       // already closed
     }
   }
+}
+
+// Shared gate for /mcp and /sync/since: OAuth JWT when configured, else the
+// legacy static bearer.
+async function isAuthorized(
+  authHeader: string,
+  tokenBuf: Buffer,
+  oauth: OAuthConfig | undefined
+): Promise<boolean> {
+  return oauth ? verifyOAuthBearer(authHeader, oauth.verifier) : verifyBearer(authHeader, tokenBuf)
+}
+
+function sendUnauthorized(res: ServerResponse, oauth: OAuthConfig | undefined): void {
+  if (oauth) {
+    const resourceMetadataUrl = `${oauth.origin}/.well-known/oauth-protected-resource`
+    res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}"`)
+  }
+  res.writeHead(401)
+  res.end()
 }
 
 function verifyBearer(authHeader: string, tokenBuf: Buffer): boolean {

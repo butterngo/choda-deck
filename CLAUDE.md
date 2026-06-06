@@ -146,6 +146,16 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 
 Store the token at `sensitive_information/mcp-http-token.txt` (gitignored) locally, or as a k8s `Secret` in cluster. Do not commit. Rotation = regenerate + restart pod + update client config.
 
+### Read-only pull — sync engine (ADR-030 Phase 2)
+
+The HTTP server exposes `GET /sync/since?since=<lamport>` (bearer/OAuth-gated, same as `/mcp`) returning canonical row deltas. The laptop drains remote → local SQLite with `choda-deck sync pull` (read-only; no write-through — Phases 3-6 parked). Today only `inbox_add` stamps `sync_updated_at` on the remote, so pull surfaces remote-added inbox items.
+
+| Env var | Required | Purpose |
+|---|---|---|
+| `CHODA_PULL_REMOTE_URL` | `sync pull` | Remote MCP origin, e.g. `https://mcp.choda.dev` |
+| `CHODA_PULL_REMOTE_TOKEN` | `sync pull` | Bearer token (falls back to `MCP_HTTP_TOKEN`) |
+| `CHODA_TOMBSTONE_TTL_DAYS` | — | Tombstone retention window (reserved; enforced in a later slice) |
+
 ### Remote tool allowlist
 
 HTTP mode exposes a narrowed surface — the **6-tool read + capture allowlist** (`REMOTE_TOOL_ALLOWLIST` in `src/adapters/mcp/server-bootstrap.ts`):

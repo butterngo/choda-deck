@@ -146,7 +146,9 @@ export async function startMcpServer(): Promise<void> {
         port,
         bind,
         token,
-        oauth
+        oauth,
+        // ADR-030 Phase 2 — read-only pull source (GET /sync/since).
+        syncSource: { fetchSince: (since) => svc.fetchSince(since) }
       }
     )
     return
