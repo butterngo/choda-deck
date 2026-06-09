@@ -39,6 +39,19 @@ import type {
 import { InboxLifecycleService } from './lifecycle/inbox-lifecycle-service'
 import { ConversationLifecycleService } from './lifecycle/conversation-lifecycle-service'
 import { SessionLifecycleService } from './lifecycle/session-lifecycle-service'
+import { InvestigationLifecycleService } from './lifecycle/investigation-lifecycle-service'
+import { InvestigationRepository } from './repositories/investigation-repository'
+import type { InvestigationOperations } from './interfaces/investigation.interface'
+import type {
+  AddEvidenceInput,
+  Evidence,
+  Hypothesis,
+  HypothesisStatus,
+  Investigation,
+  ResolveInvestigationInput,
+  ResolveInvestigationResult,
+  StartInvestigationInput
+} from './investigation-types'
 import { flipAcCheckbox, type CheckAcItemInput, type CheckAcItemResult } from './lifecycle/ac-check'
 import { NoActiveSessionError, TaskNotFoundError } from './lifecycle/errors'
 import { KnowledgeService } from './knowledge-service'
@@ -138,7 +151,8 @@ export class SqliteTaskService
     SessionLifecycleOperations,
     KnowledgeOperations,
     SessionEventOperations,
-    AgentMemoryOperations
+    AgentMemoryOperations,
+    InvestigationOperations
 {
   private readonly db: Database.Database
   private readonly projects: ProjectRepository
@@ -155,9 +169,11 @@ export class SqliteTaskService
   private readonly toolInvocations: ToolInvocationsRepository
   private readonly sessionEvents: SessionEventRepository
   private readonly agentMemories: AgentMemoryRepository
+  private readonly investigations: InvestigationRepository
   private readonly inboxLifecycle: InboxLifecycleService
   private readonly conversationLifecycle: ConversationLifecycleService
   private readonly sessionLifecycle: SessionLifecycleService
+  private readonly investigationLifecycle: InvestigationLifecycleService
   private readonly knowledgeRepo: KnowledgeRepository
   private readonly knowledgeService: KnowledgeService
   private readonly codeRefs: CodeRefRepository
@@ -191,6 +207,8 @@ export class SqliteTaskService
     this.contextSources = new ContextSourceRepository(this.db)
     this.conversations = new ConversationRepository(this.db)
     this.inbox = new InboxRepository(this.db, this.counters)
+    this.investigations = new InvestigationRepository(this.db, this.counters)
+    this.investigationLifecycle = new InvestigationLifecycleService(this.db, this.investigations)
     this.inboxLifecycle = new InboxLifecycleService(
       this.db,
       this.inbox,
@@ -541,6 +559,29 @@ export class SqliteTaskService
   }
   async resumeSession(id: string): Promise<ResumeSessionResult> {
     return this.sessionLifecycle.resumeSession(id)
+  }
+
+  // ── Investigation lifecycle (ADR-035, stdio-only) ──────────────────────────
+  async startInvestigation(input: StartInvestigationInput): Promise<Investigation> {
+    return this.investigationLifecycle.startInvestigation(input)
+  }
+  async addHypothesis(investigationId: string, description: string): Promise<Hypothesis> {
+    return this.investigationLifecycle.addHypothesis(investigationId, description)
+  }
+  async setHypothesisStatus(hypothesisId: string, status: HypothesisStatus): Promise<Hypothesis> {
+    return this.investigationLifecycle.setHypothesisStatus(hypothesisId, status)
+  }
+  async addEvidence(input: AddEvidenceInput): Promise<Evidence> {
+    return this.investigationLifecycle.addEvidence(input)
+  }
+  async resolveInvestigation(
+    id: string,
+    input: ResolveInvestigationInput
+  ): Promise<ResolveInvestigationResult> {
+    return this.investigationLifecycle.resolveInvestigation(id, input)
+  }
+  async getInvestigation(id: string): Promise<Investigation | null> {
+    return this.investigationLifecycle.getInvestigation(id)
   }
 
   // ── Knowledge ─────────────────────────────────────────────────────────────

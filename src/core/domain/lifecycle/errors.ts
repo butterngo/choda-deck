@@ -133,6 +133,37 @@ export class NoActiveSessionError extends LifecycleError {
   }
 }
 
+export class InvestigationNotFoundError extends LifecycleError {
+  constructor(id: string) {
+    super('INVESTIGATION_NOT_FOUND', `Investigation ${id} not found`)
+    this.name = 'InvestigationNotFoundError'
+  }
+}
+
+export class InvestigationStatusError extends LifecycleError {
+  constructor(id: string, current: string, message: string) {
+    super('INVESTIGATION_INVALID_STATUS', `Investigation ${id} is ${current} — ${message}`)
+    this.name = 'InvestigationStatusError'
+  }
+}
+
+export class HypothesisNotFoundError extends LifecycleError {
+  constructor(id: string) {
+    super('HYPOTHESIS_NOT_FOUND', `Hypothesis ${id} not found`)
+    this.name = 'HypothesisNotFoundError'
+  }
+}
+
+export class HypothesisTransitionError extends LifecycleError {
+  constructor(id: string, current: string, target: string) {
+    super(
+      'HYPOTHESIS_INVALID_TRANSITION',
+      `Hypothesis ${id} is ${current} — cannot transition to ${target} (only testing → ruled_out | confirmed is allowed)`
+    )
+    this.name = 'HypothesisTransitionError'
+  }
+}
+
 export class QueueDirtyTreeError extends LifecycleError {
   constructor(cwd: string, porcelain: string) {
     super(
