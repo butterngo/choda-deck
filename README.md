@@ -276,7 +276,7 @@ CHODA_PG_URL="postgres://choda:choda@localhost:5432/choda" \
 
 The script is idempotent (skips tables that already have rows; pass `--force` to wipe + reload). Embedding vectors are NOT copied — re-run `scripts/backfill-embeddings.mjs` against the Postgres backend after migration to rebuild them.
 
-The cross-device pending-ops sync engine (ADR-030 §2) is **not** in this release — laptop ↔ remote MCP today is "one backend at a time," not a live sync. Pick `CHODA_BACKEND` per process.
+Cross-device sync is **partial** as of `0.3.0`: read-only pull (ADR-030 Phase 2) ships — `choda-deck sync pull` drains a remote MCP's `GET /sync/since` into the local SQLite file. Full bidirectional pending-ops sync (write-through + last-writer-wins, Phases 3–6) is **not** in this release; for writes, pick `CHODA_BACKEND` per process.
 
 ## Architecture
 
@@ -286,6 +286,16 @@ The cross-device pending-ops sync engine (ADR-030 §2) is **not** in this releas
 - **Windows-first**, but runs on macOS and Linux
 
 See [`docs/architecture.md`](https://github.com/butterngo/choda-deck/blob/main/docs/architecture.md) for the full layout, and ADRs in [`docs/knowledge/`](https://github.com/butterngo/choda-deck/tree/main/docs/knowledge) for design decisions.
+
+## Changelog
+
+Full notes per release: [GitHub Releases](https://github.com/butterngo/choda-deck/releases).
+
+### 0.3.0
+- **Investigation** — first-class, stdio-only container for nonlinear debugging (hypotheses + typed evidence across sessions; `resolve` drafts a knowledge gotcha). 6 new tools (ADR-035).
+- **Cross-device sync foundation** — sync-metadata columns + Lamport clock (Phase 1) and read-only pull `choda-deck sync pull` (Phase 2, ADR-030).
+- **`session_cancel`** — retire a session without marking its task DONE.
+- Auto-derived `modifies` TOUCHES at `session_end`; HTTP keep-alive teardown fix; the CLI bin now actually ships in the npm tarball.
 
 ## Status
 
