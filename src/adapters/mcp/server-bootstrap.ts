@@ -19,6 +19,7 @@ import * as projectTools from './mcp-tools/project-tools'
 import * as workspaceTools from './mcp-tools/workspace-tools'
 import * as sessionTools from './mcp-tools/session-tools'
 import * as inboxTools from './mcp-tools/inbox-tools'
+import * as investigationTools from './mcp-tools/investigation-tools'
 import * as backupTools from './mcp-tools/backup-tools'
 import * as knowledgeTools from './mcp-tools/knowledge-tools'
 import * as codeRefTools from './mcp-tools/code-ref-tools'
@@ -82,6 +83,8 @@ function buildMcpServer(
   workspaceTools.register(instrumented, deps.svc)
   sessionTools.register(instrumented, deps.svc)
   inboxTools.register(instrumented, deps.svc)
+  // ADR-035: stdio-only — deliberately absent from REMOTE_TOOL_ALLOWLIST above.
+  investigationTools.register(instrumented, deps.svc)
   backupTools.register(instrumented, deps.svc, deps.dataDir, deps.dbPath)
   knowledgeTools.register(instrumented, deps.svc)
   codeRefTools.register(instrumented, deps.svc)

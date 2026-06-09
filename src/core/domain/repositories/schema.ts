@@ -2,13 +2,14 @@ import type Database from 'better-sqlite3'
 import { createSyncClockTables } from '../../sync/lamport-clock'
 import { SYNCABLE_TABLES, SYNC_COLUMNS } from '../../sync/syncable-tables'
 
-const SCHEMA_VERSION = 5
+const SCHEMA_VERSION = 6
 
 export function initSchema(db: Database.Database): void {
   createCoreTables(db)
   runLegacyMigrations(db)
   createM1Tables(db)
   createM2Tables(db)
+  createInvestigationTables(db)
   dropLegacyOAuthTables(db)
   addSyncColumns(db)
   createSyncClockTables(db)
@@ -739,6 +740,54 @@ function createM2Tables(db: Database.Database): void {
       recall_count INTEGER DEFAULT 0
     )
   `)
+}
+
+// ADR-035 (TASK-603): Investigation domain object — a first-class, stdio-only
+// container for nonlinear debugging state. Three tables: the investigation, its
+// hypotheses (ruled-out branches persisted, never deleted), and typed evidence
+// that attaches to the investigation or to a specific hypothesis. Not added to
+// SYNCABLE_TABLES — a local debug aid with no remote consumer (ADR-026).
+function createInvestigationTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS investigations (
+      id TEXT PRIMARY KEY,
+      symptom TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'exploring' CHECK (status IN ('exploring','confirmed','resolved')),
+      task_id TEXT,
+      session_id TEXT,
+      root_cause TEXT,
+      fix_summary TEXT,
+      pattern_tag TEXT,
+      created_at TEXT NOT NULL,
+      resolved_at TEXT
+    )
+  `)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS hypotheses (
+      id TEXT PRIMARY KEY,
+      investigation_id TEXT NOT NULL,
+      description TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'testing' CHECK (status IN ('testing','ruled_out','confirmed')),
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (investigation_id) REFERENCES investigations(id)
+    )
+  `)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS evidence (
+      id TEXT PRIMARY KEY,
+      investigation_id TEXT NOT NULL,
+      hypothesis_id TEXT,
+      type TEXT NOT NULL CHECK (type IN ('screenshot','log','network','code_snippet')),
+      ref TEXT NOT NULL,
+      note TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (investigation_id) REFERENCES investigations(id),
+      FOREIGN KEY (hypothesis_id) REFERENCES hypotheses(id)
+    )
+  `)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_hypotheses_investigation ON hypotheses(investigation_id)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_evidence_investigation ON evidence(investigation_id)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_evidence_hypothesis ON evidence(hypothesis_id)')
 }
 
 // ADR-034: the ADR-027 self-issued OAuth store is gone — Keycloak issues and
