@@ -152,4 +152,4 @@ Lifecycle mutations validate state and fail atomically: resolve on an already-`r
 
 ---
 
-**Status: DRAFT — ADR-035.** Acceptance (DRAFT → ACCEPTED) is TASK-603's call. Registered in the knowledge index.
+**Status: ACCEPTED — ADR-035.** Implemented + merged via PR #181 (squash 0a2c3b0); TASK-603 DONE. Registered in the knowledge index.
