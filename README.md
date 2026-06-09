@@ -18,6 +18,7 @@ Claude can:
 - 💬 Hold structured conversations with decisions logged
 - 📥 Capture mid-flow ideas to an inbox, research them later, convert to tasks
 - 📚 Maintain a knowledge layer (ADRs / decision logs) with staleness tracking
+- 🔍 Trace bugs as structured investigations — hypotheses, evidence, root cause — that survive across sessions
 - 💾 Auto-backup daily, restore on demand
 
 Everything lives in a single SQLite file. No cloud, no SaaS, no telemetry.
@@ -141,6 +142,7 @@ All tools are namespaced `mcp__choda-tasks__<name>`. Claude calls them on your b
 | **Conversation** | `conversation_open`, `conversation_add`, `conversation_decide`, `conversation_close`, `conversation_reopen`, `conversation_list`, `conversation_read`, `conversation_poll` | Structured threads (e.g. FE/BE alignment, ADR debate). `decide` logs the resolution. |
 | **Inbox** | `inbox_add`, `inbox_research`, `inbox_convert`, `inbox_ready`, `inbox_archive`, `inbox_list`, `inbox_get`, `inbox_update` | Capture-now, decide-later. Items move `raw` → `researching` → `ready` → `converted` (to a task) or `archived`. |
 | **Knowledge** | `knowledge_create`, `knowledge_list`, `knowledge_get`, `knowledge_search`, `knowledge_update`, `knowledge_verify`, `knowledge_delete` | ADRs / decision logs with frontmatter. `refs[]` tracks implementation files + commit SHAs → staleness banner when code drifts. |
+| **Investigation** | `investigation_start`, `investigation_add_hypothesis`, `investigation_set_hypothesis_status`, `investigation_add_evidence`, `investigation_resolve`, `investigation_get` | Nonlinear debugging container (ADR-035). Hypotheses (ruled-out branches kept) + typed evidence persist across sessions; `resolve` drafts a knowledge gotcha for reuse. stdio-only. |
 | **Backup** | `backup_create`, `backup_list`, `backup_restore` | Daily auto-backup of the SQLite DB. Manual create + restore when you need to roll back. |
 | **Ops** | `stats_report`, `cleanup_worktree_orphans` | Tool-usage telemetry (per-tool calls / error rate / dead-in-window) + worktree GC. |
 
@@ -287,7 +289,7 @@ See [`docs/architecture.md`](https://github.com/butterngo/choda-deck/blob/main/d
 
 ## Status
 
-`0.2.0` — early, dogfooded daily by the author. API may move before `1.0`. Issues + PRs welcome.
+`0.3.0` — early, dogfooded daily by the author. API may move before `1.0`. Issues + PRs welcome.
 
 ## License
 
