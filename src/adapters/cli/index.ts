@@ -17,7 +17,7 @@
  *   MCP_HTTP_TOKEN     — bearer token; REQUIRED when MCP_TRANSPORT=http
  */
 
-const VERSION = '0.2.0'
+const VERSION = '0.3.0'
 
 const ROOT_HELP = `choda-deck v${VERSION}
 

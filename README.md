@@ -42,7 +42,7 @@ choda-deck is the **memory layer** Claude wishes it had built-in.
 ```bash
 npm install -g choda-deck
 # or run on demand
-npx choda-deck
+npx -y choda-deck mcp serve
 ```
 
 Requires Node.js >= 20.
@@ -60,7 +60,7 @@ Add to `.claude.json` (user-level) or `.mcp.json` (project-level):
   "mcpServers": {
     "choda-tasks": {
       "command": "npx",
-      "args": ["-y", "choda-deck"],
+      "args": ["-y", "choda-deck", "mcp", "serve"],
       "env": {
         "CHODA_DATA_DIR": "/absolute/path/to/data",
         "CHODA_CONTENT_ROOT": "/absolute/path/to/your/notes-or-vault"
@@ -92,7 +92,7 @@ Create `.vscode/mcp.json` in your workspace (or add to User Settings):
     "choda-tasks": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "choda-deck"],
+      "args": ["-y", "choda-deck", "mcp", "serve"],
       "env": {
         "CHODA_DATA_DIR": "/absolute/path/to/data",
         "CHODA_CONTENT_ROOT": "/absolute/path/to/your/notes-or-vault"
@@ -110,41 +110,35 @@ Any MCP-compatible client works. Use the `command` / `args` / `env` triple — d
 
 ## CLI
 
-`choda-deck` ships a read-only CLI that talks to the same SQLite store directly — no AI in the loop, no MCP roundtrip. Use it to verify state, script automations, or pipe to `jq`.
+`choda-deck` is first and foremost an MCP server — the binary exposes two commands:
 
 ```bash
-choda-deck --help                                # show all subcommands
-choda-deck task list --status TODO --json        # script-friendly
-choda-deck task show TASK-669                    # body + linked conversations
-choda-deck inbox list --project choda-deck
-choda-deck knowledge list
-choda-deck knowledge show ADR-020-embedding-architecture
-choda-deck project context choda-deck            # AI's session_start view
-choda-deck mcp serve                             # start the MCP stdio server
+choda-deck mcp serve     # start the MCP server (stdio by default; MCP_TRANSPORT=http for Streamable HTTP)
+choda-deck sync pull     # drain a remote MCP's changes into the local SQLite DB (ADR-030 Phase 2)
+choda-deck --help
+choda-deck --version
 ```
 
-Pass `--json` to any read command for machine-readable output. Plain text is the default for humans.
-
-### Reading freshness
-
-The CLI opens SQLite in WAL mode for shared reads. While the MCP server is actively writing, a CLI read may see a snapshot from a few seconds ago — re-run after 1-2s if state looks stale. See knowledge entry `sqlite-wal-read-consistency` for details.
+`mcp serve` is what your MCP client launches under the hood — the `npx -y choda-deck mcp serve` config shown above resolves to it. `sync pull` performs the read-only cross-device pull (see [Postgres backend](#postgres-backend)). There is no separate query CLI — read state through the MCP tools (Claude) or the SQLite file directly.
 
 ## Tools
 
-All tools are namespaced `mcp__choda-tasks__<name>`. Claude calls them on your behalf — you never invoke them directly.
+All tools are namespaced `mcp__choda-tasks__<name>`. Claude calls them on your behalf — you never invoke them directly. Over the HTTP transport only a narrow read + capture subset is exposed (see [HTTP transport](#http-transport)); the full surface below is stdio-only.
 
 | Domain | Tools | What it does |
 |---|---|---|
 | **Project** | `project_add`, `project_list`, `project_context` | Multi-project setup. Each project has its own task list and metadata. |
-| **Workspace** | `workspace_add`, `workspace_list`, `workspace_archive` | Sub-scope inside a project (e.g. `frontend`, `backend`, `infra`). Knowledge entries can be scoped to a workspace. |
-| **Task** | `task_create`, `task_list`, `task_update`, `task_context` | TODO → READY → IN-PROGRESS → DONE/BLOCKED. Each task has body + acceptance criteria + labels + priority. |
-| **Session** | `session_start`, `session_checkpoint`, `session_end`, `session_resume`, `session_list` | Bind a work session to a task. Checkpoint progress so the next session resumes with full context. |
-| **Conversation** | `conversation_open`, `conversation_add`, `conversation_decide`, `conversation_close`, `conversation_reopen`, `conversation_list`, `conversation_read`, `conversation_poll` | Structured threads (e.g. FE/BE alignment, ADR debate). `decide` logs the resolution. |
-| **Inbox** | `inbox_add`, `inbox_research`, `inbox_convert`, `inbox_ready`, `inbox_archive`, `inbox_list`, `inbox_get`, `inbox_update` | Capture-now, decide-later. Items move `raw` → `researching` → `ready` → `converted` (to a task) or `archived`. |
-| **Knowledge** | `knowledge_create`, `knowledge_list`, `knowledge_get`, `knowledge_search`, `knowledge_update`, `knowledge_verify`, `knowledge_delete` | ADRs / decision logs with frontmatter. `refs[]` tracks implementation files + commit SHAs → staleness banner when code drifts. |
-| **Investigation** | `investigation_start`, `investigation_add_hypothesis`, `investigation_set_hypothesis_status`, `investigation_add_evidence`, `investigation_resolve`, `investigation_get` | Nonlinear debugging container (ADR-035). Hypotheses (ruled-out branches kept) + typed evidence persist across sessions; `resolve` drafts a knowledge gotcha for reuse. stdio-only. |
+| **Workspace** | `workspace_add`, `workspace_list`, `workspace_archive` | Sub-scope inside a project (e.g. `frontend`, `backend`, `infra`). Knowledge + tasks can be scoped to a workspace. |
+| **Task** | `task_create`, `task_list`, `task_update`, `task_context`, `ac_check` | TODO → READY → IN-PROGRESS → DONE/CANCELLED. Each task has body + acceptance criteria + labels + priority. `ac_check` ticks one AC item with evidence. |
+| **Session** | `session_start`, `session_checkpoint`, `session_end`, `session_resume`, `session_cancel`, `session_list`, `session_event_add`, `session_event_list` | Bind a work session to a task. Checkpoint progress so the next session resumes with full context; `session_cancel` retires a session without completing its task. |
+| **Conversation** | `conversation_open`, `conversation_add`, `conversation_decide`, `conversation_signoff`, `conversation_mark_read`, `conversation_list`, `conversation_read`, `conversation_poll` | Structured threads (e.g. FE/BE alignment, ADR debate). Status is `open` → `decided`; `decide` logs the resolution, `signoff` records agreement. |
+| **Inbox** | `inbox_add`, `inbox_research`, `inbox_ready`, `inbox_convert`, `inbox_archive`, `inbox_list`, `inbox_get`, `inbox_update` | Capture-now, decide-later. Items move `raw` → `researching` → `ready` → `converted` (to a task) or `archived`. |
+| **Knowledge** | `knowledge_create`, `knowledge_register_existing`, `knowledge_list`, `knowledge_get`, `knowledge_search`, `knowledge_update`, `knowledge_verify`, `knowledge_delete` | ADRs / decision logs with frontmatter. `refs[]` tracks implementation files + commit SHAs → staleness banner when code drifts. `search` is embedding-backed. |
+| **Investigation** | `investigation_start`, `investigation_add_hypothesis`, `investigation_set_hypothesis_status`, `investigation_add_evidence`, `investigation_resolve`, `investigation_get` | Nonlinear debugging container (ADR-035). Hypotheses (ruled-out branches kept) + typed evidence persist across sessions; `resolve` drafts a knowledge gotcha for reuse. |
+| **Code graph** | `code_ref_upsert`, `code_ref_prefix`, `code_ref_delete`, `touches_add`, `touches_remove`, `task_touches`, `graph_edges`, `feature_projection` | Couple tasks to the code they touch (`modifies` / `reference` edges) and project features from the task graph (ADR-026/032). |
+| **Memory** | `memory_write`, `memory_recall`, `memory_promote_to_knowledge` | Scoped agent memory (task → workspace → project → user). Promote a load-bearing memory into a proposed ADR. |
 | **Backup** | `backup_create`, `backup_list`, `backup_restore` | Daily auto-backup of the SQLite DB. Manual create + restore when you need to roll back. |
-| **Ops** | `stats_report`, `cleanup_worktree_orphans` | Tool-usage telemetry (per-tool calls / error rate / dead-in-window) + worktree GC. |
+| **Ops** | `stats_report`, `cleanup_worktree_orphans`, `cleanup_artifacts` | Tool-usage telemetry (per-tool calls / error rate / dead-in-window) + worktree & artifact GC. |
 
 ## Common workflows
 
@@ -188,9 +182,8 @@ You    : "should we use sqlite-vec or qdrant for embeddings?"
 Claude : (conversation_open "embedding store choice")
 Claude : (analyzes both, posts trade-offs)
 You    : "go sqlite-vec for now"
-Claude : (conversation_decide "sqlite-vec — brute KNN fine at our scale")
+Claude : (conversation_decide "sqlite-vec — brute KNN fine at our scale")  ← marks the thread decided
 Claude : (knowledge_create ADR-020 with refs to src/embeddings/*.ts)
-Claude : (conversation_close)
 ```
 
 Three months later, when you edit `src/embeddings/`:
@@ -218,9 +211,28 @@ $CHODA_DATA_DIR/
 └── backups/choda-deck-<date>.db  ← auto daily, retained
 ```
 
+### HTTP transport
+
+The same binary also speaks **Streamable HTTP** for remote / k8s use, selected at startup via `MCP_TRANSPORT=http` (ADR-026):
+
+```bash
+MCP_TRANSPORT=http \
+MCP_HTTP_TOKEN="$(node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))")" \
+  choda-deck mcp serve         # listens on :7337; POST /mcp (bearer-gated), GET /healthz
+```
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `MCP_TRANSPORT` | `stdio` | `stdio` (local) or `http` (remote / k8s) |
+| `MCP_HTTP_PORT` | `7337` | HTTP listen port |
+| `MCP_HTTP_BIND` | `0.0.0.0` | Bind address (`127.0.0.1` for local-only) |
+| `MCP_HTTP_TOKEN` | _required for http_ | Bearer token gating `POST /mcp` |
+
+HTTP mode exposes a **narrowed surface** — a 6-tool read + capture allowlist (`project_list`, `task_list`, `task_context`, `inbox_list`, `inbox_get`, `inbox_add`). Everything else stays stdio-only (local trust). For `claude.ai`'s connector, swap bearer auth for Keycloak-backed OAuth with `MCP_OAUTH_MODE=1` (ADR-034). The cross-device read-only pull (`choda-deck sync pull`) drains this HTTP surface into a local SQLite copy.
+
 ### Postgres backend
 
-The Postgres adapter is full-feature parity with SQLite — all `mcp__choda-tasks__*` tools work against either backend. Use Postgres when running the MCP HTTP transport in k8s (ADR-026 + ADR-030).
+Postgres backs the **HTTP transport only** (remote / k8s). It implements the narrow `RemoteOperations` port — the call graph of the HTTP allowlist above — not the full stdio surface, so `MCP_TRANSPORT=stdio` with `CHODA_BACKEND=postgres` is **rejected at boot**. Stdio is always SQLite (ADR-026 + ADR-030).
 
 **Local dev** with the shipped `docker-compose.yml`:
 
@@ -228,7 +240,7 @@ The Postgres adapter is full-feature parity with SQLite — all `mcp__choda-task
 docker compose up -d                             # boots pgvector/pgvector:pg16 on :5432
 export CHODA_BACKEND=postgres
 export CHODA_PG_URL="postgres://choda:choda@localhost:5432/choda"
-pnpm run mcp:http                                # schema migrates on first connect
+MCP_TRANSPORT=http MCP_HTTP_TOKEN=dev-token choda-deck mcp serve   # schema migrates on first connect
 ```
 
 **k8s** — minimal `Deployment` + `Secret` shape:
