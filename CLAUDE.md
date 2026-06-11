@@ -148,13 +148,22 @@ Store the token at `sensitive_information/mcp-http-token.txt` (gitignored) local
 
 ### Read-only pull — sync engine (ADR-030 Phase 2)
 
-The HTTP server exposes `GET /sync/since?since=<lamport>` (bearer/OAuth-gated, same as `/mcp`) returning canonical row deltas. The laptop drains remote → local SQLite with `choda-deck sync pull` (read-only; no write-through — Phases 3-6 parked). Today only `inbox_add` stamps `sync_updated_at` on the remote, so pull surfaces remote-added inbox items.
+The HTTP server exposes `GET /sync/since?since=<lamport>` (bearer/OAuth-gated, same as `/mcp`) returning canonical row deltas. The laptop drains remote → local SQLite with `choda-deck sync pull` (read-only). Today only `inbox_add` stamps `sync_updated_at` on the remote, so a *bare* pull surfaces remote-added inbox items; full bidirectional sync runs under `CHODA_BACKEND=sync` (below).
 
 | Env var | Required | Purpose |
 |---|---|---|
-| `CHODA_PULL_REMOTE_URL` | `sync pull` | Remote MCP origin, e.g. `https://mcp.choda.dev` |
-| `CHODA_PULL_REMOTE_TOKEN` | `sync pull` | Bearer token (falls back to `MCP_HTTP_TOKEN`) |
+| `CHODA_PULL_REMOTE_URL` | `sync pull` / `=sync` | Remote MCP origin, e.g. `https://mcp.choda.dev` |
+| `CHODA_PULL_REMOTE_TOKEN` | `sync pull` / `=sync` | Bearer token (falls back to `MCP_HTTP_TOKEN`) |
 | `CHODA_TOMBSTONE_TTL_DAYS` | — | Tombstone retention window (reserved; enforced in a later slice) |
+
+### Write-through + drain — `CHODA_BACKEND=sync` (ADR-030 Phase 3-6)
+
+Set `CHODA_BACKEND=sync` (stdio only — rejected at boot on http) to run the laptop as a write-through client: local SQLite is the working copy and every mutating `task_*` / `inbox_*` tool call also POSTs to the remote `POST /sync/apply` (bearer/OAuth-gated, symmetric to `/sync/since`), which applies server-side last-writer-wins and returns per-row verdicts. On a remote failure the op is queued to local `pending_ops` and the call still succeeds. A background loop drains the queue + pulls deltas on a cadence; a dropped op (canonical was newer) is recorded to `sync_conflicts` **and** surfaced as a raw `inbox_add` so loss is never silent. `conversation_*` is out of scope (gated — see TASK-1067 / 979e).
+
+| Env var | Required | Purpose |
+|---|---|---|
+| `CHODA_BACKEND=sync` | — | Enables write-through + drain/pull loop (reuses the pull envs above) |
+| `CHODA_SYNC_INTERVAL_MS` | — | Drain/pull cadence in ms (default `30000`) |
 
 ### Remote tool allowlist
 

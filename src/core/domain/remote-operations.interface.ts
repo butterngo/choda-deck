@@ -14,6 +14,7 @@
 import type { ProjectRow } from './repositories/project-repository'
 import type { WorkspaceRow } from './repositories/workspace-repository'
 import type { TableDelta } from '../sync/sync-pull'
+import type { ApplyResult } from '../sync/sync-apply'
 import type {
   Task,
   TaskFilter,
@@ -72,4 +73,12 @@ export interface RemoteOperations {
   // tool — a transport endpoint — but it expands the PG surface, so the standing
   // rule still applies: implemented on PostgresTaskService in the same change.
   fetchSince(since: number): Promise<TableDelta[]>
+
+  // ADR-030 Phase 3 (979a) — the write counterpart to fetchSince. Backs
+  // POST /sync/apply: the laptop pushes its locally stamped deltas, the canonical
+  // store applies them under server-side LWW (canonical wins ties) and returns a
+  // per-row verdict. Like fetchSince this is a transport endpoint, not an MCP
+  // tool, so the read+capture allowlist is unchanged. Scope: tasks + inbox only
+  // (APPLY_TABLES) — conversation_* stays out until 979e's append-merge ships.
+  applyDelta(deltas: TableDelta[], origin: string): Promise<ApplyResult>
 }

@@ -15,12 +15,24 @@ import { PostgresTaskService } from './postgres-task-service'
 import { PgConnection } from './repositories/postgres/connection'
 import type { BackendTaskService } from './backend-task-service.interface'
 import type { BackendConfig } from '../backend-config'
+import { HttpWriteClient } from '../sync/http-write-client'
+import { wrapWithSyncWriteThrough } from '../sync/sync-write-through'
 
 export function createTaskService(config: BackendConfig): BackendTaskService {
   switch (config.kind) {
     case 'sqlite':
       fs.mkdirSync(path.dirname(config.dbPath), { recursive: true })
       return new SqliteTaskService(config.dbPath)
+    case 'sync': {
+      // Local SQLite + write-through to the remote. The drain/pull loop is
+      // started separately by server-bootstrap (a timer doesn't belong in the
+      // shared factory, which the CLI also uses). Write-through itself is
+      // synchronous per tool call and lives in the returned wrapper.
+      fs.mkdirSync(path.dirname(config.dbPath), { recursive: true })
+      const svc = new SqliteTaskService(config.dbPath)
+      const client = new HttpWriteClient({ remoteUrl: config.remoteUrl, token: config.remoteToken })
+      return wrapWithSyncWriteThrough(svc, client)
+    }
     case 'postgres': {
       const poolSize = Number(process.env.CHODA_PG_POOL_SIZE ?? '10')
       const conn = new PgConnection({
@@ -52,6 +64,16 @@ export function requireBackendForTransport(
       '[choda-deck] CHODA_BACKEND=postgres is not allowed with MCP_TRANSPORT=stdio — ' +
         'the PG adapter implements only RemoteOperations (subset of BackendTaskService) ' +
         'per ADR-026 §Per-tool scoping. Use sqlite for stdio, postgres for http.\n'
+    )
+    process.exit(2)
+  }
+  // ADR-030 Phase 3-6: sync is the laptop driving a remote — it is a stdio
+  // client by definition. Serving HTTP from a sync backend would mean a node
+  // both accepts pushes and pushes elsewhere; not a supported topology.
+  if (backend.kind === 'sync' && transport === 'http') {
+    process.stderr.write(
+      '[choda-deck] CHODA_BACKEND=sync is not allowed with MCP_TRANSPORT=http — ' +
+        'sync is the laptop (stdio) write-through client. Use postgres for the http server.\n'
     )
     process.exit(2)
   }

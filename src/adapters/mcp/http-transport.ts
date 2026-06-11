@@ -11,7 +11,8 @@ import {
   type KeycloakProxyConfig
 } from './oauth/keycloak-proxy'
 import type { JwtVerifier } from './oauth/jwt-verifier'
-import type { PullSource } from '../../core/sync/sync-pull'
+import type { PullSource, TableDelta } from '../../core/sync/sync-pull'
+import type { ApplySink } from '../../core/sync/sync-apply'
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024
 
@@ -39,6 +40,9 @@ export interface HttpTransportOptions {
   // ADR-030 Phase 2 — read-only pull source backing GET /sync/since. Omitted
   // when the backend can't produce deltas; the route then 404s.
   syncSource?: PullSource
+  // ADR-030 Phase 3 (979a) — write sink backing POST /sync/apply. Omitted when
+  // the backend can't accept pushes; the route then 404s.
+  syncSink?: ApplySink
 }
 
 export interface HttpTransportHandle {
@@ -61,7 +65,7 @@ export async function startHttpTransport(
   const oauth = opts.oauth
 
   const httpServer = createServer((req, res) => {
-    handle(req, res, serverFactory, tokenBuf, oauth, opts.syncSource).catch((err) => {
+    handle(req, res, serverFactory, tokenBuf, oauth, opts.syncSource, opts.syncSink).catch((err) => {
       console.error('[choda-deck] http handler error', err)
       if (!res.headersSent) {
         res.writeHead(500)
@@ -103,7 +107,8 @@ async function handle(
   serverFactory: McpServerFactory,
   tokenBuf: Buffer,
   oauth: OAuthConfig | undefined,
-  syncSource: PullSource | undefined
+  syncSource: PullSource | undefined,
+  syncSink: ApplySink | undefined
 ): Promise<void> {
   const parsedUrl = new URL(req.url ?? '/', 'http://placeholder')
   const pathname = parsedUrl.pathname
@@ -119,6 +124,10 @@ async function handle(
 
   if (pathname === '/sync/since' && method === 'GET') {
     return handleSyncSince(req, res, tokenBuf, oauth, syncSource, parsedUrl)
+  }
+
+  if (pathname === '/sync/apply' && method === 'POST') {
+    return handleSyncApply(req, res, tokenBuf, oauth, syncSink)
   }
 
   if (pathname === '/mcp' && method === 'POST') {
@@ -158,6 +167,56 @@ async function handleSyncSince(
   }
   const deltas = await syncSource.fetchSince(since)
   sendJson(res, 200, { since, deltas })
+}
+
+// ADR-030 Phase 3 (979a) — write-apply endpoint. Auth-gated exactly like
+// /sync/since and /mcp. Body = { origin: string, deltas: TableDelta[] }. The
+// canonical store applies under server-side LWW and returns per-row verdicts so
+// the pusher can log conflicts. Tables outside APPLY_TABLES are rejected 400 by
+// applyDelta before any DB write.
+async function handleSyncApply(
+  req: IncomingMessage,
+  res: ServerResponse,
+  tokenBuf: Buffer,
+  oauth: OAuthConfig | undefined,
+  syncSink: ApplySink | undefined
+): Promise<void> {
+  if (!syncSink) {
+    res.writeHead(404)
+    res.end()
+    return
+  }
+  if (!(await isAuthorized(req.headers.authorization ?? '', tokenBuf, oauth))) {
+    sendUnauthorized(res, oauth)
+    return
+  }
+  const contentType = (req.headers['content-type'] ?? '').toLowerCase()
+  if (!contentType.includes('application/json')) {
+    res.writeHead(415)
+    res.end()
+    return
+  }
+  let parsed: unknown
+  try {
+    parsed = await readJson(req)
+  } catch (err) {
+    writeBodyError(res, err)
+    return
+  }
+  const body = parsed as { origin?: unknown; deltas?: unknown }
+  if (typeof body.origin !== 'string' || !Array.isArray(body.deltas)) {
+    res.writeHead(400)
+    res.end()
+    return
+  }
+  try {
+    const result = await syncSink.applyDelta(body.deltas as TableDelta[], body.origin)
+    sendJson(res, 200, result)
+  } catch {
+    // applyDelta throws on an out-of-scope table — a client contract error.
+    res.writeHead(400)
+    res.end()
+  }
 }
 
 async function tryHandleOAuthRoute(

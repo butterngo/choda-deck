@@ -2,7 +2,9 @@ import Database from 'better-sqlite3'
 import * as sqliteVec from 'sqlite-vec'
 import type { TaskService } from './task-service.interface'
 import { fetchSinceFromSqlite } from '../sync/sync-source'
+import { applyDeltaToSqlite } from '../sync/sync-sink'
 import type { TableDelta } from '../sync/sync-pull'
+import type { ApplyResult } from '../sync/sync-apply'
 import { EmbeddingStore } from './embedding/embedding-store'
 import { loadEmbeddingProvider } from './embedding/embedding-provider-factory'
 import type { EmbeddingProvider } from './embedding/embedding-provider.interface'
@@ -504,6 +506,18 @@ export class SqliteTaskService
   // ── Inbox ──────────────────────────────────────────────────────────────────
   async fetchSince(since: number): Promise<TableDelta[]> {
     return fetchSinceFromSqlite(this.db, since)
+  }
+
+  async applyDelta(deltas: TableDelta[], origin: string): Promise<ApplyResult> {
+    return applyDeltaToSqlite(this.db, deltas, origin)
+  }
+
+  // ADR-030 Phase 3 (979b) — raw DB handle for the sync write-through wrapper
+  // (laptop sync mode only). The wrapper needs canonical-row reads, Lamport
+  // stamping, and pending_ops access that the domain methods don't expose. Not
+  // part of any interface; used solely by wrapWithSyncWriteThrough.
+  get syncDatabase(): Database.Database {
+    return this.db
   }
 
   async createInbox(input: CreateInboxInput): Promise<InboxItem> {

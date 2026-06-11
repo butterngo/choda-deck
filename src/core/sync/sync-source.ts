@@ -9,6 +9,9 @@
 // In practice only inbox_items carries a non-NULL sync_updated_at today (it is
 // the lone remote-writable table — inbox_add), so the other syncable tables come
 // back empty until the remote write surface widens.
+//
+// The WRITE side (applyDelta*, POST /sync/apply) is the symmetric sink — see
+// sync-sink.ts.
 
 import type Database from 'better-sqlite3'
 import type { PgConnection } from '../domain/repositories/postgres/connection'
