@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3'
 import { createSyncClockTables } from '../../sync/lamport-clock'
+import { createPendingOpsTable } from '../../sync/pending-ops'
 import { SYNCABLE_TABLES, SYNC_COLUMNS } from '../../sync/syncable-tables'
 
 const SCHEMA_VERSION = 6
@@ -13,6 +14,7 @@ export function initSchema(db: Database.Database): void {
   dropLegacyOAuthTables(db)
   addSyncColumns(db)
   createSyncClockTables(db)
+  createPendingOpsTable(db)
   createIndexes(db)
   cleanupPoisonedTaskIds(db)
   seedSchemaVersion(db)

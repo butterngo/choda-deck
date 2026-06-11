@@ -512,6 +512,14 @@ export class SqliteTaskService
     return applyDeltaToSqlite(this.db, deltas, origin)
   }
 
+  // ADR-030 Phase 3 (979b) — raw DB handle for the sync write-through wrapper
+  // (laptop sync mode only). The wrapper needs canonical-row reads, Lamport
+  // stamping, and pending_ops access that the domain methods don't expose. Not
+  // part of any interface; used solely by wrapWithSyncWriteThrough.
+  get syncDatabase(): Database.Database {
+    return this.db
+  }
+
   async createInbox(input: CreateInboxInput): Promise<InboxItem> {
     return this.inbox.create(input)
   }
