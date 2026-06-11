@@ -43,3 +43,19 @@ export class HttpWriteClient implements ApplySink {
     return (await res.json()) as ApplyResult
   }
 }
+
+// Connectivity gate for the drain loop (ADR-030 §Reconnect drain). GET /healthz
+// is unauthenticated and returns {"ok":true}; any non-2xx or network error means
+// "treat the remote as down, skip this drain cycle". Never throws.
+export async function isRemoteReachable(
+  remoteUrl: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<boolean> {
+  const base = remoteUrl.replace(/\/$/, '')
+  try {
+    const res = await fetchImpl(`${base}/healthz`, { method: 'GET' })
+    return res.ok
+  } catch {
+    return false
+  }
+}
