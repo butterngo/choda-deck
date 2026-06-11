@@ -145,9 +145,7 @@ function makeDeps(data: FakeData): FeatureProjectionDeps {
     getRelationships: notImpl,
     upsertCodeRef: notImpl,
     listCodeRefsByPrefix: notImpl,
-    deleteCodeRef: notImpl,
     addTouches: notImpl,
-    removeTouches: notImpl,
     getTouchesForCodeRef: notImpl
   }
 }

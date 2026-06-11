@@ -13,9 +13,7 @@ export interface CodeRefOperations {
   upsertCodeRef(input: UpsertCodeRefInput): Promise<CodeRefRow>
   getCodeRef(slug: string): Promise<CodeRefRow | null>
   listCodeRefsByPrefix(filter: CodeRefPrefixFilter): Promise<CodeRefRow[]>
-  deleteCodeRef(slug: string): Promise<void>
   addTouches(taskId: string, codeRefSlug: string, relation: TouchesRelation): Promise<void>
-  removeTouches(taskId: string, codeRefSlug: string): Promise<void>
   getTouchesForTask(taskId: string): Promise<TouchesEdge[]>
   getTouchesForCodeRef(codeRefSlug: string): Promise<TouchesEdge[]>
 }
