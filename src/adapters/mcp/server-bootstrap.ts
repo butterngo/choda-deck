@@ -151,7 +151,9 @@ export async function startMcpServer(): Promise<void> {
         token,
         oauth,
         // ADR-030 Phase 2 — read-only pull source (GET /sync/since).
-        syncSource: { fetchSince: (since) => svc.fetchSince(since) }
+        syncSource: { fetchSince: (since) => svc.fetchSince(since) },
+        // ADR-030 Phase 3 (979a) — write-apply sink (POST /sync/apply).
+        syncSink: { applyDelta: (deltas, origin) => svc.applyDelta(deltas, origin) }
       }
     )
     return

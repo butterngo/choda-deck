@@ -29,6 +29,7 @@ import type {
 } from './interfaces/tool-invocations-repository.interface'
 import type { CheckAcItemInput, CheckAcItemResult } from './lifecycle/ac-check'
 import type { TableDelta } from '../sync/sync-pull'
+import type { ApplyResult } from '../sync/sync-apply'
 
 export interface BackendTaskService
   extends TaskService,
@@ -54,4 +55,6 @@ export interface BackendTaskService
   checkAcItem(input: CheckAcItemInput): Promise<CheckAcItemResult>
   // ADR-030 Phase 2 — read-only pull source (also on RemoteOperations).
   fetchSince(since: number): Promise<TableDelta[]>
+  // ADR-030 Phase 3 (979a) — write-apply sink (also on RemoteOperations).
+  applyDelta(deltas: TableDelta[], origin: string): Promise<ApplyResult>
 }

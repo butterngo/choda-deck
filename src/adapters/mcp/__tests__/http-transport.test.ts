@@ -173,6 +173,81 @@ describe('startHttpTransport', () => {
   })
 })
 
+describe('startHttpTransport — POST /sync/apply (979a)', () => {
+  const sink = {
+    calls: [] as Array<{ origin: string; deltas: unknown }>,
+    applyDelta: async (deltas: unknown, origin: string) => {
+      sink.calls.push({ origin, deltas })
+      return { applied: 1, tombstoned: 0, conflicts: 0, verdicts: [] }
+    }
+  }
+  let handle: HttpTransportHandle
+  let baseUrl: string
+
+  beforeAll(async () => {
+    handle = await startHttpTransport(buildServerFactory(), {
+      port: 0,
+      bind: '127.0.0.1',
+      token: TOKEN,
+      syncSink: sink as never
+    })
+    baseUrl = `http://127.0.0.1:${handle.address.port}`
+  })
+
+  afterAll(async () => {
+    await handle.close()
+  })
+
+  function postApply(body: unknown, headers: Record<string, string> = {}): Promise<Response> {
+    return fetch(`${baseUrl}/sync/apply`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify(body)
+    })
+  }
+
+  it('without Authorization → 401', async () => {
+    const res = await postApply({ origin: 'laptop', deltas: [] })
+    expect(res.status).toBe(401)
+  })
+
+  it('with bearer + valid body → 200 and the sink receives the deltas', async () => {
+    sink.calls = []
+    const deltas = [{ table: 'inbox_items', rows: [{ id: 'INBOX-1', sync_updated_at: 1 }] }]
+    const res = await postApply(
+      { origin: 'laptop', deltas },
+      { authorization: `Bearer ${TOKEN}` }
+    )
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ applied: 1 })
+    expect(sink.calls).toHaveLength(1)
+    expect(sink.calls[0].origin).toBe('laptop')
+  })
+
+  it('malformed body (missing origin/deltas) → 400', async () => {
+    const res = await postApply({ deltas: 'nope' }, { authorization: `Bearer ${TOKEN}` })
+    expect(res.status).toBe(400)
+  })
+
+  it('404s when no sink is configured', async () => {
+    const bare = await startHttpTransport(buildServerFactory(), {
+      port: 0,
+      bind: '127.0.0.1',
+      token: TOKEN
+    })
+    try {
+      const res = await fetch(`http://127.0.0.1:${bare.address.port}/sync/apply`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
+        body: JSON.stringify({ origin: 'laptop', deltas: [] })
+      })
+      expect(res.status).toBe(404)
+    } finally {
+      await bare.close()
+    }
+  })
+})
+
 describe('startHttpTransport — concurrent requests', () => {
   it('handles parallel /healthz hits without crashing', async () => {
     const handle = await startHttpTransport(buildServerFactory(), {
