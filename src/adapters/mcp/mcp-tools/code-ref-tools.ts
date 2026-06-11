@@ -51,21 +51,6 @@ export const register = (server: InstrumentedServer, svc: CodeRefOperations): vo
   )
 
   server.registerTool(
-    'code_ref_delete',
-    {
-      description:
-        'Delete a code_ref identity row by slug. Also removes its TOUCHES edges. The matching .md note (if any) is managed separately via knowledge_delete.',
-      inputSchema: {
-        slug: z.string().describe('Slug of the code_ref row to delete')
-      }
-    },
-    async ({ slug }) => {
-      await svc.deleteCodeRef(slug)
-      return textResponse({ slug, deleted: true })
-    }
-  )
-
-  server.registerTool(
     'touches_add',
     {
       description:
@@ -79,21 +64,6 @@ export const register = (server: InstrumentedServer, svc: CodeRefOperations): vo
     async ({ taskId, codeRefSlug, relation }) => {
       await svc.addTouches(taskId, codeRefSlug, relation as TouchesRelation)
       return textResponse({ taskId, codeRefSlug, relation })
-    }
-  )
-
-  server.registerTool(
-    'touches_remove',
-    {
-      description: 'Remove a TOUCHES edge between a task and a code_ref.',
-      inputSchema: {
-        taskId: z.string().describe('Task ID'),
-        codeRefSlug: z.string().describe('Slug of the code_ref row')
-      }
-    },
-    async ({ taskId, codeRefSlug }) => {
-      await svc.removeTouches(taskId, codeRefSlug)
-      return textResponse({ taskId, codeRefSlug, removed: true })
     }
   )
 

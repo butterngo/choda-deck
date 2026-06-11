@@ -119,12 +119,6 @@ export class CodeRefRepository {
       .run(taskId, codeRefSlug, relation)
   }
 
-  removeTouches(taskId: string, codeRefSlug: string): void {
-    this.db
-      .prepare('DELETE FROM task_code_refs WHERE task_id = ? AND code_ref_slug = ?')
-      .run(taskId, codeRefSlug)
-  }
-
   getTouchesForTask(taskId: string): TouchesEdge[] {
     const rows = this.db
       .prepare('SELECT * FROM task_code_refs WHERE task_id = ? ORDER BY code_ref_slug')

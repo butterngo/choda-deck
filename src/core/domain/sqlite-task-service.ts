@@ -620,14 +620,8 @@ export class SqliteTaskService
   async listCodeRefsByPrefix(filter: CodeRefPrefixFilter): Promise<CodeRefRow[]> {
     return this.codeRefs.listByPrefix(filter)
   }
-  async deleteCodeRef(slug: string): Promise<void> {
-    this.codeRefs.delete(slug)
-  }
   async addTouches(taskId: string, codeRefSlug: string, relation: TouchesRelation): Promise<void> {
     this.codeRefs.addTouches(taskId, codeRefSlug, relation)
-  }
-  async removeTouches(taskId: string, codeRefSlug: string): Promise<void> {
-    this.codeRefs.removeTouches(taskId, codeRefSlug)
   }
   async getTouchesForTask(taskId: string): Promise<TouchesEdge[]> {
     return this.codeRefs.getTouchesForTask(taskId)
