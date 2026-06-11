@@ -13,6 +13,8 @@ import {
 } from './instrumented-server'
 import { startHttpTransport, type OAuthConfig } from './http-transport'
 import { createKeycloakVerifier } from './oauth/jwt-verifier'
+import { startSyncLoop } from '../../core/sync/sync-loop'
+import type Database from 'better-sqlite3'
 import * as taskTools from './mcp-tools/task-tools'
 import * as conversationTools from './mcp-tools/conversation-tools'
 import * as projectTools from './mcp-tools/project-tools'
@@ -163,6 +165,24 @@ export async function startMcpServer(): Promise<void> {
   // TASK-681: catch missed migrations to instrumented facade — count must be
   // non-zero, otherwise registration silently bypassed instrumentation.
   console.error(`[choda-deck] registered ${toolCount} MCP tools`)
+
+  // ADR-030 Phase 5+6 (979d) — in sync mode, run the bidirectional drain/pull
+  // loop alongside the stdio server. Write-through itself already happens per
+  // tool call (in the wrapped service); this loop replays any queued offline ops
+  // and pulls remote deltas. The timer is unref'd so it never holds the process.
+  if (backend.kind === 'sync') {
+    const db = (svc as unknown as { syncDatabase: Database.Database }).syncDatabase
+    startSyncLoop({
+      db,
+      remoteUrl: backend.remoteUrl,
+      token: backend.remoteToken,
+      intervalMs: backend.intervalMs
+    })
+    console.error(
+      `[choda-deck] sync loop started → ${backend.remoteUrl} (every ${backend.intervalMs}ms)`
+    )
+  }
+
   const transport = new StdioServerTransport()
   await server.connect(transport)
 }

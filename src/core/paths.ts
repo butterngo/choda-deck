@@ -58,12 +58,15 @@ export function resolveDataPaths(electronDataDir?: string): DataPaths {
  * Resolve which storage backend to use at startup (ADR-030).
  *
  * Env contract:
- *   CHODA_BACKEND  — 'sqlite' (default) | 'postgres'
+ *   CHODA_BACKEND  — 'sqlite' (default) | 'postgres' | 'sync'
  *   CHODA_PG_URL   — required when CHODA_BACKEND=postgres
+ *   CHODA_PULL_REMOTE_URL / CHODA_PULL_REMOTE_TOKEN — required when =sync
+ *   CHODA_SYNC_INTERVAL_MS — optional drain/pull cadence (default 30000)
  *
  * SQLite reuses the dbPath from `resolveDataPaths`. Postgres uses
  * `CHODA_PG_URL` (validated here) plus optional `CHODA_PG_POOL_SIZE`
- * (consumed in the task-service factory; defaults to 10).
+ * (consumed in the task-service factory; defaults to 10). Sync wraps the same
+ * SQLite dbPath with write-through to the remote, reusing the read-pull envs.
  */
 export function resolveBackendConfig(dataPaths: DataPaths): BackendConfig {
   const kind = (process.env.CHODA_BACKEND ?? 'sqlite').toLowerCase()
@@ -76,8 +79,25 @@ export function resolveBackendConfig(dataPaths: DataPaths): BackendConfig {
     }
     return { kind: 'postgres', connectionString }
   }
+  if (kind === 'sync') {
+    const remoteUrl = process.env.CHODA_PULL_REMOTE_URL ?? ''
+    const remoteToken = process.env.CHODA_PULL_REMOTE_TOKEN ?? process.env.MCP_HTTP_TOKEN ?? ''
+    if (remoteUrl.length === 0 || remoteToken.length === 0) {
+      throw new Error(
+        '[paths] CHODA_BACKEND=sync requires CHODA_PULL_REMOTE_URL and CHODA_PULL_REMOTE_TOKEN (or MCP_HTTP_TOKEN)'
+      )
+    }
+    const intervalMs = Number.parseInt(process.env.CHODA_SYNC_INTERVAL_MS ?? '30000', 10)
+    return {
+      kind: 'sync',
+      dbPath: dataPaths.dbPath,
+      remoteUrl,
+      remoteToken,
+      intervalMs: Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : 30000
+    }
+  }
   if (kind !== 'sqlite') {
-    throw new Error(`[paths] unknown CHODA_BACKEND="${kind}" — expected sqlite|postgres`)
+    throw new Error(`[paths] unknown CHODA_BACKEND="${kind}" — expected sqlite|postgres|sync`)
   }
   return { kind: 'sqlite', dbPath: dataPaths.dbPath }
 }

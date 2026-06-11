@@ -91,4 +91,10 @@ describe('wrapWithSyncWriteThrough', () => {
     const got = await wrapped.getTask(task.id)
     expect(got?.title).toBe('readable')
   })
+
+  it('exposes syncDatabase through the proxy (bootstrap reads the loop db from it)', () => {
+    const wrapped = wrapWithSyncWriteThrough(svc, sink)
+    const db = (wrapped as unknown as { syncDatabase: typeof svc.syncDatabase }).syncDatabase
+    expect(db).toBe(svc.syncDatabase)
+  })
 })
