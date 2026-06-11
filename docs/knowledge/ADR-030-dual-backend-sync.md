@@ -5,19 +5,19 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/domain/sqlite-task-service.ts
-    commitSha: 255f371b3340903687577a34bcf1e25432aa7532
+    commitSha: d2aba0c2c8741fd19ae51212ee69897b77fa1428
   - path: src/core/paths.ts
-    commitSha: 255f371b3340903687577a34bcf1e25432aa7532
+    commitSha: d2aba0c2c8741fd19ae51212ee69897b77fa1428
   - path: src/core/sync/canonical-json.ts
-    commitSha: 255f371b3340903687577a34bcf1e25432aa7532
+    commitSha: d2aba0c2c8741fd19ae51212ee69897b77fa1428
   - path: src/core/sync/export-service.ts
-    commitSha: 255f371b3340903687577a34bcf1e25432aa7532
+    commitSha: d2aba0c2c8741fd19ae51212ee69897b77fa1428
   - path: src/core/sync/import-service.ts
-    commitSha: 255f371b3340903687577a34bcf1e25432aa7532
+    commitSha: d2aba0c2c8741fd19ae51212ee69897b77fa1428
   - path: src/adapters/mcp/server-bootstrap.ts
-    commitSha: 255f371b3340903687577a34bcf1e25432aa7532
+    commitSha: d2aba0c2c8741fd19ae51212ee69897b77fa1428
 createdAt: 2026-05-22
-lastVerifiedAt: 2026-05-25
+lastVerifiedAt: 2026-06-11
 ---
 
 > **AI-Context:** Two storage backends behind one driver port. Local MCP (stdio) drives SQLite; remote MCP (http, k8s) drives Postgres. The laptop syncs to remote via a **pending-ops queue + LWW reconciliation** built on top of the existing `src/core/sync/` snapshot machinery. Remote Postgres is **canonical when reachable**; local SQLite is a working copy that can write offline and drain on reconnect. Op-log-per-tool-call is rejected — the existing export/import + a small pending queue covers single-user multi-device without it.
@@ -32,9 +32,18 @@ PG now implements only `RemoteOperations` (`src/core/domain/remote-operations.in
 
 Code reduction: `postgres-task-service.ts` 1208 → ~150 lines; 8 `.pg.ts` repo files + the pgvector store deleted; 11 `.pg.test.ts` files deleted; migrations 11 → 6 entries.
 
-The **sync engine** (open in §Status table below) is unaffected by this narrowing — it remains future work, gated on a real concurrent-write incident or a daily-driver claude.ai connector. If/when sync lands, the methods needed for drain/reconcile would expand `RemoteOperations` (or graduate to a different port).
+The **sync engine** (open in §Status table below) is unaffected by this narrowing — it remains future work, gated on a real concurrent-write incident or a daily-driver claude.ai connector. If/when sync lands, the methods needed for drain/reconcile would expand `RemoteOperations` (or graduate to a different port). _(Superseded by the 2026-06-11 update below — Phase 3-6 shipped for tasks + inbox.)_
 
-## Status (2026-05-25)
+## Update 2026-06-11 — Phase 3-6 shipped (tasks + inbox); endpoint, not tool surface
+
+Write-through landed for **tasks + inbox** (TASK-979, sub-tasks 1063–1066, PR #183). Two design points diverged from the original plan above:
+
+- **Dedicated endpoint, not the MCP tool surface.** The §How-it-works drain says "POST to the remote MCP tool". It doesn't: the write path is `POST /sync/apply` on the HTTP transport, symmetric to the shipped `GET /sync/since` read path, auth-gated identically. This keeps `REMOTE_TOOL_ALLOWLIST` unchanged (still the 6 read+capture tools — claude.ai's surface stays read-only) and puts server-side LWW in one place (`applyDeltaToPg`). The narrowing above is therefore *not* reversed for tasks/inbox — `RemoteOperations` grew by `applyDelta` only, no task-mutation tools were added.
+- **`conversation_messages` deliberately excluded.** Plain LWW there could silently drop a load-bearing `decisionSummary` — the exact risk that parked this engine. Conversation sync needs an append-preserving merge and is tracked separately as the gated **TASK-1067 (979e)**, to be designed against a real observed conflict, not in the abstract.
+
+Stamping lives entirely in the write-through wrapper (`sync-write-through.ts`), so a plain stdio server with sync off is unchanged. `pending_ops` + `sync_conflicts` are local-SQLite-only tables; a dropped op is recorded **and** surfaced as a raw `inbox_add`.
+
+## Status (2026-06-11)
 
 | Component | State | Where it landed |
 |---|---|---|
@@ -45,11 +54,14 @@ The **sync engine** (open in §Status table below) is unaffected by this narrowi
 | One-shot SQLite → Postgres data migration script | **Done** | TASK-934 slice 21 (`scripts/migrate-sqlite-to-postgres.mjs`) |
 | docker-compose + README k8s recipe | **Done** | TASK-934 slice 21 |
 | **Sync engine Phase 1+2 — additive `sync_*` columns + Lamport clock + read-only pull (`GET /sync/since`, `choda-deck sync pull`)** | **Done** | TASK-978 (PRs #178 schema, #179 pull) |
-| **Sync engine Phase 3-6 — write-through, `pending_ops` queue, LWW drain, `sync_conflicts` surfacing, `CHODA_BACKEND=sync` mode** | **Open** | parked (TASK-979) |
+| **Sync engine Phase 3-6 (tasks + inbox) — `POST /sync/apply` + write-through, `pending_ops` queue, LWW drain, `sync_conflicts` + inbox surfacing, `CHODA_BACKEND=sync` mode** | **Done** | TASK-979 / 1063–1066 (PR #183) |
+| Sync engine — `conversation_messages` write-through (append-preserving merge) | **Open** | gated (TASK-1067 / 979e) |
 
-Phase 1+2 shipped (TASK-978): both backends carry namespaced `sync_updated_at`/`sync_deleted_at`/`sync_origin` columns; the remote `inbox_add` stamps a server-side Lamport tick; the laptop drains remote → local SQLite read-only via `GET /sync/since` + `choda-deck sync pull` with per-row LWW + tombstone propagation. **No write-through yet** — Phases 3-6 (offline `pending_ops` queue, drain-on-reconnect, `sync_conflicts` + inbox surfacing) are parked in TASK-979. Today only `inbox_add` is remotely writable, so pull catches remote-added inbox items; task/conversation rows are stdio-only and never diverge. Local stdio writes do not yet stamp `sync_updated_at` (that's write-through). The ULID PK swap from §Schema additions is also deferred (rewrites every FK target — separate slice).
+Phase 1+2 shipped (TASK-978): both backends carry namespaced `sync_updated_at`/`sync_deleted_at`/`sync_origin` columns; the remote `inbox_add` stamps a server-side Lamport tick; the laptop drains remote → local SQLite read-only via `GET /sync/since` + `choda-deck sync pull` with per-row LWW + tombstone propagation.
 
-Revisit write-through (Phase 3-6) when: (a) the claude.ai remote connector becomes day-to-day and a second device starts writing concurrently, OR (b) a concrete data-loss incident from manual export/import makes the case for automatic drain.
+Phase 3-6 shipped for **tasks + inbox** (TASK-979 / 1063–1066, PR #183): `CHODA_BACKEND=sync` makes the laptop a write-through client — each mutating `task_*`/`inbox_*` call writes local SQLite, stamps the row (Lamport tick + `origin='laptop'`), and POSTs it to `POST /sync/apply`, which applies server-side LWW (canonical wins ties) and returns per-row verdicts. On a remote failure the op queues to `pending_ops` and the call still succeeds; a background loop drains (connectivity-gated via `/healthz`) then pulls. Dropped ops go to `sync_conflicts` + a raw `inbox_add`. `conversation_messages` is excluded (gated, TASK-1067). The ULID PK swap from §Schema additions remains deferred (rewrites every FK target — separate slice).
+
+Remaining revisit trigger applies only to `conversation_messages` (TASK-1067): build the append-preserving merge when a real `decisionSummary` divergence with non-trivial cost is observed — not speculatively.
 
 ## Context
 
