@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import Database from 'better-sqlite3'
 import { initSchema } from '../domain/repositories/schema'
+import { InboxRepository } from '../domain/repositories/inbox-repository'
+import { CounterRepository } from '../domain/repositories/counter-repository'
 import { fetchSinceFromSqlite } from './sync-source'
 
 let db: Database.Database
@@ -47,5 +49,18 @@ describe('fetchSinceFromSqlite', () => {
   it('returns an empty array when nothing changed since the cursor', () => {
     addInbox('I1', 2)
     expect(fetchSinceFromSqlite(db, 100)).toEqual([])
+  })
+
+  // Regression: a remote (HTTP-canonical) inbox_add must surface to the pull —
+  // InboxRepository.create stamps sync_updated_at via the Lamport clock, else the
+  // row stays NULL-stamped and never drains to the laptop (TASK-1074 AC-4 gap).
+  it('a repo-created inbox row is stamped and surfaces in fetchSince', () => {
+    const repo = new InboxRepository(db, new CounterRepository(db))
+    const created = repo.create({ projectId: 'p', content: 'remote capture' })
+    const deltas = fetchSinceFromSqlite(db, 0)
+    const row = deltas.find((d) => d.table === 'inbox_items')?.rows.find((r) => r.id === created.id)
+    expect(row).toBeDefined()
+    expect(row?.sync_updated_at as number).toBeGreaterThan(0)
+    expect(row?.sync_origin).toBe('remote')
   })
 })

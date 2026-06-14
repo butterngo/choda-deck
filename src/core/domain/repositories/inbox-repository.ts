@@ -8,6 +8,7 @@ import type {
 } from '../task-types'
 import { now, type Param } from './shared'
 import type { CounterRepository } from './counter-repository'
+import { tick } from '../../sync/lamport-clock'
 
 function rowToInbox(row: Record<string, unknown>): InboxItem {
   return {
@@ -36,12 +37,29 @@ export class InboxRepository {
     const ts = now()
     const projectId = input.projectId ?? null
     const id = this.nextInboxId()
+    // ADR-030: stamp a Lamport tick + origin so a remote (HTTP-canonical) inbox_add
+    // surfaces in GET /sync/since and drains to the laptop — mirrors
+    // PostgresInboxRepository.create (the lone remote-writable table, ADR-030 Phase 2).
+    // Without this, remote-captured items have sync_updated_at = NULL and never sync,
+    // and unstamped canonical rows get no LWW protection on a colliding push.
+    // On a CHODA_BACKEND=sync laptop the write-through wrapper re-stamps with
+    // origin='laptop'; on plain stdio the value is inert (fetchSince is never called).
+    const lamport = tick(this.db)
     this.db
       .prepare(
-        `INSERT INTO inbox_items (id, project_id, workspace_id, content, status, linked_task_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'raw', ?, ?, ?)`
+        `INSERT INTO inbox_items (id, project_id, workspace_id, content, status, linked_task_id, created_at, updated_at, sync_updated_at, sync_origin)
+         VALUES (?, ?, ?, ?, 'raw', ?, ?, ?, ?, 'remote')`
       )
-      .run(id, projectId, input.workspaceId ?? null, input.content, input.linkedTaskId ?? null, ts, ts)
+      .run(
+        id,
+        projectId,
+        input.workspaceId ?? null,
+        input.content,
+        input.linkedTaskId ?? null,
+        ts,
+        ts,
+        lamport
+      )
     return this.get(id)!
   }
 
