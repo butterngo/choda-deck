@@ -197,7 +197,7 @@ export class TaskRepository {
   getDue(date: string): Task[] {
     const rows = this.db
       .prepare(
-        "SELECT * FROM tasks WHERE due_date <= ? AND status NOT IN ('DONE', 'CANCELLED') ORDER BY due_date"
+        "SELECT * FROM tasks WHERE due_date <= ? AND status NOT IN ('IMPLEMENTED', 'DONE', 'CANCELLED') ORDER BY due_date"
       )
       .all(date) as Array<Record<string, unknown>>
     return rows.map((r) => rowToTask(r, this.getBlockedBy(r.id as string)))
@@ -254,7 +254,7 @@ export class TaskRepository {
 
     const subtaskRows = this.db
       .prepare(
-        `SELECT id, status, title FROM tasks WHERE parent_task_id = ? AND status NOT IN ('DONE', 'CANCELLED')`
+        `SELECT id, status, title FROM tasks WHERE parent_task_id = ? AND status NOT IN ('IMPLEMENTED', 'DONE', 'CANCELLED')`
       )
       .all(taskId) as Array<{ id: string; status: TaskStatus; title: string }>
     for (const row of subtaskRows) {
@@ -265,7 +265,7 @@ export class TaskRepository {
       const placeholders = blockedBy.map(() => '?').join(',')
       const depRows = this.db
         .prepare(
-          `SELECT id, status, title FROM tasks WHERE id IN (${placeholders}) AND status NOT IN ('DONE', 'CANCELLED')`
+          `SELECT id, status, title FROM tasks WHERE id IN (${placeholders}) AND status NOT IN ('IMPLEMENTED', 'DONE', 'CANCELLED')`
         )
         .all(...blockedBy) as Array<{ id: string; status: TaskStatus; title: string }>
       for (const row of depRows) {

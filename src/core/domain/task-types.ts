@@ -1,6 +1,12 @@
 // Task management types — pure types, zero runtime dependencies
 
-export type TaskStatus = 'TODO' | 'READY' | 'IN-PROGRESS' | 'DONE' | 'CANCELLED'
+export type TaskStatus =
+  | 'TODO'
+  | 'READY'
+  | 'IN-PROGRESS'
+  | 'IMPLEMENTED'
+  | 'DONE'
+  | 'CANCELLED'
 export type TaskPriority = 'critical' | 'high' | 'medium' | 'low'
 // ADR-NNN Pillar 3 graph edges. The first four are the original task/tech edges;
 // the last five are TASK-992's first-class knowledge-graph edges, all stored in
@@ -19,7 +25,20 @@ export type RelationType =
   | 'INTEGRATES_WITH'
 export type DocumentType = 'adr' | 'guide' | 'spec' | 'note' | 'research'
 
-export const TASK_STATUSES: TaskStatus[] = ['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED']
+export const TASK_STATUSES: TaskStatus[] = [
+  'TODO',
+  'READY',
+  'IN-PROGRESS',
+  'IMPLEMENTED',
+  'DONE',
+  'CANCELLED'
+]
+
+// Statuses that "resolve" a task for the blockedBy DAG: a blocker in any of
+// these no longer blocks its dependents, and is excluded from the READY filter.
+// IMPLEMENTED counts as resolved — code is written, so downstream parallel work
+// can proceed before the implemented task is reviewed + mastered (→ DONE).
+export const RESOLVED_STATUSES: TaskStatus[] = ['IMPLEMENTED', 'DONE', 'CANCELLED']
 
 export interface Project {
   id: string

@@ -86,7 +86,7 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
       inputSchema: {
         projectId: z.string().optional().describe('Filter by project ID'),
         status: z
-          .enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED'])
+          .enum(['TODO', 'READY', 'IN-PROGRESS', 'IMPLEMENTED', 'DONE', 'CANCELLED'])
           .describe('Required — filter by status to avoid dumping the full project list'),
         priority: z
           .enum(['critical', 'high', 'medium', 'low'])
@@ -128,7 +128,9 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
         id: z.string().optional().describe('Task ID (auto-generated if omitted)'),
         projectId: z.string().describe('Project ID'),
         title: z.string().describe('Task title'),
-        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED']).optional(),
+        status: z
+          .enum(['TODO', 'READY', 'IN-PROGRESS', 'IMPLEMENTED', 'DONE', 'CANCELLED'])
+          .optional(),
         priority: z.enum(['critical', 'high', 'medium', 'low']).optional(),
         parentTaskId: z.string().optional().describe('Parent task for subtasks'),
         labels: z.array(z.string()).optional(),
@@ -138,7 +140,7 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
           .array(z.string())
           .optional()
           .describe(
-            'Task IDs blocking this task — must all be DONE/CANCELLED before this can be DONE; also excluded from READY list'
+            'Task IDs blocking this task — must all be IMPLEMENTED/DONE/CANCELLED before this can be DONE; also excluded from READY list'
           )
       }
     },
@@ -154,12 +156,15 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
     'task_update',
     {
       description:
-        'Update a task. Status=DONE is hard-blocked if any subtask or blockedBy task is not DONE/CANCELLED — error lists blockers. ' +
-        '`body` and `title` are locked when status ∈ {IN-PROGRESS, DONE, CANCELLED} to prevent silent spec drift — reset to TODO/READY first.',
+        'Update a task. Status=DONE is hard-blocked if any subtask or blockedBy task is not IMPLEMENTED/DONE/CANCELLED — error lists blockers. ' +
+        'IMPLEMENTED = code written, awaiting review + master → DONE (session_end lands here); it resolves blockers so parallel plans proceed. ' +
+        '`body` and `title` are locked when status ∈ {IN-PROGRESS, IMPLEMENTED, DONE, CANCELLED} to prevent silent spec drift — reset to TODO/READY first.',
       inputSchema: {
         id: z.string().describe('Task ID'),
         title: z.string().optional(),
-        status: z.enum(['TODO', 'READY', 'IN-PROGRESS', 'DONE', 'CANCELLED']).optional(),
+        status: z
+          .enum(['TODO', 'READY', 'IN-PROGRESS', 'IMPLEMENTED', 'DONE', 'CANCELLED'])
+          .optional(),
         priority: z.enum(['critical', 'high', 'medium', 'low']).nullable().optional(),
         parentTaskId: z.string().nullable().optional(),
         labels: z.array(z.string()).optional(),
@@ -179,7 +184,7 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
   )
 }
 
-const LOCKED_STATUSES = ['IN-PROGRESS', 'DONE', 'CANCELLED'] as const
+const LOCKED_STATUSES = ['IN-PROGRESS', 'IMPLEMENTED', 'DONE', 'CANCELLED'] as const
 
 async function enforceBodyTitleLock(svc: TaskToolsDeps, id: string, input: UpdateTaskInput): Promise<void> {
   const touchingBody = 'body' in input
