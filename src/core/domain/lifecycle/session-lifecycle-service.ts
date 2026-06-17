@@ -127,8 +127,11 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
       if (session.taskId) {
         const task = this.tasks.get(session.taskId)
         if (task) {
-          this.tasks.update(session.taskId, { status: 'DONE' })
-          taskUpdated = { id: task.id, title: task.title, newStatus: 'DONE' }
+          // ADR-028: session_end lands the task in IMPLEMENTED (code written,
+          // awaiting review + master → DONE), not DONE — Butter reviews each
+          // parallel plan step-by-step and promotes to DONE later.
+          this.tasks.update(session.taskId, { status: 'IMPLEMENTED' })
+          taskUpdated = { id: task.id, title: task.title, newStatus: 'IMPLEMENTED' }
         }
       }
 

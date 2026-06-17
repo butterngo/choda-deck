@@ -85,7 +85,7 @@ export interface EndSessionInput {
 export interface EndSessionResult {
   session: Session
   closedConversationIds: string[]
-  taskUpdated: { id: string; title: string; newStatus: 'DONE' } | null
+  taskUpdated: { id: string; title: string; newStatus: 'IMPLEMENTED' } | null
   /**
    * Session events flagged `memory_candidate=1`, oldest-first.
    * Empty array when the session produced none. Phase 2 of ADR-023:
@@ -127,7 +127,7 @@ export interface SessionLifecycleOperations {
    * Failure-path session close. Marks session `completed` with `handoff.failureReason`,
    * closes linked conversations, and intentionally **does not** touch the bound task's
    * status (task stays IN-PROGRESS for human review). Distinct from `endSession`, which
-   * marks the task DONE.
+   * marks the task IMPLEMENTED (awaiting review + master → DONE).
    */
   abandonSession(id: string, reason: string): Promise<AbandonSessionResult>
   checkpointSession(id: string, input: CheckpointSessionInput): Promise<CheckpointSessionResult>

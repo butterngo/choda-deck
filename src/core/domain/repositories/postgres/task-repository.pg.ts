@@ -126,7 +126,7 @@ export class PostgresTaskRepository {
 
     const subtasks = await this.conn.query<{ id: string; status: string; title: string }>(
       `SELECT id, status, title FROM tasks
-       WHERE parent_task_id = $1 AND status NOT IN ('DONE', 'CANCELLED')`,
+       WHERE parent_task_id = $1 AND status NOT IN ('IMPLEMENTED', 'DONE', 'CANCELLED')`,
       [taskId]
     )
     for (const row of subtasks.rows) {
@@ -141,7 +141,7 @@ export class PostgresTaskRepository {
     if (blockedBy.length > 0) {
       const deps = await this.conn.query<{ id: string; status: string; title: string }>(
         `SELECT id, status, title FROM tasks
-         WHERE id = ANY($1::text[]) AND status NOT IN ('DONE', 'CANCELLED')`,
+         WHERE id = ANY($1::text[]) AND status NOT IN ('IMPLEMENTED', 'DONE', 'CANCELLED')`,
         [blockedBy as unknown as SqlValue]
       )
       for (const row of deps.rows) {

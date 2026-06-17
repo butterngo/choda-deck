@@ -179,7 +179,7 @@ describe('endSession', () => {
     expect(after?.decisionSummary).toBe('done for the day')
   })
 
-  it('marks linked task DONE when session had a taskId', async () => {
+  it('marks linked task IMPLEMENTED when session had a taskId', async () => {
     const started = await svc.startSession({ projectId: 'proj-s' })
     const task = await svc.createTask({ projectId: 'proj-s', title: 'Do X' })
     await svc.updateSession(started.session.id, { taskId: task.id })
@@ -188,8 +188,8 @@ describe('endSession', () => {
       handoff: { resumePoint: 'x' }
     })
 
-    expect(r.taskUpdated).toEqual({ id: task.id, title: 'Do X', newStatus: 'DONE' })
-    expect((await svc.getTask(task.id))?.status).toBe('DONE')
+    expect(r.taskUpdated).toEqual({ id: task.id, title: 'Do X', newStatus: 'IMPLEMENTED' })
+    expect((await svc.getTask(task.id))?.status).toBe('IMPLEMENTED')
   })
 
   it('uses custom decisionSummary when provided', async () => {
