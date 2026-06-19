@@ -1,19 +1,24 @@
-// ADR-030 / 2026-05-28 narrowing — Postgres conversation repo, read-only.
-//
-// Kept: findByLink (inbox_get + task_context linked-conv lookups), getMessages
-// (inbox_get message list), getActions (task_context per-conv action display).
-// Writes, participants, links/unlinks, deletes, and the role-routed event
-// emitter are gone — no remote tool can post to or restructure a conversation.
+// ADR-030 / 2026-05-28 narrowing — Postgres conversation repo. Was read-only;
+// TASK-1136 (AC-4) restores the APPEND-ONLY write surface the remote allowlist
+// needs: open (create + participants + links), add (message), and the reads
+// conversation_read / conversation_list call. No mutable header CRUD — the
+// header (status/decisionSummary/signedOff) is a fold over the message log,
+// recomputed by the sync apply path (see recomputeHeaderPg in sync-sink.ts).
 
 import type { Queryable } from './connection'
+import { generateId } from '../shared'
 import type {
   Conversation,
   ConversationAction,
   ConversationActionStatus,
+  ConversationLink,
   ConversationLinkType,
   ConversationMessage,
   ConversationMessageKind,
-  ConversationStatus
+  ConversationParticipant,
+  ConversationStatus,
+  CreateConversationInput,
+  CreateConversationMessageInput
 } from '../../task-types'
 
 interface ConversationDbRow {
@@ -125,7 +130,7 @@ export class PostgresConversationRepository {
 
   async getMessages(conversationId: string): Promise<ConversationMessage[]> {
     const result = await this.conn.query<MessageDbRow>(
-      `SELECT m.id, m.conversation_id, m.author_name, m.content, m.created_at,
+      `SELECT m.id, m.conversation_id, m.author_name, m.content, m.kind, m.created_at,
               COALESCE(array_agg(r.participant_name) FILTER (WHERE r.participant_name IS NOT NULL), '{}') AS read_by
        FROM conversation_messages m
        LEFT JOIN conversation_message_reads r ON r.message_id = m.id
@@ -144,5 +149,93 @@ export class PostgresConversationRepository {
       [conversationId]
     )
     return result.rows.map(mapAction)
+  }
+
+  // ── TASK-1136 (AC-4) append-only write + read surface for the remote allowlist ──
+
+  async get(id: string): Promise<Conversation | null> {
+    const result = await this.conn.query<ConversationDbRow>(
+      `SELECT ${CONV_COLS} FROM conversations WHERE id = $1`,
+      [id]
+    )
+    return result.rows[0] ? mapConversation(result.rows[0]) : null
+  }
+
+  async findByProject(projectId: string, status?: ConversationStatus): Promise<Conversation[]> {
+    const result = status
+      ? await this.conn.query<ConversationDbRow>(
+          `SELECT ${CONV_COLS} FROM conversations WHERE project_id = $1 AND status = $2 ORDER BY created_at DESC`,
+          [projectId, status]
+        )
+      : await this.conn.query<ConversationDbRow>(
+          `SELECT ${CONV_COLS} FROM conversations WHERE project_id = $1 ORDER BY created_at DESC`,
+          [projectId]
+        )
+    return result.rows.map(mapConversation)
+  }
+
+  async create(input: CreateConversationInput): Promise<Conversation> {
+    const id = input.id || generateId('CONV')
+    const names = (input.participants ?? []).map((p) => p.name)
+    await this.conn.query(
+      `INSERT INTO conversations (id, project_id, title, status, created_by, participants_json)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [id, input.projectId, input.title, input.status || 'open', input.createdBy, JSON.stringify(names)]
+    )
+    for (const name of names) {
+      await this.conn.query(
+        `INSERT INTO conversation_participants (conversation_id, participant_name)
+         VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [id, name]
+      )
+    }
+    return (await this.get(id))!
+  }
+
+  async addMessage(input: CreateConversationMessageInput): Promise<ConversationMessage> {
+    const id = input.id || generateId('MSG')
+    const result = await this.conn.query<MessageDbRow>(
+      `INSERT INTO conversation_messages (id, conversation_id, author_name, content, kind)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, conversation_id, author_name, content, kind, created_at`,
+      [id, input.conversationId, input.authorName, input.content, input.kind ?? 'message']
+    )
+    return mapMessage({ ...result.rows[0], read_by: [] })
+  }
+
+  async getParticipants(conversationId: string): Promise<ConversationParticipant[]> {
+    const result = await this.conn.query<{ participant_name: string }>(
+      `SELECT participant_name FROM conversation_participants WHERE conversation_id = $1 ORDER BY participant_name`,
+      [conversationId]
+    )
+    return result.rows.map((r) => ({ conversationId, name: r.participant_name }))
+  }
+
+  async getLinks(conversationId: string): Promise<ConversationLink[]> {
+    const result = await this.conn.query<{ linked_type: string; linked_id: string }>(
+      `SELECT linked_type, linked_id FROM conversation_links WHERE conversation_id = $1`,
+      [conversationId]
+    )
+    return result.rows.map((r) => ({
+      conversationId,
+      linkedType: r.linked_type as ConversationLinkType,
+      linkedId: r.linked_id
+    }))
+  }
+
+  async link(conversationId: string, linkedType: ConversationLinkType, linkedId: string): Promise<void> {
+    await this.conn.query(
+      `INSERT INTO conversation_links (conversation_id, linked_type, linked_id)
+       VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+      [conversationId, linkedType, linkedId]
+    )
+  }
+
+  async markRead(messageId: string, participantName: string): Promise<void> {
+    await this.conn.query(
+      `INSERT INTO conversation_message_reads (message_id, participant_name)
+       VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [messageId, participantName]
+    )
   }
 }
