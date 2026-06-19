@@ -13,6 +13,7 @@
 
 import type Database from 'better-sqlite3'
 import type { PgConnection, Queryable } from '../domain/repositories/postgres/connection'
+import { ConversationRepository } from '../domain/repositories/conversation-repository'
 import { mergeClock } from './lamport-clock'
 import type { PulledRow, TableDelta } from './sync-pull'
 import {
@@ -138,6 +139,20 @@ export function applyDeltaToSqlite(
     if (maxLamport > 0) mergeClock(db, maxLamport)
   })
   run()
+
+  // TASK-1067/1136 — refold derived headers for conversations whose message log
+  // just changed, so status/decisionSummary converge with the appended turns.
+  const affectedConvIds = new Set<string>()
+  for (const delta of deltas) {
+    if (delta.table !== 'conversation_messages') continue
+    for (const row of delta.rows) {
+      if (typeof row.conversation_id === 'string') affectedConvIds.add(row.conversation_id)
+    }
+  }
+  if (affectedConvIds.size > 0) {
+    const convRepo = new ConversationRepository(db)
+    for (const cid of affectedConvIds) convRepo.recomputeHeader(cid)
+  }
 
   return { applied, tombstoned, conflicts, verdicts }
 }
