@@ -60,7 +60,13 @@ export const REMOTE_TOOL_ALLOWLIST: ReadonlySet<string> = new Set([
   'task_context',
   'inbox_list',
   'inbox_get',
-  'inbox_add'
+  'inbox_add',
+  // TASK-1136 (AC-4) — conversation channel for the claude.ai connector. Append
+  // only: open a thread, add a turn, read, list. decide/signoff stay stdio-only.
+  'conversation_open',
+  'conversation_add',
+  'conversation_read',
+  'conversation_list'
 ])
 
 // HTTP mode skips tool-invocation telemetry — the table doesn't exist on the

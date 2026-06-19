@@ -24,10 +24,15 @@ import type {
   InboxFilter,
   CreateInboxInput,
   Conversation,
+  ConversationLink,
   ConversationLinkType,
   ConversationMessage,
-  ConversationAction
+  ConversationAction,
+  ConversationParticipant,
+  ConversationStatus,
+  CreateConversationMessageInput
 } from './task-types'
+import type { OpenConversationInput } from './interfaces/conversation-lifecycle.interface'
 
 export interface RemoteOperations {
   initializeAsync(): Promise<void>
@@ -66,6 +71,17 @@ export interface RemoteOperations {
   ): Promise<Conversation[]>
   getConversationMessages(conversationId: string): Promise<ConversationMessage[]>
   getConversationActions(conversationId: string): Promise<ConversationAction[]>
+
+  // Conversation append-only surface (TASK-1136 AC-4) — the remote allowlist's
+  // conversation_open / conversation_add / conversation_read / conversation_list.
+  // open + add are the only writes; decide/signoff stay stdio-only.
+  openConversation(input: OpenConversationInput): Promise<Conversation>
+  addConversationMessage(input: CreateConversationMessageInput): Promise<ConversationMessage>
+  getConversation(id: string): Promise<Conversation | null>
+  findConversations(projectId: string, status?: ConversationStatus): Promise<Conversation[]>
+  getConversationParticipants(conversationId: string): Promise<ConversationParticipant[]>
+  getConversationLinks(conversationId: string): Promise<ConversationLink[]>
+  markConversationMessageRead(messageId: string, participantName: string): Promise<void>
 
   // ADR-030 Phase 2 — read-only pull source. Backs GET /sync/since on the HTTP
   // transport; the signature matches the PullSource port (sync-pull.ts) so a

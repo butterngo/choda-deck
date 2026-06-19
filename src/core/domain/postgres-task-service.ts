@@ -38,10 +38,15 @@ import type {
   InboxFilter,
   CreateInboxInput,
   Conversation,
+  ConversationLink,
   ConversationLinkType,
   ConversationMessage,
-  ConversationAction
+  ConversationAction,
+  ConversationParticipant,
+  ConversationStatus,
+  CreateConversationMessageInput
 } from './task-types'
+import type { OpenConversationInput } from './interfaces/conversation-lifecycle.interface'
 
 export class PostgresTaskService implements RemoteOperations {
   private readonly conn: PgConnection
@@ -140,6 +145,53 @@ export class PostgresTaskService implements RemoteOperations {
 
   async getConversationActions(conversationId: string): Promise<ConversationAction[]> {
     return this.conversations.getActions(conversationId)
+  }
+
+  // ── TASK-1136 (AC-4) — conversation tools on the remote allowlist ──
+  // Append-only: open seeds the conversation + initial message + participants +
+  // task links (no session resolve — sessions are stdio-only on this surface).
+  // decide/signoff stay stdio-only; a decision reaches PG only via sync, where
+  // applyDeltaToPg recomputes the header.
+  async openConversation(input: OpenConversationInput): Promise<Conversation> {
+    const conv = await this.conversations.create({
+      projectId: input.projectId,
+      title: input.title,
+      createdBy: input.createdBy,
+      participants: input.participants
+    })
+    await this.conversations.addMessage({
+      conversationId: conv.id,
+      authorName: input.createdBy,
+      content: input.initialMessage.content
+    })
+    for (const taskId of input.linkedTasks ?? []) {
+      await this.conversations.link(conv.id, 'task', taskId)
+    }
+    return (await this.conversations.get(conv.id))!
+  }
+
+  async addConversationMessage(input: CreateConversationMessageInput): Promise<ConversationMessage> {
+    return this.conversations.addMessage(input)
+  }
+
+  async getConversation(id: string): Promise<Conversation | null> {
+    return this.conversations.get(id)
+  }
+
+  async findConversations(projectId: string, status?: ConversationStatus): Promise<Conversation[]> {
+    return this.conversations.findByProject(projectId, status)
+  }
+
+  async getConversationParticipants(conversationId: string): Promise<ConversationParticipant[]> {
+    return this.conversations.getParticipants(conversationId)
+  }
+
+  async getConversationLinks(conversationId: string): Promise<ConversationLink[]> {
+    return this.conversations.getLinks(conversationId)
+  }
+
+  async markConversationMessageRead(messageId: string, participantName: string): Promise<void> {
+    return this.conversations.markRead(messageId, participantName)
   }
 
   async fetchSince(since: number): Promise<TableDelta[]> {

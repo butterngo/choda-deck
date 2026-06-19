@@ -38,10 +38,14 @@ export async function applyDeltaToPg(
   let conflicts = 0
   let maxLamport = 0
 
+  const affectedConvIds = new Set<string>()
   await conn.transaction(async (tx) => {
     for (const delta of deltas) {
       const cols = await pgColumns(tx, delta.table)
       for (const row of delta.rows) {
+        if (delta.table === 'conversation_messages' && typeof row.conversation_id === 'string') {
+          affectedConvIds.add(row.conversation_id)
+        }
         maxLamport = Math.max(maxLamport, row.sync_updated_at)
         const cur = await tx.query<{ sync_updated_at: string | null }>(
           `SELECT sync_updated_at FROM ${delta.table} WHERE id = $1`,
@@ -86,9 +90,65 @@ export async function applyDeltaToPg(
         maxLamport
       ])
     }
+    // TASK-1136 — refold the derived header for conversations whose message log
+    // changed, so a laptop-synced decision shows `decided` on a direct PG read.
+    for (const cid of affectedConvIds) await recomputeHeaderPg(tx, cid)
   })
 
   return { applied, tombstoned, conflicts, verdicts }
+}
+
+// PG equivalent of ConversationRepository.recomputeHeader — folds the append-only
+// message log into the conversations header (status/decisionSummary/signedOff/
+// decidedAt). Participants come from the synced participants_json column.
+async function recomputeHeaderPg(tx: Queryable, conversationId: string): Promise<void> {
+  const conv = await tx.query<{ participants_json: string | null }>(
+    'SELECT participants_json FROM conversations WHERE id = $1',
+    [conversationId]
+  )
+  if (conv.rows.length === 0) return
+  const participants = parseJsonStringArray(conv.rows[0].participants_json)
+
+  const msgs = await tx.query<{ author_name: string; content: string; kind: string; created_at: Date }>(
+    'SELECT author_name, content, kind, created_at FROM conversation_messages WHERE conversation_id = $1 ORDER BY created_at, id',
+    [conversationId]
+  )
+  const decisions = msgs.rows.filter((m) => m.kind === 'decision')
+  const lastDecision = decisions.length > 0 ? decisions[decisions.length - 1] : null
+  const signoffs = msgs.rows.filter((m) => m.kind === 'signoff')
+  const signedOff = [...new Set(signoffs.map((m) => m.author_name))]
+  const consensus =
+    lastDecision != null &&
+    (participants.length === 0 || participants.every((p) => signedOff.includes(p)))
+
+  let decidedAt: string | null = null
+  if (consensus) {
+    const times = [lastDecision.created_at, ...signoffs.map((m) => m.created_at)]
+      .map((d) => d.toISOString())
+      .sort()
+    decidedAt = times[times.length - 1]
+  }
+
+  await tx.query(
+    'UPDATE conversations SET status = $1, decision_summary = $2, signed_off_json = $3, decided_at = $4 WHERE id = $5',
+    [
+      consensus ? 'decided' : 'open',
+      lastDecision ? lastDecision.content : null,
+      JSON.stringify(signedOff),
+      decidedAt,
+      conversationId
+    ]
+  )
+}
+
+function parseJsonStringArray(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
 }
 
 // SQLite variant — synchronous (better-sqlite3), no per-column coercion (SQLite
