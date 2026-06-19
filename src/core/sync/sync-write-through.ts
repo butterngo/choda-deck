@@ -38,6 +38,20 @@ const MUTATORS: Record<string, MutatorSpec> = {
   deleteInbox: { table: 'inbox_items', op: 'delete' }
 }
 
+// TASK-1136 — conversation methods push differently from the single-row task/
+// inbox mutators: a method may touch the conversations row AND one or more
+// conversation_messages (open seeds a message; decide/signoff append a turn).
+// Each entry resolves the affected conversation id from the call; pushConversation
+// then ships the conversations skeleton + any newly-appended (unstamped) messages.
+// Append-only, so there is no delete path.
+const CONVERSATION_METHODS: Record<string, (args: unknown[], result: unknown) => string | null> = {
+  openConversation: (_args, result) => (result as { id?: string } | null)?.id ?? null,
+  addConversationMessage: (_args, result) =>
+    (result as { conversationId?: string } | null)?.conversationId ?? null,
+  decideConversation: (args) => (args[0] as string) ?? null,
+  signoffConversation: (args) => (args[0] as string) ?? null
+}
+
 export interface SyncWriteThroughOptions {
   origin?: string // device tag stamped on locally-written rows; default 'laptop'
 }
@@ -55,9 +69,16 @@ export function wrapWithSyncWriteThrough(
       const orig = Reflect.get(target, prop, receiver)
       if (typeof orig !== 'function') return orig
       const spec = MUTATORS[prop as string]
-      if (!spec) return (orig as (...a: unknown[]) => unknown).bind(target)
+      const convResolver = CONVERSATION_METHODS[prop as string]
+      if (!spec && !convResolver) return (orig as (...a: unknown[]) => unknown).bind(target)
 
       return async (...args: unknown[]): Promise<unknown> => {
+        if (convResolver) {
+          const result = await (orig as (...a: unknown[]) => Promise<unknown>).apply(target, args)
+          const convId = convResolver(args, result)
+          if (convId) await pushConversation(db, sink, origin, convId)
+          return result
+        }
         if (spec.op === 'delete') {
           const id = args[0] as string
           const before = readRow(db, spec.table, id)
@@ -114,4 +135,66 @@ async function push(
 
 function readRow(db: Database.Database, table: string, id: string): PulledRow | undefined {
   return db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id) as PulledRow | undefined
+}
+
+// TASK-1136 — push a conversation's synced rows after a mutating call: the
+// conversations skeleton (always — its derived header may have changed; the
+// remote re-folds it) plus every newly-appended message (sync_updated_at IS
+// NULL). Each row gets a fresh Lamport stamp. On a remote failure every row is
+// enqueued so the drain loop replays it; the tool call still succeeds.
+async function pushConversation(
+  db: Database.Database,
+  sink: ApplySink,
+  origin: string,
+  conversationId: string
+): Promise<void> {
+  const staged: Array<{ table: string; row: PulledRow }> = []
+
+  const convLamport = tick(db)
+  db.prepare('UPDATE conversations SET sync_updated_at = ?, sync_origin = ? WHERE id = ?').run(
+    convLamport,
+    origin,
+    conversationId
+  )
+  const convRow = readRow(db, 'conversations', conversationId)
+  if (convRow) staged.push({ table: 'conversations', row: convRow })
+
+  const newMsgs = db
+    .prepare(
+      'SELECT id FROM conversation_messages WHERE conversation_id = ? AND sync_updated_at IS NULL ORDER BY created_at, id'
+    )
+    .all(conversationId) as Array<{ id: string }>
+  for (const m of newMsgs) {
+    const lamport = tick(db)
+    db.prepare(
+      'UPDATE conversation_messages SET sync_updated_at = ?, sync_origin = ? WHERE id = ?'
+    ).run(lamport, origin, m.id)
+    const row = readRow(db, 'conversation_messages', m.id)
+    if (row) staged.push({ table: 'conversation_messages', row })
+  }
+
+  // Group into per-table deltas, parent (conversations) first so the FK target
+  // exists before its messages on the receiver.
+  const deltas = [
+    { table: 'conversations', rows: staged.filter((s) => s.table === 'conversations').map((s) => s.row) },
+    {
+      table: 'conversation_messages',
+      rows: staged.filter((s) => s.table === 'conversation_messages').map((s) => s.row)
+    }
+  ].filter((d) => d.rows.length > 0)
+
+  try {
+    await sink.applyDelta(deltas, origin)
+  } catch {
+    for (const { table, row } of staged) {
+      enqueueOp(db, {
+        tableName: table,
+        rowId: row.id,
+        op: 'upsert',
+        row,
+        lamport: row.sync_updated_at,
+        enqueuedAt: Date.now()
+      })
+    }
+  }
 }
