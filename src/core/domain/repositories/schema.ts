@@ -391,6 +391,17 @@ function migrateConversationSchemaNarrowing(db: Database.Database): void {
     }
   }
 
+  // Step 1b: participants_json (additive, TASK-1136) — the synced authority for
+  // the 'decided' fold, denormalized onto the conversations row so it rides the
+  // synced skeleton (conversation_participants is an unsynced association table).
+  if (!convColNames.has('participants_json')) {
+    try {
+      db.exec("ALTER TABLE conversations ADD COLUMN participants_json TEXT NOT NULL DEFAULT '[]'")
+    } catch {
+      /* exists */
+    }
+  }
+
   // Step 2: conversation_message_reads side-table (additive).
   db.exec(`
     CREATE TABLE IF NOT EXISTS conversation_message_reads (
@@ -547,6 +558,7 @@ function createM1Tables(db: Database.Database): void {
       created_by TEXT NOT NULL,
       decision_summary TEXT,
       signed_off_json TEXT NOT NULL DEFAULT '[]',
+      participants_json TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       decided_at TEXT,
       owner_session_id TEXT,

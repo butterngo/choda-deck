@@ -14,6 +14,7 @@
 import type Database from 'better-sqlite3'
 import { SYNCABLE_TABLES } from './syncable-tables'
 import { getLastPullAt, setLastPullAt, mergeClock } from './lamport-clock'
+import { ConversationRepository } from '../domain/repositories/conversation-repository'
 
 export interface PulledRow {
   id: string
@@ -104,6 +105,19 @@ export async function pull(db: Database.Database, source: PullSource): Promise<P
     }
   })
   apply()
+
+  // TASK-1067/1136 — after merging conversation_messages, refold each affected
+  // conversation's derived header (status/decisionSummary/signedOff) so it
+  // converges with the appended turns regardless of LWW on the header columns.
+  // Idempotent, so recomputing for a skipped-row conversation is harmless.
+  const affectedConvIds = new Set<string>()
+  for (const m of byTable.get('conversation_messages') ?? []) {
+    if (typeof m.conversation_id === 'string') affectedConvIds.add(m.conversation_id)
+  }
+  if (affectedConvIds.size > 0) {
+    const convRepo = new ConversationRepository(db)
+    for (const cid of affectedConvIds) convRepo.recomputeHeader(cid)
+  }
 
   if (maxCursor > since) {
     setLastPullAt(db, maxCursor)

@@ -89,8 +89,19 @@ export class ConversationRepository {
         this.addParticipant(id, p.name)
       }
     }
+    this.syncParticipantsJson(id)
 
     return this.get(id)!
+  }
+
+  // TASK-1136 — mirror the conversation_participants table into the synced
+  // participants_json column on the conversations row. Called on every
+  // participant mutation so the fold's authority travels with the synced skeleton.
+  private syncParticipantsJson(conversationId: string): void {
+    const names = this.getParticipants(conversationId).map((p) => p.name)
+    this.db
+      .prepare('UPDATE conversations SET participants_json = ? WHERE id = ?')
+      .run(JSON.stringify(names), conversationId)
   }
 
   update(id: string, input: UpdateConversationInput): Conversation {
@@ -170,6 +181,7 @@ export class ConversationRepository {
         `INSERT OR IGNORE INTO conversation_participants (conversation_id, participant_name) VALUES (?, ?)`
       )
       .run(conversationId, name)
+    this.syncParticipantsJson(conversationId)
   }
 
   removeParticipant(conversationId: string, name: string): void {
@@ -178,6 +190,7 @@ export class ConversationRepository {
         'DELETE FROM conversation_participants WHERE conversation_id = ? AND participant_name = ?'
       )
       .run(conversationId, name)
+    this.syncParticipantsJson(conversationId)
   }
 
   getParticipants(conversationId: string): ConversationParticipant[] {
@@ -240,7 +253,13 @@ export class ConversationRepository {
     const signoffs = msgs.filter((m) => m.kind === 'signoff')
     const signedOff = [...new Set(signoffs.map((m) => m.authorName))]
 
-    const participants = this.getParticipants(conversationId).map((p) => p.name)
+    // Read participants from the synced participants_json (TASK-1136), not the
+    // unsynced conversation_participants table — so the fold converges on a node
+    // that received the conversation via sync and has no local participant rows.
+    const prow = this.db
+      .prepare('SELECT participants_json FROM conversations WHERE id = ?')
+      .get(conversationId) as { participants_json?: string } | undefined
+    const participants = parseSignedOff(prow?.participants_json)
     const consensus =
       lastDecision != null &&
       (participants.length === 0 || participants.every((p) => signedOff.includes(p)))

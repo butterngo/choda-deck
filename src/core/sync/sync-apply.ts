@@ -15,12 +15,21 @@
 
 import type { PulledRow, TableDelta } from './sync-pull'
 
-// Write-through scope for 979a/979b: tasks + inbox only. conversation_* is
-// deliberately excluded — a generic LWW upsert would silently drop a
-// decisionSummary edit, which is the exact loss the parked 979e slice exists to
-// prevent (it ships an append-preserving merge instead). The apply path refuses
-// any other table so a mis-scoped push can never reach a conversation row here.
-export const APPLY_TABLES: readonly string[] = ['tasks', 'inbox_items']
+// Write-through apply scope. tasks + inbox (979a/979b) plus conversations
+// (TASK-1136). The earlier decisionSummary-drop risk is gone: conversations are
+// an append-only log (TASK-1067) — decision/signoff are messages, the header is
+// a fold recomputed on each node after apply, so a generic LWW upsert on the
+// header columns is harmless. Both `conversations` (skeleton + derived cache)
+// and `conversation_messages` (the authoritative log) sync; the apply path
+// recomputes the header after applying message rows. The set matches the pull
+// side (SYNCABLE_TABLES) for the conversation tables so both directions agree.
+export const APPLY_TABLES: readonly string[] = [
+  'tasks',
+  'inbox_items',
+  'conversations',
+  'conversation_messages',
+  'conversation_actions'
+]
 
 export type ApplyVerdict = 'applied' | 'tombstoned' | 'conflict'
 

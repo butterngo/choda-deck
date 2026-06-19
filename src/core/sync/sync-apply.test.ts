@@ -44,8 +44,13 @@ describe('assertApplyTables — scope guard', () => {
   it('accepts tasks + inbox_items', () => {
     expect(() => assertApplyTables([{ table: 'inbox_items', rows: [] }, { table: 'tasks', rows: [] }])).not.toThrow()
   })
-  it('rejects conversation_messages (deferred to 979e)', () => {
-    expect(() => assertApplyTables([{ table: 'conversation_messages', rows: [] }])).toThrow(/apply scope/)
+  it('accepts conversation tables (TASK-1136 — append-only fold sync)', () => {
+    expect(() =>
+      assertApplyTables([{ table: 'conversations', rows: [] }, { table: 'conversation_messages', rows: [] }])
+    ).not.toThrow()
+  })
+  it('rejects a non-syncable table (e.g. sessions)', () => {
+    expect(() => assertApplyTables([{ table: 'sessions', rows: [] }])).toThrow(/apply scope/)
   })
   it('rejects an unknown table before any DB access', () => {
     expect(() => assertApplyTables([{ table: 'sqlite_master', rows: [] }])).toThrow(/apply scope/)
@@ -105,7 +110,7 @@ describe('applyDeltaToSqlite — sink against in-memory SQLite', () => {
 
   it('refuses an out-of-scope table without writing', () => {
     expect(() =>
-      applyDeltaToSqlite(db, [{ table: 'conversation_messages', rows: [] }], 'remote')
+      applyDeltaToSqlite(db, [{ table: 'sessions', rows: [] }], 'remote')
     ).toThrow(/apply scope/)
   })
 })

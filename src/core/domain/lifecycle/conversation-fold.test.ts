@@ -79,6 +79,27 @@ describe('conversation append-only fold (TASK-1067)', () => {
     expect((await svc.getConversation(id))?.status).toBe('decided')
   })
 
+  it('folds from participants_json when the conversation arrived via sync (no local participant rows)', async () => {
+    // Simulate a synced skeleton: conversations row with participants_json set but
+    // NO conversation_participants rows (the association table is not synced).
+    const db = svc.syncDatabase
+    db.prepare(
+      `INSERT INTO conversations (id, project_id, title, created_by, participants_json)
+       VALUES ('CONV-SYNCED', 'proj-f', 'Synced', 'Butter', '["Butter","Claude"]')`
+    ).run()
+    // Decision + one signoff arrive as synced message rows.
+    await svc.addConversationMessage({ conversationId: 'CONV-SYNCED', authorName: 'Butter', content: 'Do X', kind: 'decision' })
+    await svc.addConversationMessage({ conversationId: 'CONV-SYNCED', authorName: 'Butter', content: '', kind: 'signoff' })
+    svc.recomputeConversationHeader('CONV-SYNCED')
+    expect((await svc.getConversation('CONV-SYNCED'))?.status).toBe('open') // Claude still owed
+
+    await svc.addConversationMessage({ conversationId: 'CONV-SYNCED', authorName: 'Claude', content: '', kind: 'signoff' })
+    svc.recomputeConversationHeader('CONV-SYNCED')
+    const conv = await svc.getConversation('CONV-SYNCED')
+    expect(conv?.status).toBe('decided')
+    expect(conv?.decisionSummary).toBe('Do X')
+  })
+
   it('converges when a turn arrives out of band (simulated sync merge)', async () => {
     // Two participants; Butter decides + signs locally.
     const id = await open(['Butter', 'Claude'])
