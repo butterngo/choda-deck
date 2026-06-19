@@ -14,6 +14,7 @@ import {
 import { startHttpTransport, type OAuthConfig } from './http-transport'
 import { createKeycloakVerifier } from './oauth/jwt-verifier'
 import { startSyncLoop } from '../../core/sync/sync-loop'
+import { KeycloakTokenProvider } from '../../core/sync/keycloak-token-provider'
 import type Database from 'better-sqlite3'
 import * as taskTools from './mcp-tools/task-tools'
 import * as conversationTools from './mcp-tools/conversation-tools'
@@ -172,14 +173,26 @@ export async function startMcpServer(): Promise<void> {
   // and pulls remote deltas. The timer is unref'd so it never holds the process.
   if (backend.kind === 'sync') {
     const db = (svc as unknown as { syncDatabase: Database.Database }).syncDatabase
+    // TASK-1108 — with OAuth creds, refresh Keycloak access tokens so the loop
+    // outlives the ~300s TTL; otherwise hold the static bearer (unchanged).
+    const provider = backend.oauth
+      ? new KeycloakTokenProvider({
+          issuer: backend.oauth.issuer,
+          clientId: backend.oauth.clientId,
+          clientSecret: backend.oauth.clientSecret,
+          username: backend.oauth.username,
+          password: backend.oauth.password
+        })
+      : null
     startSyncLoop({
       db,
       remoteUrl: backend.remoteUrl,
-      token: backend.remoteToken,
+      ...(provider ? { getToken: () => provider.getToken() } : { token: backend.remoteToken }),
       intervalMs: backend.intervalMs
     })
     console.error(
-      `[choda-deck] sync loop started → ${backend.remoteUrl} (every ${backend.intervalMs}ms)`
+      `[choda-deck] sync loop started → ${backend.remoteUrl} (every ${backend.intervalMs}ms` +
+        `${provider ? ', Keycloak token-refresh' : ', static bearer'})`
     )
   }
 

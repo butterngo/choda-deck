@@ -18,7 +18,12 @@ import { pull } from './sync-pull'
 export interface SyncLoopOptions {
   db: Database.Database
   remoteUrl: string
-  token: string
+  // Static bearer (MCP_HTTP_TOKEN). Mutually exclusive with getToken.
+  token?: string
+  // Per-request token provider (Keycloak refresh flow, TASK-1108). Wins over
+  // token — lets the loop outlive the ~300s access-token TTL against an OAuth
+  // remote. Both HTTP clients call it per request.
+  getToken?: () => Promise<string>
   origin?: string
   intervalMs?: number
   fetchImpl?: typeof fetch
@@ -32,8 +37,9 @@ export interface SyncLoopHandle {
 export function startSyncLoop(opts: SyncLoopOptions): SyncLoopHandle {
   const origin = opts.origin ?? 'laptop'
   const fetchImpl = opts.fetchImpl ?? fetch
-  const client = new HttpWriteClient({ remoteUrl: opts.remoteUrl, token: opts.token, fetchImpl })
-  const pullSource = new HttpPullSource({ remoteUrl: opts.remoteUrl, token: opts.token, fetchImpl })
+  const auth = { getToken: opts.getToken, token: opts.token }
+  const client = new HttpWriteClient({ remoteUrl: opts.remoteUrl, ...auth, fetchImpl })
+  const pullSource = new HttpPullSource({ remoteUrl: opts.remoteUrl, ...auth, fetchImpl })
 
   const runOnce = async (): Promise<void> => {
     const drain = await drainPendingOps(opts.db, client, {
