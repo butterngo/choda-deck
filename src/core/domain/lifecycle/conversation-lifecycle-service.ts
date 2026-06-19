@@ -11,7 +11,6 @@ import type {
   SignoffConversationResult
 } from '../interfaces/conversation-lifecycle.interface'
 import type { Conversation } from '../task-types'
-import { now } from '../repositories/shared'
 import { ConversationNotFoundError } from './errors'
 
 export class ConversationLifecycleService implements ConversationLifecycleOperations {
@@ -84,31 +83,22 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
       const conv = this.conversations.get(id)
       if (!conv) throw new ConversationNotFoundError(id)
 
+      // TASK-1067 — the decision is an append-only `decision` turn; status /
+      // decisionSummary are then folded from the message log, not written here.
       this.conversations.addMessage({
         conversationId: id,
         authorName: input.author,
-        content: input.decision
+        content: input.decision,
+        kind: 'decision'
       })
-
-      // Record the decision summary but only flip status to `decided` once every
-      // participant has signed off (consensus). For solo conversations (or those
-      // without registered participants) decideConversation flips immediately.
-      const participants = this.conversations.getParticipants(id)
-      const everyoneSignedOff =
-        participants.length === 0 ||
-        participants.every((p) => conv.signedOff.includes(p.name))
-
-      const updated = this.conversations.update(id, {
-        decisionSummary: input.decision,
-        ...(everyoneSignedOff
-          ? { status: 'decided' as const, decidedAt: now() }
-          : {})
-      })
+      this.conversations.recomputeHeader(id)
 
       const actions: DecideConversationResultAction[] = (input.actions ?? []).map((action) =>
         this.createActionAndMaybeSpawnTask(conv.projectId, id, action)
       )
 
+      const updated = this.conversations.get(id)
+      if (!updated) throw new ConversationNotFoundError(id)
       return { conversation: updated, actions }
     })
     return tx()
@@ -119,24 +109,25 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
       const conv = this.conversations.get(id)
       if (!conv) throw new ConversationNotFoundError(id)
 
-      const signedOff = this.conversations.appendSignoff(id, name)
-      const participants = this.conversations.getParticipants(id)
-      const everyoneSignedOff =
-        participants.length > 0 && participants.every((p) => signedOff.includes(p.name))
-
-      // Flip to decided only when:
-      //  1. consensus is reached, AND
-      //  2. a decision summary already exists (decideConversation was called)
-      let updated = conv
-      let decided = false
-      if (everyoneSignedOff && conv.decisionSummary && conv.status !== 'decided') {
-        updated = this.conversations.update(id, { status: 'decided', decidedAt: now() })
-        decided = true
-      } else {
-        // refresh so the returned conv reflects the new signedOff[]
-        updated = this.conversations.get(id) ?? conv
+      const wasDecided = conv.status === 'decided'
+      // TASK-1067 — signoff is an append-only `signoff` turn. Idempotent: skip the
+      // append when this signer already has one (the fold dedups by author too).
+      if (!conv.signedOff.includes(name)) {
+        this.conversations.addMessage({
+          conversationId: id,
+          authorName: name,
+          content: '',
+          kind: 'signoff'
+        })
       }
-      return { conversation: updated, signedOff, decided }
+      this.conversations.recomputeHeader(id)
+
+      const updated = this.conversations.get(id) ?? conv
+      return {
+        conversation: updated,
+        signedOff: updated.signedOff,
+        decided: updated.status === 'decided' && !wasDecided
+      }
     })
     return tx()
   }

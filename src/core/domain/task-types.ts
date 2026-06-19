@@ -289,11 +289,17 @@ export interface ConversationParticipant {
   name: string
 }
 
+// TASK-1067 — a conversation is an append-only log. `decision` and `signoff`
+// turns are messages too; the conversation header (status/decisionSummary/
+// signedOff) is a fold over these. Plain chat turns are `message`.
+export type ConversationMessageKind = 'message' | 'decision' | 'signoff'
+
 export interface ConversationMessage {
   id: string
   conversationId: string
   authorName: string
   content: string
+  kind: ConversationMessageKind
   readBy: string[]
   createdAt: string
 }
@@ -337,6 +343,8 @@ export interface CreateConversationMessageInput {
   conversationId: string
   authorName: string
   content: string
+  // Defaults to 'message' when omitted (plain chat turn).
+  kind?: ConversationMessageKind
 }
 
 export interface CreateConversationActionInput {

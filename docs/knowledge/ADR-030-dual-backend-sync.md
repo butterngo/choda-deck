@@ -61,6 +61,17 @@ Design consequences for the implementation slice (AC-2/AC-4):
 
 Implementation + the `/choda-sync` guard flip land under TASK-1108's AC-2/AC-4; conversation sync rides on top via TASK-1067.
 
+## Update 2026-06-19 — conversation sync via append-only fold (TASK-1067, supersedes the §Revisit LWW-merge plan)
+
+The 2026-06-11 update deferred `conversation_messages` because plain LWW could silently drop a load-bearing `decisionSummary`, and the planned fix was an *append-preserving merge* (recover a dropped header write as a new message). **That plan is superseded.** Reframing removes the risk at the root instead of patching it: a conversation **is** an append-only log.
+
+- `decide` and `signoff` stop being `UPDATE conversations` and become **typed `conversation_messages`** (`kind` ∈ `message | decision | signoff`).
+- `status` / `decisionSummary` / `signedOff` / `decidedAt` are a **pure fold over the messages**, not authoritative stored state. The `conversations` header columns become a derived cache, recomputed after any message change.
+- Because the header is a pure function of the (append-only, union-merged) messages, **each node recomputes it after a merge** — so whatever LWW does to the cached header columns is immediately overwritten by the recompute. No conflict to resolve, no column-level sync exclusion needed.
+- `conversation_messages` union-merge by id exactly like `inbox_add`. **Read-state (`conversation_message_reads`) stays per-device** and is excluded from sync (it is not in `SYNCABLE_TABLES`).
+
+This partially reverses the 2026-05-28 PG narrowing: the deleted Postgres conversation repos are restored **as append-only inserts only** (no mutable header CRUD), plus the allowlist expansion the §Per-tool scoping standing rule requires (`REMOTE_TOOL_ALLOWLIST` + `RemoteOperations` + `PostgresTaskService`, same PR) for `conversation_open` / `conversation_add` / `conversation_read` / `conversation_list`.
+
 ## Status (2026-06-11)
 
 | Component | State | Where it landed |
