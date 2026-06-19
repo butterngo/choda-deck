@@ -468,6 +468,11 @@ export class SqliteTaskService
   async getConversationMessages(conversationId: string): Promise<ConversationMessage[]> {
     return this.conversations.getMessages(conversationId)
   }
+  // TASK-1067 — refold the header from the message log. Called after a sync merge
+  // appends conversation_messages so the derived header converges on every node.
+  recomputeConversationHeader(conversationId: string): void {
+    this.conversations.recomputeHeader(conversationId)
+  }
   async markConversationMessageRead(messageId: string, participantName: string): Promise<void> {
     this.conversations.markMessageRead(messageId, participantName)
   }

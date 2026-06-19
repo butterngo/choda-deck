@@ -3,6 +3,7 @@ import type {
   Conversation,
   ConversationStatus,
   ConversationMessage,
+  ConversationMessageKind,
   ConversationLink,
   ConversationLinkType,
   ConversationParticipant,
@@ -207,10 +208,10 @@ export class ConversationRepository {
     const id = input.id || generateId('MSG')
     this.db
       .prepare(
-        `INSERT INTO conversation_messages (id, conversation_id, author_name, content)
-       VALUES (?, ?, ?, ?)`
+        `INSERT INTO conversation_messages (id, conversation_id, author_name, content, kind)
+       VALUES (?, ?, ?, ?, ?)`
       )
-      .run(id, input.conversationId, input.authorName, input.content)
+      .run(id, input.conversationId, input.authorName, input.content, input.kind ?? 'message')
     const row = this.db
       .prepare('SELECT * FROM conversation_messages WHERE id = ?')
       .get(id) as Record<string, unknown>
@@ -219,9 +220,50 @@ export class ConversationRepository {
       conversationId: row.conversation_id as string,
       authorName: row.author_name as string,
       content: row.content as string,
+      kind: (row.kind as ConversationMessageKind) ?? 'message',
       readBy: [],
       createdAt: row.created_at as string
     }
+  }
+
+  // TASK-1067 — fold the append-only message log into the conversation header
+  // (status / decisionSummary / signedOff / decidedAt) and write it to the cache
+  // columns. Pure function of the messages + participants, so re-running it on
+  // any node after a sync merge converges the header regardless of LWW on the
+  // (non-authoritative) header columns. Call after any message append/merge.
+  recomputeHeader(conversationId: string): void {
+    const conv = this.get(conversationId)
+    if (!conv) return
+    const msgs = this.getMessages(conversationId)
+    const decisions = msgs.filter((m) => m.kind === 'decision')
+    const lastDecision = decisions.length > 0 ? decisions[decisions.length - 1] : null
+    const signoffs = msgs.filter((m) => m.kind === 'signoff')
+    const signedOff = [...new Set(signoffs.map((m) => m.authorName))]
+
+    const participants = this.getParticipants(conversationId).map((p) => p.name)
+    const consensus =
+      lastDecision != null &&
+      (participants.length === 0 || participants.every((p) => signedOff.includes(p)))
+
+    // decidedAt = when consensus was reached: the later of the decision turn and
+    // the last signoff that completed it. Deterministic from message timestamps.
+    let decidedAt: string | null = null
+    if (consensus) {
+      const completing = [lastDecision.createdAt, ...signoffs.map((m) => m.createdAt)]
+      decidedAt = completing.sort()[completing.length - 1]
+    }
+
+    this.db
+      .prepare(
+        'UPDATE conversations SET status = ?, decision_summary = ?, signed_off_json = ?, decided_at = ? WHERE id = ?'
+      )
+      .run(
+        consensus ? 'decided' : 'open',
+        lastDecision ? lastDecision.content : null,
+        JSON.stringify(signedOff),
+        decidedAt,
+        conversationId
+      )
   }
 
   markMessageRead(messageId: string, participantName: string): void {
@@ -235,7 +277,7 @@ export class ConversationRepository {
   getMessages(conversationId: string): ConversationMessage[] {
     const rows = this.db
       .prepare(
-        `SELECT m.id, m.conversation_id, m.author_name, m.content, m.created_at,
+        `SELECT m.id, m.conversation_id, m.author_name, m.content, m.kind, m.created_at,
                 GROUP_CONCAT(r.participant_name) AS read_by_csv
          FROM conversation_messages m
          LEFT JOIN conversation_message_reads r ON r.message_id = m.id
@@ -249,6 +291,7 @@ export class ConversationRepository {
       conversationId: row.conversation_id as string,
       authorName: row.author_name as string,
       content: row.content as string,
+      kind: (row.kind as ConversationMessageKind) ?? 'message',
       readBy: parseReadByCsv(row.read_by_csv),
       createdAt: row.created_at as string
     }))

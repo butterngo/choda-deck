@@ -497,6 +497,14 @@ function migrateConversationMessages(db: Database.Database): void {
       /* exists */
     }
   }
+  // TASK-1067 — append-only fold: decision/signoff turns are typed messages.
+  if (!colNames.includes('kind')) {
+    try {
+      db.exec("ALTER TABLE conversation_messages ADD COLUMN kind TEXT NOT NULL DEFAULT 'message'")
+    } catch {
+      /* exists */
+    }
+  }
 }
 
 function createM1Tables(db: Database.Database): void {
@@ -560,6 +568,7 @@ function createM1Tables(db: Database.Database): void {
       conversation_id TEXT NOT NULL,
       author_name TEXT NOT NULL,
       content TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'message',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (conversation_id) REFERENCES conversations(id)
     )
