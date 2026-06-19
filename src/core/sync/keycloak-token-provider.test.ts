@@ -87,10 +87,9 @@ describe('KeycloakTokenProvider', () => {
 
   it('falls back to the password grant when the refresh token is rejected', async () => {
     let t = 0
-    let refreshOk = false
     const { fetchImpl, calls } = makeFetch({
       password: () =>
-        grant({ access_token: refreshOk ? 'X' : 'AT_PW', expires_in: 300, refresh_token: 'RTx', refresh_expires_in: 1800 }),
+        grant({ access_token: 'AT_PW', expires_in: 300, refresh_token: 'RTx', refresh_expires_in: 1800 }),
       refresh_token: () => new Response('', { status: 400 })
     })
     const p = new KeycloakTokenProvider({ ...base, fetchImpl, now: () => t })
