@@ -23,19 +23,25 @@ import type { ApplySink } from './sync-apply'
 import type { PulledRow } from './sync-pull'
 
 interface MutatorSpec {
-  table: 'tasks' | 'inbox_items'
+  table: 'tasks' | 'inbox_items' | 'projects' | 'workspaces'
   op: 'upsert' | 'delete'
 }
 
 // Method name → which table it writes and whether it is a delete. createInbox is
 // remote-writable today; update/delete inbox round out the inbox surface.
+// ensureProject/addWorkspace (TASK-1146) push the project + workspace rows so a
+// task pushed for a new project finds its FK parents on the remote. The generic
+// upsert handler resolves the row id from result.id (workspace) or args[0]
+// (ensureProject returns void, so its id arg is used).
 const MUTATORS: Record<string, MutatorSpec> = {
   createTask: { table: 'tasks', op: 'upsert' },
   updateTask: { table: 'tasks', op: 'upsert' },
   deleteTask: { table: 'tasks', op: 'delete' },
   createInbox: { table: 'inbox_items', op: 'upsert' },
   updateInbox: { table: 'inbox_items', op: 'upsert' },
-  deleteInbox: { table: 'inbox_items', op: 'delete' }
+  deleteInbox: { table: 'inbox_items', op: 'delete' },
+  ensureProject: { table: 'projects', op: 'upsert' },
+  addWorkspace: { table: 'workspaces', op: 'upsert' }
 }
 
 // TASK-1136 — conversation methods push differently from the single-row task/

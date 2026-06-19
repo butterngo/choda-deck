@@ -24,6 +24,8 @@ import type { PulledRow, TableDelta } from './sync-pull'
 // recomputes the header after applying message rows. The set matches the pull
 // side (SYNCABLE_TABLES) for the conversation tables so both directions agree.
 export const APPLY_TABLES: readonly string[] = [
+  'projects',
+  'workspaces',
   'tasks',
   'inbox_items',
   'conversations',
