@@ -12,6 +12,7 @@ import type {
   ConversationActionStatus,
   ConversationLinkType,
   ConversationMessage,
+  ConversationMessageKind,
   ConversationStatus
 } from '../../task-types'
 
@@ -56,6 +57,9 @@ interface MessageDbRow {
   conversation_id: string
   author_name: string
   content: string
+  // TASK-1067 — append-only fold turn type. Column lands with the PG repo
+  // restoration (AC-3); default 'message' keeps pre-migration rows valid.
+  kind: string | null
   read_by: string[] | null
   created_at: Date
 }
@@ -66,6 +70,7 @@ function mapMessage(row: MessageDbRow): ConversationMessage {
     conversationId: row.conversation_id,
     authorName: row.author_name,
     content: row.content,
+    kind: (row.kind ?? 'message') as ConversationMessageKind,
     readBy: row.read_by ?? [],
     createdAt: row.created_at.toISOString()
   }
