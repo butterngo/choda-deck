@@ -325,6 +325,17 @@ export const MIGRATIONS: readonly Migration[] = [
       );
       INSERT INTO _sync_clock (id, counter) VALUES (0, 0) ON CONFLICT (id) DO NOTHING;
     `
+  },
+  {
+    // TASK-1136 — conversation append-only fold sync. `kind` types each message
+    // turn (message|decision|signoff); `participants_json` denormalizes the
+    // participant set onto the conversations row so the derived header folds
+    // identically on every node (the participants table is not synced).
+    name: '014_conversation_fold',
+    sql: `
+      ALTER TABLE conversation_messages ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'message';
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS participants_json TEXT NOT NULL DEFAULT '[]';
+    `
   }
 ]
 

@@ -92,6 +92,59 @@ describe('wrapWithSyncWriteThrough', () => {
     expect(got?.title).toBe('readable')
   })
 
+  it('openConversation pushes the conversation skeleton + initial message (TASK-1136)', async () => {
+    await svc.ensureProject('p', 'P', '/p')
+    const wrapped = wrapWithSyncWriteThrough(svc, sink)
+    const conv = await wrapped.openConversation({
+      projectId: 'p',
+      title: 'Sync chat',
+      createdBy: 'Butter',
+      participants: [{ name: 'Butter' }],
+      initialMessage: { content: 'hi' }
+    })
+    const tables = sink.calls.flatMap((c) => c.deltas.map((d) => d.table))
+    expect(tables).toContain('conversations')
+    expect(tables).toContain('conversation_messages')
+    const convDelta = sink.calls[0].deltas.find((d) => d.table === 'conversations')
+    expect(convDelta?.rows[0]).toMatchObject({ id: conv.id, sync_origin: 'laptop' })
+    expect(countPendingOps(svc.syncDatabase)).toBe(0)
+  })
+
+  it('addConversationMessage pushes only the new (unstamped) message', async () => {
+    await svc.ensureProject('p', 'P', '/p')
+    const wrapped = wrapWithSyncWriteThrough(svc, sink)
+    const conv = await wrapped.openConversation({
+      projectId: 'p',
+      title: 'T',
+      createdBy: 'Butter',
+      participants: [{ name: 'Butter' }],
+      initialMessage: { content: 'seed' }
+    })
+    sink.calls = []
+    const msg = await wrapped.addConversationMessage({
+      conversationId: conv.id,
+      authorName: 'Butter',
+      content: 'turn 2'
+    })
+    const msgDelta = sink.calls[0].deltas.find((d) => d.table === 'conversation_messages')
+    expect(msgDelta?.rows.map((r) => r.id)).toEqual([msg.id]) // only the fresh turn
+  })
+
+  it('failed conversation push enqueues the skeleton + message rows', async () => {
+    await svc.ensureProject('p', 'P', '/p')
+    const wrapped = wrapWithSyncWriteThrough(svc, sink)
+    sink.fail = true
+    const conv = await wrapped.openConversation({
+      projectId: 'p',
+      title: 'Offline',
+      createdBy: 'Butter',
+      participants: [{ name: 'Butter' }],
+      initialMessage: { content: 'hi' }
+    })
+    expect(conv.id).toBeTruthy() // tool call succeeded despite remote failure
+    expect(countPendingOps(svc.syncDatabase)).toBe(2) // conversations + initial message
+  })
+
   it('exposes syncDatabase through the proxy (bootstrap reads the loop db from it)', () => {
     const wrapped = wrapWithSyncWriteThrough(svc, sink)
     const db = (wrapped as unknown as { syncDatabase: typeof svc.syncDatabase }).syncDatabase
