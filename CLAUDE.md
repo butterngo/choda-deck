@@ -165,6 +165,24 @@ Set `CHODA_BACKEND=sync` (stdio only — rejected at boot on http) to run the la
 | `CHODA_BACKEND=sync` | — | Enables write-through + drain/pull loop (reuses the pull envs above) |
 | `CHODA_SYNC_INTERVAL_MS` | — | Drain/pull cadence in ms (default `30000`) |
 
+**Token refresh against an OAuth remote (TASK-1108, ADR-030 §Update 2026-06-18).** The
+drain/pull loop's Keycloak access token expires in ~300s. Set the ROPC creds below and
+the loop mints + refreshes tokens itself (Option A), surviving past expiry; omit them and
+the loop falls back to the static `CHODA_PULL_REMOTE_TOKEN`/`MCP_HTTP_TOKEN` bearer and
+dies at ~5 min. The durable credential is the username/password — the rotating refresh
+token (30-min idle TTL) is only a warm-path optimization. Each `*_FILE` variant reads the
+value from a gitignored file (`sensitive_information/`); never inline secrets.
+
+| Env var | Required | Purpose |
+|---|---|---|
+| `CHODA_SYNC_OIDC_ISSUER` | refresh mode | Keycloak realm issuer, e.g. `https://id.choda.dev/realms/demo` (falls back to `MCP_OIDC_ISSUER`) |
+| `CHODA_SYNC_OIDC_CLIENT_ID` | refresh mode | Client id, e.g. `claude-connector` (falls back to `MCP_OIDC_CLIENT_ID`) |
+| `CHODA_SYNC_OIDC_USERNAME` | refresh mode | ROPC username (or `_FILE`) |
+| `CHODA_SYNC_OIDC_PASSWORD` | refresh mode | ROPC password (or `_FILE`) |
+| `CHODA_SYNC_OIDC_CLIENT_SECRET` | confidential client | Client secret (or `_FILE`; falls back to `MCP_OIDC_CLIENT_SECRET[_FILE]`) — omit for a public client |
+
+Refresh mode engages only when issuer + client id + username + password all resolve.
+
 ### Remote tool allowlist
 
 HTTP mode exposes a narrowed surface — the **6-tool read + capture allowlist** (`REMOTE_TOOL_ALLOWLIST` in `src/adapters/mcp/server-bootstrap.ts`):

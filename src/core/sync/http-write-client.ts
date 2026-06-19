@@ -6,24 +6,27 @@
 
 import type { ApplyResult, ApplySink } from './sync-apply'
 import type { TableDelta } from './sync-pull'
+import { resolveTokens, type TokenProvider } from './keycloak-token-provider'
 
 export interface HttpWriteClientOptions {
   // Remote MCP origin, e.g. https://mcp.choda.dev or http://localhost:7337.
   remoteUrl: string
-  // Bearer token (static MCP_HTTP_TOKEN, or a Keycloak access token in OAuth mode).
-  token: string
+  // Static bearer (MCP_HTTP_TOKEN). Mutually exclusive with getToken.
+  token?: string
+  // Per-request token provider (Keycloak refresh flow, TASK-1108). Wins over token.
+  getToken?: () => Promise<string>
   // Injectable for tests; defaults to global fetch.
   fetchImpl?: typeof fetch
 }
 
 export class HttpWriteClient implements ApplySink {
   private readonly base: string
-  private readonly token: string
+  private readonly tokens: TokenProvider
   private readonly fetchImpl: typeof fetch
 
   constructor(opts: HttpWriteClientOptions) {
     this.base = opts.remoteUrl.replace(/\/$/, '')
-    this.token = opts.token
+    this.tokens = resolveTokens(opts.getToken, opts.token)
     this.fetchImpl = opts.fetchImpl ?? fetch
   }
 
@@ -31,7 +34,7 @@ export class HttpWriteClient implements ApplySink {
     const res = await this.fetchImpl(`${this.base}/sync/apply`, {
       method: 'POST',
       headers: {
-        authorization: `Bearer ${this.token}`,
+        authorization: `Bearer ${await this.tokens.getToken()}`,
         'content-type': 'application/json',
         accept: 'application/json'
       },

@@ -5,19 +5,19 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/domain/sqlite-task-service.ts
-    commitSha: d2aba0c2c8741fd19ae51212ee69897b77fa1428
+    commitSha: 1b99ca7a5da85bf754c053c07073c628bf9b735a
   - path: src/core/paths.ts
-    commitSha: d2aba0c2c8741fd19ae51212ee69897b77fa1428
+    commitSha: 1b99ca7a5da85bf754c053c07073c628bf9b735a
   - path: src/core/sync/canonical-json.ts
-    commitSha: d2aba0c2c8741fd19ae51212ee69897b77fa1428
+    commitSha: 1b99ca7a5da85bf754c053c07073c628bf9b735a
   - path: src/core/sync/export-service.ts
-    commitSha: d2aba0c2c8741fd19ae51212ee69897b77fa1428
+    commitSha: 1b99ca7a5da85bf754c053c07073c628bf9b735a
   - path: src/core/sync/import-service.ts
-    commitSha: d2aba0c2c8741fd19ae51212ee69897b77fa1428
+    commitSha: 1b99ca7a5da85bf754c053c07073c628bf9b735a
   - path: src/adapters/mcp/server-bootstrap.ts
-    commitSha: d2aba0c2c8741fd19ae51212ee69897b77fa1428
+    commitSha: 1b99ca7a5da85bf754c053c07073c628bf9b735a
 createdAt: 2026-05-22
-lastVerifiedAt: 2026-06-11
+lastVerifiedAt: 2026-06-15
 ---
 
 > **AI-Context:** Two storage backends behind one driver port. Local MCP (stdio) drives SQLite; remote MCP (http, k8s) drives Postgres. The laptop syncs to remote via a **pending-ops queue + LWW reconciliation** built on top of the existing `src/core/sync/` snapshot machinery. Remote Postgres is **canonical when reachable**; local SQLite is a working copy that can write offline and drain on reconnect. Op-log-per-tool-call is rejected — the existing export/import + a small pending queue covers single-user multi-device without it.
@@ -42,6 +42,24 @@ Write-through landed for **tasks + inbox** (TASK-979, sub-tasks 1063–1066, PR 
 - **`conversation_messages` deliberately excluded.** Plain LWW there could silently drop a load-bearing `decisionSummary` — the exact risk that parked this engine. Conversation sync needs an append-preserving merge and is tracked separately as the gated **TASK-1067 (979e)**, to be designed against a real observed conflict, not in the abstract.
 
 Stamping lives entirely in the write-through wrapper (`sync-write-through.ts`), so a plain stdio server with sync off is unchanged. `pending_ops` + `sync_conflicts` are local-SQLite-only tables; a dropped op is recorded **and** surfaced as a raw `inbox_add`.
+
+## Update 2026-06-18 — token-refresh for continuous sync against the OAuth remote (Option A) (TASK-1108)
+
+`CHODA_BACKEND=sync` runs a background drain/pull loop that authenticates to the OAuth-mode remote (`mcp.choda.dev`, [[ADR-034-keycloak-backed-http-auth-via-on-origin-proxy]]) with a bearer JWT. Keycloak access tokens are short-lived and `http-write-client.ts` / `http-pull-source.ts` send whatever bearer they were handed at boot — so continuous two-way sync died ~5 min after start when the token expired. Only one-shot `pull`/`status` (inside the token window) worked; the `/choda-sync` skill refused to start continuous mode for this reason. This is the gate for the always-on Design↔Code channel (TASK-1130).
+
+**Decision: Option A — client-side refresh-token flow** (over B = long-lived service token, C = one-shot-only).
+
+- **C rejected** — it abandons continuous sync, killing the channel's purpose.
+- **B rejected** — a static service credential on the laptop is higher blast-radius and collapses audit identity to one principal, which undercuts the `sync_origin`-tagged conflict model. A keeps per-user Keycloak identity, and a rotating refresh token is revocable + shorter-lived than a static service secret.
+
+**Verified live against `id.choda.dev/realms/demo`, client `claude-connector` (2026-06-18):** the ROPC password grant returns a `refresh_token` with **no `offline_access` scope needed**; the `refresh_token` grant round-trips and **rotates** (new refresh token each call). Token windows: **access `expires_in=300s`, refresh `refresh_expires_in=1800s` (30 min idle)**.
+
+Design consequences for the implementation slice (AC-2/AC-4):
+- The drain loop refreshes the access token **before `exp`** (e.g. ~30s margin); refreshing more often than every 30 min keeps the rotating refresh token alive indefinitely up to Keycloak SSO max-session.
+- The refresh token only survives **30 min idle** — so after a laptop **sleep > 30 min** it is dead. The durable credential is therefore the **ROPC username/password** (`sensitive_information/keycloak-demo-user.txt`), used to re-mint from cold; the refresh token is the warm-path optimization, not the source of truth.
+- Store the live refresh token only in memory (or gitignored `sensitive_information/`); never commit it. Touch points: `http-write-client.ts`, `http-pull-source.ts`, the drain-loop boot path, and the `/choda-sync` skill guard (which flips from "refuse continuous" to "start the loop").
+
+Implementation + the `/choda-sync` guard flip land under TASK-1108's AC-2/AC-4; conversation sync rides on top via TASK-1067.
 
 ## Status (2026-06-11)
 
