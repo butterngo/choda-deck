@@ -14,6 +14,7 @@ import { HttpWriteClient, isRemoteReachable } from './http-write-client'
 import { HttpPullSource } from './http-pull-source'
 import { drainPendingOps, type ConflictRecord } from './sync-drain'
 import { pull } from './sync-pull'
+import { writeLoopHeartbeat, type LoopJwtState } from './sync-loop-status'
 
 export interface SyncLoopOptions {
   db: Database.Database
@@ -40,6 +41,9 @@ export function startSyncLoop(opts: SyncLoopOptions): SyncLoopHandle {
   const auth = { getToken: opts.getToken, token: opts.token }
   const client = new HttpWriteClient({ remoteUrl: opts.remoteUrl, ...auth, fetchImpl })
   const pullSource = new HttpPullSource({ remoteUrl: opts.remoteUrl, ...auth, fetchImpl })
+  // jwtState surfaced to the companion adapter's /sync/health: a refresh provider
+  // outlives token expiry, a static bearer dies at ~300s, none = unauthenticated.
+  const jwtState: LoopJwtState = opts.getToken ? 'refresh' : opts.token ? 'static' : 'none'
 
   const runOnce = async (): Promise<void> => {
     const drain = await drainPendingOps(opts.db, client, {
@@ -49,13 +53,23 @@ export function startSyncLoop(opts: SyncLoopOptions): SyncLoopHandle {
     })
     // Only pull when the drain confirmed the remote is reachable — avoids a
     // guaranteed-failing GET right after an offline drain cycle.
+    let pulled = false
     if (drain.reachable) {
       try {
         await pull(opts.db, pullSource)
+        pulled = true
       } catch {
         // Transient pull failure — next cycle retries from the same cursor.
       }
     }
+    // TASK-1158 — stamp the cross-process heartbeat so the companion adapter can
+    // report loop liveness + pull age from the shared DB.
+    writeLoopHeartbeat(opts.db, {
+      at: now(),
+      pulled,
+      reachable: drain.reachable,
+      jwtState
+    })
   }
 
   let timer: ReturnType<typeof setInterval> | null = null

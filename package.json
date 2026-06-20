@@ -43,7 +43,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false",
     "build:mcp": "esbuild src/adapters/mcp/server.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/mcp-server.cjs --external:better-sqlite3 --external:sqlite-vec --external:@huggingface/transformers --external:onnxruntime-node --external:onnxruntime-web --external:sharp && node -e \"require('fs').copyFileSync('src/adapters/mcp/rules/mcp-rules.md','dist/mcp-rules.md')\"",
     "build:cli": "esbuild src/adapters/cli/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/cli.cjs --external:better-sqlite3 --external:sqlite-vec --external:@huggingface/transformers --external:onnxruntime-node --external:onnxruntime-web --external:sharp",
-    "build": "pnpm run build:mcp && pnpm run build:cli"
+    "build:companion": "esbuild src/adapters/companion/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/companion-server.cjs --external:better-sqlite3 --external:sqlite-vec --external:@huggingface/transformers --external:onnxruntime-node --external:onnxruntime-web --external:sharp",
+    "build": "pnpm run build:mcp && pnpm run build:cli && pnpm run build:companion"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
