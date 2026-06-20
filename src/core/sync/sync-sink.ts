@@ -14,6 +14,7 @@
 import type Database from 'better-sqlite3'
 import type { PgConnection, Queryable } from '../domain/repositories/postgres/connection'
 import { ConversationRepository } from '../domain/repositories/conversation-repository'
+import { advanceCountersFromImport } from '../domain/repositories/counter-repository'
 import { mergeClock } from './lamport-clock'
 import type { PulledRow, TableDelta } from './sync-pull'
 import {
@@ -213,6 +214,11 @@ export function applyDeltaToSqlite(
     const convRepo = new ConversationRepository(db)
     for (const cid of affectedConvIds) convRepo.recomputeHeader(cid)
   }
+
+  // TASK-1148 — advance the id allocator past every applied TASK-/INBOX- id.
+  const byTable = new Map<string, Array<{ id?: unknown }>>()
+  for (const delta of deltas) byTable.set(delta.table, delta.rows)
+  advanceCountersFromImport(db, byTable)
 
   return { applied, tombstoned, conflicts, verdicts }
 }

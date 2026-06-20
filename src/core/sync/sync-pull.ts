@@ -15,6 +15,7 @@ import type Database from 'better-sqlite3'
 import { SYNCABLE_TABLES } from './syncable-tables'
 import { getLastPullAt, setLastPullAt, mergeClock } from './lamport-clock'
 import { ConversationRepository } from '../domain/repositories/conversation-repository'
+import { advanceCountersFromImport } from '../domain/repositories/counter-repository'
 
 export interface PulledRow {
   id: string
@@ -118,6 +119,10 @@ export async function pull(db: Database.Database, source: PullSource): Promise<P
     const convRepo = new ConversationRepository(db)
     for (const cid of affectedConvIds) convRepo.recomputeHeader(cid)
   }
+
+  // TASK-1148 — advance the local id allocator past every imported TASK-/INBOX- id
+  // so a freshly-synced node's next mint can't collide with a pulled row.
+  advanceCountersFromImport(db, byTable)
 
   if (maxCursor > since) {
     setLastPullAt(db, maxCursor)
