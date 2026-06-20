@@ -10,6 +10,7 @@
 // Created here so the table is present and the API is testable.
 
 import type Database from 'better-sqlite3'
+import { ensureLoopStatusColumns } from './sync-loop-status'
 
 // Both singleton tables pin a single row at id = 0 via a CHECK constraint, so
 // repeated INSERT OR IGNORE can never produce a second row.
@@ -28,6 +29,8 @@ export function createSyncClockTables(db: Database.Database): void {
     )
   `)
   db.exec('INSERT OR IGNORE INTO _sync_state (id, last_pull_at) VALUES (0, 0)')
+  // TASK-1158 — cross-process loop heartbeat columns live on this singleton row.
+  ensureLoopStatusColumns(db)
 }
 
 // Atomically increment the counter and return the new value. UPDATE ... RETURNING
