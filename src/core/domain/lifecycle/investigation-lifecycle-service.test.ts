@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
+import Database from 'better-sqlite3'
 import { SqliteTaskService } from '../sqlite-task-service'
 import {
   HypothesisNotFoundError,
@@ -102,6 +103,28 @@ describe('evidence (AC-3)', () => {
     expect(full?.evidence).toHaveLength(2)
   })
 
+  it('stores evidence by-value via snapshot, read back intact (TASK-1167)', async () => {
+    const inv = await svc.startInvestigation({ symptom: 's' })
+    const observed = 'ERROR sweep-crawl: queue depth=0 but worker still polling\n  at poller.ts:88'
+    const e = await svc.addEvidence({
+      investigationId: inv.id,
+      type: 'log',
+      ref: 'app.log:120',
+      snapshot: observed
+    })
+    expect(e.snapshot).toBe(observed)
+
+    // Survives a fresh nested read (the cross-session / post-compaction path).
+    const full = await svc.getInvestigation(inv.id)
+    expect(full?.evidence[0].snapshot).toBe(observed)
+  })
+
+  it('defaults snapshot to null when omitted (by-reference only — backward compatible)', async () => {
+    const inv = await svc.startInvestigation({ symptom: 's' })
+    const e = await svc.addEvidence({ investigationId: inv.id, type: 'log', ref: 'app.log:1' })
+    expect(e.snapshot).toBeNull()
+  })
+
   it('throws InvestigationNotFoundError on unknown investigation (AC-6)', async () => {
     await expect(
       svc.addEvidence({ investigationId: 'INV-999', type: 'log', ref: 'x' })
@@ -168,6 +191,48 @@ describe('getInvestigation cross-session read (AC-5)', () => {
 
   it('returns null for an unknown investigation', async () => {
     expect(await svc.getInvestigation('INV-999')).toBeNull()
+  })
+})
+
+describe('evidence-by-value migration (TASK-1167)', () => {
+  const LEGACY_DB = path.join(__dirname, '__test-investigation-legacy__.db')
+
+  afterEach(() => {
+    if (fs.existsSync(LEGACY_DB)) fs.unlinkSync(LEGACY_DB)
+  })
+
+  it('adds the snapshot column to a pre-existing evidence table (idempotent ALTER)', async () => {
+    // Simulate a DB created before evidence-by-value: an evidence table with no
+    // snapshot column. CREATE TABLE IF NOT EXISTS will skip it on next boot, so the
+    // ALTER is what must backfill the column.
+    const legacy = new Database(LEGACY_DB)
+    legacy.exec(`
+      CREATE TABLE evidence (
+        id TEXT PRIMARY KEY,
+        investigation_id TEXT NOT NULL,
+        hypothesis_id TEXT,
+        type TEXT NOT NULL,
+        ref TEXT NOT NULL,
+        note TEXT,
+        created_at TEXT NOT NULL
+      )
+    `)
+    const before = legacy.prepare('PRAGMA table_info(evidence)').all() as Array<{ name: string }>
+    expect(before.some((c) => c.name === 'snapshot')).toBe(false)
+    legacy.close()
+
+    // Reopening through the service runs initSchema → the idempotent ALTER.
+    const migrated = new SqliteTaskService(LEGACY_DB)
+    await migrated.ensureProject('proj-m', 'Migrated', '/tmp/m')
+    const inv = await migrated.startInvestigation({ symptom: 'legacy' })
+    const e = await migrated.addEvidence({
+      investigationId: inv.id,
+      type: 'log',
+      ref: 'x',
+      snapshot: 'captured value'
+    })
+    expect(e.snapshot).toBe('captured value')
+    await migrated.close()
   })
 })
 

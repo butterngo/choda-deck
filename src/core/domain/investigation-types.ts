@@ -19,7 +19,11 @@ export interface Evidence {
   // Evidence attaches to the investigation as a whole, or to a specific hypothesis.
   hypothesisId: string | null
   type: EvidenceType
+  // `ref` is a by-reference locator (file:line / path / URL). `snapshot` is the
+  // captured value — the observed runtime output itself, ephemeral at the source
+  // (ADR-035 evidence-by-value, TASK-1167). Either or both may be present.
   ref: string
+  snapshot: string | null
   note: string | null
   createdAt: string
 }
@@ -51,6 +55,7 @@ export interface AddEvidenceInput {
   hypothesisId?: string | null
   type: EvidenceType
   ref: string
+  snapshot?: string | null
   note?: string | null
 }
 

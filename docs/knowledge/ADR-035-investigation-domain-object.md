@@ -150,6 +150,27 @@ Lifecycle mutations validate state and fail atomically: resolve on an already-`r
 - [[feature-knowledge-layer]] — the gotcha store + `knowledge_search` that pattern capture reuses
 - TASK-603 — implementation of this ADR
 
+## Update 2026-06-20 — evidence-by-value (TASK-1167)
+
+The original `evidence` table stores only `ref` — a by-reference locator (`file:line`,
+log path, URL/HAR). That suits static debugging (the bytes still live at the locator),
+but the dynamic-debugger work (TASK-1165) escalates to **running the app and observing
+runtime state**, where the output is *ephemeral*: a log line, a query result, or a probe
+dump that no longer exists once the process exits. A pure locator captures nothing.
+
+**Decision:** add a nullable `snapshot TEXT` column to `evidence` — the captured value
+**by value**, alongside (not replacing) `ref`. Either or both may be present: `ref` says
+*where it came from*, `snapshot` preserves *what was observed*. `investigation_add_evidence`
+gains an optional `snapshot` arg. Backward compatible — omitting it yields `snapshot=null`,
+the prior by-reference-only behavior.
+
+- Migration is the established idempotent `try/catch ALTER TABLE evidence ADD COLUMN`
+  in `createInvestigationTables` (runs every boot; `CREATE TABLE IF NOT EXISTS` skips an
+  existing table, so the ALTER is what backfills the column on pre-existing DBs).
+- Stays **stdio-only** — `evidence` is not in `SYNCABLE_TABLES` and the investigation
+  tools are not in `REMOTE_TOOL_ALLOWLIST`. No `RemoteOperations` / Postgres facade
+  change (the ADR-026 three-edit rule does not fire).
+
 ---
 
-**Status: ACCEPTED — ADR-035.** Implemented + merged via PR #181 (squash 0a2c3b0); TASK-603 DONE. Registered in the knowledge index.
+**Status: ACCEPTED — ADR-035.** Implemented + merged via PR #181 (squash 0a2c3b0); TASK-603 DONE. Registered in the knowledge index. Amended 2026-06-20 (TASK-1167) — evidence-by-value `snapshot` column.

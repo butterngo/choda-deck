@@ -67,13 +67,17 @@ export const register = (server: InstrumentedServer, svc: InvestigationToolsDeps
     'investigation_add_evidence',
     {
       description:
-        'Attach typed evidence to an investigation, or to a specific hypothesis within it.',
+        'Attach typed evidence to an investigation, or to a specific hypothesis within it. `ref` is a by-reference locator; `snapshot` captures the observed value by-value (runtime output is ephemeral — ADR-035 evidence-by-value).',
       inputSchema: {
         investigationId: z.string().describe('Investigation ID'),
         type: z
           .enum(['screenshot', 'log', 'network', 'code_snippet'])
           .describe('Evidence type'),
         ref: z.string().describe('Path / URL / locator for the evidence'),
+        snapshot: z
+          .string()
+          .optional()
+          .describe('Captured value by-value — the observed runtime output itself (e.g. a log excerpt, a query result), preserved even when the source is ephemeral'),
         hypothesisId: z
           .string()
           .optional()
@@ -81,8 +85,10 @@ export const register = (server: InstrumentedServer, svc: InvestigationToolsDeps
         note: z.string().optional().describe('Optional note about the evidence')
       }
     },
-    async ({ investigationId, type, ref, hypothesisId, note }) =>
-      tryLifecycle(() => svc.addEvidence({ investigationId, type, ref, hypothesisId, note }))
+    async ({ investigationId, type, ref, snapshot, hypothesisId, note }) =>
+      tryLifecycle(() =>
+        svc.addEvidence({ investigationId, type, ref, snapshot, hypothesisId, note })
+      )
   )
 
   server.registerTool(

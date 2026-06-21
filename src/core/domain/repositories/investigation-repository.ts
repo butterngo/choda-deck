@@ -46,6 +46,7 @@ function rowToEvidence(row: Record<string, unknown>): Evidence {
     hypothesisId: (row.hypothesis_id as string) || null,
     type: row.type as EvidenceType,
     ref: row.ref as string,
+    snapshot: (row.snapshot as string) || null,
     note: (row.note as string) || null,
     createdAt: row.created_at as string
   }
@@ -134,8 +135,8 @@ export class InvestigationRepository {
     const id = this.nextId('EVID', 'evidence')
     this.db
       .prepare(
-        `INSERT INTO evidence (id, investigation_id, hypothesis_id, type, ref, note, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO evidence (id, investigation_id, hypothesis_id, type, ref, snapshot, note, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -143,6 +144,7 @@ export class InvestigationRepository {
         input.hypothesisId ?? null,
         input.type,
         input.ref,
+        input.snapshot ?? null,
         input.note ?? null,
         now()
       )

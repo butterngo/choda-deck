@@ -805,11 +805,20 @@ function createInvestigationTables(db: Database.Database): void {
       type TEXT NOT NULL CHECK (type IN ('screenshot','log','network','code_snippet')),
       ref TEXT NOT NULL,
       note TEXT,
+      snapshot TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY (investigation_id) REFERENCES investigations(id),
       FOREIGN KEY (hypothesis_id) REFERENCES hypotheses(id)
     )
   `)
+  // TASK-1167 (ADR-035 evidence-by-value): runtime output is ephemeral, so dynamic
+  // debugging captures the observed snapshot by value alongside the by-reference
+  // `ref` locator. Idempotent ALTER for DBs created before the column existed.
+  try {
+    db.exec('ALTER TABLE evidence ADD COLUMN snapshot TEXT')
+  } catch {
+    /* column exists */
+  }
   db.exec('CREATE INDEX IF NOT EXISTS idx_hypotheses_investigation ON hypotheses(investigation_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_evidence_investigation ON evidence(investigation_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_evidence_hypothesis ON evidence(hypothesis_id)')
