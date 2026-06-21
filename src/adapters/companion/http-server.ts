@@ -7,6 +7,7 @@ import { createServer, type IncomingMessage, type ServerResponse, type Server } 
 import type { CompanionServices } from './service-factory'
 import { computeLedger } from './sync-ledger'
 import { computeHealth } from './sync-health'
+import { SyncNotConfiguredError } from './sync-actions'
 
 // Hard-coded loopback bind — never read from env. AC-4: the adapter must not be
 // exposable on a public interface.
@@ -31,6 +32,21 @@ async function route(
   const url = new URL(req.url ?? '/', 'http://localhost')
   const path = url.pathname
   const method = req.method ?? 'GET'
+
+  // TASK-1175 — mutating sync actions are POST-only. A SyncNotConfiguredError
+  // (no remote on this laptop) maps to 409 so the UI shows a real reason, never a
+  // silent success (AC-3).
+  if (method === 'POST' && (path === '/sync/pull' || path === '/sync/push')) {
+    try {
+      const result = path === '/sync/pull' ? await services.pull() : await services.push()
+      return sendJson(res, 200, result)
+    } catch (err) {
+      if (err instanceof SyncNotConfiguredError) {
+        return sendJson(res, 409, { error: err.message })
+      }
+      throw err
+    }
+  }
 
   if (method !== 'GET') {
     sendJson(res, 405, { error: 'method not allowed' })

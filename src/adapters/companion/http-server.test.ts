@@ -5,6 +5,7 @@ import type { CompanionServices } from './service-factory'
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
 import { LEDGER_ENTITIES } from './sync-ledger'
 import { ensureLoopStatusColumns, writeLoopHeartbeat } from '../../core/sync/sync-loop-status'
+import { SyncNotConfiguredError } from './sync-actions'
 
 function fixtureDb(): Database.Database {
   const db = new Database(':memory:')
@@ -48,6 +49,8 @@ describe('companion http server', () => {
       db,
       dbPath: ':memory:',
       intervalMs: 30000,
+      pull: async () => ({ upserted: 3, tombstoned: 1, cursor: 42 }),
+      push: async () => ({ drained: 2, conflicts: 0, remaining: 0, reachable: true }),
       close: () => db.close()
     }
     handle = await startCompanionServer(services, 0)
@@ -94,5 +97,45 @@ describe('companion http server', () => {
   it('404s an unknown path and 405s a non-GET', async () => {
     expect((await fetch(`${base}/nope`)).status).toBe(404)
     expect((await fetch(`${base}/tasks`, { method: 'POST' })).status).toBe(405)
+  })
+
+  it('POST /sync/pull and /sync/push run the action and return its summary', async () => {
+    const pull = await fetch(`${base}/sync/pull`, { method: 'POST' })
+    expect(pull.status).toBe(200)
+    expect(await pull.json()).toEqual({ upserted: 3, tombstoned: 1, cursor: 42 })
+
+    const push = await fetch(`${base}/sync/push`, { method: 'POST' })
+    expect(push.status).toBe(200)
+    expect(await push.json()).toEqual({ drained: 2, conflicts: 0, remaining: 0, reachable: true })
+  })
+})
+
+describe('companion http server — sync not configured', () => {
+  it('returns 409 (not a silent success) when the laptop has no remote', async () => {
+    const db = fixtureDb()
+    const services: CompanionServices = {
+      svc: fakeSvc,
+      db,
+      dbPath: ':memory:',
+      intervalMs: 30000,
+      pull: async () => {
+        throw new SyncNotConfiguredError('sync is not configured')
+      },
+      push: async () => {
+        throw new SyncNotConfiguredError('sync is not configured')
+      },
+      close: () => db.close()
+    }
+    const handle = await startCompanionServer(services, 0)
+    try {
+      const res = await fetch(`http://${COMPANION_BIND}:${handle.address.port}/sync/pull`, {
+        method: 'POST'
+      })
+      expect(res.status).toBe(409)
+      expect((await res.json()).error).toMatch(/not configured/i)
+    } finally {
+      await handle.close()
+      db.close()
+    }
   })
 })
