@@ -8,6 +8,13 @@ import Database from 'better-sqlite3'
 import { createTaskService } from '../../core/domain/task-service-factory'
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
 import { resolveBackendConfig, resolveDataPaths } from '../../core/paths'
+import {
+  resolveRemoteConfig,
+  runPull,
+  runPush,
+  type PullSummary,
+  type PushSummary
+} from './sync-actions'
 
 export interface CompanionServices {
   svc: BackendTaskService
@@ -15,6 +22,11 @@ export interface CompanionServices {
   db: Database.Database
   dbPath: string
   intervalMs: number
+  // TASK-1175 — mutating sync actions (own writable connection per call). Injected
+  // so http-server stays decoupled and tests can pass fakes. Throw
+  // SyncNotConfiguredError when the laptop has no remote configured.
+  pull: () => Promise<PullSummary>
+  push: () => Promise<PushSummary>
   close: () => void
 }
 
@@ -41,6 +53,8 @@ export async function createCompanionServices(): Promise<CompanionServices> {
     db,
     dbPath: dataPaths.dbPath,
     intervalMs,
+    pull: () => runPull(dataPaths.dbPath, resolveRemoteConfig()),
+    push: () => runPush(dataPaths.dbPath, resolveRemoteConfig()),
     close: () => {
       db.close()
     }
