@@ -13,7 +13,9 @@ import { now } from '../domain/repositories/shared'
 import { HttpWriteClient, isRemoteReachable } from './http-write-client'
 import { HttpPullSource } from './http-pull-source'
 import { drainPendingOps, type ConflictRecord } from './sync-drain'
-import { pull } from './sync-pull'
+import type { ApplySink } from './sync-apply'
+import { pull, type PullSource } from './sync-pull'
+import { appendSyncEvent, sumPullCounts } from './sync-events'
 import { writeLoopHeartbeat, type LoopJwtState } from './sync-loop-status'
 
 export interface SyncLoopOptions {
@@ -45,32 +47,15 @@ export function startSyncLoop(opts: SyncLoopOptions): SyncLoopHandle {
   // outlives token expiry, a static bearer dies at ~300s, none = unauthenticated.
   const jwtState: LoopJwtState = opts.getToken ? 'refresh' : opts.token ? 'static' : 'none'
 
-  const runOnce = async (): Promise<void> => {
-    const drain = await drainPendingOps(opts.db, client, {
+  const runOnce = (): Promise<void> =>
+    runSyncCycle({
+      db: opts.db,
+      client,
+      pullSource,
       origin,
       isReachable: () => isRemoteReachable(opts.remoteUrl, fetchImpl),
-      onConflict: (c) => surfaceConflict(opts.db, c)
-    })
-    // Only pull when the drain confirmed the remote is reachable — avoids a
-    // guaranteed-failing GET right after an offline drain cycle.
-    let pulled = false
-    if (drain.reachable) {
-      try {
-        await pull(opts.db, pullSource)
-        pulled = true
-      } catch {
-        // Transient pull failure — next cycle retries from the same cursor.
-      }
-    }
-    // TASK-1158 — stamp the cross-process heartbeat so the companion adapter can
-    // report loop liveness + pull age from the shared DB.
-    writeLoopHeartbeat(opts.db, {
-      at: now(),
-      pulled,
-      reachable: drain.reachable,
       jwtState
     })
-  }
 
   let timer: ReturnType<typeof setInterval> | null = null
   // Kick off an immediate cycle, then schedule. Errors are swallowed — the loop
@@ -89,6 +74,72 @@ export function startSyncLoop(opts: SyncLoopOptions): SyncLoopHandle {
       timer = null
     }
   }
+}
+
+export interface SyncCycleDeps {
+  db: Database.Database
+  client: ApplySink
+  pullSource: PullSource
+  origin: string
+  // Connectivity gate, forwarded to the drain.
+  isReachable: () => Promise<boolean>
+  jwtState: LoopJwtState
+  // Wall-clock (epoch ms) for sync_events.at — injectable for deterministic tests.
+  nowMs?: () => number
+  // ISO wall-clock for the heartbeat — injectable for tests.
+  nowIso?: () => string
+}
+
+// One sync cycle: drain the queue, pull deltas, stamp the heartbeat, and record a
+// durable sync_events row for each piece of real data movement (TASK-1214):
+// - one `drain` event when ops were accepted by the remote (pushed count),
+// - one `conflict` event per dropped op (alongside the existing sync_conflicts row
+//   + raw inbox surface — no double-loss, no silent drop),
+// - one `pull` event when the pull upserted/tombstoned anything.
+// A pure no-op cycle (nothing drained, nothing pulled) appends NO sync_events row:
+// the loop heartbeat already records that a cycle ran, and the activity feed is
+// reserved for actual data movement — keeping it appended-on-change bounds growth.
+export async function runSyncCycle(deps: SyncCycleDeps): Promise<void> {
+  const nowMs = deps.nowMs ?? Date.now
+  const nowIso = deps.nowIso ?? now
+
+  const drain = await drainPendingOps(deps.db, deps.client, {
+    origin: deps.origin,
+    isReachable: deps.isReachable,
+    onConflict: (c) => {
+      surfaceConflict(deps.db, c)
+      appendSyncEvent(deps.db, {
+        at: nowMs(),
+        kind: 'conflict',
+        conflicts: 1,
+        note: `${c.op} ${c.tableName} ${c.rowId} dropped by LWW (lamport ${c.lamport} ≤ canonical ${c.canonicalLamport})`
+      })
+    }
+  })
+  if (drain.drained > 0) {
+    appendSyncEvent(deps.db, { at: nowMs(), kind: 'drain', pushed: drain.drained })
+  }
+
+  // Only pull when the drain confirmed the remote is reachable — avoids a
+  // guaranteed-failing GET right after an offline drain cycle.
+  let pulled = false
+  if (drain.reachable) {
+    try {
+      const result = await pull(deps.db, deps.pullSource)
+      pulled = true
+      const upserted = sumPullCounts(result.counts, 'upserted')
+      const tombstoned = sumPullCounts(result.counts, 'tombstoned')
+      if (upserted > 0 || tombstoned > 0) {
+        appendSyncEvent(deps.db, { at: nowMs(), kind: 'pull', upserted, tombstoned })
+      }
+    } catch {
+      // Transient pull failure — next cycle retries from the same cursor.
+    }
+  }
+
+  // TASK-1158 — stamp the cross-process heartbeat so the companion adapter can
+  // report loop liveness + pull age from the shared DB.
+  writeLoopHeartbeat(deps.db, { at: nowIso(), pulled, reachable: drain.reachable, jwtState: deps.jwtState })
 }
 
 // Write a raw inbox item recording a dropped op, directly (not via the wrapped
