@@ -16,6 +16,8 @@ async function main(): Promise<void> {
     `[companion] listening on http://${COMPANION_BIND}:${handle.address.port} ` +
       `(db: ${services.dbPath})`
   )
+  // TASK-1330 — surface where the extension pairs its capture token from.
+  console.error('[companion] capture bridge token → <dataDir>/bridge-token.txt (pair it in the extension)')
   const shutdown = async (): Promise<void> => {
     await handle.close()
     services.close()

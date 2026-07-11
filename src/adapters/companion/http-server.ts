@@ -4,10 +4,17 @@
 // this process never talks to the remote and never holds an OAuth credential.
 
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'http'
+import { Buffer } from 'buffer'
+import { timingSafeEqual } from 'crypto'
 import type { CompanionServices } from './service-factory'
 import { computeLedger } from './sync-ledger'
 import { computeHealth } from './sync-health'
 import { SyncNotConfiguredError } from './sync-actions'
+import {
+  CAPTURE_MAX_BODY_BYTES,
+  UnimplementedDestinationError,
+  validateCapture
+} from './capture-contract'
 
 // Hard-coded loopback bind — never read from env. AC-4: the adapter must not be
 // exposable on a public interface.
@@ -32,6 +39,13 @@ async function route(
   const url = new URL(req.url ?? '/', 'http://localhost')
   const path = url.pathname
   const method = req.method ?? 'GET'
+
+  // TASK-1330 — capture bridge. Token-gated (writes triggered from a web page),
+  // contract-validated. Dispatch onto inbox/task/conversation/knowledge is
+  // TASK-1331; without a dispatcher a valid capture 501s.
+  if (method === 'POST' && path === '/capture') {
+    return handleCapture(req, res, services)
+  }
 
   // TASK-1175 — mutating sync actions are POST-only. A SyncNotConfiguredError
   // (no remote on this laptop) maps to 409 so the UI shows a real reason, never a
@@ -86,6 +100,99 @@ async function listAllConversations(services: CompanionServices): Promise<unknow
     all.push(...(await services.svc.findConversations(p.id)))
   }
   return all
+}
+
+class BodyTooLargeError extends Error {
+  constructor() {
+    super('body too large')
+    this.name = 'BodyTooLargeError'
+  }
+}
+
+// Constant-time compare of the x-choda-bridge-token header against the profile
+// token. Length-guarded so timingSafeEqual never throws on a mismatched size.
+function tokenMatches(header: string | undefined, expected: string): boolean {
+  if (typeof header !== 'string' || header.length === 0) return false
+  const provided = Buffer.from(header, 'utf8')
+  const expectedBuf = Buffer.from(expected, 'utf8')
+  if (provided.length !== expectedBuf.length) return false
+  return timingSafeEqual(provided, expectedBuf)
+}
+
+// Read the request body, rejecting once it exceeds CAPTURE_MAX_BODY_BYTES. Mirrors
+// the MCP http-transport reader: settle early on overflow but keep draining so the
+// client reads our 413 instead of a socket reset.
+function readCappedBody(req: IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const cl = Number.parseInt(req.headers['content-length'] ?? '', 10)
+    if (Number.isFinite(cl) && cl > CAPTURE_MAX_BODY_BYTES) {
+      reject(new BodyTooLargeError())
+      return
+    }
+    const chunks: Buffer[] = []
+    let size = 0
+    let settled = false
+    const settle = (fn: () => void): void => {
+      if (settled) return
+      settled = true
+      fn()
+    }
+    req.on('data', (chunk: Buffer) => {
+      if (settled) return
+      size += chunk.length
+      if (size > CAPTURE_MAX_BODY_BYTES) settle(() => reject(new BodyTooLargeError()))
+      else chunks.push(chunk)
+    })
+    req.on('end', () => settle(() => resolve(Buffer.concat(chunks))))
+    req.on('error', (err) => settle(() => reject(err)))
+  })
+}
+
+async function handleCapture(
+  req: IncomingMessage,
+  res: ServerResponse,
+  services: CompanionServices
+): Promise<void> {
+  if (!tokenMatches(req.headers['x-choda-bridge-token'] as string | undefined, services.bridgeToken)) {
+    return sendJson(res, 401, { error: 'invalid or missing x-choda-bridge-token' })
+  }
+  const contentType = (req.headers['content-type'] ?? '').toLowerCase()
+  if (!contentType.includes('application/json')) {
+    return sendJson(res, 415, { error: 'content-type must be application/json' })
+  }
+  let raw: Buffer
+  try {
+    raw = await readCappedBody(req)
+  } catch (err) {
+    if (err instanceof BodyTooLargeError) {
+      return sendJson(res, 413, { error: `body exceeds ${CAPTURE_MAX_BODY_BYTES} bytes` })
+    }
+    throw err
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw.toString('utf8'))
+  } catch {
+    return sendJson(res, 400, { error: 'body is not valid JSON' })
+  }
+  const validation = validateCapture(parsed)
+  if (!validation.ok) {
+    return sendJson(res, 400, { error: validation.error })
+  }
+  // No dispatcher wired yet (TASK-1331) → the contract is accepted but nothing
+  // routes it. Distinct from 400: the request was well-formed.
+  if (!services.dispatch) {
+    return sendJson(res, 501, { error: 'capture dispatch not implemented' })
+  }
+  try {
+    const result = await services.dispatch.dispatch(validation.value)
+    return sendJson(res, 200, result)
+  } catch (err) {
+    if (err instanceof UnimplementedDestinationError) {
+      return sendJson(res, 501, { error: err.message })
+    }
+    throw err
+  }
 }
 
 export function startCompanionServer(

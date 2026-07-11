@@ -6,6 +6,7 @@ import type { BackendTaskService } from '../../core/domain/backend-task-service.
 import { LEDGER_ENTITIES } from './sync-ledger'
 import { ensureLoopStatusColumns, writeLoopHeartbeat } from '../../core/sync/sync-loop-status'
 import { SyncNotConfiguredError } from './sync-actions'
+import { UnimplementedDestinationError } from './capture-contract'
 
 function fixtureDb(): Database.Database {
   const db = new Database(':memory:')
@@ -49,6 +50,7 @@ describe('companion http server', () => {
       db,
       dbPath: ':memory:',
       intervalMs: 30000,
+      bridgeToken: 'test-token',
       pull: async () => ({ upserted: 3, tombstoned: 1, cursor: 42 }),
       push: async () => ({ drained: 2, conflicts: 0, remaining: 0, reachable: true }),
       close: () => db.close()
@@ -108,6 +110,93 @@ describe('companion http server', () => {
     expect(push.status).toBe(200)
     expect(await push.json()).toEqual({ drained: 2, conflicts: 0, remaining: 0, reachable: true })
   })
+
+  // TASK-1330 — capture bridge on the no-dispatcher fixture.
+  const capture = (body: unknown, token = 'test-token'): Promise<Response> =>
+    fetch(`${base}/capture`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-choda-bridge-token': token },
+      body: JSON.stringify(body)
+    })
+  const validBody = { kind: 'text', destination: 'inbox', payload: 'hello', sourceUrl: 'http://x' }
+
+  it('POST /capture 401s a missing/bad token', async () => {
+    const noHeader = await fetch(`${base}/capture`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(validBody)
+    })
+    expect(noHeader.status).toBe(401)
+    expect((await capture(validBody, 'wrong')).status).toBe(401)
+  })
+
+  it('POST /capture 415s a non-JSON content-type', async () => {
+    const res = await fetch(`${base}/capture`, {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain', 'x-choda-bridge-token': 'test-token' },
+      body: 'nope'
+    })
+    expect(res.status).toBe(415)
+  })
+
+  it('POST /capture 400s malformed contract', async () => {
+    expect((await capture({ kind: 'bogus', destination: 'inbox', payload: 'x', sourceUrl: 'http://x' })).status).toBe(400)
+    expect((await capture({ kind: 'text', destination: 'nope', payload: 'x', sourceUrl: 'http://x' })).status).toBe(400)
+    expect((await capture({ kind: 'text', destination: 'inbox', sourceUrl: 'http://x' })).status).toBe(400)
+    expect((await capture({ kind: 'text', destination: 'inbox', payload: 'x' })).status).toBe(400)
+  })
+
+  it('POST /capture 413s an over-cap body', async () => {
+    const big = { ...validBody, payload: 'x'.repeat(64 * 1024 + 1) }
+    expect((await capture(big)).status).toBe(413)
+  })
+
+  it('POST /capture 501s a well-formed capture when no dispatcher is wired', async () => {
+    const res = await capture(validBody)
+    expect(res.status).toBe(501)
+    expect((await res.json()).error).toMatch(/not implemented/i)
+  })
+})
+
+describe('companion http server — capture dispatch', () => {
+  it('routes a valid capture through the dispatcher and 501s an unimplemented destination', async () => {
+    const db = fixtureDb()
+    const services: CompanionServices = {
+      svc: fakeSvc,
+      db,
+      dbPath: ':memory:',
+      intervalMs: 30000,
+      bridgeToken: 'tok',
+      dispatch: {
+        dispatch: async (c) => {
+          if (c.destination === 'knowledge') throw new UnimplementedDestinationError('knowledge')
+          return { id: 'INBOX-9', destination: c.destination }
+        }
+      },
+      pull: async () => ({ upserted: 0, tombstoned: 0, cursor: 0 }),
+      push: async () => ({ drained: 0, conflicts: 0, remaining: 0, reachable: true }),
+      close: () => db.close()
+    }
+    const handle = await startCompanionServer(services, 0)
+    const base = `http://${COMPANION_BIND}:${handle.address.port}`
+    const post = (body: unknown): Promise<Response> =>
+      fetch(`${base}/capture`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-choda-bridge-token': 'tok' },
+        body: JSON.stringify(body)
+      })
+    try {
+      const ok = await post({ kind: 'text', destination: 'inbox', payload: 'hi', sourceUrl: 'http://x' })
+      expect(ok.status).toBe(200)
+      expect(await ok.json()).toEqual({ id: 'INBOX-9', destination: 'inbox' })
+
+      const notImpl = await post({ kind: 'text', destination: 'knowledge', payload: 'hi', sourceUrl: 'http://x' })
+      expect(notImpl.status).toBe(501)
+    } finally {
+      await handle.close()
+      db.close()
+    }
+  })
 })
 
 describe('companion http server — sync not configured', () => {
@@ -118,6 +207,7 @@ describe('companion http server — sync not configured', () => {
       db,
       dbPath: ':memory:',
       intervalMs: 30000,
+      bridgeToken: 'test-token',
       pull: async () => {
         throw new SyncNotConfiguredError('sync is not configured')
       },
