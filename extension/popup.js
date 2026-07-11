@@ -141,10 +141,15 @@ function renderReqPreview() {
     Object.entries(o || {})
       .map(([k, v]) => `  ${k}: ${v}`)
       .join('\n') || '  (none)'
+  const body =
+    r.body !== undefined
+      ? `\n\nRESPONSE BODY\n${r.body}`
+      : '\n\nRESPONSE BODY\n  (not captured — reload the page, then retry)'
   pre.textContent =
     `${r.method} ${r.url}${r.status ? '  ·  ' + r.status : ''}\n\n` +
     `REQUEST HEADERS\n${fmt(r.requestHeaders)}\n\n` +
-    `RESPONSE HEADERS\n${fmt(r.responseHeaders)}`
+    `RESPONSE HEADERS\n${fmt(r.responseHeaders)}` +
+    body
 }
 
 let activeTab = null
@@ -240,7 +245,8 @@ el('send').addEventListener('click', async () => {
         url: r.url,
         status: r.status,
         requestHeaders: r.requestHeaders,
-        responseHeaders: r.responseHeaders
+        responseHeaders: r.responseHeaders,
+        body: r.body
       }
     }
   }

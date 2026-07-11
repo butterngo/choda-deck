@@ -56,7 +56,15 @@ chrome.webRequest.onHeadersReceived.addListener(
   ['responseHeaders', 'extraHeaders']
 )
 
-// Popup asks for the active tab's recent requests (newest first).
+// Response bodies arrive from the page interceptor (content.js). webRequest never
+// sees a body, so merge it onto the most recent same-URL record that lacks one.
+function attachBody(msg) {
+  const rec = Object.values(requests)
+    .filter((r) => r.url === msg.url && (!msg.method || r.method === msg.method) && r.body === undefined)
+    .sort((a, b) => b.ts - a.ts)[0]
+  if (rec) rec.body = msg.body
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === 'getRequests') {
     const list = Object.values(requests)
@@ -64,6 +72,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       .sort((a, b) => b.ts - a.ts)
       .slice(0, MAX_PER_TAB)
     sendResponse({ requests: list })
+  } else if (msg?.type === 'responseBody') {
+    attachBody(msg)
   }
   return true
 })
