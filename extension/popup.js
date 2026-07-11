@@ -22,7 +22,7 @@ function selectedKind() {
   return document.querySelector('input[name="kind"]:checked').value
 }
 
-// Populate the destination dropdown for the active kind (image → local-only).
+// Populate the destination dropdown for the active kind (image/network → local-only).
 function refreshDestinations() {
   const kind = selectedKind()
   const allowed = kind === 'text' ? ALL_DESTINATIONS : LOCAL_ONLY
@@ -38,6 +38,49 @@ function refreshDestinations() {
   if (allowed.includes(prev)) sel.value = prev
   el('textPane').hidden = kind !== 'text'
   el('imagePane').hidden = kind !== 'image'
+  el('networkPane').hidden = kind !== 'network'
+  if (kind === 'network') loadRequests()
+}
+
+// A short label for a request dropdown option — METHOD + path (+ status).
+function reqLabel(r) {
+  let path = r.url
+  try {
+    const u = new URL(r.url)
+    path = u.host + u.pathname
+  } catch { /* keep raw */ }
+  if (path.length > 46) path = path.slice(0, 46) + '…'
+  return `${r.method} ${path}${r.status ? ' · ' + r.status : ''}`
+}
+
+let capturedRequests = []
+
+// Ask the service worker for the active tab's recent API calls.
+async function loadRequests() {
+  const sel = el('req')
+  sel.innerHTML = ''
+  try {
+    const { requests } = await chrome.runtime.sendMessage({
+      type: 'getRequests',
+      tabId: activeTab.id
+    })
+    capturedRequests = requests || []
+    if (!capturedRequests.length) {
+      const opt = document.createElement('option')
+      opt.textContent = 'no requests seen — reload the page, then reopen'
+      opt.value = ''
+      sel.appendChild(opt)
+      return
+    }
+    capturedRequests.forEach((r, i) => {
+      const opt = document.createElement('option')
+      opt.value = String(i)
+      opt.textContent = reqLabel(r)
+      sel.appendChild(opt)
+    })
+  } catch {
+    setStatus('Could not read requests (reload the extension after adding permissions)', 'err')
+  }
 }
 
 let activeTab = null
@@ -109,9 +152,23 @@ el('send').addEventListener('click', async () => {
     const text = el('text').value.trim()
     if (!text) return setStatus('Nothing to capture — text is empty', 'err')
     payload = { text, projectId }
-  } else {
+  } else if (kind === 'image') {
     if (!screenshotDataUrl) return setStatus('Grab a screenshot first', 'err')
     payload = { dataUrl: screenshotDataUrl, projectId }
+  } else {
+    const idx = el('req').value
+    const r = capturedRequests[Number(idx)]
+    if (!r) return setStatus('Pick a request first', 'err')
+    payload = {
+      projectId,
+      record: {
+        method: r.method,
+        url: r.url,
+        status: r.status,
+        requestHeaders: r.requestHeaders,
+        responseHeaders: r.responseHeaders
+      }
+    }
   }
 
   const { base, token } = await getConfig()

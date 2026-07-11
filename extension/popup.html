@@ -44,6 +44,7 @@
     <div class="modes">
       <label><input type="radio" name="kind" value="text" checked /> Text</label>
       <label><input type="radio" name="kind" value="image" /> Screenshot</label>
+      <label><input type="radio" name="kind" value="network" /> Network</label>
     </div>
 
     <div class="row">
@@ -65,6 +66,12 @@
     <div id="imagePane" hidden>
       <button type="button" id="grab" class="ghost">📸 Grab visible tab</button>
       <div id="shot"></div>
+    </div>
+
+    <div id="networkPane" hidden>
+      <label for="req">Recent API requests (this tab)</label>
+      <select id="req"></select>
+      <p class="hint" style="margin:4px 0 0">Captures headers + cookies + token — not the response body.</p>
     </div>
 
     <button type="button" id="send" class="primary">Capture →</button>
