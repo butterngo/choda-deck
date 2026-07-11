@@ -17,6 +17,7 @@ import {
 } from './sync-actions'
 import { resolveBridgeToken } from './bridge-token'
 import type { CaptureDispatcher } from './capture-contract'
+import { CompanionCaptureDispatcher } from './capture-dispatcher'
 
 export interface CompanionServices {
   svc: BackendTaskService
@@ -63,6 +64,7 @@ export async function createCompanionServices(): Promise<CompanionServices> {
     dbPath: dataPaths.dbPath,
     intervalMs,
     bridgeToken,
+    dispatch: new CompanionCaptureDispatcher(svc),
     pull: () => runPull(dataPaths.dbPath, resolveRemoteConfig()),
     push: () => runPush(dataPaths.dbPath, resolveRemoteConfig()),
     close: () => {

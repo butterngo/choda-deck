@@ -36,12 +36,33 @@ export interface CaptureDispatcher {
   dispatch(capture: CaptureRequest): Promise<CaptureResult>
 }
 
-// Thrown by a dispatcher when a destination is recognized but not yet wired.
-// The route maps it to 501 (distinct from a 400 malformed contract).
-export class UnimplementedDestinationError extends Error {
+// Base for "the contract was valid but this capture can't be routed yet". The
+// route maps any subclass to 501 (distinct from a 400 malformed contract).
+export class CaptureNotImplementedError extends Error {}
+
+// Destination recognized but not yet wired.
+export class UnimplementedDestinationError extends CaptureNotImplementedError {
   constructor(destination: CaptureDestination) {
     super(`capture destination not implemented: ${destination}`)
     this.name = 'UnimplementedDestinationError'
+  }
+}
+
+// Kind recognized by the contract but not yet handled by the dispatcher (e.g.
+// image/network before TASK-1332). Also 501.
+export class UnimplementedKindError extends CaptureNotImplementedError {
+  constructor(kind: CaptureKind) {
+    super(`capture kind not implemented: ${kind}`)
+    this.name = 'UnimplementedKindError'
+  }
+}
+
+// Thrown by the dispatcher when the per-kind payload is malformed (the contract
+// validator only checks envelope shape, not payload internals). Route → 400.
+export class CaptureBadRequestError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'CaptureBadRequestError'
   }
 }
 

@@ -12,7 +12,8 @@ import { computeHealth } from './sync-health'
 import { SyncNotConfiguredError } from './sync-actions'
 import {
   CAPTURE_MAX_BODY_BYTES,
-  UnimplementedDestinationError,
+  CaptureBadRequestError,
+  CaptureNotImplementedError,
   validateCapture
 } from './capture-contract'
 
@@ -188,7 +189,10 @@ async function handleCapture(
     const result = await services.dispatch.dispatch(validation.value)
     return sendJson(res, 200, result)
   } catch (err) {
-    if (err instanceof UnimplementedDestinationError) {
+    if (err instanceof CaptureBadRequestError) {
+      return sendJson(res, 400, { error: err.message })
+    }
+    if (err instanceof CaptureNotImplementedError) {
       return sendJson(res, 501, { error: err.message })
     }
     throw err
