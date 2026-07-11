@@ -15,6 +15,9 @@ import {
   type PullSummary,
   type PushSummary
 } from './sync-actions'
+import { resolveBridgeToken } from './bridge-token'
+import type { CaptureDispatcher } from './capture-contract'
+import { CompanionCaptureDispatcher } from './capture-dispatcher'
 
 export interface CompanionServices {
   svc: BackendTaskService
@@ -22,6 +25,12 @@ export interface CompanionServices {
   db: Database.Database
   dbPath: string
   intervalMs: number
+  // TASK-1330 — per-profile token gating POST /capture. The web extension pairs
+  // by pasting it (read from <dataDir>/bridge-token.txt).
+  bridgeToken: string
+  // TASK-1331 — routes a validated capture onto inbox/task/conversation/knowledge.
+  // Absent in the skeleton → POST /capture 501s.
+  dispatch?: CaptureDispatcher
   // TASK-1175 — mutating sync actions (own writable connection per call). Injected
   // so http-server stays decoupled and tests can pass fakes. Throw
   // SyncNotConfiguredError when the laptop has no remote configured.
@@ -48,11 +57,14 @@ export async function createCompanionServices(): Promise<CompanionServices> {
   // columns), so a read-only open now always succeeds.
   const db = new Database(dataPaths.dbPath, { readonly: true })
   const intervalMs = Number.parseInt(process.env.CHODA_SYNC_INTERVAL_MS ?? '30000', 10) || 30000
+  const bridgeToken = resolveBridgeToken(dataPaths.dataDir)
   return {
     svc,
     db,
     dbPath: dataPaths.dbPath,
     intervalMs,
+    bridgeToken,
+    dispatch: new CompanionCaptureDispatcher(svc, dataPaths.artifactsDir),
     pull: () => runPull(dataPaths.dbPath, resolveRemoteConfig()),
     push: () => runPush(dataPaths.dbPath, resolveRemoteConfig()),
     close: () => {
