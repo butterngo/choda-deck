@@ -40,6 +40,50 @@ function refreshDestinations() {
   el('imagePane').hidden = kind !== 'image'
   el('networkPane').hidden = kind !== 'network'
   if (kind === 'network') loadRequests()
+  refreshConvPane()
+}
+
+// A — reply-to-existing: the conversation picker shows when destination is
+// conversation, listing existing threads for the selected project (+ "New").
+let allConversations = []
+
+function currentHost() {
+  try {
+    return new URL(activeTab.url).host
+  } catch {
+    return ''
+  }
+}
+
+function refreshConvPane() {
+  const show = el('destination').value === 'conversation'
+  el('convPane').hidden = !show
+  if (show) loadConversations()
+}
+
+async function loadConversations() {
+  const sel = el('convTarget')
+  const projectId = el('project').value
+  sel.innerHTML = ''
+  const mk = (value, text) => {
+    const o = document.createElement('option')
+    o.value = value
+    o.textContent = text
+    sel.appendChild(o)
+  }
+  mk('', '➕ New conversation')
+  try {
+    if (!allConversations.length) {
+      const { base } = await getConfig()
+      const res = await fetch(`${base}/conversations`)
+      allConversations = (await res.json()).conversations || []
+    }
+    allConversations
+      .filter((c) => c.projectId === projectId && c.status === 'open')
+      .forEach((c) => mk(c.id, `↳ ${c.title || c.id}`))
+  } catch {
+    /* leave just the New option */
+  }
 }
 
 // A short label for a request dropdown option — METHOD + path (+ status).
@@ -105,6 +149,10 @@ async function init() {
       sel.appendChild(opt)
     }
     if (!projects.length) setStatus('Bridge has no projects', 'err')
+    // C — project auto-fit by tab: pre-select the project last used for this host.
+    const { projectByDomain = {} } = await chrome.storage.local.get('projectByDomain')
+    const remembered = projectByDomain[currentHost()]
+    if (remembered && projects.some((p) => p.id === remembered)) sel.value = remembered
   } catch {
     setStatus('Bridge not reachable — is companion-server running on 127.0.0.1?', 'err')
   }
@@ -126,6 +174,11 @@ async function init() {
 for (const r of document.querySelectorAll('input[name="kind"]')) {
   r.addEventListener('change', refreshDestinations)
 }
+el('destination').addEventListener('change', refreshConvPane)
+// project change re-scopes the conversation reply list to that project
+el('project').addEventListener('change', () => {
+  if (!el('convPane').hidden) loadConversations()
+})
 
 el('grab').addEventListener('click', async () => {
   try {
@@ -171,6 +224,12 @@ el('send').addEventListener('click', async () => {
     }
   }
 
+  // A — reply into an existing thread when one is picked (any kind can reply).
+  if (destination === 'conversation') {
+    const convId = el('convTarget').value
+    if (convId) payload.conversationId = convId
+  }
+
   const { base, token } = await getConfig()
   setStatus('Sending…')
   try {
@@ -181,7 +240,15 @@ el('send').addEventListener('click', async () => {
     })
     const body = await res.json().catch(() => ({}))
     if (res.ok) {
-      setStatus(`✓ ${destination} → ${body.id}`, 'ok')
+      // C — remember the project chosen for this host for next time.
+      const host = currentHost()
+      if (host) {
+        const { projectByDomain = {} } = await chrome.storage.local.get('projectByDomain')
+        projectByDomain[host] = projectId
+        await chrome.storage.local.set({ projectByDomain })
+      }
+      const verb = payload.conversationId ? 'replied' : '✓'
+      setStatus(`${verb} ${destination} → ${body.id}`, 'ok')
     } else if (res.status === 401) {
       setStatus('401 — token mismatch. Re-paste it in Options.', 'err')
     } else {
