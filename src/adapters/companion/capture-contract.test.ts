@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { validateCapture, CAPTURE_MAX_BODY_BYTES } from './capture-contract'
+import { validateCapture, CAPTURE_MAX_TEXT_BYTES, CAPTURE_MAX_IMAGE_BYTES } from './capture-contract'
 
 describe('validateCapture', () => {
   const valid = { kind: 'text', destination: 'inbox', payload: 'hello', sourceUrl: 'http://x' }
@@ -37,7 +37,8 @@ describe('validateCapture', () => {
     expect(validateCapture({ ...valid, kind: 'image' }).ok).toBe(true)
   })
 
-  it('exposes a 64 KB default body cap', () => {
-    expect(CAPTURE_MAX_BODY_BYTES).toBe(64 * 1024)
+  it('exposes a 64 KB text cap and a larger image cap', () => {
+    expect(CAPTURE_MAX_TEXT_BYTES).toBe(64 * 1024)
+    expect(CAPTURE_MAX_IMAGE_BYTES).toBeGreaterThan(CAPTURE_MAX_TEXT_BYTES)
   })
 })

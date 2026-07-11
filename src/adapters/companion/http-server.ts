@@ -11,7 +11,8 @@ import { computeLedger } from './sync-ledger'
 import { computeHealth } from './sync-health'
 import { SyncNotConfiguredError } from './sync-actions'
 import {
-  CAPTURE_MAX_BODY_BYTES,
+  CAPTURE_MAX_IMAGE_BYTES,
+  capForKind,
   CaptureBadRequestError,
   CaptureNotImplementedError,
   validateCapture
@@ -120,13 +121,14 @@ function tokenMatches(header: string | undefined, expected: string): boolean {
   return timingSafeEqual(provided, expectedBuf)
 }
 
-// Read the request body, rejecting once it exceeds CAPTURE_MAX_BODY_BYTES. Mirrors
-// the MCP http-transport reader: settle early on overflow but keep draining so the
-// client reads our 413 instead of a socket reset.
-function readCappedBody(req: IncomingMessage): Promise<Buffer> {
+// Read the request body up to `cap` bytes, rejecting once it exceeds. Mirrors the
+// MCP http-transport reader: settle early on overflow but keep draining so the
+// client reads our 413 instead of a socket reset. The route reads at the image
+// ceiling, then applies the tighter per-kind cap once the kind is known.
+function readCappedBody(req: IncomingMessage, cap: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const cl = Number.parseInt(req.headers['content-length'] ?? '', 10)
-    if (Number.isFinite(cl) && cl > CAPTURE_MAX_BODY_BYTES) {
+    if (Number.isFinite(cl) && cl > cap) {
       reject(new BodyTooLargeError())
       return
     }
@@ -141,7 +143,7 @@ function readCappedBody(req: IncomingMessage): Promise<Buffer> {
     req.on('data', (chunk: Buffer) => {
       if (settled) return
       size += chunk.length
-      if (size > CAPTURE_MAX_BODY_BYTES) settle(() => reject(new BodyTooLargeError()))
+      if (size > cap) settle(() => reject(new BodyTooLargeError()))
       else chunks.push(chunk)
     })
     req.on('end', () => settle(() => resolve(Buffer.concat(chunks))))
@@ -163,10 +165,12 @@ async function handleCapture(
   }
   let raw: Buffer
   try {
-    raw = await readCappedBody(req)
+    // Read to the absolute (image) ceiling; the tighter per-kind cap is applied
+    // below once the kind is known.
+    raw = await readCappedBody(req, CAPTURE_MAX_IMAGE_BYTES)
   } catch (err) {
     if (err instanceof BodyTooLargeError) {
-      return sendJson(res, 413, { error: `body exceeds ${CAPTURE_MAX_BODY_BYTES} bytes` })
+      return sendJson(res, 413, { error: `body exceeds ${CAPTURE_MAX_IMAGE_BYTES} bytes` })
     }
     throw err
   }
@@ -179,6 +183,12 @@ async function handleCapture(
   const validation = validateCapture(parsed)
   if (!validation.ok) {
     return sendJson(res, 400, { error: validation.error })
+  }
+  // Per-kind body cap: text/network 64 KB, image larger. Checked against the raw
+  // bytes so an oversize payload of any kind returns 413 (not a downstream error).
+  const cap = capForKind(validation.value.kind)
+  if (raw.length > cap) {
+    return sendJson(res, 413, { error: `${validation.value.kind} body exceeds ${cap} bytes` })
   }
   // No dispatcher wired yet (TASK-1331) → the contract is accepted but nothing
   // routes it. Distinct from 400: the request was well-formed.

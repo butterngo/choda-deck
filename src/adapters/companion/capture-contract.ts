@@ -11,9 +11,16 @@ export type CaptureKind = (typeof CAPTURE_KINDS)[number]
 export const CAPTURE_DESTINATIONS = ['inbox', 'task', 'conversation', 'knowledge'] as const
 export type CaptureDestination = (typeof CAPTURE_DESTINATIONS)[number]
 
-// Max request body for a capture. Text is the common case; TASK-1332 raises the
-// image cap separately. Enforced by the route before parsing.
-export const CAPTURE_MAX_BODY_BYTES = 64 * 1024
+// Per-kind body caps, enforced by the route against the raw request bytes. Text
+// and network payloads are small (a selection / a headers record); image carries
+// a base64 screenshot, so it gets a larger ceiling. The route reads up to the
+// image cap (memory ceiling) then rejects a body over its kind's cap with 413.
+export const CAPTURE_MAX_TEXT_BYTES = 64 * 1024
+export const CAPTURE_MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+export function capForKind(kind: CaptureKind): number {
+  return kind === 'image' ? CAPTURE_MAX_IMAGE_BYTES : CAPTURE_MAX_TEXT_BYTES
+}
 
 export interface CaptureRequest {
   kind: CaptureKind
