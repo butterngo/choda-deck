@@ -32,6 +32,18 @@
       button.ghost { cursor: pointer; }
       #shot { margin-top: 6px; }
       #shot img { max-width: 100%; border-radius: 6px; display: block; margin-top: 6px; }
+      #reqPreview {
+        max-height: 170px;
+        overflow: auto;
+        margin: 6px 0 0;
+        padding: 6px 8px;
+        background: #8881;
+        border-radius: 6px;
+        font: 11px/1.35 ui-monospace, "Cascadia Code", monospace;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      #reqPreview:empty { display: none; }
       #status { margin-top: 10px; min-height: 16px; font-size: 12px; }
       #status.ok { color: #16a34a; }
       #status.err { color: #dc2626; }
@@ -76,7 +88,8 @@
     <div id="networkPane" hidden>
       <label for="req">Recent API requests (this tab)</label>
       <select id="req"></select>
-      <p class="hint" style="margin:4px 0 0">Captures headers + cookies + token — not the response body.</p>
+      <pre id="reqPreview"></pre>
+      <p class="hint" style="margin:4px 0 0">Headers + cookies + token — response body not captured.</p>
     </div>
 
     <button type="button" id="send" class="primary">Capture →</button>

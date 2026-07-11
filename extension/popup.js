@@ -122,9 +122,29 @@ async function loadRequests() {
       opt.textContent = reqLabel(r)
       sel.appendChild(opt)
     })
+    renderReqPreview()
   } catch {
     setStatus('Could not read requests (reload the extension after adding permissions)', 'err')
   }
+}
+
+// Show the selected request's method/status + request & response headers (cookie
+// and token live in these) right in the popup — inspect without opening DevTools.
+function renderReqPreview() {
+  const pre = el('reqPreview')
+  const r = capturedRequests[Number(el('req').value)]
+  if (!r) {
+    pre.textContent = ''
+    return
+  }
+  const fmt = (o) =>
+    Object.entries(o || {})
+      .map(([k, v]) => `  ${k}: ${v}`)
+      .join('\n') || '  (none)'
+  pre.textContent =
+    `${r.method} ${r.url}${r.status ? '  ·  ' + r.status : ''}\n\n` +
+    `REQUEST HEADERS\n${fmt(r.requestHeaders)}\n\n` +
+    `RESPONSE HEADERS\n${fmt(r.responseHeaders)}`
 }
 
 let activeTab = null
@@ -175,6 +195,7 @@ for (const r of document.querySelectorAll('input[name="kind"]')) {
   r.addEventListener('change', refreshDestinations)
 }
 el('destination').addEventListener('change', refreshConvPane)
+el('req').addEventListener('change', renderReqPreview)
 // project change re-scopes the conversation reply list to that project
 el('project').addEventListener('change', () => {
   if (!el('convPane').hidden) loadConversations()
