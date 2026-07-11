@@ -64,7 +64,7 @@ export async function createCompanionServices(): Promise<CompanionServices> {
     dbPath: dataPaths.dbPath,
     intervalMs,
     bridgeToken,
-    dispatch: new CompanionCaptureDispatcher(svc),
+    dispatch: new CompanionCaptureDispatcher(svc, dataPaths.artifactsDir),
     pull: () => runPull(dataPaths.dbPath, resolveRemoteConfig()),
     push: () => runPush(dataPaths.dbPath, resolveRemoteConfig()),
     close: () => {
