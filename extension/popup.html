@@ -1,0 +1,77 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font: 13px/1.4 system-ui, sans-serif;
+        width: 340px;
+        margin: 0;
+        padding: 12px;
+      }
+      h1 { font-size: 13px; margin: 0 0 8px; font-weight: 600; }
+      label { display: block; margin: 8px 0 3px; font-weight: 500; }
+      select, textarea, button, input {
+        width: 100%;
+        box-sizing: border-box;
+        font: inherit;
+        padding: 6px;
+        border-radius: 6px;
+        border: 1px solid #8884;
+        background: #8881;
+        color: inherit;
+      }
+      textarea { min-height: 90px; resize: vertical; }
+      .row { display: flex; gap: 8px; }
+      .row > * { flex: 1; }
+      .modes { display: flex; gap: 12px; margin: 4px 0; }
+      .modes label { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-weight: 400; }
+      .modes input { width: auto; }
+      button.primary { margin-top: 10px; background: #2563eb; color: #fff; border: none; cursor: pointer; padding: 8px; font-weight: 600; }
+      button.ghost { cursor: pointer; }
+      #shot { margin-top: 6px; }
+      #shot img { max-width: 100%; border-radius: 6px; display: block; margin-top: 6px; }
+      #status { margin-top: 10px; min-height: 16px; font-size: 12px; }
+      #status.ok { color: #16a34a; }
+      #status.err { color: #dc2626; }
+      a { color: #2563eb; }
+    </style>
+  </head>
+  <body>
+    <h1>Choda Capture</h1>
+
+    <div class="modes">
+      <label><input type="radio" name="kind" value="text" checked /> Text</label>
+      <label><input type="radio" name="kind" value="image" /> Screenshot</label>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="project">Project</label>
+        <select id="project"></select>
+      </div>
+      <div>
+        <label for="destination">Destination</label>
+        <select id="destination"></select>
+      </div>
+    </div>
+
+    <div id="textPane">
+      <label for="text">Text (edit before sending)</label>
+      <textarea id="text" placeholder="Select text on the page, or type here…"></textarea>
+    </div>
+
+    <div id="imagePane" hidden>
+      <button type="button" id="grab" class="ghost">📸 Grab visible tab</button>
+      <div id="shot"></div>
+    </div>
+
+    <button type="button" id="send" class="primary">Capture →</button>
+    <div id="status">
+      <span id="hint"></span>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
