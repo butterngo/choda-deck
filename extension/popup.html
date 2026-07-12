@@ -32,6 +32,18 @@
       button.ghost { cursor: pointer; }
       #shot { margin-top: 6px; }
       #shot img { max-width: 100%; border-radius: 6px; display: block; margin-top: 6px; }
+      #reqPreview {
+        max-height: 170px;
+        overflow: auto;
+        margin: 6px 0 0;
+        padding: 6px 8px;
+        background: #8881;
+        border-radius: 6px;
+        font: 11px/1.35 ui-monospace, "Cascadia Code", monospace;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      #reqPreview:empty { display: none; }
       #status { margin-top: 10px; min-height: 16px; font-size: 12px; }
       #status.ok { color: #16a34a; }
       #status.err { color: #dc2626; }
@@ -44,6 +56,7 @@
     <div class="modes">
       <label><input type="radio" name="kind" value="text" checked /> Text</label>
       <label><input type="radio" name="kind" value="image" /> Screenshot</label>
+      <label><input type="radio" name="kind" value="network" /> Network</label>
     </div>
 
     <div class="row">
@@ -57,6 +70,11 @@
       </div>
     </div>
 
+    <div id="convPane" hidden>
+      <label for="convTarget">Conversation</label>
+      <select id="convTarget"></select>
+    </div>
+
     <div id="textPane">
       <label for="text">Text (edit before sending)</label>
       <textarea id="text" placeholder="Select text on the page, or type here…"></textarea>
@@ -65,6 +83,13 @@
     <div id="imagePane" hidden>
       <button type="button" id="grab" class="ghost">📸 Grab visible tab</button>
       <div id="shot"></div>
+    </div>
+
+    <div id="networkPane" hidden>
+      <label for="req">Recent API requests (this tab)</label>
+      <select id="req"></select>
+      <pre id="reqPreview"></pre>
+      <p class="hint" style="margin:4px 0 0">Headers + cookies + token + response body (fetch/XHR; reload page to capture).</p>
     </div>
 
     <button type="button" id="send" class="primary">Capture →</button>

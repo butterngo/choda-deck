@@ -53,7 +53,14 @@ export interface NetworkRecord {
   requestHeaders?: Record<string, string>
   responseHeaders?: Record<string, string>
   cookies?: Record<string, string>
+  // Response body, captured client-side by the extension's page interceptor
+  // (webRequest can't see it). Optional + capped by the caller.
+  body?: string
 }
+
+// Defensive cap so a large body can't bloat the stored entry (the extension caps
+// too, but the contract shouldn't trust the client).
+const MAX_BODY_CHARS = 64 * 1024
 
 function isStringMap(v: unknown): v is Record<string, string> {
   return (
@@ -82,6 +89,7 @@ export function parseNetworkRecord(record: unknown): NetworkRecord {
     out.responseHeaders = r.responseHeaders
   }
   if (r.cookies !== undefined && isStringMap(r.cookies)) out.cookies = r.cookies
+  if (typeof r.body === 'string' && r.body.length > 0) out.body = r.body.slice(0, MAX_BODY_CHARS)
   return out
 }
 
@@ -100,10 +108,12 @@ function headerBlock(title: string, headers?: Record<string, string>): string {
  */
 export function formatNetworkRecord(record: NetworkRecord): string {
   const status = record.status !== undefined ? ` → ${record.status}` : ''
+  const body = record.body ? `\n**Response body**\n\`\`\`\n${record.body}\n\`\`\`\n` : ''
   return (
     `**${record.method} ${record.url}**${status}\n` +
     headerBlock('Request headers', record.requestHeaders) +
     headerBlock('Response headers', record.responseHeaders) +
-    headerBlock('Cookies', record.cookies)
+    headerBlock('Cookies', record.cookies) +
+    body
   )
 }
