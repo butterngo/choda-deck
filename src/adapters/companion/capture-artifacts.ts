@@ -93,6 +93,79 @@ export function parseNetworkRecord(record: unknown): NetworkRecord {
   return out
 }
 
+// ---- HAR bundle (TASK-1372) -------------------------------------------------
+// A selection of network records serialized as ONE lean HAR 1.2 file, so the
+// conversation links a single artifact that opens in DevTools / any HAR viewer.
+
+interface HarNameValue {
+  name: string
+  value: string
+}
+
+function harHeaders(headers?: Record<string, string>): HarNameValue[] {
+  return Object.entries(headers ?? {}).map(([name, value]) => ({ name, value }))
+}
+
+function harEntry(record: NetworkRecord, startedDateTime: string): Record<string, unknown> {
+  return {
+    startedDateTime,
+    time: -1,
+    request: {
+      method: record.method,
+      url: record.url,
+      httpVersion: 'HTTP/1.1',
+      headers: harHeaders(record.requestHeaders),
+      queryString: [],
+      cookies: harHeaders(record.cookies),
+      headersSize: -1,
+      bodySize: -1
+    },
+    response: {
+      status: record.status ?? 0,
+      statusText: '',
+      httpVersion: 'HTTP/1.1',
+      headers: harHeaders(record.responseHeaders),
+      cookies: [],
+      content: {
+        size: record.body ? record.body.length : 0,
+        mimeType: record.responseHeaders?.['content-type'] ?? 'x-unknown',
+        ...(record.body ? { text: record.body } : {})
+      },
+      redirectURL: '',
+      headersSize: -1,
+      bodySize: -1
+    },
+    cache: {},
+    timings: { send: -1, wait: -1, receive: -1 }
+  }
+}
+
+/** Serialize records into a lean HAR 1.2 log (spec-minimal fields, -1 unknowns). */
+export function buildHar(records: NetworkRecord[]): string {
+  const startedDateTime = new Date().toISOString()
+  return JSON.stringify(
+    {
+      log: {
+        version: '1.2',
+        creator: { name: 'choda-capture', version: '1.0' },
+        entries: records.map((r) => harEntry(r, startedDateTime))
+      }
+    },
+    null,
+    2
+  )
+}
+
+/** Write a HAR bundle under `<artifactsDir>/captures/` and return its path. */
+export function writeHarArtifact(artifactsDir: string, records: NetworkRecord[]): StoredArtifact {
+  const har = buildHar(records)
+  const dir = path.join(artifactsDir, 'captures')
+  fs.mkdirSync(dir, { recursive: true })
+  const filePath = path.join(dir, `${randomBytes(8).toString('hex')}.har`)
+  fs.writeFileSync(filePath, har, 'utf8')
+  return { filePath, bytes: Buffer.byteLength(har) }
+}
+
 function headerBlock(title: string, headers?: Record<string, string>): string {
   if (!headers || Object.keys(headers).length === 0) return ''
   const rows = Object.entries(headers)

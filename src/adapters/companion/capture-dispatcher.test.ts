@@ -210,3 +210,64 @@ describe('CompanionCaptureDispatcher — network kind', () => {
     ).rejects.toBeInstanceOf(CaptureBadRequestError)
   })
 })
+
+describe('CompanionCaptureDispatcher — network-bundle kind (TASK-1372)', () => {
+  const entries = [
+    { method: 'GET', url: 'https://api.ex.com/a', status: 200, requestHeaders: { accept: '*/*' } },
+    { method: 'POST', url: 'https://api.ex.com/b', status: 201, body: '{"ok":true}' },
+    { method: 'GET', url: 'https://ex.com/app.js', status: 200 }
+  ]
+  const bundleReq = (destination: 'inbox' | 'task' | 'conversation' | 'knowledge', payload: unknown): CaptureRequest => ({
+    kind: 'network-bundle',
+    destination,
+    sourceUrl: 'http://ex.com/p',
+    payload
+  })
+
+  it('writes exactly ONE valid HAR 1.2 file and ONE conversation row linking it', async () => {
+    const svc = makeSvc()
+    const res = await make(svc).dispatch(
+      bundleReq('conversation', { entries, projectId: 'choda-deck' })
+    )
+    expect(res).toEqual({ id: 'CONV-1', destination: 'conversation' })
+
+    const dir = path.join(ARTIFACTS, 'captures')
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith('.har'))
+    expect(files).toHaveLength(1)
+
+    const har = JSON.parse(fs.readFileSync(path.join(dir, files[0]), 'utf8'))
+    expect(har.log.version).toBe('1.2')
+    expect(har.log.creator.name).toBe('choda-capture')
+    expect(har.log.entries).toHaveLength(3)
+    expect(har.log.entries[0].request.method).toBe('GET')
+    expect(har.log.entries[1].response.content.text).toBe('{"ok":true}')
+
+    expect(svc.openConversation).toHaveBeenCalledTimes(1)
+    const call = (svc.openConversation as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(call.initialMessage.content).toContain(files[0])
+    expect(call.initialMessage.content).toContain('3 requests')
+  })
+
+  it('empty entries → CaptureBadRequestError (400)', async () => {
+    const svc = makeSvc()
+    await expect(
+      make(svc).dispatch(bundleReq('conversation', { entries: [], projectId: 'choda-deck' }))
+    ).rejects.toBeInstanceOf(CaptureBadRequestError)
+  })
+
+  it('inbox destination → guarded 400 (local-only)', async () => {
+    const svc = makeSvc()
+    await expect(
+      make(svc).dispatch(bundleReq('inbox', { entries, projectId: 'choda-deck' }))
+    ).rejects.toBeInstanceOf(CaptureBadRequestError)
+  })
+
+  it('malformed entry (missing url) → CaptureBadRequestError', async () => {
+    const svc = makeSvc()
+    await expect(
+      make(svc).dispatch(
+        bundleReq('knowledge', { entries: [{ method: 'GET' }], projectId: 'choda-deck' })
+      )
+    ).rejects.toBeInstanceOf(CaptureBadRequestError)
+  })
+})
