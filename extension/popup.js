@@ -291,7 +291,7 @@ el('grab').addEventListener('click', async () => {
 })
 
 el('send').addEventListener('click', async () => {
-  const kind = selectedKind()
+  let kind = selectedKind()
   const projectId = el('project').value
   const destination = el('destination').value
   const sourceUrl = activeTab?.url || 'unknown'
@@ -308,22 +308,21 @@ el('send').addEventListener('click', async () => {
   } else {
     const picked = selectedRequests()
     if (!picked.length) return setStatus('Select at least one request first', 'err')
-    // Single request keeps the original kind:'network' path; the multi-select
-    // bundle send lands with TASK-1374.
-    if (picked.length > 1) {
-      return setStatus('Multi-request bundle send not wired yet — select exactly one', 'err')
-    }
-    const r = picked[0]
-    payload = {
-      projectId,
-      record: {
-        method: r.method,
-        url: r.url,
-        status: r.status,
-        requestHeaders: r.requestHeaders,
-        responseHeaders: r.responseHeaders,
-        body: r.body
-      }
+    const toRecord = (r) => ({
+      method: r.method,
+      url: r.url,
+      status: r.status,
+      requestHeaders: r.requestHeaders,
+      responseHeaders: r.responseHeaders,
+      body: r.body
+    })
+    // One request keeps the original kind:'network' path; 2+ become ONE
+    // kind:'network-bundle' → a single .har artifact linked to the entry (TASK-1374).
+    if (picked.length === 1) {
+      payload = { projectId, record: toRecord(picked[0]) }
+    } else {
+      kind = 'network-bundle'
+      payload = { projectId, entries: picked.map(toRecord) }
     }
   }
 
@@ -351,9 +350,12 @@ el('send').addEventListener('click', async () => {
         await chrome.storage.local.set({ projectByDomain })
       }
       const verb = payload.conversationId ? 'replied' : '✓'
-      setStatus(`${verb} ${destination} → ${body.id}`, 'ok')
+      const extra = kind === 'network-bundle' ? ` (${payload.entries.length} requests → 1 .har)` : ''
+      setStatus(`${verb} ${destination} → ${body.id}${extra}`, 'ok')
     } else if (res.status === 401) {
       setStatus('401 — token mismatch. Re-paste it in Options.', 'err')
+    } else if (res.status === 413) {
+      setStatus('413 — selection too large. Deselect some entries and retry.', 'err')
     } else {
       setStatus(`${res.status} — ${body.error || 'capture failed'}`, 'err')
     }
