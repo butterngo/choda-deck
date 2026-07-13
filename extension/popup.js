@@ -93,7 +93,7 @@ function reqLabel(r) {
     const u = new URL(r.url)
     path = u.host + u.pathname
   } catch { /* keep raw */ }
-  if (path.length > 46) path = path.slice(0, 46) + '…'
+  if (path.length > 90) path = path.slice(0, 90) + '…'
   return `${r.method} ${path}${r.status ? ' · ' + r.status : ''}`
 }
 
