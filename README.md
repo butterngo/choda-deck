@@ -230,6 +230,22 @@ MCP_HTTP_TOKEN="$(node -e "console.log(require('crypto').randomBytes(32).toStrin
 
 HTTP mode exposes a **narrowed surface** — a 6-tool read + capture allowlist (`project_list`, `task_list`, `task_context`, `inbox_list`, `inbox_get`, `inbox_add`). Everything else stays stdio-only (local trust). For `claude.ai`'s connector, swap bearer auth for Keycloak-backed OAuth with `MCP_OAUTH_MODE=1` (ADR-034). The cross-device read-only pull (`choda-deck sync pull`) drains this HTTP surface into a local SQLite copy.
 
+### Companion API as an always-on Windows service
+
+The companion REST adapter (`dist/companion-server.cjs` — capture bridge + sync ledger on `127.0.0.1:7338`) can run as an auto-start background service so the browser extension never sees "Bridge not reachable":
+
+```bash
+pnpm run build:companion
+node scripts/install-companion-service.mjs --content-root "C:\path\to\vault"
+# options: --data-dir <path> (default <repo>/data) · --port <n> (default 7338) · --uninstall
+```
+
+The installer registers a logon-triggered Scheduled Task (`ChodaCompanionServer`) that runs the server hidden via a supervisor loop — a crash restarts it within ~15 s. Logs append to `<dataDir>/logs/companion-server.log`; the extension pairs with the token at `<dataDir>/bridge-token.txt`.
+
+- **Update:** `pnpm run build:companion`, then re-run the installer — it stops the old instance and starts the new bundle.
+- **Uninstall:** `node scripts/install-companion-service.mjs --uninstall` — removes the task and stops the server.
+- The bind stays loopback-only; nothing is exposed off-machine.
+
 ### Postgres backend
 
 Postgres backs the **HTTP transport only** (remote / k8s). It implements the narrow `RemoteOperations` port — the call graph of the HTTP allowlist above — not the full stdio surface, so `MCP_TRANSPORT=stdio` with `CHODA_BACKEND=postgres` is **rejected at boot**. Stdio is always SQLite (ADR-026 + ADR-030).
