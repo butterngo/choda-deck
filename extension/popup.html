@@ -44,6 +44,22 @@
         word-break: break-all;
       }
       #reqPreview:empty { display: none; }
+      .chips { display: flex; gap: 4px; margin: 4px 0; flex-wrap: wrap; }
+      .chips button {
+        width: auto; padding: 2px 8px; font-size: 11px; cursor: pointer;
+        border-radius: 999px; border: 1px solid #8884; background: #8881;
+      }
+      .chips button.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+      .selectall { font-weight: 400; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+      .selectall input { width: auto; }
+      #reqList { max-height: 150px; overflow: auto; margin-top: 4px; }
+      #reqList label {
+        display: flex; align-items: center; gap: 6px; margin: 0; padding: 2px 4px;
+        font-weight: 400; font-size: 11px; font-family: ui-monospace, "Cascadia Code", monospace;
+        cursor: pointer; border-radius: 4px;
+      }
+      #reqList label:hover { background: #8882; }
+      #reqList input { width: auto; }
       #status { margin-top: 10px; min-height: 16px; font-size: 12px; }
       #status.ok { color: #16a34a; }
       #status.err { color: #dc2626; }
@@ -86,8 +102,10 @@
     </div>
 
     <div id="networkPane" hidden>
-      <label for="req">Recent API requests (this tab)</label>
-      <select id="req"></select>
+      <label>Recent requests (this tab)</label>
+      <div id="typeChips" class="chips"></div>
+      <label class="selectall"><input type="checkbox" id="selectAll" /> select all (filtered)</label>
+      <div id="reqList"></div>
       <pre id="reqPreview"></pre>
       <p class="hint" style="margin:4px 0 0">Headers + cookies + token + response body (fetch/XHR; reload page to capture).</p>
     </div>
