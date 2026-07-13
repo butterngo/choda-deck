@@ -5,7 +5,7 @@
 // dispatcher (the port below); the skeleton wires none, so every valid capture
 // 501s until a dispatcher is injected.
 
-export const CAPTURE_KINDS = ['text', 'image', 'network'] as const
+export const CAPTURE_KINDS = ['text', 'image', 'network', 'network-bundle'] as const
 export type CaptureKind = (typeof CAPTURE_KINDS)[number]
 
 export const CAPTURE_DESTINATIONS = ['inbox', 'task', 'conversation', 'knowledge'] as const
@@ -19,7 +19,11 @@ export const CAPTURE_MAX_TEXT_BYTES = 64 * 1024
 export const CAPTURE_MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 export function capForKind(kind: CaptureKind): number {
-  return kind === 'image' ? CAPTURE_MAX_IMAGE_BYTES : CAPTURE_MAX_TEXT_BYTES
+  // network-bundle carries many records (with optional bodies), so it shares the
+  // image ceiling rather than the single-record 64 KB cap.
+  return kind === 'image' || kind === 'network-bundle'
+    ? CAPTURE_MAX_IMAGE_BYTES
+    : CAPTURE_MAX_TEXT_BYTES
 }
 
 export interface CaptureRequest {

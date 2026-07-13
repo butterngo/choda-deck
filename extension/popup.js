@@ -93,46 +93,109 @@ function reqLabel(r) {
     const u = new URL(r.url)
     path = u.host + u.pathname
   } catch { /* keep raw */ }
-  if (path.length > 46) path = path.slice(0, 46) + '…'
+  if (path.length > 90) path = path.slice(0, 90) + '…'
   return `${r.method} ${path}${r.status ? ' · ' + r.status : ''}`
 }
 
 let capturedRequests = []
+// TASK-1373 — filter + multi-select state. Selections are keyed by requestId so
+// they survive filter switches; previewId is the last row the user focused.
+const FILTERS = ['all', 'api', 'html', 'js', 'css']
+let activeFilter = 'all'
+const selectedIds = new Set()
+let previewId = null
 
-// Ask the service worker for the active tab's recent API calls.
+function filteredRequests() {
+  return activeFilter === 'all'
+    ? capturedRequests
+    : capturedRequests.filter((r) => (r.resType || 'api') === activeFilter)
+}
+
+function renderChips() {
+  const box = el('typeChips')
+  box.innerHTML = ''
+  for (const f of FILTERS) {
+    const n =
+      f === 'all'
+        ? capturedRequests.length
+        : capturedRequests.filter((r) => (r.resType || 'api') === f).length
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.textContent = `${f.toUpperCase()} ${n}`
+    b.className = f === activeFilter ? 'active' : ''
+    b.addEventListener('click', () => {
+      activeFilter = f
+      renderChips()
+      renderReqList()
+    })
+    box.appendChild(b)
+  }
+}
+
+function renderReqList() {
+  const list = el('reqList')
+  list.innerHTML = ''
+  const rows = filteredRequests()
+  if (!rows.length) {
+    list.textContent = 'no requests seen — reload the page, then reopen'
+    el('selectAll').checked = false
+    return
+  }
+  for (const r of rows) {
+    const label = document.createElement('label')
+    const cb = document.createElement('input')
+    cb.type = 'checkbox'
+    cb.checked = selectedIds.has(r.requestId)
+    cb.addEventListener('change', () => {
+      if (cb.checked) selectedIds.add(r.requestId)
+      else selectedIds.delete(r.requestId)
+      previewId = r.requestId
+      syncSelectAll()
+      renderReqPreview()
+    })
+    const span = document.createElement('span')
+    span.textContent = reqLabel(r)
+    label.addEventListener('click', () => {
+      previewId = r.requestId
+      renderReqPreview()
+    })
+    label.append(cb, span)
+    list.appendChild(label)
+  }
+  syncSelectAll()
+}
+
+// "select all" reflects + toggles exactly the currently filtered set.
+function syncSelectAll() {
+  const rows = filteredRequests()
+  el('selectAll').checked = rows.length > 0 && rows.every((r) => selectedIds.has(r.requestId))
+}
+
+function selectedRequests() {
+  return capturedRequests.filter((r) => selectedIds.has(r.requestId))
+}
+
+// Ask the service worker for the active tab's recent requests (all kinds).
 async function loadRequests() {
-  const sel = el('req')
-  sel.innerHTML = ''
   try {
     const { requests } = await chrome.runtime.sendMessage({
       type: 'getRequests',
       tabId: activeTab.id
     })
     capturedRequests = requests || []
-    if (!capturedRequests.length) {
-      const opt = document.createElement('option')
-      opt.textContent = 'no requests seen — reload the page, then reopen'
-      opt.value = ''
-      sel.appendChild(opt)
-      return
-    }
-    capturedRequests.forEach((r, i) => {
-      const opt = document.createElement('option')
-      opt.value = String(i)
-      opt.textContent = reqLabel(r)
-      sel.appendChild(opt)
-    })
+    renderChips()
+    renderReqList()
     renderReqPreview()
   } catch {
     setStatus('Could not read requests (reload the extension after adding permissions)', 'err')
   }
 }
 
-// Show the selected request's method/status + request & response headers (cookie
+// Show the focused request's method/status + request & response headers (cookie
 // and token live in these) right in the popup — inspect without opening DevTools.
 function renderReqPreview() {
   const pre = el('reqPreview')
-  const r = capturedRequests[Number(el('req').value)]
+  const r = capturedRequests.find((x) => x.requestId === previewId)
   if (!r) {
     pre.textContent = ''
     return
@@ -200,7 +263,15 @@ for (const r of document.querySelectorAll('input[name="kind"]')) {
   r.addEventListener('change', refreshDestinations)
 }
 el('destination').addEventListener('change', refreshConvPane)
-el('req').addEventListener('change', renderReqPreview)
+el('selectAll').addEventListener('change', () => {
+  const rows = filteredRequests()
+  const on = el('selectAll').checked
+  for (const r of rows) {
+    if (on) selectedIds.add(r.requestId)
+    else selectedIds.delete(r.requestId)
+  }
+  renderReqList()
+})
 // project change re-scopes the conversation reply list to that project
 el('project').addEventListener('change', () => {
   if (!el('convPane').hidden) loadConversations()
@@ -220,7 +291,7 @@ el('grab').addEventListener('click', async () => {
 })
 
 el('send').addEventListener('click', async () => {
-  const kind = selectedKind()
+  let kind = selectedKind()
   const projectId = el('project').value
   const destination = el('destination').value
   const sourceUrl = activeTab?.url || 'unknown'
@@ -235,19 +306,23 @@ el('send').addEventListener('click', async () => {
     if (!screenshotDataUrl) return setStatus('Grab a screenshot first', 'err')
     payload = { dataUrl: screenshotDataUrl, projectId }
   } else {
-    const idx = el('req').value
-    const r = capturedRequests[Number(idx)]
-    if (!r) return setStatus('Pick a request first', 'err')
-    payload = {
-      projectId,
-      record: {
-        method: r.method,
-        url: r.url,
-        status: r.status,
-        requestHeaders: r.requestHeaders,
-        responseHeaders: r.responseHeaders,
-        body: r.body
-      }
+    const picked = selectedRequests()
+    if (!picked.length) return setStatus('Select at least one request first', 'err')
+    const toRecord = (r) => ({
+      method: r.method,
+      url: r.url,
+      status: r.status,
+      requestHeaders: r.requestHeaders,
+      responseHeaders: r.responseHeaders,
+      body: r.body
+    })
+    // One request keeps the original kind:'network' path; 2+ become ONE
+    // kind:'network-bundle' → a single .har artifact linked to the entry (TASK-1374).
+    if (picked.length === 1) {
+      payload = { projectId, record: toRecord(picked[0]) }
+    } else {
+      kind = 'network-bundle'
+      payload = { projectId, entries: picked.map(toRecord) }
     }
   }
 
@@ -275,9 +350,12 @@ el('send').addEventListener('click', async () => {
         await chrome.storage.local.set({ projectByDomain })
       }
       const verb = payload.conversationId ? 'replied' : '✓'
-      setStatus(`${verb} ${destination} → ${body.id}`, 'ok')
+      const extra = kind === 'network-bundle' ? ` (${payload.entries.length} requests → 1 .har)` : ''
+      setStatus(`${verb} ${destination} → ${body.id}${extra}`, 'ok')
     } else if (res.status === 401) {
       setStatus('401 — token mismatch. Re-paste it in Options.', 'err')
+    } else if (res.status === 413) {
+      setStatus('413 — selection too large. Deselect some entries and retry.', 'err')
     } else {
       setStatus(`${res.status} — ${body.error || 'capture failed'}`, 'err')
     }

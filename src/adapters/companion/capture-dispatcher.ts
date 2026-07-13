@@ -17,7 +17,12 @@ import {
   type CaptureRequest,
   type CaptureResult
 } from './capture-contract'
-import { formatNetworkRecord, parseNetworkRecord, writeImageArtifact } from './capture-artifacts'
+import {
+  formatNetworkRecord,
+  parseNetworkRecord,
+  writeHarArtifact,
+  writeImageArtifact
+} from './capture-artifacts'
 
 const CAPTURE_AUTHOR = 'companion'
 const DEFAULT_KNOWLEDGE_TYPE: KnowledgeType = 'learning'
@@ -88,6 +93,8 @@ export class CompanionCaptureDispatcher implements CaptureDispatcher {
         return this.dispatchImage(capture)
       case 'network':
         return this.dispatchNetwork(capture)
+      case 'network-bundle':
+        return this.dispatchNetworkBundle(capture)
     }
   }
 
@@ -131,6 +138,33 @@ export class CompanionCaptureDispatcher implements CaptureDispatcher {
     const record = parseNetworkRecord(p.record)
     const title = titleFrom(target, `${record.method} ${record.url}`, capture.sourceUrl)
     const body = withSource(formatNetworkRecord(record), capture.sourceUrl)
+    return this.persistLocal(capture.destination, target, title, body)
+  }
+
+  // A selection of network records → ONE .har artifact + ONE local entry linking
+  // it (TASK-1372). Never a row per record.
+  private async dispatchNetworkBundle(capture: CaptureRequest): Promise<CaptureResult> {
+    guardLocalOnly('network-bundle', capture.destination)
+    const p = asObject(
+      capture.payload,
+      'network-bundle payload must be an object { entries, projectId, ... }'
+    )
+    const target = parseTarget(p)
+    if (!Array.isArray(p.entries) || p.entries.length === 0) {
+      throw new CaptureBadRequestError('network-bundle payload requires a non-empty "entries" array')
+    }
+    const records = p.entries.map((e) => parseNetworkRecord(e))
+    const stored = writeHarArtifact(this.artifactsDir, records)
+    const title = titleFrom(
+      target,
+      `Network bundle (${records.length} requests) from ${capture.sourceUrl}`,
+      capture.sourceUrl
+    )
+    const body = withSource(
+      `HAR bundle: [${records.length} requests](${stored.filePath}) (${stored.bytes} bytes)\n\n` +
+        records.map((r) => `- ${r.method} ${r.url}${r.status !== undefined ? ` → ${r.status}` : ''}`).join('\n'),
+      capture.sourceUrl
+    )
     return this.persistLocal(capture.destination, target, title, body)
   }
 
