@@ -5,6 +5,7 @@ import type { CompanionServices } from './service-factory'
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
 import { LEDGER_ENTITIES } from './sync-ledger'
 import { ensureLoopStatusColumns, writeLoopHeartbeat } from '../../core/sync/sync-loop-status'
+import { createSyncEventsTable, appendSyncEvent } from '../../core/sync/sync-events'
 import { SyncNotConfiguredError } from './sync-actions'
 import { UnimplementedDestinationError } from './capture-contract'
 
@@ -18,6 +19,11 @@ function fixtureDb(): Database.Database {
   db.exec(`CREATE TABLE _sync_state (id INTEGER PRIMARY KEY CHECK (id = 0), last_pull_at INTEGER NOT NULL DEFAULT 0)`)
   db.exec('INSERT INTO _sync_state (id, last_pull_at) VALUES (0, 0)')
   ensureLoopStatusColumns(db)
+  // seed the sync activity log so /sync/log has events to serve (at ascending →
+  // newest by id is also newest by time)
+  createSyncEventsTable(db)
+  appendSyncEvent(db, { at: 1000, kind: 'pull', upserted: 2 }, 10_000)
+  appendSyncEvent(db, { at: 2000, kind: 'push', pushed: 1 }, 10_000)
   // one remote-origin task so the ledger has a non-zero remote-only bucket
   db.prepare(
     `INSERT INTO tasks (id, sync_origin, sync_updated_at, sync_deleted_at) VALUES ('TASK-1', 'remote', 5, NULL)`
@@ -85,6 +91,20 @@ describe('companion http server', () => {
     const body = await (await fetch(`${base}/sync/ledger`)).json()
     const tasks = body.ledger.find((r: { entity: string }) => r.entity === 'tasks')
     expect(tasks).toEqual({ entity: 'tasks', inSync: 0, localOnly: 0, remoteOnly: 1, tombstoned: 0 })
+  })
+
+  it('serves the sync log newest-first and honors ?limit', async () => {
+    const all = await (await fetch(`${base}/sync/log`)).json()
+    expect(all.events.map((e: { at: number }) => e.at)).toEqual([2000, 1000])
+    expect(all.events[0].kind).toBe('push')
+
+    const one = await (await fetch(`${base}/sync/log?limit=1`)).json()
+    expect(one.events).toHaveLength(1)
+    expect(one.events[0].at).toBe(2000)
+  })
+
+  it('rejects a non-GET on /sync/log (read-only)', async () => {
+    expect((await fetch(`${base}/sync/log`, { method: 'POST' })).status).toBe(405)
   })
 
   it('serves health with no credential in the body', async () => {

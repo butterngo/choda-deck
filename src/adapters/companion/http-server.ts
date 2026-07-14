@@ -8,6 +8,7 @@ import { Buffer } from 'buffer'
 import { timingSafeEqual } from 'crypto'
 import type { CompanionServices } from './service-factory'
 import { computeLedger } from './sync-ledger'
+import { computeSyncLog } from './sync-log'
 import { computeHealth } from './sync-health'
 import { SyncNotConfiguredError } from './sync-actions'
 import {
@@ -82,6 +83,11 @@ async function route(
       return sendJson(res, 200, { conversations: await listAllConversations(services) })
     case '/sync/ledger':
       return sendJson(res, 200, { ledger: computeLedger(services.db) })
+    case '/sync/log': {
+      const rawLimit = url.searchParams.get('limit')
+      const limit = rawLimit === null ? undefined : Number(rawLimit)
+      return sendJson(res, 200, { events: computeSyncLog(services.db, limit) })
+    }
     case '/sync/health':
       return sendJson(
         res,
