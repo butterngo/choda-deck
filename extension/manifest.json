@@ -3,7 +3,7 @@
   "name": "Choda Capture",
   "version": "0.1.0",
   "description": "Capture page text or a screenshot straight into choda-deck (inbox / task / conversation / knowledge).",
-  "permissions": ["activeTab", "scripting", "tabs", "storage", "webRequest"],
+  "permissions": ["activeTab", "scripting", "tabs", "storage", "webRequest", "sidePanel"],
   "host_permissions": ["http://127.0.0.1/*", "<all_urls>"],
   "background": { "service_worker": "background.js" },
   "content_scripts": [
@@ -22,8 +22,8 @@
     }
   ],
   "action": {
-    "default_popup": "popup.html",
     "default_title": "Choda Capture"
   },
+  "side_panel": { "default_path": "popup.html" },
   "options_page": "options.html"
 }

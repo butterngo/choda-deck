@@ -365,3 +365,13 @@ el('send').addEventListener('click', async () => {
 })
 
 init()
+
+// As a side panel this page survives tab switches (a popup never did) — re-bind
+// to the newly active tab so requests/selection/preview track it.
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  activeTab = await chrome.tabs.get(tabId)
+  selectedIds.clear()
+  previewId = null
+  screenshotDataUrl = null
+  if (!el('networkPane').hidden) loadRequests()
+})

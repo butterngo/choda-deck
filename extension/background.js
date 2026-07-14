@@ -7,6 +7,10 @@
 // capture method/url/status + request/response headers only — enough to inspect
 // the API shape, cookies, and the auth token.
 
+// Toolbar click opens the full-height side panel (popup.html serves as the
+// panel page) — popups are hard-capped at 800x600, the side panel is not.
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {})
+
 const MAX_PER_TAB = 25
 
 // TASK-1373 — buffer more than API calls so the popup can filter by kind.
