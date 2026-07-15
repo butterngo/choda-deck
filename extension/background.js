@@ -91,6 +91,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse({ requests: list })
   } else if (msg?.type === 'responseBody') {
     attachBody(msg)
+  } else if (msg?.type === 'captureScreenshot') {
+    // TASK-1413 — content scripts can't call captureVisibleTab; the SW does it and
+    // returns a small JPEG (q60) so the screenshot never dominates the 5 MB bundle.
+    chrome.tabs.captureVisibleTab({ format: 'jpeg', quality: 60 }, (dataUrl) => {
+      sendResponse({ dataUrl: chrome.runtime.lastError ? null : dataUrl })
+    })
+    return true // async sendResponse
   }
   return true
 })

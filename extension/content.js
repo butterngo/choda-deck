@@ -8,9 +8,34 @@
 
 // ---- 2. discovery recorder (TASK-1412) --------------------------------------
 // (declared before the message listener so its handler can reference it)
+let snapCounter = 0
+let snapTimer = null
+
+// TASK-1413 — after a snapshot-worthy event, grab a per-step DOM+CSS snapshot
+// (debounced). The SW captures the screenshot (content scripts can't); we
+// serialize + redact the DOM here and forward one snapshot record.
+function maybeSnapshot(triggerType) {
+  if (!ChodaSnapshot.shouldSnapshot(triggerType)) return
+  if (snapTimer) clearTimeout(snapTimer)
+  snapTimer = setTimeout(() => {
+    snapTimer = null
+    chrome.runtime.sendMessage({ type: 'captureScreenshot' }, (resp) => {
+      void chrome.runtime.lastError // SW asleep → resp undefined; snapshot still useful
+      const id = `snap-${++snapCounter}`
+      const { snapshot, event } = ChodaSnapshot.takeSnapshot({
+        doc: document,
+        id,
+        screenshotDataUrl: resp && resp.dataUrl ? resp.dataUrl : undefined
+      })
+      chrome.runtime.sendMessage({ type: 'discoverySnapshot', snapshot, event }).catch(() => {})
+    })
+  }, 400)
+}
+
 const recorder = ChodaRecorder.createRecorder({
   emit: (event) => {
     chrome.runtime.sendMessage({ type: 'discoveryEvent', event }).catch(() => {})
+    maybeSnapshot(event.type)
   }
 })
 
