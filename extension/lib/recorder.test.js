@@ -61,3 +61,32 @@ describe('recorder events (AC-1)', () => {
     expect(events[0]).toMatchObject({ type: 'nav', url: 'https://ex/spa/route', title: 'Route' })
   })
 })
+
+describe('recorder network track (TASK-1419)', () => {
+  it('handleNetwork emits an apicall only while recording (AC-1)', () => {
+    const { rec, events } = setup()
+    rec.handleNetwork({ url: 'https://api/x', method: 'GET', status: 200 })
+    expect(events).toHaveLength(0) // idle
+    rec.start()
+    rec.handleNetwork({ url: 'https://api/x', method: 'POST', status: 201 })
+    expect(events[0]).toMatchObject({ type: 'apicall', url: 'https://api/x', method: 'POST', status: 201 })
+  })
+
+  it('redacts a token in the response body and caps it (AC-2)', () => {
+    const { rec, events } = setup()
+    rec.start()
+    const body = 'prefix Bearer abcDEF123456ghijkl {"tok":"eyJhbGciOi.eyJzdWIi.SflKxwRJ"} ' + 'x'.repeat(20000)
+    rec.handleNetwork({ url: 'https://api/y', method: 'GET', status: 200, body })
+    const ev = events[0]
+    expect(ev.body).not.toContain('abcDEF123456ghijkl')
+    expect(ev.body).toContain('[redacted]')
+    expect(ev.body.length).toBeLessThanOrEqual(8 * 1024)
+  })
+
+  it('ignores a message with no url', () => {
+    const { rec, events } = setup()
+    rec.start()
+    rec.handleNetwork({ method: 'GET' })
+    expect(events).toHaveLength(0)
+  })
+})

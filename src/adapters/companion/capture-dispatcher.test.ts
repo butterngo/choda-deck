@@ -314,6 +314,23 @@ describe('CompanionCaptureDispatcher — discovery-session kind (TASK-1410)', ()
     expect(fs.existsSync(path.join(dir, 'snapshots', 's1.css'))).toBe(true)
   })
 
+  it('persists an apicall event with a response body + reflects it in the draft (TASK-1419)', async () => {
+    const svc = makeSvc()
+    const withApi = [
+      { type: 'nav', ts: 1, url: 'https://shop.ex/products', title: 'Products' },
+      { type: 'apicall', ts: 2, url: 'https://api.ex/paging', method: 'POST', status: 200, body: '{"total":64537}' }
+    ]
+    await make(svc).dispatch(discReq('inbox', { events: withApi, projectId: 'choda-deck' }))
+    const capturesDir = path.join(ARTIFACTS, 'captures')
+    const dir = path.join(capturesDir, fs.readdirSync(capturesDir).find((d) => d.startsWith('discovery-')) as string)
+    const jsonl = fs.readFileSync(path.join(dir, 'timeline.jsonl'), 'utf8')
+    const apiLine = JSON.parse(jsonl.trimEnd().split('\n').find((l) => l.includes('apicall')) as string)
+    expect(apiLine).toMatchObject({ type: 'apicall', method: 'POST', status: 200, body: '{"total":64537}' })
+    const draft = fs.readFileSync(path.join(dir, 'draft.md'), 'utf8')
+    expect(draft).toContain('api POST https://api.ex/paging → 200')
+    expect(draft).toContain('body 15b')
+  })
+
   it('inbox row carries a summary + relative pointer, NOT raw HTML bodies (AC-3)', async () => {
     const svc = makeSvc()
     await make(svc).dispatch(discReq('inbox', { events, snapshots, projectId: 'choda-deck' }))
