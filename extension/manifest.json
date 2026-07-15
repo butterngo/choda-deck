@@ -16,7 +16,7 @@
     },
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "js": ["lib/redact.js", "lib/selector.js", "lib/recorder.js", "content.js"],
       "run_at": "document_start",
       "all_frames": true
     }
