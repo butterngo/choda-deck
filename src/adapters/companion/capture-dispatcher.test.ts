@@ -271,3 +271,81 @@ describe('CompanionCaptureDispatcher — network-bundle kind (TASK-1372)', () =>
     ).rejects.toBeInstanceOf(CaptureBadRequestError)
   })
 })
+
+describe('CompanionCaptureDispatcher — discovery-session kind (TASK-1410)', () => {
+  const events = [
+    { type: 'nav', ts: 1, url: 'https://shop.ex/products', title: 'Products' },
+    { type: 'click', ts: 2, url: 'https://shop.ex/products', selector: '[data-testid=add]', text: 'Add to cart' },
+    { type: 'apicall', ts: 3, url: 'https://api.ex/cart', method: 'POST', status: 201 },
+    { type: 'snapshot', ts: 4, url: 'https://shop.ex/cart', snapshotId: 's1' }
+  ]
+  const SECRET = 'SUPERSECRET_TOKEN_abc123'
+  const snapshots = [{ id: 's1', html: `<div data-token="${SECRET}">cart</div>`, css: 'div{color:red}' }]
+  const discReq = (
+    destination: 'inbox' | 'task' | 'conversation' | 'knowledge',
+    payload: unknown
+  ): CaptureRequest => ({
+    kind: 'discovery-session',
+    destination,
+    sourceUrl: 'http://shop.ex/products',
+    payload
+  })
+
+  it('writes timeline.jsonl (one event per line) + draft.md, returns inbox id (AC-2)', async () => {
+    const svc = makeSvc()
+    const res = await make(svc).dispatch(discReq('inbox', { events, snapshots, projectId: 'choda-deck' }))
+    expect(res).toEqual({ id: 'INBOX-1', destination: 'inbox' })
+
+    const capturesDir = path.join(ARTIFACTS, 'captures')
+    const sessionDir = fs.readdirSync(capturesDir).find((d) => d.startsWith('discovery-'))
+    expect(sessionDir).toBeDefined()
+    const dir = path.join(capturesDir, sessionDir as string)
+
+    const jsonl = fs.readFileSync(path.join(dir, 'timeline.jsonl'), 'utf8').trimEnd()
+    const lines = jsonl.split('\n')
+    expect(lines).toHaveLength(4)
+    expect(lines.every((l) => JSON.parse(l).type)).toBe(true)
+
+    const draft = fs.readFileSync(path.join(dir, 'draft.md'), 'utf8')
+    expect(draft).toContain('# Discovery session')
+    expect(draft).toContain('POST')
+    // snapshot html + css written under snapshots/
+    expect(fs.existsSync(path.join(dir, 'snapshots', 's1.html'))).toBe(true)
+    expect(fs.existsSync(path.join(dir, 'snapshots', 's1.css'))).toBe(true)
+  })
+
+  it('inbox row carries a summary + relative pointer, NOT raw HTML bodies (AC-3)', async () => {
+    const svc = makeSvc()
+    await make(svc).dispatch(discReq('inbox', { events, snapshots, projectId: 'choda-deck' }))
+    const content = (svc.createInbox as ReturnType<typeof vi.fn>).mock.calls[0][0].content as string
+    expect(content).toContain('Discovery session')
+    expect(content).toContain('timeline.jsonl')
+    expect(content).toMatch(/captures\/discovery-[0-9a-f]+/)
+    // the secret buried in the snapshot HTML must never reach the synced inbox row
+    expect(content).not.toContain(SECRET)
+    expect(content).not.toContain('<div')
+  })
+
+  it.each(['task', 'conversation', 'knowledge'] as const)(
+    'destination %s → guarded 400 (inbox-only, AC-4)',
+    async (dest) => {
+      const svc = makeSvc()
+      await expect(
+        make(svc).dispatch(discReq(dest, { events, projectId: 'choda-deck' }))
+      ).rejects.toBeInstanceOf(CaptureBadRequestError)
+      expect(svc.createInbox).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([
+    ['empty events', { events: [], projectId: 'choda-deck' }],
+    ['missing projectId', { events }],
+    ['event missing selector', { events: [{ type: 'click', ts: 1 }], projectId: 'choda-deck' }],
+    ['bad event type', { events: [{ type: 'scroll', ts: 1 }], projectId: 'choda-deck' }]
+  ])('rejects %s with 400', async (_label, payload) => {
+    const svc = makeSvc()
+    await expect(make(svc).dispatch(discReq('inbox', payload))).rejects.toBeInstanceOf(
+      CaptureBadRequestError
+    )
+  })
+})

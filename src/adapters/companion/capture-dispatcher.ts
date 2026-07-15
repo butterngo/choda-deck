@@ -23,6 +23,7 @@ import {
   writeHarArtifact,
   writeImageArtifact
 } from './capture-artifacts'
+import { parseDiscoveryBundle, writeDiscoverySession } from './discovery-artifacts'
 
 const CAPTURE_AUTHOR = 'companion'
 const DEFAULT_KNOWLEDGE_TYPE: KnowledgeType = 'learning'
@@ -95,7 +96,34 @@ export class CompanionCaptureDispatcher implements CaptureDispatcher {
         return this.dispatchNetwork(capture)
       case 'network-bundle':
         return this.dispatchNetworkBundle(capture)
+      case 'discovery-session':
+        return this.dispatchDiscoverySession(capture)
     }
+  }
+
+  // A recorded browsing session → ONE local artifact (jsonl timeline + md draft +
+  // snapshots) + ONE raw inbox row that carries only a sanitized summary + a
+  // relative pointer, never the raw HTML/network bodies (those stay on disk).
+  // Deferred classification: it lands in the inbox to be triaged/promoted later
+  // (ADR-011), so — inverse to image/network — it may ONLY target inbox.
+  private async dispatchDiscoverySession(capture: CaptureRequest): Promise<CaptureResult> {
+    if (capture.destination !== 'inbox') {
+      throw new CaptureBadRequestError(
+        'discovery-session captures may only target the inbox (deferred classification)'
+      )
+    }
+    const bundle = parseDiscoveryBundle(capture.payload)
+    const stored = writeDiscoverySession(this.artifactsDir, bundle)
+    const summary =
+      `Discovery session${bundle.label ? ` — ${bundle.label}` : ''}: ` +
+      `${stored.eventCount} steps · ${stored.navCount} pages · ${stored.apiCount} API calls · ` +
+      `${stored.snapshotCount} snapshots.\n\n` +
+      `Timeline: \`${stored.relDir}/timeline.jsonl\` · draft: \`${stored.relDir}/draft.md\``
+    const item = await this.svc.createInbox({
+      projectId: bundle.projectId,
+      content: withSource(summary, capture.sourceUrl)
+    })
+    return { id: item.id, destination: 'inbox' }
   }
 
   private async dispatchText(capture: CaptureRequest): Promise<CaptureResult> {

@@ -10,11 +10,16 @@ describe('validateCapture', () => {
   })
 
   it('accepts every kind × destination combination', () => {
-    for (const kind of ['text', 'image', 'network']) {
+    for (const kind of ['text', 'image', 'network', 'network-bundle', 'discovery-session']) {
       for (const destination of ['inbox', 'task', 'conversation', 'knowledge']) {
         expect(validateCapture({ ...valid, kind, destination }).ok).toBe(true)
       }
     }
+  })
+
+  it('accepts the discovery-session kind; still rejects an unknown kind (AC-1)', () => {
+    expect(validateCapture({ ...valid, kind: 'discovery-session' }).ok).toBe(true)
+    expect(validateCapture({ ...valid, kind: 'session' }).ok).toBe(false)
   })
 
   it.each([

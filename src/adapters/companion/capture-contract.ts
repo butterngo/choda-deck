@@ -5,8 +5,68 @@
 // dispatcher (the port below); the skeleton wires none, so every valid capture
 // 501s until a dispatcher is injected.
 
-export const CAPTURE_KINDS = ['text', 'image', 'network', 'network-bundle'] as const
+export const CAPTURE_KINDS = ['text', 'image', 'network', 'network-bundle', 'discovery-session'] as const
 export type CaptureKind = (typeof CAPTURE_KINDS)[number]
+
+// ---- Discovery session timeline (TASK-1410) ---------------------------------
+// A recorded browsing session = one timestamp-ordered timeline of events. The
+// extension buffers these client-side and POSTs one finalized bundle at Stop.
+// The envelope validator (validateCapture) only checks the outer contract; the
+// per-event shape below is parsed by the dispatcher via capture-artifacts.
+
+export interface DiscoveryEventBase {
+  ts: number
+  url?: string
+}
+export interface DiscoveryNavEvent extends DiscoveryEventBase {
+  type: 'nav'
+  title?: string
+}
+export interface DiscoveryClickEvent extends DiscoveryEventBase {
+  type: 'click'
+  selector: string
+  text?: string
+}
+export interface DiscoveryInputEvent extends DiscoveryEventBase {
+  type: 'input'
+  selector: string
+  // Already redacted at capture time in the page (TASK-1411) — never a raw secret.
+  value: string
+}
+export interface DiscoveryApiEvent extends DiscoveryEventBase {
+  type: 'apicall'
+  method: string
+  status?: number
+}
+export interface DiscoverySnapshotEvent extends DiscoveryEventBase {
+  type: 'snapshot'
+  // References a DiscoverySnapshot.id carried in the bundle's snapshots[].
+  snapshotId: string
+}
+export type DiscoveryEvent =
+  | DiscoveryNavEvent
+  | DiscoveryClickEvent
+  | DiscoveryInputEvent
+  | DiscoveryApiEvent
+  | DiscoverySnapshotEvent
+
+// A per-step DOM snapshot (TASK-1413 fills html/css/screenshot; redacted in-page).
+export interface DiscoverySnapshot {
+  id: string
+  html?: string
+  css?: string
+  // base64 data URL — decoded + written to disk locally, never synced.
+  screenshotDataUrl?: string
+}
+
+export interface DiscoverySessionBundle {
+  projectId: string
+  label?: string
+  startedAt?: number
+  endedAt?: number
+  events: DiscoveryEvent[]
+  snapshots?: DiscoverySnapshot[]
+}
 
 export const CAPTURE_DESTINATIONS = ['inbox', 'task', 'conversation', 'knowledge'] as const
 export type CaptureDestination = (typeof CAPTURE_DESTINATIONS)[number]
@@ -21,7 +81,7 @@ export const CAPTURE_MAX_IMAGE_BYTES = 5 * 1024 * 1024
 export function capForKind(kind: CaptureKind): number {
   // network-bundle carries many records (with optional bodies), so it shares the
   // image ceiling rather than the single-record 64 KB cap.
-  return kind === 'image' || kind === 'network-bundle'
+  return kind === 'image' || kind === 'network-bundle' || kind === 'discovery-session'
     ? CAPTURE_MAX_IMAGE_BYTES
     : CAPTURE_MAX_TEXT_BYTES
 }
