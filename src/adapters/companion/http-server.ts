@@ -11,6 +11,7 @@ import { computeLedger } from './sync-ledger'
 import { computeSyncLog } from './sync-log'
 import { computeHealth } from './sync-health'
 import { SyncNotConfiguredError } from './sync-actions'
+import { handleWorkflowRoute } from './workflow'
 import {
   CAPTURE_MAX_IMAGE_BYTES,
   capForKind,
@@ -48,6 +49,13 @@ async function route(
   // TASK-1331; without a dispatcher a valid capture 501s.
   if (method === 'POST' && path === '/capture') {
     return handleCapture(req, res, services)
+  }
+
+  // TASK-1171 — workflow focus feed + the light task/session actions (the only
+  // mutating task routes on this surface). Handled before the GET-only guard so
+  // its POSTs work; returns false when the path isn't a workflow route.
+  if (await handleWorkflowRoute(req, res, services.svc)) {
+    return
   }
 
   // TASK-1175 — mutating sync actions are POST-only. A SyncNotConfiguredError
