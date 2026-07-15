@@ -375,3 +375,86 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   screenshotDataUrl = null
   if (!el('networkPane').hidden) loadRequests()
 })
+
+// ---- Discovery recorder controller (TASK-1414) ------------------------------
+// Record ● / Stop ■ toggles the content-script recorder in the active tab, buffers
+// its events + snapshots into one session, and POSTs the finalized bundle as
+// kind:'discovery-session' at Stop. The raw artifact stays local; only a sanitized
+// summary + pointer is synced (the backend dispatcher enforces that).
+;(() => {
+  let session = null
+  let recTabId = null
+
+  const setRec = (text, cls) => {
+    const s = el('recStatus')
+    s.textContent = text
+    s.style.color = cls === 'err' ? '#dc2626' : cls === 'ok' ? '#16a34a' : ''
+  }
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (!session || !msg) return
+    if (msg.type === 'discoveryEvent') {
+      session.addEvent(msg.event)
+    } else if (msg.type === 'discoverySnapshot') {
+      session.addEvent(msg.event)
+      session.addSnapshot(msg.snapshot)
+    }
+    if (session) {
+      const c = session.counts()
+      setRec(`Recording… ${c.events} events · ${c.snapshots} snapshots`)
+    }
+  })
+
+  async function start() {
+    if (!activeTab) return setRec('No active tab', 'err')
+    session = ChodaTimeline.createSession()
+    recTabId = activeTab.id
+    await chrome.tabs.sendMessage(recTabId, { type: 'discoveryControl', action: 'start' }).catch(() => {})
+    el('recBtn').textContent = '■ Stop & save'
+    setRec('Recording… 0 events')
+  }
+
+  async function stop() {
+    const s = session
+    session = null
+    el('recBtn').textContent = '● Record discovery'
+    if (recTabId != null) {
+      await chrome.tabs.sendMessage(recTabId, { type: 'discoveryControl', action: 'stop' }).catch(() => {})
+    }
+    if (!s) return
+    const projectId = el('project').value
+    if (!projectId) return setRec('Pick a project first', 'err')
+
+    const { bundle, empty, trimmed } = s.finalize({ projectId, label: activeTab && activeTab.title })
+    if (empty || !bundle) return setRec('Nothing captured — no session saved.', 'err')
+
+    const { base, token } = await getConfig()
+    if (!token) return setRec('No token — paste it in Options', 'err')
+    try {
+      const res = await fetch(`${base}/capture`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-choda-bridge-token': token },
+        body: JSON.stringify({
+          kind: 'discovery-session',
+          destination: 'inbox',
+          payload: bundle,
+          sourceUrl: (activeTab && activeTab.url) || bundle.events[0].url || 'about:blank'
+        })
+      })
+      const body = await res.json().catch(() => ({}))
+      if (res.ok) {
+        setRec(`Saved → ${body.id}${trimmed ? ` (trimmed ${trimmed} screenshots to fit)` : ''}`, 'ok')
+      } else if (res.status === 413) {
+        setRec('413 — session too large even after trimming', 'err')
+      } else if (res.status === 401) {
+        setRec('401 — token mismatch. Re-paste it in Options.', 'err')
+      } else {
+        setRec(`${res.status} — ${body.error || 'save failed'}`, 'err')
+      }
+    } catch {
+      setRec('Bridge not reachable — start companion-server on 127.0.0.1', 'err')
+    }
+  }
+
+  el('recBtn').addEventListener('click', () => (session ? stop() : start()))
+})()

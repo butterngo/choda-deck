@@ -71,6 +71,11 @@
   <body>
     <h1>Choda Capture</h1>
 
+    <div id="discoveryPane" style="border:1px solid #8884;border-radius:6px;padding:8px;margin-bottom:10px">
+      <button type="button" id="recBtn" class="ghost">● Record discovery</button>
+      <div id="recStatus" style="font-size:12px;margin-top:4px"></div>
+    </div>
+
     <div class="modes">
       <label><input type="radio" name="kind" value="text" checked /> Text</label>
       <label><input type="radio" name="kind" value="image" /> Screenshot</label>
@@ -117,6 +122,7 @@
       <span id="hint"></span>
     </div>
 
+    <script src="lib/timeline.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

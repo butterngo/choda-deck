@@ -13,5 +13,11 @@ export default defineConfig(
       ]
     }
   },
+  {
+    // Extension is plain classic-script / CommonJS browser code (MV3), not TS
+    // modules — its dual-mode libs + tests use require()/module.exports.
+    files: ['extension/**/*.js'],
+    rules: { '@typescript-eslint/no-require-imports': 'off' }
+  },
   eslintConfigPrettier
 )

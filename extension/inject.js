@@ -43,6 +43,27 @@
     }
   }
 
+  // TASK-1412 — SPA navigation. history.pushState/replaceState live in the PAGE
+  // context, so patch them here (MAIN world) and relay to the isolated recorder.
+  const navPost = (url) => {
+    try {
+      window.postMessage({ __chodaNav: true, url: abs(url), title: document.title }, '*')
+    } catch {
+      /* ignore */
+    }
+  }
+  for (const name of ['pushState', 'replaceState']) {
+    const orig = history[name]
+    if (typeof orig === 'function') {
+      history[name] = function (state, title, url) {
+        const r = orig.apply(this, arguments)
+        if (url != null) navPost(url)
+        return r
+      }
+    }
+  }
+  window.addEventListener('popstate', () => navPost(location.href))
+
   const origOpen = XMLHttpRequest.prototype.open
   const origSend = XMLHttpRequest.prototype.send
   XMLHttpRequest.prototype.open = function (method, url) {
