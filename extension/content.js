@@ -49,6 +49,9 @@ window.addEventListener('message', (e) => {
       .catch(() => {
         /* SW asleep / popup gone — body simply won't be attached */
       })
+    // TASK-1419 — same interceptor feeds the discovery session as an apicall event
+    // (no-op while idle). Keeps the old Network feature's SW relay above unchanged.
+    recorder.handleNetwork(d)
   } else if (d.__chodaNav === true) {
     // MAIN-world history patch (inject.js) → recorder nav event.
     recorder.handleNav(d.url, d.title)

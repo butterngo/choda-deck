@@ -79,7 +79,8 @@ function parseEvent(raw: unknown, i: number): DiscoveryEvent {
         ts: raw.ts,
         url,
         method: reqStr(raw, 'method', `event[${i}].method required`),
-        status: typeof raw.status === 'number' ? raw.status : undefined
+        status: typeof raw.status === 'number' ? raw.status : undefined,
+        body: typeof raw.body === 'string' ? raw.body : undefined
       }
     default:
       // snapshot
@@ -159,7 +160,10 @@ function eventLine(e: DiscoveryEvent): string {
     case 'input':
       return `- input \`${e.selector}\` = ${e.value}`
     case 'apicall':
-      return `- api ${e.method} ${e.url ?? ''}${e.status !== undefined ? ` → ${e.status}` : ''}`
+      return (
+        `- api ${e.method} ${e.url ?? ''}${e.status !== undefined ? ` → ${e.status}` : ''}` +
+        (e.body ? ` (body ${e.body.length}b)` : '')
+      )
     default:
       return `- snapshot ${e.snapshotId}${e.url ? ` @ ${e.url}` : ''}`
   }

@@ -37,6 +37,8 @@ export interface DiscoveryApiEvent extends DiscoveryEventBase {
   type: 'apicall'
   method: string
   status?: number
+  // Response body — redacted + capped in-page at capture time (TASK-1419).
+  body?: string
 }
 export interface DiscoverySnapshotEvent extends DiscoveryEventBase {
   type: 'snapshot'

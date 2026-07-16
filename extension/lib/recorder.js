@@ -11,6 +11,11 @@
   const redact = root.ChodaRedact || (typeof require !== 'undefined' && require('./redact.js'))
   const selector = root.ChodaSelector || (typeof require !== 'undefined' && require('./selector.js'))
 
+  // Response bodies are the flow's payload but also the most likely secret carrier —
+  // redacted at capture time (like input values) and capped so one big JSON can't
+  // bloat the bundle.
+  const MAX_API_BODY = 8 * 1024
+
   // opts: { emit(event), now?(), url?() }
   function createRecorder(opts) {
     const emit = opts.emit
@@ -64,7 +69,22 @@
       emit({ type: 'nav', ts: now(), url: url || currentUrl(), title: title || undefined })
     }
 
-    return { start, stop, isRecording, handleDomEvent, handleClick, handleInput, handleNav }
+    // TASK-1419 — a fetch/XHR the MAIN-world interceptor (inject.js) relayed:
+    // { url, method, status, body }. Turns it into an `apicall` timeline event so
+    // the API behind each screen is captured inline. Body redacted + capped.
+    function handleNetwork(d) {
+      if (!recording || !d || !d.url) return
+      emit({
+        type: 'apicall',
+        ts: now(),
+        url: String(d.url),
+        method: d.method || 'GET',
+        status: typeof d.status === 'number' ? d.status : undefined,
+        body: d.body ? redact.redactText(String(d.body)).slice(0, MAX_API_BODY) : undefined
+      })
+    }
+
+    return { start, stop, isRecording, handleDomEvent, handleClick, handleInput, handleNav, handleNetwork }
   }
 
   const api = { createRecorder }
