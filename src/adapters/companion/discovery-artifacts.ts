@@ -98,7 +98,14 @@ function parseSnapshot(raw: unknown, i: number): DiscoverySnapshot {
   }
 }
 
-/** Narrow an arbitrary capture payload into a DiscoverySessionBundle, or throw 400. */
+/**
+ * Narrow an arbitrary capture payload into a DiscoverySessionBundle.
+ *
+ * Tolerant by design (TASK-1420): a single malformed event (e.g. a click that
+ * captured no selector) is **dropped**, not fatal — losing one weird event must
+ * never cost a whole recording. Only the envelope (object shape, projectId, at
+ * least one *valid* event) can 400. Same for snapshots.
+ */
 export function parseDiscoveryBundle(payload: unknown): DiscoverySessionBundle {
   if (!isObj(payload)) {
     throw new CaptureBadRequestError('discovery-session payload must be an object { projectId, events, ... }')
@@ -107,9 +114,26 @@ export function parseDiscoveryBundle(payload: unknown): DiscoverySessionBundle {
   if (!Array.isArray(payload.events) || payload.events.length === 0) {
     throw new CaptureBadRequestError('discovery-session payload requires a non-empty "events" array')
   }
-  const events = payload.events.map((e, i) => parseEvent(e, i))
+  const events: DiscoveryEvent[] = []
+  for (let i = 0; i < payload.events.length; i++) {
+    try {
+      events.push(parseEvent(payload.events[i], i))
+    } catch {
+      // Drop the malformed event; keep the session.
+    }
+  }
+  if (events.length === 0) {
+    throw new CaptureBadRequestError('discovery-session had no valid events')
+  }
   const snapshots = Array.isArray(payload.snapshots)
-    ? payload.snapshots.map((s, i) => parseSnapshot(s, i))
+    ? payload.snapshots.reduce<DiscoverySnapshot[]>((acc, s, i) => {
+        try {
+          acc.push(parseSnapshot(s, i))
+        } catch {
+          /* drop malformed snapshot */
+        }
+        return acc
+      }, [])
     : undefined
   return {
     projectId,

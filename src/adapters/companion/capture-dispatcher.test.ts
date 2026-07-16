@@ -331,6 +331,30 @@ describe('CompanionCaptureDispatcher — discovery-session kind (TASK-1410)', ()
     expect(draft).toContain('body 15b')
   })
 
+  it('drops a malformed event but still saves the session (TASK-1420 AC-3)', async () => {
+    const svc = makeSvc()
+    const mixed = [
+      { type: 'nav', ts: 1, url: 'https://shop.ex', title: 'Home' },
+      { type: 'click', ts: 2 }, // malformed — no selector (the event[34] bug)
+      { type: 'click', ts: 3, url: 'https://shop.ex', selector: '#buy', text: 'Buy' }
+    ]
+    const res = await make(svc).dispatch(discReq('inbox', { events: mixed, projectId: 'choda-deck' }))
+    expect(res).toEqual({ id: 'INBOX-1', destination: 'inbox' })
+    const capturesDir = path.join(ARTIFACTS, 'captures')
+    const dir = path.join(capturesDir, fs.readdirSync(capturesDir).find((d) => d.startsWith('discovery-')) as string)
+    const lines = fs.readFileSync(path.join(dir, 'timeline.jsonl'), 'utf8').trimEnd().split('\n')
+    expect(lines).toHaveLength(2) // nav + the good click; the bad click dropped
+    expect(lines.some((l) => l.includes('#buy'))).toBe(true)
+  })
+
+  it('a bundle whose every event is malformed → 400 (AC-4)', async () => {
+    const svc = makeSvc()
+    await expect(
+      make(svc).dispatch(discReq('inbox', { events: [{ type: 'click', ts: 1 }, { type: 'apicall', ts: 2 }], projectId: 'choda-deck' }))
+    ).rejects.toBeInstanceOf(CaptureBadRequestError)
+    expect(svc.createInbox).not.toHaveBeenCalled()
+  })
+
   it('inbox row carries a summary + relative pointer, NOT raw HTML bodies (AC-3)', async () => {
     const svc = makeSvc()
     await make(svc).dispatch(discReq('inbox', { events, snapshots, projectId: 'choda-deck' }))
