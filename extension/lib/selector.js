@@ -39,7 +39,10 @@
   // Walk up to the nearest ancestor with a stable attr id, building an
   // :nth-of-type path from there down. Falls back to a full path to <html>.
   function cssPath(el) {
-    if (!el || !el.tagName) return ''
+    // Never return '' — a click can land on the document/<html> root or a detached
+    // node; an empty selector would make the backend reject the whole session
+    // (TASK-1420). Fall back to the tag name, else 'unknown'.
+    if (!el || !el.tagName) return 'unknown'
     const direct = attrSelector(el)
     if (direct) return direct
 
@@ -54,7 +57,7 @@
       parts.unshift(`${tag(node)}:nth-of-type(${nthOfType(node)})`)
       node = node.parentElement
     }
-    return parts.join(' > ')
+    return parts.join(' > ') || tag(el) || 'unknown'
   }
 
   const api = { cssPath }

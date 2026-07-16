@@ -39,7 +39,7 @@
         type: 'click',
         ts: now(),
         url: currentUrl(),
-        selector: selector.cssPath(el),
+        selector: selector.cssPath(el) || 'unknown',
         text: typeof text === 'string' ? text.trim().slice(0, 80) : undefined
       })
     }
@@ -50,7 +50,7 @@
         type: 'input',
         ts: now(),
         url: currentUrl(),
-        selector: selector.cssPath(el),
+        selector: selector.cssPath(el) || 'unknown',
         value: redact.redactValue(el)
       })
     }

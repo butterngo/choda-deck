@@ -54,6 +54,14 @@ describe('recorder events (AC-1)', () => {
     expect(events[0].value).toBe('Hanoi')
   })
 
+  it('a click whose target yields no selector emits "unknown", never "" (TASK-1420 AC-2)', () => {
+    const { rec, events } = setup()
+    rec.start()
+    rec.handleDomEvent({ type: 'click', target: { getAttribute: () => null } }) // no tagName
+    expect(events[0]).toMatchObject({ type: 'click', selector: 'unknown' })
+    expect(events[0].selector).not.toBe('')
+  })
+
   it('handleNav → nav event (SPA pushState path, AC-4)', () => {
     const { rec, events } = setup()
     rec.start()

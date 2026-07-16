@@ -41,4 +41,10 @@ describe('cssPath (AC-2)', () => {
     expect(reselected).toHaveLength(1)
     expect(reselected[0]).toBe(target)
   })
+
+  it('never returns an empty selector (AC-1)', () => {
+    expect(cssPath(document.documentElement)).not.toBe('')
+    expect(cssPath(null)).toBe('unknown')
+    expect(cssPath({})).toBe('unknown') // no tagName
+  })
 })
