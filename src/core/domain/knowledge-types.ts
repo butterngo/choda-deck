@@ -40,6 +40,35 @@ export const FEATURE_STATUSES: readonly FeatureStatus[] = [
   'blocked'
 ]
 
+// Lifecycle status for NON-feature entries. A `decision` (ADR) or `spike` has its
+// own lifecycle that has nothing to do with a feature's delivery state — an ADR is
+// proposed/accepted/superseded, a spike is complete. Enforcing FEATURE_STATUSES on
+// these types threw a hard FrontmatterParseError that made the whole entry
+// unreadable via knowledge_get (7 entries were bricked this way; ADR-019, ADR-021,
+// ADR-023-auto-safe, ADR-024 all carry `status: superseded`).
+export type EntryStatus =
+  | 'proposed'
+  | 'accepted'
+  | 'implemented'
+  | 'superseded'
+  | 'deprecated'
+  | 'rejected'
+  | 'complete'
+
+export const ENTRY_STATUSES: readonly EntryStatus[] = [
+  'proposed',
+  'accepted',
+  'implemented',
+  'superseded',
+  'deprecated',
+  'rejected',
+  'complete'
+]
+
+// `feature` nodes are validated against FEATURE_STATUSES; every other type against
+// ENTRY_STATUSES. See validate() in knowledge-frontmatter.ts.
+export type KnowledgeStatus = FeatureStatus | EntryStatus
+
 // TASK-988: optional structured frontmatter for the first-class graph types.
 // All fields are optional so the 5 original types (spike/decision/…) keep their
 // existing two-line frontmatter unchanged. feature uses anchorTaskId /
@@ -50,7 +79,7 @@ export interface KnowledgeStructured {
   realizesTasks?: string[]
   inWorkspaces?: string[]
   effortBand?: EffortBand
-  status?: FeatureStatus
+  status?: KnowledgeStatus
   affectedFeatureId?: string
 }
 

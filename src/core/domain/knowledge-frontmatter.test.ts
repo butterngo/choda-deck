@@ -69,3 +69,53 @@ describe('frontmatter structured fields (TASK-988)', () => {
     expect(text).not.toContain('realizesTasks')
   })
 })
+
+// `status` is per-node-type: a feature has a DELIVERY status, an ADR/spike has a
+// LIFECYCLE status. Enforcing FEATURE_STATUSES on every type threw a hard
+// FrontmatterParseError that made the entire entry unreadable via knowledge_get —
+// it bricked 7 real entries (ADR-019, ADR-021, ADR-023-auto-safe, ADR-024 all
+// carry `status: superseded`; the gateway's ADR-006 carries `implemented`; two
+// spikes carry `complete`).
+describe('status is validated per node type', () => {
+  const withStatus = (type: KnowledgeFrontmatter['type'], status: string): string =>
+    serializeFrontmatter({ ...base, type } as KnowledgeFrontmatter, 'b').replace(
+      'lastVerifiedAt: 2026-05-29',
+      `lastVerifiedAt: 2026-05-29\nstatus: ${status}`
+    )
+
+  it('accepts a lifecycle status on a decision (the ADR-024 regression)', () => {
+    const parsed = parseFrontmatter(withStatus('decision', 'superseded'))
+    expect(parsed.frontmatter.structured?.status).toBe('superseded')
+  })
+
+  it('accepts `complete` on a spike', () => {
+    const parsed = parseFrontmatter(withStatus('spike', 'complete'))
+    expect(parsed.frontmatter.structured?.status).toBe('complete')
+  })
+
+  it('accepts `implemented` on a decision', () => {
+    const parsed = parseFrontmatter(withStatus('decision', 'implemented'))
+    expect(parsed.frontmatter.structured?.status).toBe('implemented')
+  })
+
+  it('still accepts a delivery status on a feature', () => {
+    const parsed = parseFrontmatter(withStatus('feature', 'shipped'))
+    expect(parsed.frontmatter.structured?.status).toBe('shipped')
+  })
+
+  it('rejects a lifecycle status on a feature — wrong vocabulary', () => {
+    expect(() => parseFrontmatter(withStatus('feature', 'superseded'))).toThrow(
+      /invalid status for type feature/
+    )
+  })
+
+  it('rejects a delivery status on a decision — wrong vocabulary', () => {
+    expect(() => parseFrontmatter(withStatus('decision', 'shipped'))).toThrow(
+      /invalid status for type decision/
+    )
+  })
+
+  it('rejects a garbage status on any type', () => {
+    expect(() => parseFrontmatter(withStatus('decision', 'banana'))).toThrow(/invalid status/)
+  })
+})

@@ -14,6 +14,7 @@ import {
   type ProjectionRole,
   type RealizedTaskAc
 } from '../../../core/domain/services/feature-projection'
+import type { FeatureStatus } from '../../../core/domain/knowledge-types'
 
 // ADR-NNN Pillar 5 (TASK-994, TASK-995). I/O layer: gather the feature's graph
 // slice once from the first-class repos, then hand it to the pure
@@ -173,7 +174,9 @@ export async function buildFeatureProjection(
   const input: FeatureProjectionInput = {
     featureId,
     title: entry.frontmatter.title,
-    status: structured.status,
+    // Safe narrowing: this builder only ever runs on `feature` nodes, and the
+    // frontmatter validator enforces FEATURE_STATUSES for that type.
+    status: structured.status as FeatureStatus | undefined,
     effortBand: structured.effortBand,
     sections: parseSections(entry.body),
     workspaces: inEdges.map((e) => e.toId),

@@ -1,14 +1,15 @@
 import type {
   EffortBand,
-  FeatureStatus,
   KnowledgeFrontmatter,
   KnowledgeRef,
+  KnowledgeStatus,
   KnowledgeStructured,
   KnowledgeType,
   KnowledgeScope
 } from './knowledge-types'
 import {
   EFFORT_BANDS,
+  ENTRY_STATUSES,
   FEATURE_STATUSES,
   KNOWLEDGE_TYPES,
   KNOWLEDGE_SCOPES
@@ -87,7 +88,7 @@ function assignStructured(
   if ((STRUCTURED_SCALAR_KEYS as readonly string[]).includes(key)) {
     const value = unquote(rawValue)
     if (key === 'effortBand') s.effortBand = value as EffortBand
-    else if (key === 'status') s.status = value as FeatureStatus
+    else if (key === 'status') s.status = value as KnowledgeStatus
     else if (key === 'anchorTaskId') s.anchorTaskId = value
     else if (key === 'affectedFeatureId') s.affectedFeatureId = value
     return true
@@ -198,8 +199,17 @@ function validate(
   if (structured.effortBand && !EFFORT_BANDS.includes(structured.effortBand)) {
     throw new FrontmatterParseError(`invalid effortBand: ${structured.effortBand}`)
   }
-  if (structured.status && !FEATURE_STATUSES.includes(structured.status)) {
-    throw new FrontmatterParseError(`invalid status: ${structured.status}`)
+  // `status` means different things per node type: a feature has a delivery status,
+  // an ADR/spike has a lifecycle status. Validate against the right vocabulary —
+  // enforcing FEATURE_STATUSES on a `decision` bricked the whole entry.
+  if (structured.status) {
+    const allowed: readonly string[] =
+      fm.type === 'feature' ? FEATURE_STATUSES : ENTRY_STATUSES
+    if (!allowed.includes(structured.status)) {
+      throw new FrontmatterParseError(
+        `invalid status for type ${fm.type}: ${structured.status} (expected one of: ${allowed.join(', ')})`
+      )
+    }
   }
   const hasStructured = Object.values(structured).some((v) => v !== undefined)
   return {
