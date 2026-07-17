@@ -27,9 +27,29 @@ companion capture bridge (`POST /capture`, ADR-036). Works in Chrome and Edge.
   conversation/knowledge (secret-safe, stays local). The PNG lands in
   `data/artifacts/captures/` and the entry references it.
 
+## Discovery recording — noise filter (TASK-1423)
+
+A recording captures every fetch/XHR the page makes, which on a real app is mostly
+noise. Two gates run in `lib/noise-filter.js` before an `apicall` event is emitted:
+
+- **Telemetry deny-list** — `DEFAULT_EXCLUDE_PATTERNS` (Application Insights,
+  `*.monitor.azure.com`, GA/GTM, Sentry, Datadog, Segment, Hotjar, …). Matched as
+  case-insensitive substrings of the full URL. **To add a vendor, append a pattern
+  to that const** — keep it vendor-specific (`google-analytics.com`), never a bare
+  word like `track` or `api`, which would eat real endpoints.
+- **Asset fan-out collapse** — repeats of the same `METHOD + origin + pathname`
+  (query ignored) fold into the first event, which gains `collapsed: <n>` and up to
+  5 `collapsedSamples` URLs. So 10× `GetEmployeeThumbnail?Id=1..10` becomes one
+  event saying "this fired 10 times, here are 5 of the ids".
+
+Measured on the INBOX-1172 recording: 20 raw apicalls → 8 events, with no business
+endpoint lost. Both gates are per-recorder options — `createRecorder({ excludePatterns, collapse: false })`
+opts out if you ever need the raw stream.
+
 ## Notes / limits (v1)
 
 - Screenshot = visible viewport (no region-drag crop yet).
 - Network-header capture not wired into the UI yet (bridge supports it).
 - `chrome://` / `edge://` / PDF pages can't be read — type text or screenshot instead.
-- Pick a real project in the dropdown; an unknown projectId currently errors server-side.
+- Pick a real project in the dropdown; an unknown projectId is rejected with a clean
+  `404 project "<id>" does not exist` (TASK-1425).
