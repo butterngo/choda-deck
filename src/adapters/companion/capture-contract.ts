@@ -139,6 +139,16 @@ export class CaptureBadRequestError extends Error {
   }
 }
 
+// Thrown by the dispatcher when the payload names a projectId that doesn't exist.
+// Distinct from CaptureBadRequestError: the contract is well-formed, the referent
+// isn't there. Route → 404.
+export class CaptureNotFoundError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'CaptureNotFoundError'
+  }
+}
+
 export type CaptureValidation =
   | { ok: true; value: CaptureRequest }
   | { ok: false; error: string }

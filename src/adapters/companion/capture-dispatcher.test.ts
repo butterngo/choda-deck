@@ -3,11 +3,16 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import { CompanionCaptureDispatcher } from './capture-dispatcher'
-import { CaptureBadRequestError, type CaptureRequest } from './capture-contract'
+import {
+  CaptureBadRequestError,
+  CaptureNotFoundError,
+  type CaptureRequest
+} from './capture-contract'
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
 
 function makeSvc(): BackendTaskService {
   return {
+    getProject: vi.fn(async (id: string) => (id === 'choda-deck' ? { id } : null)),
     createInbox: vi.fn(async () => ({ id: 'INBOX-1' })),
     createTask: vi.fn(async () => ({ id: 'TASK-9' })),
     openConversation: vi.fn(async () => ({ id: 'CONV-1' })),
@@ -388,5 +393,48 @@ describe('CompanionCaptureDispatcher — discovery-session kind (TASK-1410)', ()
     await expect(make(svc).dispatch(discReq('inbox', payload))).rejects.toBeInstanceOf(
       CaptureBadRequestError
     )
+  })
+})
+
+// TASK-1425 — an unknown projectId must be a clean 404, not an FK SqliteError
+// flattened to 500 by the route. Guarded in dispatch() so every kind is covered,
+// including discovery-session (which never passes through parseTarget).
+describe('CompanionCaptureDispatcher — unknown project guard', () => {
+  const events = [{ type: 'nav', ts: 1, url: 'https://shop.ex/products', title: 'Products' }]
+  const discReq = (projectId: string): CaptureRequest => ({
+    kind: 'discovery-session',
+    destination: 'inbox',
+    sourceUrl: 'http://shop.ex/products',
+    payload: { events, projectId }
+  })
+
+  it('text kind → CaptureNotFoundError, nothing written', async () => {
+    const svc = makeSvc()
+    await expect(
+      make(svc).dispatch({ ...base, destination: 'inbox', payload: { ...payload, projectId: 'nope' } })
+    ).rejects.toBeInstanceOf(CaptureNotFoundError)
+    expect(svc.createInbox).not.toHaveBeenCalled()
+  })
+
+  it('discovery-session kind → CaptureNotFoundError (parseTarget is bypassed here)', async () => {
+    const svc = makeSvc()
+    await expect(
+      make(svc).dispatch(discReq('nope'))
+    ).rejects.toBeInstanceOf(CaptureNotFoundError)
+    expect(svc.createInbox).not.toHaveBeenCalled()
+  })
+
+  it('missing projectId still 400, not 404 — the two error classes stay distinct', async () => {
+    const svc = makeSvc()
+    await expect(
+      make(svc).dispatch({ ...base, destination: 'inbox', payload: { text: 'hi' } })
+    ).rejects.toBeInstanceOf(CaptureBadRequestError)
+  })
+
+  it('known projectId passes the guard', async () => {
+    const svc = makeSvc()
+    const res = await make(svc).dispatch({ ...base, destination: 'inbox', payload })
+    expect(res).toEqual({ id: 'INBOX-1', destination: 'inbox' })
+    expect(svc.getProject).toHaveBeenCalledWith('choda-deck')
   })
 })
