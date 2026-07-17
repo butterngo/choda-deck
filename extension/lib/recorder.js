@@ -10,20 +10,29 @@
 ;(function (root) {
   const redact = root.ChodaRedact || (typeof require !== 'undefined' && require('./redact.js'))
   const selector = root.ChodaSelector || (typeof require !== 'undefined' && require('./selector.js'))
+  const noise =
+    root.ChodaNoiseFilter || (typeof require !== 'undefined' && require('./noise-filter.js'))
 
   // Response bodies are the flow's payload but also the most likely secret carrier —
   // redacted at capture time (like input values) and capped so one big JSON can't
   // bloat the bundle.
   const MAX_API_BODY = 8 * 1024
 
-  // opts: { emit(event), now?(), url?() }
+  // opts: { emit(event), now?(), url?(), excludePatterns?, collapse? }
+  // excludePatterns overrides the telemetry deny-list (TASK-1423); collapse:false
+  // disables asset fan-out folding for a caller that wants every raw apicall.
   function createRecorder(opts) {
     const emit = opts.emit
     const now = opts.now || (() => Date.now())
     const currentUrl = opts.url || (() => (typeof location !== 'undefined' ? location.href : undefined))
+    const excludePatterns = opts.excludePatterns || noise.DEFAULT_EXCLUDE_PATTERNS
+    const collapser = opts.collapse === false ? null : noise.createCollapser()
     let recording = false
 
+    // Collapse state is per-recording: a key seen in run 1 must not silently
+    // fold a genuinely-first call in run 2.
     function start() {
+      if (collapser) collapser.reset()
       recording = true
     }
     function stop() {
@@ -72,16 +81,24 @@
     // TASK-1419 — a fetch/XHR the MAIN-world interceptor (inject.js) relayed:
     // { url, method, status, body }. Turns it into an `apicall` timeline event so
     // the API behind each screen is captured inline. Body redacted + capped.
+    //
+    // TASK-1423 — two noise gates before emit: telemetry URLs are dropped
+    // outright, and an asset fan-out (same method+path, differing query) folds
+    // into the first event's `collapsed` count instead of N near-identical rows.
     function handleNetwork(d) {
       if (!recording || !d || !d.url) return
-      emit({
+      const url = String(d.url)
+      if (noise.isExcluded(url, excludePatterns)) return
+      const event = {
         type: 'apicall',
         ts: now(),
-        url: String(d.url),
+        url,
         method: d.method || 'GET',
         status: typeof d.status === 'number' ? d.status : undefined,
         body: d.body ? redact.redactText(String(d.body)).slice(0, MAX_API_BODY) : undefined
-      })
+      }
+      if (collapser && !collapser.admit(event)) return
+      emit(event)
     }
 
     return { start, stop, isRecording, handleDomEvent, handleClick, handleInput, handleNav, handleNetwork }

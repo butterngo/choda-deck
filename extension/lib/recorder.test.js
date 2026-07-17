@@ -98,3 +98,69 @@ describe('recorder network track (TASK-1419)', () => {
     expect(events).toHaveLength(0)
   })
 })
+
+// TASK-1423 — noise gates wired into handleNetwork.
+describe('recorder noise filter (TASK-1423)', () => {
+  it('drops a telemetry apicall, keeps a business one (AC-1)', () => {
+    const { rec, events } = setup()
+    rec.start()
+    rec.handleNetwork({ url: 'https://js.monitor.azure.com/scripts/c/ai.config.json', method: 'GET' })
+    rec.handleNetwork({ url: 'https://westeurope-5.in.applicationinsights.azure.com/v2/track', method: 'POST' })
+    rec.handleNetwork({ url: 'https://api.shop.ex/cart', method: 'POST', status: 201 })
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ type: 'apicall', url: 'https://api.shop.ex/cart' })
+  })
+
+  it('collapses an asset fan-out to one event carrying the count (AC-3)', () => {
+    const { rec, events } = setup()
+    rec.start()
+    for (let i = 1; i <= 10; i++) {
+      rec.handleNetwork({ url: `https://x.ex/ABookApi/api/Templates/GetEmployeeThumbnail?Id=${i}`, method: 'GET', status: 200 })
+    }
+    expect(events).toHaveLength(1)
+    expect(events[0].collapsed).toBe(10)
+    expect(events[0].collapsedSamples).toHaveLength(5)
+  })
+
+  it('replays the INBOX-1172 shape: 20 raw apicalls → 8 events (the task premise)', () => {
+    const { rec, events } = setup()
+    rec.start()
+    // 3 telemetry beacons
+    rec.handleNetwork({ url: 'https://westeurope-5.in.applicationinsights.azure.com/v2/track', method: 'POST' })
+    rec.handleNetwork({ url: 'https://westeurope-5.in.applicationinsights.azure.com/v2/track', method: 'POST' })
+    rec.handleNetwork({ url: 'https://js.monitor.azure.com/scripts/c/ai.config.json', method: 'GET' })
+    // 10x avatar fan-out
+    for (let i = 1; i <= 10; i++) {
+      rec.handleNetwork({ url: `https://x.ex/ABookApi/api/Templates/GetEmployeeThumbnail?Id=${i}`, method: 'GET' })
+    }
+    // 7 distinct business endpoints
+    const business = ['/api/Me', '/api/Employees', '/api/Employees/42', '/api/Teams', '/api/Skills', '/api/Assignments', '/api/Config']
+    business.forEach((p) => rec.handleNetwork({ url: `https://x.ex${p}`, method: 'GET', status: 200 }))
+
+    // 7 distinct + 1 collapsed thumbnail row = 8; the 3 beacons are gone.
+    expect(events).toHaveLength(8)
+    expect(events.filter((e) => e.collapsed)).toHaveLength(1)
+    expect(events.some((e) => e.url.includes('applicationinsights'))).toBe(false)
+  })
+
+  it('collapse state resets between recordings', () => {
+    const { rec, events } = setup()
+    rec.start()
+    rec.handleNetwork({ url: 'https://x.ex/api/Thumb?Id=1', method: 'GET' })
+    rec.stop()
+    rec.start()
+    rec.handleNetwork({ url: 'https://x.ex/api/Thumb?Id=2', method: 'GET' })
+    expect(events).toHaveLength(2)
+    expect(events[0].collapsed).toBeUndefined()
+  })
+
+  it('opts.collapse === false keeps every raw apicall', () => {
+    const events = []
+    let t = 0
+    const rec = createRecorder({ emit: (e) => events.push(e), now: () => ++t, url: () => 'https://ex/p', collapse: false })
+    rec.start()
+    rec.handleNetwork({ url: 'https://x.ex/api/Thumb?Id=1', method: 'GET' })
+    rec.handleNetwork({ url: 'https://x.ex/api/Thumb?Id=2', method: 'GET' })
+    expect(events).toHaveLength(2)
+  })
+})
