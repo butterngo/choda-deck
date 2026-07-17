@@ -7,7 +7,7 @@ import { LEDGER_ENTITIES } from './sync-ledger'
 import { ensureLoopStatusColumns, writeLoopHeartbeat } from '../../core/sync/sync-loop-status'
 import { createSyncEventsTable, appendSyncEvent } from '../../core/sync/sync-events'
 import { SyncNotConfiguredError } from './sync-actions'
-import { UnimplementedDestinationError } from './capture-contract'
+import { CaptureNotFoundError, UnimplementedDestinationError } from './capture-contract'
 
 function fixtureDb(): Database.Database {
   const db = new Database(':memory:')
@@ -212,6 +212,45 @@ describe('companion http server — capture dispatch', () => {
 
       const notImpl = await post({ kind: 'text', destination: 'knowledge', payload: 'hi', sourceUrl: 'http://x' })
       expect(notImpl.status).toBe(501)
+    } finally {
+      await handle.close()
+      db.close()
+    }
+  })
+
+  // TASK-1425 — a dispatcher CaptureNotFoundError must surface as 404, not fall
+  // through the rethrow at the bottom of the capture route into a blanket 500.
+  it('404s a capture naming a project that does not exist', async () => {
+    const db = fixtureDb()
+    const services: CompanionServices = {
+      svc: fakeSvc,
+      db,
+      dbPath: ':memory:',
+      intervalMs: 30000,
+      bridgeToken: 'tok',
+      dispatch: {
+        dispatch: async () => {
+          throw new CaptureNotFoundError('project "nope" does not exist')
+        }
+      },
+      pull: async () => ({ upserted: 0, tombstoned: 0, cursor: 0 }),
+      push: async () => ({ drained: 0, conflicts: 0, remaining: 0, reachable: true }),
+      close: () => db.close()
+    }
+    const handle = await startCompanionServer(services, 0)
+    try {
+      const res = await fetch(`http://${COMPANION_BIND}:${handle.address.port}/capture`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-choda-bridge-token': 'tok' },
+        body: JSON.stringify({
+          kind: 'text',
+          destination: 'inbox',
+          payload: { text: 'hi', projectId: 'nope' },
+          sourceUrl: 'http://x'
+        })
+      })
+      expect(res.status).toBe(404)
+      expect(await res.json()).toEqual({ error: 'project "nope" does not exist' })
     } finally {
       await handle.close()
       db.close()

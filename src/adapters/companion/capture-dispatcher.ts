@@ -12,6 +12,7 @@ import type { BackendTaskService } from '../../core/domain/backend-task-service.
 import type { KnowledgeType } from '../../core/domain/knowledge-types'
 import {
   CaptureBadRequestError,
+  CaptureNotFoundError,
   type CaptureDestination,
   type CaptureDispatcher,
   type CaptureRequest,
@@ -86,7 +87,21 @@ export class CompanionCaptureDispatcher implements CaptureDispatcher {
     private readonly artifactsDir: string
   ) {}
 
+  // Guards every kind up front — including discovery-session, which reads
+  // bundle.projectId and never passes through parseTarget. A projectId the DB
+  // doesn't know would otherwise surface as a raw FK SqliteError → opaque 500.
+  // Absent projectId is NOT handled here: it falls through to the per-kind 400.
+  private async assertProjectExists(payload: unknown): Promise<void> {
+    if (typeof payload !== 'object' || payload === null) return
+    const projectId = str((payload as Record<string, unknown>).projectId)
+    if (!projectId) return
+    if (!(await this.svc.getProject(projectId))) {
+      throw new CaptureNotFoundError(`project "${projectId}" does not exist`)
+    }
+  }
+
   async dispatch(capture: CaptureRequest): Promise<CaptureResult> {
+    await this.assertProjectExists(capture.payload)
     switch (capture.kind) {
       case 'text':
         return this.dispatchText(capture)

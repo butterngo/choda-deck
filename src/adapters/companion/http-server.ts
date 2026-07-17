@@ -16,6 +16,7 @@ import {
   CAPTURE_MAX_IMAGE_BYTES,
   capForKind,
   CaptureBadRequestError,
+  CaptureNotFoundError,
   CaptureNotImplementedError,
   validateCapture
 } from './capture-contract'
@@ -215,6 +216,9 @@ async function handleCapture(
   } catch (err) {
     if (err instanceof CaptureBadRequestError) {
       return sendJson(res, 400, { error: err.message })
+    }
+    if (err instanceof CaptureNotFoundError) {
+      return sendJson(res, 404, { error: err.message })
     }
     if (err instanceof CaptureNotImplementedError) {
       return sendJson(res, 501, { error: err.message })
