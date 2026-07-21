@@ -38,7 +38,13 @@ export interface DiscoveryApiEvent extends DiscoveryEventBase {
   method: string
   status?: number
   // Response body — redacted + capped in-page at capture time (TASK-1419).
+  // Present only when the body stayed under the inline cap (TASK-1424).
   body?: string
+  // Set instead of `body` when the response was spilled to a per-call file
+  // under the session dir (TASK-1424) — relative path, e.g. "bodies/3-res.txt".
+  bodyPath?: string
+  // Request payload for POSTs etc — redacted + capped in-page (TASK-1424).
+  reqBody?: string
 }
 export interface DiscoverySnapshotEvent extends DiscoveryEventBase {
   type: 'snapshot'

@@ -13,10 +13,12 @@
   const noise =
     root.ChodaNoiseFilter || (typeof require !== 'undefined' && require('./noise-filter.js'))
 
-  // Response bodies are the flow's payload but also the most likely secret carrier —
-  // redacted at capture time (like input values) and capped so one big JSON can't
-  // bloat the bundle.
-  const MAX_API_BODY = 8 * 1024
+  // Response/request bodies are the flow's payload but also the most likely
+  // secret carrier — redacted at capture time (like input values) and capped
+  // so one big JSON can't bloat the bundle. Raised from 8 KB (TASK-1424):
+  // 8 KB was truncating real payloads mid-structure (INBOX-1172); bodies still
+  // over this cap get spilled to a file server-side rather than truncated.
+  const MAX_API_BODY = 64 * 1024
 
   // opts: { emit(event), now?(), url?(), excludePatterns?, collapse? }
   // excludePatterns overrides the telemetry deny-list (TASK-1423); collapse:false
@@ -95,7 +97,9 @@
         url,
         method: d.method || 'GET',
         status: typeof d.status === 'number' ? d.status : undefined,
-        body: d.body ? redact.redactText(String(d.body)).slice(0, MAX_API_BODY) : undefined
+        body: d.body ? redact.redactText(String(d.body)).slice(0, MAX_API_BODY) : undefined,
+        // TASK-1424 — request payload (e.g. POST filters), same redact+cap treatment.
+        reqBody: d.reqBody ? redact.redactText(String(d.reqBody)).slice(0, MAX_API_BODY) : undefined
       }
       if (collapser && !collapser.admit(event)) return
       emit(event)
