@@ -12,6 +12,8 @@ import { computeSyncLog } from './sync-log'
 import { computeHealth } from './sync-health'
 import { SyncNotConfiguredError } from './sync-actions'
 import { handleWorkflowRoute } from './workflow'
+import { handleKnowledgeRoute } from './knowledge'
+import { handleGraphRoute } from './graph'
 import {
   CAPTURE_MAX_IMAGE_BYTES,
   capForKind,
@@ -56,6 +58,15 @@ async function route(
   // mutating task routes on this surface). Handled before the GET-only guard so
   // its POSTs work; returns false when the path isn't a workflow route.
   if (await handleWorkflowRoute(req, res, services.svc)) {
+    return
+  }
+
+  // TASK-1172 — knowledge + graph read endpoints (pillar-3). GET-only, so they
+  // fall through cleanly to the method guard below if unmatched.
+  if (await handleKnowledgeRoute(req, res, services.svc)) {
+    return
+  }
+  if (await handleGraphRoute(req, res, services.svc)) {
     return
   }
 
