@@ -404,6 +404,13 @@ export class KnowledgeService implements KnowledgeOperations {
     if (project) await this.regenerateIndexMd(row.projectId, project.cwd)
   }
 
+  // TASK-1432: this has no path to change `title` — retitling is still only
+  // possible by hand-editing the .md. Deferred deliberately: writeIndexMd now
+  // reads title/date from frontmatter (disk wins), which already fixes the
+  // user-visible symptom (regen no longer reverts a hand-edited title). Adding
+  // a `title` input here would let the DB stay in sync too, but nothing reads
+  // knowledge_index.title for a decision once disk wins on render — revisit
+  // only if a consumer needs DB-side title search/filtering to reflect renames.
   async updateKnowledge(input: UpdateKnowledgeInput): Promise<KnowledgeEntry> {
     if (input.body === undefined && input.refs === undefined) {
       throw new KnowledgeValidationError('updateKnowledge requires body or refs')
@@ -593,6 +600,10 @@ export class KnowledgeService implements KnowledgeOperations {
     this.writeIndexMd(workspaceCwd, `Knowledge — ${projectId}/${workspaceId}`, rows)
   }
 
+  // TASK-1432: the .md frontmatter is what's version-controlled and hand-edited —
+  // it must win over the DB row, since updateKnowledge has no path to change
+  // `title` (see its comment) and every regen previously replayed the DB's
+  // create-time title/date over a hand-edited file.
   private writeIndexMd(cwd: string, heading: string, rows: KnowledgeIndexRow[]): void {
     const indexPath = path.join(cwd, 'docs', 'knowledge', 'INDEX.md')
     const lines: string[] = ['# ' + heading, '']
@@ -602,9 +613,12 @@ export class KnowledgeService implements KnowledgeOperations {
       lines.push('| Slug | Type | Title | Last verified | Stale |')
       lines.push('|------|------|-------|---------------|-------|')
       for (const r of rows) {
-        const flag = this.isEntryStale(r, cwd) ? '✱' : ''
+        const fm = this.readFrontmatterSafe(r.filePath)
+        const title = fm?.title ?? r.title
+        const lastVerified = (fm?.lastVerifiedAt ?? r.lastVerifiedAt).slice(0, 10)
+        const flag = this.isEntryStale(r, fm) ? '✱' : ''
         lines.push(
-          `| [${r.slug}](./${r.slug}.md) | ${r.type} | ${escapeMd(r.title)} | ${r.lastVerifiedAt.slice(0, 10)} | ${flag} |`
+          `| [${r.slug}](./${r.slug}.md) | ${r.type} | ${escapeMd(title)} | ${lastVerified} | ${flag} |`
         )
       }
     }
@@ -613,15 +627,27 @@ export class KnowledgeService implements KnowledgeOperations {
     fs.writeFileSync(indexPath, lines.join('\n') + '\n', 'utf8')
   }
 
-  private isEntryStale(row: KnowledgeIndexRow, projectCwd: string): boolean {
+  private readFrontmatterSafe(filePath: string): KnowledgeFrontmatter | null {
     try {
-      const raw = fs.readFileSync(row.filePath, 'utf8')
-      const { frontmatter } = parseFrontmatter(raw)
-      const staleness = this.computeStaleness(frontmatter.refs, projectCwd, row.scope)
-      return staleness.some((s) => s.commitsSince > 0)
+      const raw = fs.readFileSync(filePath, 'utf8')
+      return parseFrontmatter(raw).frontmatter
     } catch {
-      return false
+      return null
     }
+  }
+
+  // TASK-1432: staleness must be computed against the repo the entry's OWN
+  // filePath lives in, not the caller's `cwd` — a row registered from a live
+  // git worktree (row.filePath under some `<repo>.worktrees/<branch>/...`)
+  // previously had its staleness computed against the MAIN repo's cwd, a
+  // mismatched pairing that flips the ✱ flag incorrectly. Every project-scope
+  // entry's file lives at `<cwd>/docs/knowledge/<slug>.md` (resolveFilePath),
+  // so the entry's own cwd is always derivable from its filePath directly.
+  private isEntryStale(row: KnowledgeIndexRow, frontmatter: KnowledgeFrontmatter | null): boolean {
+    if (!frontmatter) return false
+    const ownCwd = path.dirname(path.dirname(path.dirname(row.filePath)))
+    const staleness = this.computeStaleness(frontmatter.refs, ownCwd, row.scope)
+    return staleness.some((s) => s.commitsSince > 0)
   }
 
   async searchKnowledge(query: string, k = 5): Promise<KnowledgeSearchResult> {
