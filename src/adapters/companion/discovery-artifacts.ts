@@ -22,6 +22,10 @@ const DISCOVERY_EVENT_TYPES = ['nav', 'click', 'input', 'apicall', 'snapshot'] a
 const SCREENSHOT_DATA_URL_RE = /^data:image\/(png|jpe?g|webp);base64,([a-z0-9+/=]+)$/i
 const SCREENSHOT_EXT: Record<string, string> = { png: 'png', jpg: 'jpg', jpeg: 'jpg', webp: 'webp' }
 
+// A response body over this cap is spilled to its own file (TASK-1424) so
+// timeline.jsonl stays lean; smaller bodies stay inline for easy reading.
+const INLINE_BODY_CAP = 32 * 1024
+
 export interface DiscoverySessionArtifact {
   // Absolute session dir + the two canonical files.
   dir: string
@@ -80,7 +84,8 @@ function parseEvent(raw: unknown, i: number): DiscoveryEvent {
         url,
         method: reqStr(raw, 'method', `event[${i}].method required`),
         status: typeof raw.status === 'number' ? raw.status : undefined,
-        body: typeof raw.body === 'string' ? raw.body : undefined
+        body: typeof raw.body === 'string' ? raw.body : undefined,
+        reqBody: typeof raw.reqBody === 'string' ? raw.reqBody : undefined
       }
     default:
       // snapshot
@@ -186,11 +191,34 @@ function eventLine(e: DiscoveryEvent): string {
     case 'apicall':
       return (
         `- api ${e.method} ${e.url ?? ''}${e.status !== undefined ? ` → ${e.status}` : ''}` +
-        (e.body ? ` (body ${e.body.length}b)` : '')
+        (e.body ? ` (body ${e.body.length}b)` : '') +
+        (e.bodyPath ? ` (body spilled → ${e.bodyPath})` : '') +
+        (e.reqBody ? ` (req ${e.reqBody.length}b)` : '')
       )
     default:
       return `- snapshot ${e.snapshotId}${e.url ? ` @ ${e.url}` : ''}`
   }
+}
+
+// Response bodies over INLINE_BODY_CAP move to their own file under
+// `<dir>/bodies/` so timeline.jsonl stays lean; the event keeps a relative
+// `bodyPath` reference instead of `body` (TASK-1424 AC-1). Returns the
+// (possibly rewritten) events plus the bytes written to spill files.
+function spillLargeBodies(dir: string, events: DiscoveryEvent[]): { events: DiscoveryEvent[]; bytes: number } {
+  let bytes = 0
+  let n = 0
+  const out = events.map((e) => {
+    if (e.type !== 'apicall' || !e.body || e.body.length <= INLINE_BODY_CAP) return e
+    n += 1
+    const bodiesDir = path.join(dir, 'bodies')
+    fs.mkdirSync(bodiesDir, { recursive: true })
+    const rel = path.join('bodies', `${n}-res.txt`)
+    fs.writeFileSync(path.join(dir, rel), e.body, 'utf8')
+    bytes += Buffer.byteLength(e.body)
+    const { body: _body, ...rest } = e
+    return { ...rest, bodyPath: rel.split(path.sep).join('/') }
+  })
+  return { events: out, bytes }
 }
 
 function buildDraft(bundle: DiscoverySessionBundle, relDir: string): string {
@@ -219,16 +247,17 @@ export function writeDiscoverySession(
   const dir = path.join(artifactsDir, relDir)
   fs.mkdirSync(dir, { recursive: true })
 
-  const jsonl = bundle.events.map((e) => JSON.stringify(e)).join('\n') + '\n'
+  const { events, bytes: spillBytes } = spillLargeBodies(dir, bundle.events)
+  const jsonl = events.map((e) => JSON.stringify(e)).join('\n') + '\n'
   const timelinePath = path.join(dir, 'timeline.jsonl')
   fs.writeFileSync(timelinePath, jsonl, 'utf8')
 
-  let bytes = Buffer.byteLength(jsonl)
+  let bytes = Buffer.byteLength(jsonl) + spillBytes
   if (bundle.snapshots && bundle.snapshots.length > 0) {
     bytes += writeSnapshots(dir, bundle.snapshots)
   }
 
-  const draft = buildDraft(bundle, relDir.split(path.sep).join('/'))
+  const draft = buildDraft({ ...bundle, events }, relDir.split(path.sep).join('/'))
   const draftPath = path.join(dir, 'draft.md')
   fs.writeFileSync(draftPath, draft, 'utf8')
   bytes += Buffer.byteLength(draft)
@@ -238,9 +267,9 @@ export function writeDiscoverySession(
     timelinePath,
     draftPath,
     relDir: relDir.split(path.sep).join('/'),
-    eventCount: bundle.events.length,
-    navCount: bundle.events.filter((e) => e.type === 'nav').length,
-    apiCount: bundle.events.filter((e) => e.type === 'apicall').length,
+    eventCount: events.length,
+    navCount: events.filter((e) => e.type === 'nav').length,
+    apiCount: events.filter((e) => e.type === 'apicall').length,
     snapshotCount: bundle.snapshots?.length ?? 0,
     bytes
   }

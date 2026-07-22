@@ -336,6 +336,64 @@ describe('CompanionCaptureDispatcher — discovery-session kind (TASK-1410)', ()
     expect(draft).toContain('body 15b')
   })
 
+  it('a response body over the inline cap is spilled to a file, referenced by bodyPath (TASK-1424 AC-1)', async () => {
+    const svc = makeSvc()
+    const bigBody = '{"total":64537,"items":[' + 'x'.repeat(33 * 1024) + ']}'
+    const withBigBody = [
+      { type: 'nav', ts: 1, url: 'https://shop.ex/products', title: 'Products' },
+      { type: 'apicall', ts: 2, url: 'https://api.ex/paging', method: 'POST', status: 200, body: bigBody }
+    ]
+    await make(svc).dispatch(discReq('inbox', { events: withBigBody, projectId: 'choda-deck' }))
+    const capturesDir = path.join(ARTIFACTS, 'captures')
+    const dir = path.join(capturesDir, fs.readdirSync(capturesDir).find((d) => d.startsWith('discovery-')) as string)
+    const jsonl = fs.readFileSync(path.join(dir, 'timeline.jsonl'), 'utf8')
+    const apiLine = JSON.parse(jsonl.trimEnd().split('\n').find((l) => l.includes('apicall')) as string)
+    expect(apiLine.body).toBeUndefined()
+    expect(apiLine.bodyPath).toBe('bodies/1-res.txt')
+    const spilled = fs.readFileSync(path.join(dir, apiLine.bodyPath), 'utf8')
+    expect(spilled).toBe(bigBody)
+  })
+
+  it('a response body at/under the inline cap stays inline, no bodyPath (TASK-1424 AC-1)', async () => {
+    const svc = makeSvc()
+    const smallBody = '{"total":1}'
+    const withSmallBody = [
+      { type: 'apicall', ts: 1, url: 'https://api.ex/cart', method: 'GET', status: 200, body: smallBody }
+    ]
+    await make(svc).dispatch(discReq('inbox', { events: withSmallBody, projectId: 'choda-deck' }))
+    const capturesDir = path.join(ARTIFACTS, 'captures')
+    const dir = path.join(capturesDir, fs.readdirSync(capturesDir).find((d) => d.startsWith('discovery-')) as string)
+    const jsonl = fs.readFileSync(path.join(dir, 'timeline.jsonl'), 'utf8')
+    const apiLine = JSON.parse(jsonl.trimEnd().split('\n').find((l) => l.includes('apicall')) as string)
+    expect(apiLine.body).toBe(smallBody)
+    expect(apiLine.bodyPath).toBeUndefined()
+    expect(fs.existsSync(path.join(dir, 'bodies'))).toBe(false)
+  })
+
+  it("a POST's request body is captured into reqBody and reaches the timeline (TASK-1424 AC-2)", async () => {
+    const svc = makeSvc()
+    const withReqBody = [
+      {
+        type: 'apicall',
+        ts: 1,
+        url: 'https://api.ex/crawler/paging',
+        method: 'POST',
+        status: 200,
+        body: '{"total":64537}',
+        reqBody: '{"page":1,"filters":{"status":"active"}}'
+      }
+    ]
+    await make(svc).dispatch(discReq('inbox', { events: withReqBody, projectId: 'choda-deck' }))
+    const capturesDir = path.join(ARTIFACTS, 'captures')
+    const dir = path.join(capturesDir, fs.readdirSync(capturesDir).find((d) => d.startsWith('discovery-')) as string)
+    const jsonl = fs.readFileSync(path.join(dir, 'timeline.jsonl'), 'utf8')
+    const apiLine = JSON.parse(jsonl.trimEnd().split('\n').find((l) => l.includes('apicall')) as string)
+    const reqBody = '{"page":1,"filters":{"status":"active"}}'
+    expect(apiLine.reqBody).toBe(reqBody)
+    const draft = fs.readFileSync(path.join(dir, 'draft.md'), 'utf8')
+    expect(draft).toContain(`req ${reqBody.length}b`)
+  })
+
   it('drops a malformed event but still saves the session (TASK-1420 AC-3)', async () => {
     const svc = makeSvc()
     const mixed = [

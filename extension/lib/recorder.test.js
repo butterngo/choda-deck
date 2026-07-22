@@ -83,12 +83,12 @@ describe('recorder network track (TASK-1419)', () => {
   it('redacts a token in the response body and caps it (AC-2)', () => {
     const { rec, events } = setup()
     rec.start()
-    const body = 'prefix Bearer abcDEF123456ghijkl {"tok":"eyJhbGciOi.eyJzdWIi.SflKxwRJ"} ' + 'x'.repeat(20000)
+    const body = 'prefix Bearer abcDEF123456ghijkl {"tok":"eyJhbGciOi.eyJzdWIi.SflKxwRJ"} ' + 'x'.repeat(200000)
     rec.handleNetwork({ url: 'https://api/y', method: 'GET', status: 200, body })
     const ev = events[0]
     expect(ev.body).not.toContain('abcDEF123456ghijkl')
     expect(ev.body).toContain('[redacted]')
-    expect(ev.body.length).toBeLessThanOrEqual(8 * 1024)
+    expect(ev.body.length).toBeLessThanOrEqual(64 * 1024)
   })
 
   it('ignores a message with no url', () => {
@@ -96,6 +96,39 @@ describe('recorder network track (TASK-1419)', () => {
     rec.start()
     rec.handleNetwork({ method: 'GET' })
     expect(events).toHaveLength(0)
+  })
+})
+
+// TASK-1424 — deeper API capture: request body + raised response cap.
+describe('recorder deeper API capture (TASK-1424)', () => {
+  it('a response body under the old 8 KB cap is no longer truncated (AC-1)', () => {
+    const { rec, events } = setup()
+    rec.start()
+    const body = 'x'.repeat(20 * 1024)
+    rec.handleNetwork({ url: 'https://api/y', method: 'GET', status: 200, body })
+    expect(events[0].body).toHaveLength(20 * 1024)
+  })
+
+  it("a POST's request body is captured (redacted) into reqBody (AC-2)", () => {
+    const { rec, events } = setup()
+    rec.start()
+    rec.handleNetwork({
+      url: 'https://api.ex/crawler/paging',
+      method: 'POST',
+      status: 200,
+      body: '{"total":1}',
+      reqBody: '{"page":1,"filters":{"token":"Bearer abcDEF123456ghijkl"}}'
+    })
+    expect(events[0].reqBody).toContain('"page":1')
+    expect(events[0].reqBody).not.toContain('abcDEF123456ghijkl')
+    expect(events[0].reqBody).toContain('[redacted]')
+  })
+
+  it('no reqBody on the message → reqBody stays undefined (GET requests)', () => {
+    const { rec, events } = setup()
+    rec.start()
+    rec.handleNetwork({ url: 'https://api/y', method: 'GET', status: 200, body: '{}' })
+    expect(events[0].reqBody).toBeUndefined()
   })
 })
 

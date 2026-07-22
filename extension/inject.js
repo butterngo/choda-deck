@@ -6,7 +6,10 @@
 // so a huge response can't bloat the buffer.
 
 ;(() => {
-  const MAX = 20000
+  // TASK-1424 — raised from 20000 so a full API response/request body reaches
+  // the recorder without truncating mid-payload; the recorder applies its own
+  // (spillable) cap downstream.
+  const MAX = 64 * 1024
   const post = (d) => {
     try {
       window.postMessage({ __chodaCapture: true, ...d }, '*')
@@ -22,9 +25,15 @@
     }
   }
 
+  // TASK-1424 — only a string request body is captured (the common
+  // JSON.stringify(...) case); FormData/Blob/ReadableStream bodies are skipped
+  // rather than guessed at.
+  const reqBodyOf = (init) => (init && typeof init.body === 'string' ? init.body.slice(0, MAX) : undefined)
+
   const origFetch = window.fetch
   if (origFetch) {
     window.fetch = function (...args) {
+      const reqBody = reqBodyOf(args[1])
       return origFetch.apply(this, args).then((res) => {
         try {
           const url = res.url || abs(typeof args[0] === 'string' ? args[0] : args[0]?.url)
@@ -33,7 +42,7 @@
           res
             .clone()
             .text()
-            .then((t) => post({ url, method, status: res.status, body: t.slice(0, MAX) }))
+            .then((t) => post({ url, method, status: res.status, body: t.slice(0, MAX), reqBody }))
             .catch(() => {})
         } catch {
           /* ignore */
@@ -70,11 +79,18 @@
     this.__cc = { method, url: abs(url) }
     return origOpen.apply(this, arguments)
   }
-  XMLHttpRequest.prototype.send = function () {
+  XMLHttpRequest.prototype.send = function (body) {
+    const reqBody = typeof body === 'string' ? body.slice(0, MAX) : undefined
     this.addEventListener('load', () => {
       try {
-        const body = typeof this.responseText === 'string' ? this.responseText : ''
-        post({ url: this.__cc?.url, method: this.__cc?.method, status: this.status, body: body.slice(0, MAX) })
+        const resBody = typeof this.responseText === 'string' ? this.responseText : ''
+        post({
+          url: this.__cc?.url,
+          method: this.__cc?.method,
+          status: this.status,
+          body: resBody.slice(0, MAX),
+          reqBody
+        })
       } catch {
         /* responseType blob/arraybuffer — no text body */
       }
