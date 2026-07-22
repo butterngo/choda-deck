@@ -22,6 +22,7 @@ import type { CodeRefOperations } from './interfaces/code-ref-operations.interfa
 import type { SessionEventOperations } from './interfaces/session-event-operations.interface'
 import type { AgentMemoryOperations } from './interfaces/agent-memory-operations.interface'
 import type { InvestigationOperations } from './interfaces/investigation.interface'
+import type { RelationshipOperations } from './interfaces/relationship-repository.interface'
 import type {
   ToolInvocation,
   ToolInvocationAggregate,
@@ -46,7 +47,8 @@ export interface BackendTaskService
     CodeRefOperations,
     SessionEventOperations,
     AgentMemoryOperations,
-    InvestigationOperations {
+    InvestigationOperations,
+    RelationshipOperations {
   initializeAsync(): Promise<void>
   backup(absolutePath: string): Promise<void>
   recordToolInvocation(invocation: ToolInvocation): Promise<void>
