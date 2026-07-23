@@ -41,6 +41,7 @@ function refreshDestinations() {
   el('networkPane').hidden = kind !== 'network'
   if (kind === 'network') loadRequests()
   refreshConvPane()
+  refreshKnowledgePane()
 }
 
 // A — reply-to-existing: the conversation picker shows when destination is
@@ -59,6 +60,14 @@ function refreshConvPane() {
   const show = el('destination').value === 'conversation'
   el('convPane').hidden = !show
   if (show) loadConversations()
+}
+
+// TASK-1456 — knowledgeType picker shows when destination is knowledge (mirrors
+// convPane's show/hide pattern). Options are KNOWLEDGE_TYPES from
+// src/core/domain/knowledge-types.ts, duplicated here since the extension can't
+// import server TS — 'learning' matches the server's DEFAULT_KNOWLEDGE_TYPE.
+function refreshKnowledgePane() {
+  el('knowledgeTypePane').hidden = el('destination').value !== 'knowledge'
 }
 
 async function loadConversations() {
@@ -465,7 +474,10 @@ async function init() {
 for (const r of document.querySelectorAll('input[name="kind"]')) {
   r.addEventListener('change', refreshDestinations)
 }
-el('destination').addEventListener('change', refreshConvPane)
+el('destination').addEventListener('change', () => {
+  refreshConvPane()
+  refreshKnowledgePane()
+})
 el('reqSearch').addEventListener('input', () => {
   searchQuery = el('reqSearch').value.trim()
   renderReqList()
@@ -563,6 +575,11 @@ el('send').addEventListener('click', async () => {
   if (destination === 'conversation') {
     const convId = el('convTarget').value
     if (convId) payload.conversationId = convId
+  }
+  // TASK-1456 — dispatcher reads knowledgeType off the payload; 'learning' matches
+  // its server-side default, so an untouched picker is still a no-op.
+  if (destination === 'knowledge') {
+    payload.knowledgeType = el('knowledgeType').value
   }
 
   const { base, token } = await getConfig()
