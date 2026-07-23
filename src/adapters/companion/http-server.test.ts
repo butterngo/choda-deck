@@ -36,7 +36,8 @@ const fakeSvc = {
   listProjects: async () => [{ id: 'choda-deck' }],
   findTasks: async () => [{ id: 'TASK-1', title: 't' }],
   findInbox: async () => [{ id: 'INBOX-1' }],
-  findConversations: async () => [{ id: 'CONV-1' }]
+  findConversations: async () => [{ id: 'CONV-1' }],
+  findWorkspaces: async () => [{ id: 'w1', projectId: 'choda-deck', label: 'Main', cwd: 'C:/x', archivedAt: null }]
 } as unknown as BackendTaskService
 
 describe('companion http server', () => {
@@ -84,6 +85,9 @@ describe('companion http server', () => {
     expect(await (await fetch(`${base}/inbox`)).json()).toEqual({ inbox: [{ id: 'INBOX-1' }] })
     expect(await (await fetch(`${base}/conversations`)).json()).toEqual({
       conversations: [{ id: 'CONV-1' }]
+    })
+    expect(await (await fetch(`${base}/workspaces`)).json()).toEqual({
+      workspaces: [{ id: 'w1', projectId: 'choda-deck', label: 'Main', cwd: 'C:/x', archivedAt: null }]
     })
   })
 
