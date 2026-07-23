@@ -110,6 +110,9 @@ let previewId = null
 const GROUP_ORDER = ['api', 'html', 'js', 'css', 'other']
 const collapsedGroups = new Set()
 let searchQuery = ''
+// TASK-1455 — method + status-class filters, DevTools-Network-tab-style.
+let activeMethod = 'all'
+let activeStatusClass = 'all'
 
 // TASK-1450 — search matches URL always, and response body text when captured.
 function matchesSearch(r) {
@@ -119,10 +122,45 @@ function matchesSearch(r) {
   return typeof r.body === 'string' && r.body.toLowerCase().includes(q)
 }
 
+// TASK-1455 — status class bucket (2xx/3xx/4xx/5xx); null for uncaptured/invalid status.
+function statusClass(status) {
+  const n = Number(status)
+  if (!Number.isFinite(n) || n < 100 || n > 599) return null
+  return `${Math.floor(n / 100)}xx`
+}
+
 function filteredRequests() {
   return capturedRequests
     .filter((r) => activeFilter === 'all' || (r.resType || 'api') === activeFilter)
+    .filter((r) => activeMethod === 'all' || r.method === activeMethod)
+    .filter((r) => activeStatusClass === 'all' || statusClass(r.status) === activeStatusClass)
     .filter(matchesSearch)
+}
+
+// Repopulate the method/status <select>s from whatever's currently captured, keeping
+// the current selection when it's still a valid option (falls back to "all" otherwise).
+function renderNetFilters() {
+  const rebuild = (sel, options, current) => {
+    sel.innerHTML = ''
+    const allOpt = document.createElement('option')
+    allOpt.value = 'all'
+    allOpt.textContent = sel === el('methodFilter') ? 'All methods' : 'All statuses'
+    sel.appendChild(allOpt)
+    for (const o of options) {
+      const opt = document.createElement('option')
+      opt.value = o
+      opt.textContent = o
+      sel.appendChild(opt)
+    }
+    sel.value = options.includes(current) ? current : 'all'
+    return sel.value
+  }
+  const methods = [...new Set(capturedRequests.map((r) => r.method))].sort()
+  const statuses = ['2xx', '3xx', '4xx', '5xx'].filter((c) =>
+    capturedRequests.some((r) => statusClass(r.status) === c)
+  )
+  activeMethod = rebuild(el('methodFilter'), methods, activeMethod)
+  activeStatusClass = rebuild(el('statusFilter'), statuses, activeStatusClass)
 }
 
 // Group the filtered rows by resType, in a fixed display order, dropping empty groups.
@@ -264,6 +302,7 @@ async function loadRequests() {
     })
     capturedRequests = requests || []
     renderChips()
+    renderNetFilters()
     renderReqList()
     renderReqPreview()
   } catch {
@@ -429,6 +468,15 @@ for (const r of document.querySelectorAll('input[name="kind"]')) {
 el('destination').addEventListener('change', refreshConvPane)
 el('reqSearch').addEventListener('input', () => {
   searchQuery = el('reqSearch').value.trim()
+  renderReqList()
+})
+// TASK-1455 — method/status filters compose with search + type chips via filteredRequests().
+el('methodFilter').addEventListener('change', () => {
+  activeMethod = el('methodFilter').value
+  renderReqList()
+})
+el('statusFilter').addEventListener('change', () => {
+  activeStatusClass = el('statusFilter').value
   renderReqList()
 })
 // TASK-1454 — re-pull requests in place; search/filter/collapse state (module-level,
