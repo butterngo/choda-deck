@@ -340,6 +340,48 @@ describe('updateKnowledge', () => {
     const after = fs.readFileSync(indexMdPath, 'utf8')
     expect(after).toContain('reindex')
   })
+
+  it('preserves a hand-edited title/date on an unrelated entry when INDEX.md regenerates (TASK-1432)', async () => {
+    await svc.createKnowledge({
+      projectId: 'proj-k',
+      type: 'gotcha',
+      scope: 'project',
+      title: 'Old Title',
+      body: 'body\n',
+      refs: []
+    })
+    await svc.createKnowledge({
+      projectId: 'proj-k',
+      type: 'decision',
+      scope: 'project',
+      title: 'Unrelated',
+      body: 'body\n',
+      refs: []
+    })
+
+    const handEditedPath = path.join(projectCwd, 'docs', 'knowledge', 'old-title.md')
+    const raw = fs.readFileSync(handEditedPath, 'utf8')
+    const { frontmatter, body } = parseFrontmatter(raw)
+    frontmatter.title = 'New Hand-Edited Title'
+    frontmatter.lastVerifiedAt = '2026-07-01'
+    fs.writeFileSync(handEditedPath, serializeFrontmatter(frontmatter, body), 'utf8')
+
+    // A write on the UNRELATED entry regenerates INDEX.md from the DB —
+    // this used to revert old-title's DB-cached (stale) title/date.
+    await svc.updateKnowledge({ slug: 'unrelated', body: 'new body\n' })
+
+    const indexMd = fs.readFileSync(
+      path.join(projectCwd, 'docs', 'knowledge', 'INDEX.md'),
+      'utf8'
+    )
+    expect(indexMd).toContain('New Hand-Edited Title')
+    expect(indexMd).not.toContain('Old Title')
+    expect(indexMd).toContain('2026-07-01')
+
+    // DB row itself is untouched (write-path fix deliberately deferred — see
+    // updateKnowledge's TASK-1432 comment); only the rendered index reads disk.
+    expect((await repo.get('old-title'))?.title).toBe('Old Title')
+  })
 })
 
 describe('verifyKnowledge', () => {
