@@ -428,7 +428,88 @@ function renderReqPreview() {
 }
 
 let activeTab = null
-let screenshotDataUrl = null
+// TASK-1458 — the source Image backing the canvas, kept around so "Clear markup"
+// can redraw the unmarked capture instead of undoing individual strokes.
+let shotImg = null
+
+// TASK-1457/1458 — loads a data URL (from Grab or paste) onto the canvas at its
+// natural resolution; CSS scales it down for display, drawing math below un-scales
+// pointer coordinates back to canvas pixel space.
+function setScreenshot(dataUrl) {
+  const img = new Image()
+  img.onload = () => {
+    shotImg = img
+    const canvas = el('shotCanvas')
+    canvas.width = img.naturalWidth
+    canvas.height = img.naturalHeight
+    canvas.hidden = false
+    canvas.getContext('2d').drawImage(img, 0, 0)
+    el('shotClear').hidden = false
+  }
+  img.src = dataUrl
+}
+
+function clearShotMarkup() {
+  if (!shotImg) return
+  const canvas = el('shotCanvas')
+  const ctx = canvas.getContext('2d')
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.drawImage(shotImg, 0, 0)
+}
+
+// TASK-1458 — freehand highlighter: drag on the canvas to paint a translucent stroke.
+;(() => {
+  let drawing = false
+  let last = null
+
+  const point = (e) => {
+    const canvas = el('shotCanvas')
+    const rect = canvas.getBoundingClientRect()
+    return {
+      x: ((e.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((e.clientY - rect.top) / rect.height) * canvas.height
+    }
+  }
+
+  el('shotCanvas').addEventListener('mousedown', (e) => {
+    drawing = true
+    last = point(e)
+  })
+  el('shotCanvas').addEventListener('mousemove', (e) => {
+    if (!drawing) return
+    const p = point(e)
+    const ctx = el('shotCanvas').getContext('2d')
+    ctx.strokeStyle = 'rgba(255, 224, 32, 0.55)'
+    ctx.lineWidth = 18
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.beginPath()
+    ctx.moveTo(last.x, last.y)
+    ctx.lineTo(p.x, p.y)
+    ctx.stroke()
+    last = p
+  })
+  window.addEventListener('mouseup', () => {
+    drawing = false
+  })
+})()
+
+el('shotClear').addEventListener('click', clearShotMarkup)
+
+// TASK-1457 — Ctrl+V an image (Snipping Tool, copied from a webpage, …) straight
+// into Screenshot mode; non-image clipboard content is ignored, no error shown.
+document.addEventListener('paste', (e) => {
+  if (selectedKind() !== 'image') return
+  const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith('image/'))
+  const file = item?.getAsFile()
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = () => {
+    setScreenshot(reader.result)
+    setStatus('Pasted image ready', 'ok')
+  }
+  reader.readAsDataURL(file)
+})
 
 async function init() {
   ;[activeTab] = await chrome.tabs.query({ active: true, currentWindow: true })
@@ -524,11 +605,8 @@ el('project').addEventListener('change', () => {
 
 el('grab').addEventListener('click', async () => {
   try {
-    screenshotDataUrl = await chrome.tabs.captureVisibleTab(activeTab.windowId, { format: 'png' })
-    el('shot').innerHTML = ''
-    const img = document.createElement('img')
-    img.src = screenshotDataUrl
-    el('shot').appendChild(img)
+    const dataUrl = await chrome.tabs.captureVisibleTab(activeTab.windowId, { format: 'png' })
+    setScreenshot(dataUrl)
     setStatus('Screenshot ready', 'ok')
   } catch (e) {
     setStatus(`Screenshot failed: ${e.message}`, 'err')
@@ -548,8 +626,10 @@ el('send').addEventListener('click', async () => {
     if (!text) return setStatus('Nothing to capture — text is empty', 'err')
     payload = { text, projectId }
   } else if (kind === 'image') {
-    if (!screenshotDataUrl) return setStatus('Grab a screenshot first', 'err')
-    payload = { dataUrl: screenshotDataUrl, projectId }
+    // TASK-1458 — read the canvas's live pixels so any highlighter markup is baked in.
+    const canvas = el('shotCanvas')
+    if (canvas.hidden) return setStatus('Grab a screenshot first', 'err')
+    payload = { dataUrl: canvas.toDataURL('image/png'), projectId }
   } else {
     const picked = selectedRequests()
     if (!picked.length) return setStatus('Select at least one request first', 'err')
@@ -622,7 +702,9 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   activeTab = await chrome.tabs.get(tabId)
   selectedIds.clear()
   previewId = null
-  screenshotDataUrl = null
+  shotImg = null
+  el('shotCanvas').hidden = true
+  el('shotClear').hidden = true
   searchQuery = ''
   el('reqSearch').value = ''
   if (!el('networkPane').hidden) loadRequests()

@@ -32,8 +32,13 @@
       .modes input { width: auto; }
       button.primary { margin-top: 10px; background: #2563eb; color: #fff; border: none; cursor: pointer; padding: 8px; font-weight: 600; }
       button.ghost { cursor: pointer; }
-      #shot { margin-top: 6px; }
-      #shot img { max-width: 100%; border-radius: 6px; display: block; margin-top: 6px; }
+      /* TASK-1457/1458 — screenshot toolbar + canvas (paste-from-clipboard, highlighter markup). */
+      .shotToolbar { display: flex; gap: 6px; }
+      .shotToolbar button { width: auto; flex: none; padding: 6px 10px; }
+      #shotCanvas {
+        max-width: 100%; margin-top: 6px; border-radius: 6px; display: block;
+        cursor: crosshair; border: 1px solid #8883;
+      }
       #reqPreview {
         max-height: 30vh;
         overflow: auto;
@@ -164,8 +169,14 @@
     </div>
 
     <div id="imagePane" hidden>
-      <button type="button" id="grab" class="ghost">📸 Grab visible tab</button>
-      <div id="shot"></div>
+      <div class="shotToolbar">
+        <button type="button" id="grab" class="ghost">📸 Grab visible tab</button>
+        <button type="button" id="shotClear" class="ghost" hidden>✕ Clear markup</button>
+      </div>
+      <p class="hint" style="margin:4px 0 0">
+        Or paste an image from your clipboard (Ctrl+V). Drag on the image to highlight.
+      </p>
+      <canvas id="shotCanvas" hidden></canvas>
     </div>
 
     <div id="networkPane" hidden>
