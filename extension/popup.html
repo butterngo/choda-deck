@@ -64,6 +64,9 @@
       .netToolbar { display: flex; gap: 6px; align-items: center; margin: 6px 0 4px; }
       .netToolbar input { flex: 1; margin: 0; }
       .netToolbar button { width: auto; flex: none; padding: 6px 10px; cursor: pointer; }
+      /* TASK-1455 — method/status filters, DevTools-Network-tab-style. */
+      .netFilterRow { display: flex; gap: 6px; margin: 0 0 4px; }
+      .netFilterRow select { flex: 1; margin: 0; padding: 4px 6px; font-size: 11px; }
       .chips { display: flex; gap: 4px; margin: 4px 0; flex-wrap: wrap; }
       .chips button {
         width: auto; padding: 3px 9px; font-size: 11px; cursor: pointer;
@@ -157,6 +160,10 @@
       <div class="netToolbar">
         <input type="text" id="reqSearch" placeholder="search URL or response body…" />
         <button type="button" id="reqRefresh" class="ghost">⟳ Refresh</button>
+      </div>
+      <div class="netFilterRow">
+        <select id="methodFilter"><option value="all">All methods</option></select>
+        <select id="statusFilter"><option value="all">All statuses</option></select>
       </div>
       <label class="selectall"><input type="checkbox" id="selectAll" /> select all (filtered)</label>
       <div class="reqTableHead">
