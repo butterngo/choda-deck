@@ -445,6 +445,7 @@ function setScreenshot(dataUrl) {
     canvas.hidden = false
     canvas.getContext('2d').drawImage(img, 0, 0)
     el('shotClear').hidden = false
+    el('shotRemove').hidden = false
   }
   img.src = dataUrl
 }
@@ -455,6 +456,18 @@ function clearShotMarkup() {
   const ctx = canvas.getContext('2d')
   ctx.clearRect(0, 0, canvas.width, canvas.height)
   ctx.drawImage(shotImg, 0, 0)
+}
+
+// TASK-1459 — discard the image entirely (not just its markup) so Grab/paste can
+// load a fresh one into a clean panel; same end state as the tab-switch reset below.
+function removeShot() {
+  shotImg = null
+  const canvas = el('shotCanvas')
+  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)
+  canvas.hidden = true
+  el('shotClear').hidden = true
+  el('shotRemove').hidden = true
+  setStatus('Image removed', 'ok')
 }
 
 // TASK-1458 — freehand highlighter: drag on the canvas to paint a translucent stroke.
@@ -495,6 +508,7 @@ function clearShotMarkup() {
 })()
 
 el('shotClear').addEventListener('click', clearShotMarkup)
+el('shotRemove').addEventListener('click', removeShot)
 
 // TASK-1457 — Ctrl+V an image (Snipping Tool, copied from a webpage, …) straight
 // into Screenshot mode; non-image clipboard content is ignored, no error shown.
@@ -705,6 +719,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   shotImg = null
   el('shotCanvas').hidden = true
   el('shotClear').hidden = true
+  el('shotRemove').hidden = true
   searchQuery = ''
   el('reqSearch').value = ''
   if (!el('networkPane').hidden) loadRequests()
