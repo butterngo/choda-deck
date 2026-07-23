@@ -197,3 +197,59 @@ describe('recorder noise filter (TASK-1423)', () => {
     expect(events).toHaveLength(2)
   })
 })
+
+// TASK-1461 — console capture.
+describe('recorder console capture (TASK-1461)', () => {
+  it('handleConsole emits a console event only while recording', () => {
+    const { rec, events } = setup()
+    rec.handleConsole({ level: 'error', message: 'boom' })
+    expect(events).toHaveLength(0)
+    rec.start()
+    rec.handleConsole({ level: 'error', message: 'boom', stack: 'at f (x.js:1)' })
+    expect(events[0]).toMatchObject({ type: 'console', level: 'error', message: 'boom', stack: 'at f (x.js:1)' })
+    expect(typeof events[0].ts).toBe('number')
+  })
+
+  it('an unknown level normalizes to error; warn is preserved', () => {
+    const { rec, events } = setup()
+    rec.start()
+    rec.handleConsole({ level: 'warn', message: 'careful' })
+    rec.handleConsole({ level: 'info', message: 'whatever' })
+    expect(events[0].level).toBe('warn')
+    expect(events[1].level).toBe('error')
+  })
+
+  it('redacts secrets in message + stack (redactText)', () => {
+    const { rec, events } = setup()
+    rec.start()
+    rec.handleConsole({
+      level: 'error',
+      message: 'auth failed token=abcDEF123456ghij',
+      stack: 'Bearer abcDEF123456ghijklmnop at f'
+    })
+    expect(events[0].message).toContain('[redacted]')
+    expect(events[0].message).not.toContain('abcDEF123456ghij')
+    expect(events[0].stack).toContain('[redacted]')
+  })
+
+  it('caps runaway console volume and emits one dropped-count marker', () => {
+    const { rec, events } = setup()
+    rec.start()
+    for (let i = 0; i < 130; i++) rec.handleConsole({ level: 'error', message: `e${i}` })
+    // 100 real entries + exactly one marker
+    expect(events).toHaveLength(101)
+    const markers = events.filter((e) => e.message.includes('cap'))
+    expect(markers).toHaveLength(1)
+    expect(markers[0].level).toBe('warn')
+  })
+
+  it('console cap resets between recordings', () => {
+    const { rec, events } = setup()
+    rec.start()
+    for (let i = 0; i < 100; i++) rec.handleConsole({ level: 'error', message: `a${i}` })
+    rec.stop()
+    rec.start()
+    rec.handleConsole({ level: 'error', message: 'fresh' })
+    expect(events[events.length - 1]).toMatchObject({ type: 'console', message: 'fresh' })
+  })
+})

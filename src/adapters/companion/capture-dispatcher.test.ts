@@ -394,6 +394,23 @@ describe('CompanionCaptureDispatcher — discovery-session kind (TASK-1410)', ()
     expect(draft).toContain(`req ${reqBody.length}b`)
   })
 
+  it('persists a console event + reflects it in the draft (TASK-1461)', async () => {
+    const svc = makeSvc()
+    const withConsole = [
+      { type: 'nav', ts: 1, url: 'https://shop.ex/products', title: 'Products' },
+      { type: 'console', ts: 2, url: 'https://shop.ex/products', level: 'error', message: 'TypeError: x is undefined', stack: 'at f (app.js:1)' }
+    ]
+    await make(svc).dispatch(discReq('inbox', { events: withConsole, projectId: 'choda-deck' }))
+    const capturesDir = path.join(ARTIFACTS, 'captures')
+    const dir = path.join(capturesDir, fs.readdirSync(capturesDir).find((d) => d.startsWith('discovery-')) as string)
+    const jsonl = fs.readFileSync(path.join(dir, 'timeline.jsonl'), 'utf8')
+    const conLine = JSON.parse(jsonl.trimEnd().split('\n').find((l) => l.includes('console')) as string)
+    expect(conLine).toMatchObject({ type: 'console', level: 'error', message: 'TypeError: x is undefined', stack: 'at f (app.js:1)' })
+    const draft = fs.readFileSync(path.join(dir, 'draft.md'), 'utf8')
+    expect(draft).toContain('console.error TypeError: x is undefined [stack]')
+    expect(draft).toContain('1 console')
+  })
+
   it('drops a malformed event but still saves the session (TASK-1420 AC-3)', async () => {
     const svc = makeSvc()
     const mixed = [

@@ -73,6 +73,60 @@
   }
   window.addEventListener('popstate', () => navPost(location.href))
 
+  // TASK-1461 — console capture. Wrap console.error/warn and hook the two global
+  // error events, relaying each to the isolated recorder (which caps + redacts
+  // before an entry enters a session). Call-through preserves the page's own
+  // logging so nothing observes a behavior change.
+  const consolePost = (level, message, stack) => {
+    try {
+      window.postMessage(
+        {
+          __chodaConsole: true,
+          level,
+          message: String(message).slice(0, MAX),
+          stack: stack ? String(stack).slice(0, MAX) : undefined,
+          url: location.href
+        },
+        '*'
+      )
+    } catch {
+      /* structured-clone failure — drop */
+    }
+  }
+  const fmtArgs = (args) =>
+    args
+      .map((a) => {
+        if (a instanceof Error) return a.message
+        if (typeof a === 'string') return a
+        try {
+          return JSON.stringify(a)
+        } catch {
+          return String(a)
+        }
+      })
+      .join(' ')
+  for (const level of ['error', 'warn']) {
+    const orig = console[level]
+    if (typeof orig === 'function') {
+      console[level] = function (...args) {
+        const err = args.find((a) => a instanceof Error)
+        consolePost(level, fmtArgs(args), err && err.stack)
+        return orig.apply(this, args)
+      }
+    }
+  }
+  window.addEventListener('error', (e) => {
+    consolePost('error', e.message || 'uncaught error', e.error && e.error.stack)
+  })
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e.reason
+    consolePost(
+      'error',
+      r instanceof Error ? r.message : `unhandled rejection: ${String(r)}`,
+      r instanceof Error ? r.stack : undefined
+    )
+  })
+
   const origOpen = XMLHttpRequest.prototype.open
   const origSend = XMLHttpRequest.prototype.send
   XMLHttpRequest.prototype.open = function (method, url) {

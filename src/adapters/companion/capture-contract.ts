@@ -51,12 +51,21 @@ export interface DiscoverySnapshotEvent extends DiscoveryEventBase {
   // References a DiscoverySnapshot.id carried in the bundle's snapshots[].
   snapshotId: string
 }
+export interface DiscoveryConsoleEvent extends DiscoveryEventBase {
+  type: 'console'
+  // console.error/warn or a global error/unhandledrejection (TASK-1461).
+  level: 'error' | 'warn'
+  // Message + stack are redacted + capped in-page at capture time (TASK-1461).
+  message: string
+  stack?: string
+}
 export type DiscoveryEvent =
   | DiscoveryNavEvent
   | DiscoveryClickEvent
   | DiscoveryInputEvent
   | DiscoveryApiEvent
   | DiscoverySnapshotEvent
+  | DiscoveryConsoleEvent
 
 // A per-step DOM snapshot (TASK-1413 fills html/css/screenshot; redacted in-page).
 export interface DiscoverySnapshot {

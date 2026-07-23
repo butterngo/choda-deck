@@ -55,6 +55,9 @@ window.addEventListener('message', (e) => {
   } else if (d.__chodaNav === true) {
     // MAIN-world history patch (inject.js) → recorder nav event.
     recorder.handleNav(d.url, d.title)
+  } else if (d.__chodaConsole === true) {
+    // TASK-1461 — MAIN-world console/error hooks → recorder console event.
+    recorder.handleConsole(d)
   }
 })
 

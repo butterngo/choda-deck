@@ -18,7 +18,7 @@ import {
   type DiscoverySnapshot
 } from './capture-contract'
 
-const DISCOVERY_EVENT_TYPES = ['nav', 'click', 'input', 'apicall', 'snapshot'] as const
+const DISCOVERY_EVENT_TYPES = ['nav', 'click', 'input', 'apicall', 'snapshot', 'console'] as const
 const SCREENSHOT_DATA_URL_RE = /^data:image\/(png|jpe?g|webp);base64,([a-z0-9+/=]+)$/i
 const SCREENSHOT_EXT: Record<string, string> = { png: 'png', jpg: 'jpg', jpeg: 'jpg', webp: 'webp' }
 
@@ -37,6 +37,7 @@ export interface DiscoverySessionArtifact {
   navCount: number
   apiCount: number
   snapshotCount: number
+  consoleCount: number
   bytes: number
 }
 
@@ -86,6 +87,15 @@ function parseEvent(raw: unknown, i: number): DiscoveryEvent {
         status: typeof raw.status === 'number' ? raw.status : undefined,
         body: typeof raw.body === 'string' ? raw.body : undefined,
         reqBody: typeof raw.reqBody === 'string' ? raw.reqBody : undefined
+      }
+    case 'console':
+      return {
+        type,
+        ts: raw.ts,
+        url,
+        level: raw.level === 'warn' ? 'warn' : 'error',
+        message: typeof raw.message === 'string' ? raw.message : '',
+        stack: typeof raw.stack === 'string' ? raw.stack : undefined
       }
     default:
       // snapshot
@@ -195,6 +205,8 @@ function eventLine(e: DiscoveryEvent): string {
         (e.bodyPath ? ` (body spilled → ${e.bodyPath})` : '') +
         (e.reqBody ? ` (req ${e.reqBody.length}b)` : '')
       )
+    case 'console':
+      return `- console.${e.level} ${e.message}${e.stack ? ' [stack]' : ''}`
     default:
       return `- snapshot ${e.snapshotId}${e.url ? ` @ ${e.url}` : ''}`
   }
@@ -226,10 +238,12 @@ function buildDraft(bundle: DiscoverySessionBundle, relDir: string): string {
     bundle.events.filter((e) => e.type === 'nav').map((e) => (e as { url?: string }).url ?? '')
   )
   const apis = bundle.events.filter((e) => e.type === 'apicall').length
+  const consoleErrors = bundle.events.filter((e) => e.type === 'console').length
   const snaps = bundle.snapshots?.length ?? 0
   const header =
     `# Discovery session${bundle.label ? ` — ${bundle.label}` : ''}\n\n` +
-    `${bundle.events.length} events · ${pages.size} pages · ${apis} API calls · ${snaps} snapshots\n\n` +
+    `${bundle.events.length} events · ${pages.size} pages · ${apis} API calls · ` +
+    `${consoleErrors} console · ${snaps} snapshots\n\n` +
     `Raw timeline: \`${relDir}/timeline.jsonl\`\n\n## Flow\n\n`
   return header + bundle.events.map(eventLine).join('\n') + '\n'
 }
@@ -270,6 +284,7 @@ export function writeDiscoverySession(
     eventCount: events.length,
     navCount: events.filter((e) => e.type === 'nav').length,
     apiCount: events.filter((e) => e.type === 'apicall').length,
+    consoleCount: events.filter((e) => e.type === 'console').length,
     snapshotCount: bundle.snapshots?.length ?? 0,
     bytes
   }
