@@ -42,10 +42,25 @@
         background: #8881;
         border-radius: 6px;
         font: 11px/1.35 ui-monospace, "Cascadia Code", monospace;
-        white-space: pre-wrap;
         word-break: break-all;
       }
       #reqPreview:empty { display: none; }
+      .hdrSummary { font-weight: 600; margin-bottom: 6px; white-space: pre-wrap; }
+      .hdrTitle {
+        display: flex; align-items: center; justify-content: space-between;
+        font-weight: 600; opacity: 0.75; margin: 8px 0 2px;
+      }
+      .hdrRow {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 6px; padding: 1px 0; white-space: pre-wrap;
+      }
+      .hdrKV { flex: 1; word-break: break-all; }
+      .hdrCopy {
+        width: auto; flex: none; padding: 1px 6px; font-size: 10px; cursor: pointer;
+        border-radius: 4px; border: 1px solid #8884; background: #8881;
+      }
+      .bodyPre { margin: 0; white-space: pre-wrap; word-break: break-all; font: inherit; }
+      #reqSearch { margin: 4px 0; }
       .chips { display: flex; gap: 4px; margin: 4px 0; flex-wrap: wrap; }
       .chips button {
         width: auto; padding: 2px 8px; font-size: 11px; cursor: pointer;
@@ -55,8 +70,14 @@
       .selectall { font-weight: 400; font-size: 12px; display: flex; align-items: center; gap: 6px; }
       .selectall input { width: auto; }
       #reqList { max-height: 45vh; overflow: auto; margin-top: 4px; }
+      .reqGroup { margin-bottom: 2px; }
+      .reqGroupHeader {
+        font-size: 11px; font-weight: 600; padding: 3px 4px; cursor: pointer;
+        border-radius: 4px; user-select: none;
+      }
+      .reqGroupHeader:hover { background: #8882; }
       #reqList label {
-        display: flex; align-items: center; gap: 6px; margin: 0; padding: 2px 4px;
+        display: flex; align-items: center; gap: 6px; margin: 0; padding: 2px 4px 2px 16px;
         font-weight: 400; font-size: 11px; font-family: ui-monospace, "Cascadia Code", monospace;
         cursor: pointer; border-radius: 4px;
       }
@@ -111,9 +132,10 @@
     <div id="networkPane" hidden>
       <label>Recent requests (this tab)</label>
       <div id="typeChips" class="chips"></div>
+      <input type="text" id="reqSearch" placeholder="search URL or response body…" />
       <label class="selectall"><input type="checkbox" id="selectAll" /> select all (filtered)</label>
       <div id="reqList"></div>
-      <pre id="reqPreview"></pre>
+      <div id="reqPreview"></div>
       <p class="hint" style="margin:4px 0 0">Headers + cookies + token + response body (fetch/XHR; reload page to capture).</p>
     </div>
 

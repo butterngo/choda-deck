@@ -104,11 +104,36 @@ const FILTERS = ['all', 'api', 'html', 'js', 'css']
 let activeFilter = 'all'
 const selectedIds = new Set()
 let previewId = null
+// TASK-1447/1448 — per-group collapse state (keyed by resType) + free-text search,
+// both persist across renderReqList() re-renders within the popup session.
+const GROUP_ORDER = ['api', 'html', 'js', 'css', 'other']
+const collapsedGroups = new Set()
+let searchQuery = ''
+
+// TASK-1450 — search matches URL always, and response body text when captured.
+function matchesSearch(r) {
+  if (!searchQuery) return true
+  const q = searchQuery.toLowerCase()
+  if ((r.url || '').toLowerCase().includes(q)) return true
+  return typeof r.body === 'string' && r.body.toLowerCase().includes(q)
+}
 
 function filteredRequests() {
-  return activeFilter === 'all'
-    ? capturedRequests
-    : capturedRequests.filter((r) => (r.resType || 'api') === activeFilter)
+  return capturedRequests
+    .filter((r) => activeFilter === 'all' || (r.resType || 'api') === activeFilter)
+    .filter(matchesSearch)
+}
+
+// Group the filtered rows by resType, in a fixed display order, dropping empty groups.
+function groupedRequests() {
+  const byGroup = new Map()
+  for (const r of filteredRequests()) {
+    const g = r.resType || 'api'
+    if (!byGroup.has(g)) byGroup.set(g, [])
+    byGroup.get(g).push(r)
+  }
+  const order = [...GROUP_ORDER, ...[...byGroup.keys()].filter((g) => !GROUP_ORDER.includes(g))]
+  return order.filter((g) => byGroup.has(g)).map((g) => ({ group: g, rows: byGroup.get(g) }))
 }
 
 function renderChips() {
@@ -132,35 +157,58 @@ function renderChips() {
   }
 }
 
+function renderReqRow(r) {
+  const label = document.createElement('label')
+  const cb = document.createElement('input')
+  cb.type = 'checkbox'
+  cb.checked = selectedIds.has(r.requestId)
+  cb.addEventListener('change', () => {
+    if (cb.checked) selectedIds.add(r.requestId)
+    else selectedIds.delete(r.requestId)
+    previewId = r.requestId
+    syncSelectAll()
+    renderReqPreview()
+  })
+  const span = document.createElement('span')
+  span.textContent = reqLabel(r)
+  label.addEventListener('click', () => {
+    previewId = r.requestId
+    renderReqPreview()
+  })
+  label.append(cb, span)
+  return label
+}
+
+// TASK-1447 — one collapsible section per resType group; collapse state survives
+// re-renders (stored in collapsedGroups, outside this function).
 function renderReqList() {
   const list = el('reqList')
   list.innerHTML = ''
-  const rows = filteredRequests()
-  if (!rows.length) {
+  const groups = groupedRequests()
+  if (!groups.length) {
     list.textContent = 'no requests seen — reload the page, then reopen'
     el('selectAll').checked = false
     return
   }
-  for (const r of rows) {
-    const label = document.createElement('label')
-    const cb = document.createElement('input')
-    cb.type = 'checkbox'
-    cb.checked = selectedIds.has(r.requestId)
-    cb.addEventListener('change', () => {
-      if (cb.checked) selectedIds.add(r.requestId)
-      else selectedIds.delete(r.requestId)
-      previewId = r.requestId
-      syncSelectAll()
-      renderReqPreview()
+  for (const { group, rows } of groups) {
+    const section = document.createElement('div')
+    section.className = 'reqGroup'
+
+    const collapsed = collapsedGroups.has(group)
+    const header = document.createElement('div')
+    header.className = 'reqGroupHeader'
+    header.textContent = `${collapsed ? '▶' : '▼'} ${group.toUpperCase()} (${rows.length})`
+    header.addEventListener('click', () => {
+      if (collapsed) collapsedGroups.delete(group)
+      else collapsedGroups.add(group)
+      renderReqList()
     })
-    const span = document.createElement('span')
-    span.textContent = reqLabel(r)
-    label.addEventListener('click', () => {
-      previewId = r.requestId
-      renderReqPreview()
-    })
-    label.append(cb, span)
-    list.appendChild(label)
+    section.appendChild(header)
+
+    if (!collapsed) {
+      for (const r of rows) section.appendChild(renderReqRow(r))
+    }
+    list.appendChild(section)
   }
   syncSelectAll()
 }
@@ -191,28 +239,93 @@ async function loadRequests() {
   }
 }
 
+// TASK-1449 — clipboard copy with transient "copied" feedback on the triggering button.
+function copyText(text, btn) {
+  navigator.clipboard
+    .writeText(text)
+    .then(() => {
+      const orig = btn.textContent
+      btn.textContent = '✓'
+      setTimeout(() => {
+        btn.textContent = orig
+      }, 900)
+    })
+    .catch(() => {
+      btn.textContent = '✗'
+    })
+}
+
+// TASK-1449 — one row per header, each with a copy-value button, instead of one
+// plain-text dump (so a single header value can be grabbed without hand-selecting it).
+function appendHeaderRows(container, title, headers) {
+  const heading = document.createElement('div')
+  heading.className = 'hdrTitle'
+  heading.textContent = title
+  container.appendChild(heading)
+
+  const entries = Object.entries(headers || {})
+  if (!entries.length) {
+    const none = document.createElement('div')
+    none.className = 'hdrRow'
+    none.textContent = '(none)'
+    container.appendChild(none)
+    return
+  }
+  for (const [k, v] of entries) {
+    const row = document.createElement('div')
+    row.className = 'hdrRow'
+    const kv = document.createElement('span')
+    kv.className = 'hdrKV'
+    kv.textContent = `${k}: ${v}`
+    const copyBtn = document.createElement('button')
+    copyBtn.type = 'button'
+    copyBtn.className = 'hdrCopy'
+    copyBtn.textContent = '⧉'
+    copyBtn.title = `Copy ${k}`
+    copyBtn.addEventListener('click', () => copyText(String(v), copyBtn))
+    row.append(kv, copyBtn)
+    container.appendChild(row)
+  }
+}
+
 // Show the focused request's method/status + request & response headers (cookie
 // and token live in these) right in the popup — inspect without opening DevTools.
 function renderReqPreview() {
   const pre = el('reqPreview')
+  pre.innerHTML = ''
   const r = capturedRequests.find((x) => x.requestId === previewId)
-  if (!r) {
-    pre.textContent = ''
-    return
+  if (!r) return
+
+  const summary = document.createElement('div')
+  summary.className = 'hdrSummary'
+  summary.textContent = `${r.method} ${r.url}${r.status ? '  ·  ' + r.status : ''}`
+  pre.appendChild(summary)
+
+  appendHeaderRows(pre, 'REQUEST HEADERS', r.requestHeaders)
+  appendHeaderRows(pre, 'RESPONSE HEADERS', r.responseHeaders)
+
+  // TASK-1450 — copy-response-body button, hidden when the body wasn't captured.
+  const bodyTitle = document.createElement('div')
+  bodyTitle.className = 'hdrTitle'
+  const bodyLabel = document.createElement('span')
+  bodyLabel.textContent = 'RESPONSE BODY'
+  bodyTitle.appendChild(bodyLabel)
+  if (typeof r.body === 'string') {
+    const copyBodyBtn = document.createElement('button')
+    copyBodyBtn.type = 'button'
+    copyBodyBtn.className = 'hdrCopy'
+    copyBodyBtn.textContent = '⧉ copy'
+    copyBodyBtn.title = 'Copy response body'
+    copyBodyBtn.addEventListener('click', () => copyText(r.body, copyBodyBtn))
+    bodyTitle.appendChild(copyBodyBtn)
   }
-  const fmt = (o) =>
-    Object.entries(o || {})
-      .map(([k, v]) => `  ${k}: ${v}`)
-      .join('\n') || '  (none)'
-  const body =
-    r.body !== undefined
-      ? `\n\nRESPONSE BODY\n${r.body}`
-      : '\n\nRESPONSE BODY\n  (not captured — reload the page, then retry)'
-  pre.textContent =
-    `${r.method} ${r.url}${r.status ? '  ·  ' + r.status : ''}\n\n` +
-    `REQUEST HEADERS\n${fmt(r.requestHeaders)}\n\n` +
-    `RESPONSE HEADERS\n${fmt(r.responseHeaders)}` +
-    body
+  pre.appendChild(bodyTitle)
+
+  const bodyPre = document.createElement('pre')
+  bodyPre.className = 'bodyPre'
+  bodyPre.textContent =
+    typeof r.body === 'string' ? r.body : '(not captured — reload the page, then retry)'
+  pre.appendChild(bodyPre)
 }
 
 let activeTab = null
@@ -263,6 +376,10 @@ for (const r of document.querySelectorAll('input[name="kind"]')) {
   r.addEventListener('change', refreshDestinations)
 }
 el('destination').addEventListener('change', refreshConvPane)
+el('reqSearch').addEventListener('input', () => {
+  searchQuery = el('reqSearch').value.trim()
+  renderReqList()
+})
 el('selectAll').addEventListener('change', () => {
   const rows = filteredRequests()
   const on = el('selectAll').checked
@@ -373,6 +490,8 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   selectedIds.clear()
   previewId = null
   screenshotDataUrl = null
+  searchQuery = ''
+  el('reqSearch').value = ''
   if (!el('networkPane').hidden) loadRequests()
 })
 
