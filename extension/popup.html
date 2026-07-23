@@ -8,9 +8,9 @@
         font: 13px/1.4 system-ui, sans-serif;
         /* Runs as the side panel page (full browser height, user-resizable
            width) — fluid, with a floor for readability. */
-        min-width: 320px;
+        min-width: 420px;
         margin: 0;
-        padding: 12px;
+        padding: 14px;
       }
       h1 { font-size: 13px; margin: 0 0 8px; font-weight: 600; }
       label { display: block; margin: 8px 0 3px; font-weight: 500; }
@@ -60,29 +60,51 @@
         border-radius: 4px; border: 1px solid #8884; background: #8881;
       }
       .bodyPre { margin: 0; white-space: pre-wrap; word-break: break-all; font: inherit; }
-      #reqSearch { margin: 4px 0; }
+      /* TASK-1454 — refresh sits beside the search box, DevTools-style toolbar row. */
+      .netToolbar { display: flex; gap: 6px; align-items: center; margin: 6px 0 4px; }
+      .netToolbar input { flex: 1; margin: 0; }
+      .netToolbar button { width: auto; flex: none; padding: 6px 10px; cursor: pointer; }
       .chips { display: flex; gap: 4px; margin: 4px 0; flex-wrap: wrap; }
       .chips button {
-        width: auto; padding: 2px 8px; font-size: 11px; cursor: pointer;
+        width: auto; padding: 3px 9px; font-size: 11px; cursor: pointer;
         border-radius: 999px; border: 1px solid #8884; background: #8881;
       }
       .chips button.active { background: #2563eb; color: #fff; border-color: #2563eb; }
-      .selectall { font-weight: 400; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+      .selectall { font-weight: 400; font-size: 12px; display: flex; align-items: center; gap: 6px; margin: 6px 0 2px; }
       .selectall input { width: auto; }
-      #reqList { max-height: 45vh; overflow: auto; margin-top: 4px; }
-      .reqGroup { margin-bottom: 2px; }
+      /* TASK-1452 — DevTools-Network-tab-style table: checkbox / name / method / status / type columns. */
+      .reqTableHead, .reqRow {
+        display: grid; grid-template-columns: 22px 1fr 62px 52px 56px; gap: 8px; align-items: center;
+      }
+      .reqTableHead {
+        padding: 5px 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.03em;
+        text-transform: uppercase; opacity: 0.6; border: 1px solid #8883; border-bottom: none;
+        border-radius: 6px 6px 0 0;
+      }
+      #reqList {
+        max-height: 46vh; overflow: auto; margin-top: 0; border: 1px solid #8883; border-top: none;
+        border-radius: 0 0 6px 6px;
+      }
+      .reqGroup { border-bottom: 1px solid #8882; }
+      .reqGroup:last-child { border-bottom: none; }
       .reqGroupHeader {
-        font-size: 11px; font-weight: 600; padding: 3px 4px; cursor: pointer;
-        border-radius: 4px; user-select: none;
+        font-size: 11px; font-weight: 600; padding: 5px 8px; cursor: pointer;
+        user-select: none; background: #8881;
       }
       .reqGroupHeader:hover { background: #8882; }
-      #reqList label {
-        display: flex; align-items: center; gap: 6px; margin: 0; padding: 2px 4px 2px 16px;
-        font-weight: 400; font-size: 11px; font-family: ui-monospace, "Cascadia Code", monospace;
-        cursor: pointer; border-radius: 4px;
+      .reqRow {
+        padding: 5px 8px; font-size: 12px; font-family: ui-monospace, "Cascadia Code", monospace;
+        cursor: pointer;
       }
-      #reqList label:hover { background: #8882; }
-      #reqList input { width: auto; }
+      .reqRow:hover { background: #8882; }
+      .reqRow.active { background: #2563eb22; }
+      .reqRow input { width: auto; margin: 0; }
+      .reqName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .reqMethod, .reqStatus, .reqType { font-size: 11px; opacity: 0.8; }
+      /* TASK-1453 — pick a header from a dropdown, copy it with one button. */
+      .hdrPickRow { display: flex; gap: 6px; margin-top: 8px; }
+      .hdrPickRow select { flex: 1; margin: 0; }
+      .hdrPickRow button { width: auto; flex: none; padding: 6px 12px; cursor: pointer; }
       #status { margin-top: 10px; min-height: 16px; font-size: 12px; }
       #status.ok { color: #16a34a; }
       #status.err { color: #dc2626; }
@@ -132,10 +154,20 @@
     <div id="networkPane" hidden>
       <label>Recent requests (this tab)</label>
       <div id="typeChips" class="chips"></div>
-      <input type="text" id="reqSearch" placeholder="search URL or response body…" />
+      <div class="netToolbar">
+        <input type="text" id="reqSearch" placeholder="search URL or response body…" />
+        <button type="button" id="reqRefresh" class="ghost">⟳ Refresh</button>
+      </div>
       <label class="selectall"><input type="checkbox" id="selectAll" /> select all (filtered)</label>
+      <div class="reqTableHead">
+        <span></span><span>Name</span><span>Method</span><span>Status</span><span>Type</span>
+      </div>
       <div id="reqList"></div>
       <div id="reqPreview"></div>
+      <div class="hdrPickRow">
+        <select id="hdrPicker" disabled></select>
+        <button type="button" id="hdrCopyBtn" class="ghost" disabled>⧉ Copy header</button>
+      </div>
       <p class="hint" style="margin:4px 0 0">Headers + cookies + token + response body (fetch/XHR; reload page to capture).</p>
     </div>
 

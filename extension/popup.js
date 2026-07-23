@@ -86,15 +86,16 @@ async function loadConversations() {
   }
 }
 
-// A short label for a request dropdown option — METHOD + path (+ status).
-function reqLabel(r) {
-  let path = r.url
+// TASK-1452 — the table's Name column shows just the last path segment (DevTools-
+// style); the full URL lives in the row's title= tooltip.
+function reqName(r) {
   try {
     const u = new URL(r.url)
-    path = u.host + u.pathname
-  } catch { /* keep raw */ }
-  if (path.length > 90) path = path.slice(0, 90) + '…'
-  return `${r.method} ${path}${r.status ? ' · ' + r.status : ''}`
+    const last = u.pathname.split('/').filter(Boolean).pop()
+    return (last || u.pathname || u.host) + u.search
+  } catch {
+    return r.url
+  }
 }
 
 let capturedRequests = []
@@ -157,26 +158,57 @@ function renderChips() {
   }
 }
 
+// TASK-1452 — one grid row per request: checkbox / name / method / status / type,
+// mirroring Chrome DevTools' Network tab columns instead of a plain checkbox+label list.
 function renderReqRow(r) {
-  const label = document.createElement('label')
+  const row = document.createElement('div')
+  row.className = 'reqRow' + (r.requestId === previewId ? ' active' : '')
+  row.title = r.url
+  row.dataset.requestId = r.requestId
+
   const cb = document.createElement('input')
   cb.type = 'checkbox'
   cb.checked = selectedIds.has(r.requestId)
+  cb.addEventListener('click', (e) => e.stopPropagation())
   cb.addEventListener('change', () => {
     if (cb.checked) selectedIds.add(r.requestId)
     else selectedIds.delete(r.requestId)
     previewId = r.requestId
     syncSelectAll()
     renderReqPreview()
+    markActiveRow()
   })
-  const span = document.createElement('span')
-  span.textContent = reqLabel(r)
-  label.addEventListener('click', () => {
+
+  const name = document.createElement('span')
+  name.className = 'reqName'
+  name.textContent = reqName(r)
+
+  const method = document.createElement('span')
+  method.className = 'reqMethod'
+  method.textContent = r.method
+
+  const status = document.createElement('span')
+  status.className = 'reqStatus'
+  status.textContent = r.status ?? ''
+
+  const type = document.createElement('span')
+  type.className = 'reqType'
+  type.textContent = (r.resType || 'api').toUpperCase()
+
+  row.append(cb, name, method, status, type)
+  row.addEventListener('click', () => {
     previewId = r.requestId
     renderReqPreview()
+    markActiveRow()
   })
-  label.append(cb, span)
-  return label
+  return row
+}
+
+// Highlights whichever row matches previewId without a full renderReqList() re-render.
+function markActiveRow() {
+  for (const row of el('reqList').querySelectorAll('.reqRow')) {
+    row.classList.toggle('active', row.dataset.requestId === previewId)
+  }
 }
 
 // TASK-1447 — one collapsible section per resType group; collapse state survives
@@ -255,8 +287,8 @@ function copyText(text, btn) {
     })
 }
 
-// TASK-1449 — one row per header, each with a copy-value button, instead of one
-// plain-text dump (so a single header value can be grabbed without hand-selecting it).
+// TASK-1453 — headers render read-only (copy moved to the hdrPicker dropdown below,
+// replacing TASK-1449's per-row copy buttons).
 function appendHeaderRows(container, title, headers) {
   const heading = document.createElement('div')
   heading.className = 'hdrTitle'
@@ -274,17 +306,32 @@ function appendHeaderRows(container, title, headers) {
   for (const [k, v] of entries) {
     const row = document.createElement('div')
     row.className = 'hdrRow'
-    const kv = document.createElement('span')
-    kv.className = 'hdrKV'
-    kv.textContent = `${k}: ${v}`
-    const copyBtn = document.createElement('button')
-    copyBtn.type = 'button'
-    copyBtn.className = 'hdrCopy'
-    copyBtn.textContent = '⧉'
-    copyBtn.title = `Copy ${k}`
-    copyBtn.addEventListener('click', () => copyText(String(v), copyBtn))
-    row.append(kv, copyBtn)
+    row.textContent = `${k}: ${v}`
     container.appendChild(row)
+  }
+}
+
+// TASK-1453 — one <select> covering request + response headers (source-prefixed so
+// "content-type" from each side is distinguishable), plus a single Copy button.
+function populateHeaderPicker(r) {
+  const sel = el('hdrPicker')
+  const copyBtn = el('hdrCopyBtn')
+  sel.innerHTML = ''
+
+  const entries = r
+    ? [
+        ...Object.entries(r.requestHeaders || {}).map(([k, v]) => [`req: ${k}`, String(v)]),
+        ...Object.entries(r.responseHeaders || {}).map(([k, v]) => [`res: ${k}`, String(v)])
+      ]
+    : []
+
+  sel.disabled = entries.length === 0
+  copyBtn.disabled = entries.length === 0
+  for (const [label, value] of entries) {
+    const opt = document.createElement('option')
+    opt.textContent = label
+    opt.value = value
+    sel.appendChild(opt)
   }
 }
 
@@ -294,7 +341,10 @@ function renderReqPreview() {
   const pre = el('reqPreview')
   pre.innerHTML = ''
   const r = capturedRequests.find((x) => x.requestId === previewId)
-  if (!r) return
+  if (!r) {
+    populateHeaderPicker(null)
+    return
+  }
 
   const summary = document.createElement('div')
   summary.className = 'hdrSummary'
@@ -303,6 +353,7 @@ function renderReqPreview() {
 
   appendHeaderRows(pre, 'REQUEST HEADERS', r.requestHeaders)
   appendHeaderRows(pre, 'RESPONSE HEADERS', r.responseHeaders)
+  populateHeaderPicker(r)
 
   // TASK-1450 — copy-response-body button, hidden when the body wasn't captured.
   const bodyTitle = document.createElement('div')
@@ -379,6 +430,23 @@ el('destination').addEventListener('change', refreshConvPane)
 el('reqSearch').addEventListener('input', () => {
   searchQuery = el('reqSearch').value.trim()
   renderReqList()
+})
+// TASK-1454 — re-pull requests in place; search/filter/collapse state (module-level,
+// untouched by loadRequests) survives the refresh.
+el('reqRefresh').addEventListener('click', async () => {
+  const btn = el('reqRefresh')
+  const orig = btn.textContent
+  btn.disabled = true
+  btn.textContent = '⟳ …'
+  await loadRequests()
+  btn.textContent = orig
+  btn.disabled = false
+})
+// TASK-1453 — copy the header value picked in the dropdown.
+el('hdrCopyBtn').addEventListener('click', () => {
+  const sel = el('hdrPicker')
+  if (sel.disabled || !sel.options.length) return
+  copyText(sel.value, el('hdrCopyBtn'))
 })
 el('selectAll').addEventListener('change', () => {
   const rows = filteredRequests()
