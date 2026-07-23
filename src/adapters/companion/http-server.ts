@@ -7,6 +7,7 @@ import { createServer, type IncomingMessage, type ServerResponse, type Server } 
 import { Buffer } from 'buffer'
 import { timingSafeEqual } from 'crypto'
 import type { CompanionServices } from './service-factory'
+import type { WorkspaceRow } from '../../core/domain/repositories/workspace-repository'
 import { computeLedger } from './sync-ledger'
 import { computeSyncLog } from './sync-log'
 import { computeHealth } from './sync-health'
@@ -95,6 +96,8 @@ async function route(
       return sendJson(res, 200, { ok: true })
     case '/projects':
       return sendJson(res, 200, { projects: await services.svc.listProjects() })
+    case '/workspaces':
+      return sendJson(res, 200, { workspaces: await listAllWorkspaces(services) })
     case '/tasks':
       return sendJson(res, 200, { tasks: await services.svc.findTasks({}) })
     case '/inbox':
@@ -117,6 +120,19 @@ async function route(
     default:
       return sendJson(res, 404, { error: 'not found' })
   }
+}
+
+// findWorkspaces is project-scoped; the companion needs a flat list for a
+// workspace picker, so fan out over the project list and flatten. Archived
+// workspaces excluded by default (findWorkspaces' own default) so they don't
+// clutter the picker.
+async function listAllWorkspaces(services: CompanionServices): Promise<WorkspaceRow[]> {
+  const projects = await services.svc.listProjects()
+  const all: WorkspaceRow[] = []
+  for (const p of projects) {
+    all.push(...(await services.svc.findWorkspaces(p.id)))
+  }
+  return all
 }
 
 // findConversations is project-scoped; the companion shows them across projects,
