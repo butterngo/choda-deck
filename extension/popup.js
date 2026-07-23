@@ -627,6 +627,31 @@ el('grab').addEventListener('click', async () => {
   }
 })
 
+// TASK-1462 — extract the whole readable page (title + body innerText, script/style
+// noise excluded by innerText) into the textarea, capped so it can't overflow the
+// text capture's 64 KB limit. Parity with claude-in-chrome's get_page_text.
+const PAGE_TEXT_CAP = 60 * 1024
+el('grabText').addEventListener('click', async () => {
+  try {
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId: activeTab.id },
+      func: () => {
+        const title = document.title ? `# ${document.title}\n\n` : ''
+        const body = (document.body && document.body.innerText) || ''
+        return title + body
+      }
+    })
+    let text = result || ''
+    if (text.length > PAGE_TEXT_CAP) {
+      text = text.slice(0, PAGE_TEXT_CAP) + `\n\n…(truncated at ${PAGE_TEXT_CAP} chars)`
+    }
+    el('text').value = text
+    setStatus(text.trim() ? 'Page text grabbed' : 'Page had no readable text', text.trim() ? 'ok' : 'err')
+  } catch {
+    setStatus("Can't read this page (chrome:// or restricted) — select text manually", 'err')
+  }
+})
+
 el('send').addEventListener('click', async () => {
   let kind = selectedKind()
   const projectId = el('project').value

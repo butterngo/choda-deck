@@ -2,6 +2,7 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
+| [capture-js-eval-parity-deferred](./capture-js-eval-parity-deferred.md) | evaluation | JS-evaluation capture parity — DEFER, claude-in-chrome is the fallback | 2026-07-23 |  |
 | [discovery-capture-has-three-independent-api-body-caps-tune-the-right-one](./discovery-capture-has-three-independent-api-body-caps-tune-the-right-one.md) | learning | Discovery capture has three independent API-body caps — tune the right one | 2026-07-22 |  |
 | [companion-mutations-only-writable-svc-only-workflow-routes](./companion-mutations-only-writable-svc-only-workflow-routes.md) | gotcha | Companion adapter mutations go only through the writable service, only via workflow.ts routes | 2026-07-15 |  |
 | [windows-task-scheduler-as-a-service-host-three-traps-companion-service-installer](./windows-task-scheduler-as-a-service-host-three-traps-companion-service-installer.md) | gotcha | Windows Task Scheduler as a service host — three traps (companion service installer) | 2026-07-13 |  |

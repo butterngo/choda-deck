@@ -20,6 +20,10 @@
   // over this cap get spilled to a file server-side rather than truncated.
   const MAX_API_BODY = 64 * 1024
 
+  // TASK-1461 — a runaway page (error loop) could flood the timeline with console
+  // entries; cap per recording and emit a single dropped-count marker at the limit.
+  const MAX_CONSOLE_EVENTS = 100
+
   // opts: { emit(event), now?(), url?(), excludePatterns?, collapse? }
   // excludePatterns overrides the telemetry deny-list (TASK-1423); collapse:false
   // disables asset fan-out folding for a caller that wants every raw apicall.
@@ -30,11 +34,15 @@
     const excludePatterns = opts.excludePatterns || noise.DEFAULT_EXCLUDE_PATTERNS
     const collapser = opts.collapse === false ? null : noise.createCollapser()
     let recording = false
+    let consoleCount = 0
+    let consoleCapNoted = false
 
     // Collapse state is per-recording: a key seen in run 1 must not silently
     // fold a genuinely-first call in run 2.
     function start() {
       if (collapser) collapser.reset()
+      consoleCount = 0
+      consoleCapNoted = false
       recording = true
     }
     function stop() {
@@ -105,7 +113,47 @@
       emit(event)
     }
 
-    return { start, stop, isRecording, handleDomEvent, handleClick, handleInput, handleNav, handleNetwork }
+    // TASK-1461 — a console.error/warn or a global error/unhandledrejection the
+    // MAIN-world hooks (inject.js) relayed: { level, message, stack? }. Message +
+    // stack are redacted + capped (they can carry tokens in an error string), and
+    // the per-recording count is capped so an error loop can't flood the timeline.
+    function handleConsole(d) {
+      if (!recording || !d || !d.level) return
+      if (consoleCount >= MAX_CONSOLE_EVENTS) {
+        if (!consoleCapNoted) {
+          consoleCapNoted = true
+          emit({
+            type: 'console',
+            ts: now(),
+            url: currentUrl(),
+            level: 'warn',
+            message: `[choda] console capture cap (${MAX_CONSOLE_EVENTS}) reached — further entries dropped`
+          })
+        }
+        return
+      }
+      consoleCount += 1
+      emit({
+        type: 'console',
+        ts: now(),
+        url: d.url || currentUrl(),
+        level: d.level === 'warn' ? 'warn' : 'error',
+        message: d.message ? redact.redactText(String(d.message)).slice(0, MAX_API_BODY) : '',
+        stack: d.stack ? redact.redactText(String(d.stack)).slice(0, MAX_API_BODY) : undefined
+      })
+    }
+
+    return {
+      start,
+      stop,
+      isRecording,
+      handleDomEvent,
+      handleClick,
+      handleInput,
+      handleNav,
+      handleNetwork,
+      handleConsole
+    }
   }
 
   const api = { createRecorder }

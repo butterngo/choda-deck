@@ -132,7 +132,7 @@ export class CompanionCaptureDispatcher implements CaptureDispatcher {
     const summary =
       `Discovery session${bundle.label ? ` — ${bundle.label}` : ''}: ` +
       `${stored.eventCount} steps · ${stored.navCount} pages · ${stored.apiCount} API calls · ` +
-      `${stored.snapshotCount} snapshots.\n\n` +
+      `${stored.consoleCount} console · ${stored.snapshotCount} snapshots.\n\n` +
       `Timeline: \`${stored.relDir}/timeline.jsonl\` · draft: \`${stored.relDir}/draft.md\``
     const item = await this.svc.createInbox({
       projectId: bundle.projectId,
