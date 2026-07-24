@@ -115,3 +115,21 @@ describe('Pilot feature traversal (feature-crawler-list-ui-enhancements)', () =>
     expect(repo.getTo(FEATURE, 'ABOUT').map((e) => e.fromId).sort()).toEqual(GOTCHAS)
   })
 })
+
+describe('getForNodeSet (TASK-1443 full-graph read)', () => {
+  it('returns only edges where both endpoints are in the given id set', () => {
+    repo.add('TASK-1', 'TASK-2', 'DEPENDS_ON')
+    repo.add('TASK-2', 'TASK-3', 'DEPENDS_ON')
+    // TASK-9 is outside the set — this edge must not appear.
+    repo.add('TASK-2', 'TASK-9', 'DEPENDS_ON')
+
+    const edges = repo.getForNodeSet(['TASK-1', 'TASK-2', 'TASK-3'])
+    expect(edges).toHaveLength(2)
+    expect(edges.map((e) => e.toId).sort()).toEqual(['TASK-2', 'TASK-3'])
+  })
+
+  it('returns an empty array for an empty id set, without querying', () => {
+    repo.add('TASK-1', 'TASK-2', 'DEPENDS_ON')
+    expect(repo.getForNodeSet([])).toEqual([])
+  })
+})

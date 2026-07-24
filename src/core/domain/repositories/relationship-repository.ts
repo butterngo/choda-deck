@@ -56,4 +56,18 @@ export class RelationshipRepository {
         }>)
     return rows.map(rowToRelationship)
   }
+
+  // TASK-1443 — full-graph read. Both endpoints must be in `ids` (a caller-
+  // assembled project node set) so a project's graph dump never leaks an edge
+  // whose other end belongs to a different project.
+  getForNodeSet(ids: string[]): Relationship[] {
+    if (ids.length === 0) return []
+    const placeholders = ids.map(() => '?').join(',')
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM relationships WHERE from_id IN (${placeholders}) AND to_id IN (${placeholders})`
+      )
+      .all(...ids, ...ids) as Array<{ from_id: string; to_id: string; type: string }>
+    return rows.map(rowToRelationship)
+  }
 }
