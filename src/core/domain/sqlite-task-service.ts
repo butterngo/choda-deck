@@ -397,6 +397,9 @@ export class SqliteTaskService
   async getRelationshipsTo(itemId: string, type?: RelationType): Promise<Relationship[]> {
     return this.relationships.getTo(itemId, type)
   }
+  async getRelationshipsForNodes(ids: string[]): Promise<Relationship[]> {
+    return this.relationships.getForNodeSet(ids)
+  }
 
   // ── Session operations (M1) ────────────────────────────────────────────────
   async createSession(input: CreateSessionInput): Promise<Session> {

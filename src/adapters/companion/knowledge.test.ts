@@ -54,11 +54,20 @@ function fakeKnowledgeSvc(): BackendTaskService {
   const entries = new Map<string, KnowledgeEntry>([['gotcha-1', entry('gotcha-1')]])
   const relationships: Relationship[] = [
     { fromId: 'TASK-1', toId: 'TASK-2', type: 'DEPENDS_ON' },
-    { fromId: 'TASK-3', toId: 'TASK-1', type: 'REALIZES' }
+    { fromId: 'TASK-3', toId: 'TASK-1', type: 'REALIZES' },
+    // cross-project edge — TASK-9 belongs to project 'other', not 'p1'.
+    { fromId: 'TASK-2', toId: 'TASK-9', type: 'DEPENDS_ON' }
   ]
+  const tasksByProject: Record<string, Array<{ id: string }>> = {
+    p1: [{ id: 'TASK-1' }, { id: 'TASK-2' }, { id: 'TASK-3' }],
+    empty: []
+  }
   return {
     getKnowledge: async (slug: string) => entries.get(slug) ?? null,
-    listKnowledge: async () => [...entries.values()].map((e) => listItem(e.slug)),
+    listKnowledge: async (filter?: { projectId?: string }) =>
+      !filter?.projectId || filter.projectId === 'p1'
+        ? [...entries.values()].map((e) => listItem(e.slug))
+        : [],
     searchKnowledge: async () => ({
       enabled: false,
       reason: 'embedding store not configured',
@@ -69,7 +78,12 @@ function fakeKnowledgeSvc(): BackendTaskService {
     getRelationshipsFrom: async (itemId: string, type?: string) =>
       relationships.filter((r) => r.fromId === itemId && (!type || r.type === type)),
     getRelationshipsTo: async (itemId: string, type?: string) =>
-      relationships.filter((r) => r.toId === itemId && (!type || r.type === type))
+      relationships.filter((r) => r.toId === itemId && (!type || r.type === type)),
+    getRelationshipsForNodes: async (ids: string[]) =>
+      relationships.filter((r) => ids.includes(r.fromId) && ids.includes(r.toId)),
+    findTasks: async (filter?: { projectId?: string }) =>
+      tasksByProject[filter?.projectId ?? ''] ?? [],
+    listCodeRefsByPrefix: async () => []
   } as unknown as BackendTaskService
 }
 
@@ -117,6 +131,33 @@ describe('knowledge + graph routes (integration)', () => {
       expect((await fetch(`${base}/graph/edges`)).status).toBe(400)
       expect((await fetch(`${base}/graph/edges?node=TASK-1&type=bogus`)).status).toBe(400)
       expect((await fetch(`${base}/graph/edges?node=TASK-1&direction=sideways`)).status).toBe(400)
+
+      // TASK-1443 — full-graph read (no `node`, scoped by `projectId`)
+      const full = await (await fetch(`${base}/graph/edges?projectId=p1`)).json()
+      expect(full.nodes).toEqual(
+        expect.arrayContaining([
+          { id: 'TASK-1', type: 'task' },
+          { id: 'TASK-2', type: 'task' },
+          { id: 'TASK-3', type: 'task' },
+          { id: 'gotcha-1', type: 'knowledge' }
+        ])
+      )
+      expect(full.nodes).toHaveLength(4)
+      // The cross-project edge (TASK-2 → TASK-9) must not leak in — TASK-9
+      // isn't in project p1's node set.
+      expect(full.edges).toEqual(
+        expect.arrayContaining([
+          { fromId: 'TASK-1', toId: 'TASK-2', type: 'DEPENDS_ON' },
+          { fromId: 'TASK-3', toId: 'TASK-1', type: 'REALIZES' }
+        ])
+      )
+      expect(full.edges).toHaveLength(2)
+
+      // AC-6 — a project with zero relationships/nodes returns empty arrays, 200 OK.
+      const emptyFull = await (await fetch(`${base}/graph/edges?projectId=empty`)).json()
+      expect(emptyFull).toEqual({ nodes: [], edges: [] })
+
+      expect((await fetch(`${base}/graph/edges?projectId=p1`)).status).toBe(200)
     } finally {
       await handle.close()
       db.close()
