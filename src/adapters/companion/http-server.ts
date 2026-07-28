@@ -15,6 +15,7 @@ import { SyncNotConfiguredError } from './sync-actions'
 import { handleWorkflowRoute } from './workflow'
 import { handleKnowledgeRoute } from './knowledge'
 import { handleGraphRoute } from './graph'
+import { handleSearchRoute } from './search'
 import {
   CAPTURE_MAX_IMAGE_BYTES,
   capForKind,
@@ -68,6 +69,11 @@ async function route(
     return
   }
   if (await handleGraphRoute(req, res, services.svc)) {
+    return
+  }
+
+  // TASK-1493 — cross-project search (tasks + knowledge). GET-only.
+  if (await handleSearchRoute(req, res, services.svc)) {
     return
   }
 
