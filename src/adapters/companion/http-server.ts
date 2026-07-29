@@ -16,6 +16,7 @@ import { handleWorkflowRoute } from './workflow'
 import { handleKnowledgeRoute } from './knowledge'
 import { handleGraphRoute } from './graph'
 import { handleSearchRoute } from './search'
+import { handleTaskDetailRoute } from './task-detail'
 import {
   CAPTURE_MAX_IMAGE_BYTES,
   capForKind,
@@ -74,6 +75,12 @@ async function route(
 
   // TASK-1493 — cross-project search (tasks + knowledge). GET-only.
   if (await handleSearchRoute(req, res, services.svc)) {
+    return
+  }
+
+  // Task-detail read for the graph node panel. GET /tasks/:id (POST
+  // /tasks/:id/ready is a workflow route, handled above).
+  if (await handleTaskDetailRoute(req, res, services.svc)) {
     return
   }
 
