@@ -8,6 +8,19 @@ import type { ApplyResult, ApplySink } from './sync-apply'
 import type { TableDelta } from './sync-pull'
 import { resolveTokens, type TokenProvider } from './keycloak-token-provider'
 
+// Carries the HTTP status so the drain can tell a PERMANENT per-op rejection
+// (4xx — remote will never accept this op; skip it) from a TRANSIENT outage
+// (5xx / network — retry later). `status` is 0 for a non-HTTP failure.
+export class SyncApplyError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message)
+    this.name = 'SyncApplyError'
+  }
+}
+
 export interface HttpWriteClientOptions {
   // Remote MCP origin, e.g. https://mcp.choda.dev or http://localhost:7337.
   remoteUrl: string
@@ -41,7 +54,19 @@ export class HttpWriteClient implements ApplySink {
       body: JSON.stringify({ origin, deltas })
     })
     if (!res.ok) {
-      throw new Error(`sync apply: POST /sync/apply -> HTTP ${res.status}`)
+      // Surface the response body — a bare status hides the contract violation
+      // (which table/row/field the remote rejected), making a failed push
+      // undiagnosable. Body is best-effort; never let reading it mask the status.
+      let detail = ''
+      try {
+        detail = (await res.text()).slice(0, 500)
+      } catch {
+        /* ignore — keep the status */
+      }
+      throw new SyncApplyError(
+        `sync apply: POST /sync/apply -> HTTP ${res.status}${detail ? ` — ${detail}` : ''}`,
+        res.status
+      )
     }
     return (await res.json()) as ApplyResult
   }

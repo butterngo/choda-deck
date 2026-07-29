@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import Database from 'better-sqlite3'
 import { createPendingOpsTable, enqueueOp, countPendingOps } from './pending-ops'
 import { createSyncConflictsTable, drainPendingOps, type ConflictRecord } from './sync-drain'
+import { SyncApplyError } from './http-write-client'
 import type { ApplySink, ApplyResult, RowVerdict } from './sync-apply'
 import type { TableDelta, PulledRow } from './sync-pull'
 
@@ -96,5 +97,35 @@ describe('drainPendingOps', () => {
     const res = await drainPendingOps(db, sink, { origin: 'laptop', isReachable: reachable })
     expect(res).toMatchObject({ reachable: true, drained: 1, remaining: 2 })
     expect(countPendingOps(db)).toBe(2)
+  })
+
+  it('skips a 4xx-rejected op and keeps draining the rest (no stall)', async () => {
+    enqueue('A', 1) // remote permanently rejects this one (400)
+    enqueue('B', 2)
+    enqueue('C', 3)
+    const sink: ApplySink = {
+      async applyDelta(deltas) {
+        const id = deltas[0].rows[0].id
+        if (id === 'A') throw new SyncApplyError('sync apply: POST /sync/apply -> HTTP 400', 400)
+        return { applied: 1, tombstoned: 0, conflicts: 0, verdicts: [{ table: deltas[0].table, id, verdict: 'applied', canonicalLamport: 0 }] }
+      }
+    }
+    const res = await drainPendingOps(db, sink, { origin: 'laptop', isReachable: reachable })
+    expect(res).toMatchObject({ reachable: true, drained: 2, rejected: 1, remaining: 0 })
+    expect(countPendingOps(db)).toBe(0) // A dropped (won't block), B+C drained
+  })
+
+  it('still stops on a 5xx/transient error, leaving the op queued', async () => {
+    enqueue('A', 1)
+    enqueue('B', 2)
+    const sink: ApplySink = {
+      async applyDelta(deltas) {
+        if (deltas[0].rows[0].id === 'A') throw new SyncApplyError('HTTP 503', 503)
+        return { applied: 1, tombstoned: 0, conflicts: 0, verdicts: [] }
+      }
+    }
+    const res = await drainPendingOps(db, sink, { origin: 'laptop', isReachable: reachable })
+    expect(res).toMatchObject({ reachable: true, drained: 0, rejected: 0, remaining: 2 })
+    expect(countPendingOps(db)).toBe(2) // transient → nothing dropped
   })
 })

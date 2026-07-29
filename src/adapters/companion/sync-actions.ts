@@ -89,8 +89,10 @@ export interface PullSummary {
 export interface PushSummary {
   drained: number
   conflicts: number
+  rejected: number
   remaining: number
   reachable: boolean
+  error?: string // reason the drain stopped early (surfaced for diagnosis)
 }
 
 // Deps are injectable so the integration test can drive a fake remote without a
@@ -149,8 +151,10 @@ export async function runPush(
     return {
       drained: result.drained,
       conflicts: result.conflicts,
+      rejected: result.rejected,
       remaining: result.remaining,
-      reachable: result.reachable
+      reachable: result.reachable,
+      error: result.error
     }
   } finally {
     db.close()

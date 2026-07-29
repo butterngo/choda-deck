@@ -46,7 +46,9 @@ export interface DrainResult {
   reachable: boolean
   drained: number // ops the remote accepted
   conflicts: number // ops dropped by LWW
+  rejected: number // ops the remote permanently refused (4xx) — skipped, not retried
   remaining: number // still queued after this cycle
+  error?: string // reason the cycle stopped early (transient outage), if any
 }
 
 export function createSyncConflictsTable(db: Database.Database): void {
@@ -70,19 +72,35 @@ export async function drainPendingOps(
   opts: DrainOptions
 ): Promise<DrainResult> {
   if (!(await opts.isReachable())) {
-    return { reachable: false, drained: 0, conflicts: 0, remaining: countPendingOps(db) }
+    return { reachable: false, drained: 0, conflicts: 0, rejected: 0, remaining: countPendingOps(db) }
   }
 
   const ops = listPendingOps(db, opts.limit)
   let drained = 0
   let conflicts = 0
+  let rejected = 0
+  let error: string | undefined
 
   for (const op of ops) {
     let outcome: { dropped: boolean; canonicalLamport: number }
     try {
       outcome = await pushOne(sink, opts.origin, op)
-    } catch {
-      // Remote went down mid-drain — stop, leave this op and the rest queued.
+    } catch (err) {
+      const status = (err as { status?: number }).status
+      const msg = err instanceof Error ? err.message : String(err)
+      if (typeof status === 'number' && status >= 400 && status < 500) {
+        // PERMANENT per-op rejection (out-of-scope table / bad row): the remote
+        // will never accept this op, so skipping it lets the rest of the queue
+        // drain instead of one bad op stalling everything. Dropping the pending_op
+        // only abandons THIS push attempt — the local source row is untouched.
+        deletePendingOp(db, op.seq)
+        rejected++
+        error = msg
+        continue
+      }
+      // TRANSIENT (network / 5xx): stop, leave this op and the rest queued for the
+      // next reconnect. Capture the reason so a stalled queue isn't a black box.
+      error = msg
       break
     }
     if (outcome.dropped) {
@@ -102,7 +120,7 @@ export async function drainPendingOps(
     deletePendingOp(db, op.seq)
   }
 
-  return { reachable: true, drained, conflicts, remaining: countPendingOps(db) }
+  return { reachable: true, drained, conflicts, rejected, remaining: countPendingOps(db), error }
 }
 
 // Push a single op; report whether the remote DROPPED it (LWW conflict) and the
