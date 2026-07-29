@@ -43,6 +43,28 @@ describe('resolveRemoteConfig (AC-3 guard)', () => {
       token: 'k'
     })
   })
+
+  it('stays on the static token when OIDC creds are incomplete (no getToken)', () => {
+    const cfg = resolveRemoteConfig({
+      CHODA_PULL_REMOTE_URL: 'http://r',
+      MCP_HTTP_TOKEN: 'k',
+      CHODA_SYNC_OIDC_ISSUER: 'http://id/realms/demo',
+      CHODA_SYNC_OIDC_CLIENT_ID: 'c'
+      // username/password missing → refresh mode does NOT engage
+    })
+    expect(cfg.getToken).toBeUndefined()
+  })
+
+  it('engages refresh mode (getToken) when issuer+clientId+username+password all resolve', () => {
+    const cfg = resolveRemoteConfig({
+      CHODA_PULL_REMOTE_URL: 'http://r',
+      CHODA_SYNC_OIDC_ISSUER: 'http://id/realms/demo',
+      CHODA_SYNC_OIDC_CLIENT_ID: 'c',
+      CHODA_SYNC_OIDC_USERNAME: 'u',
+      CHODA_SYNC_OIDC_PASSWORD: 'p'
+    })
+    expect(typeof cfg.getToken).toBe('function')
+  })
 })
 
 describe('runPull (AC-1)', () => {

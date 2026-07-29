@@ -7,12 +7,14 @@
 // Mirrors the `choda-deck sync pull` CLI wiring and the startSyncLoop drain.
 
 import Database from 'better-sqlite3'
+import { readFileSync } from 'fs'
 import { initSchema } from '../../core/domain/repositories/schema'
 import { pull, type PullSource } from '../../core/sync/sync-pull'
 import { HttpPullSource } from '../../core/sync/http-pull-source'
 import { HttpWriteClient, isRemoteReachable } from '../../core/sync/http-write-client'
 import { drainPendingOps, createSyncConflictsTable } from '../../core/sync/sync-drain'
 import type { ApplySink } from '../../core/sync/sync-apply'
+import { KeycloakTokenProvider } from '../../core/sync/keycloak-token-provider'
 
 // Thrown when the laptop isn't sync-capable (no remote configured). The HTTP
 // layer maps this to a 4xx the UI surfaces — never a silent no-op (AC-3).
@@ -26,10 +28,35 @@ export class SyncNotConfiguredError extends Error {
 export interface RemoteConfig {
   remoteUrl: string
   token: string
+  // Per-request token provider (Keycloak refresh flow). When set it wins over
+  // the static token, so Push/Pull survive the OAuth remote's ~300s access-TTL.
+  getToken?: () => Promise<string>
+}
+
+// Read a secret from an env var, or from `<NAME>_FILE` pointing at a gitignored
+// file (sensitive_information/). Trims trailing newline.
+function readEnvOrFile(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const direct = env[name]
+  if (direct) return direct
+  const file = env[`${name}_FILE`]
+  if (file) {
+    try {
+      return readFileSync(file, 'utf8').trim()
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
 }
 
 // Resolve the remote from env exactly as the CLI `sync pull` does. Missing
 // CHODA_PULL_REMOTE_URL = not sync-capable.
+//
+// Auth precedence: if the Keycloak ROPC creds (issuer + clientId + username +
+// password) all resolve, use a refresh-capable KeycloakTokenProvider so a
+// long-running adapter keeps syncing past the ~300s access-token TTL (the static
+// bearer alone dies at ~5 min against the OAuth remote — TASK-1108 §companion).
+// Otherwise fall back to the static CHODA_PULL_REMOTE_TOKEN / MCP_HTTP_TOKEN.
 export function resolveRemoteConfig(env: NodeJS.ProcessEnv = process.env): RemoteConfig {
   const remoteUrl = env.CHODA_PULL_REMOTE_URL
   if (!remoteUrl) {
@@ -38,6 +65,18 @@ export function resolveRemoteConfig(env: NodeJS.ProcessEnv = process.env): Remot
     )
   }
   const token = env.CHODA_PULL_REMOTE_TOKEN ?? env.MCP_HTTP_TOKEN ?? ''
+
+  const issuer = env.CHODA_SYNC_OIDC_ISSUER ?? env.MCP_OIDC_ISSUER
+  const clientId = env.CHODA_SYNC_OIDC_CLIENT_ID ?? env.MCP_OIDC_CLIENT_ID
+  const username = readEnvOrFile(env, 'CHODA_SYNC_OIDC_USERNAME')
+  const password = readEnvOrFile(env, 'CHODA_SYNC_OIDC_PASSWORD')
+  const clientSecret =
+    readEnvOrFile(env, 'CHODA_SYNC_OIDC_CLIENT_SECRET') ?? readEnvOrFile(env, 'MCP_OIDC_CLIENT_SECRET')
+
+  if (issuer && clientId && username && password) {
+    const provider = new KeycloakTokenProvider({ issuer, clientId, clientSecret, username, password })
+    return { remoteUrl, token, getToken: () => provider.getToken() }
+  }
   return { remoteUrl, token }
 }
 
@@ -76,7 +115,9 @@ export async function runPull(
   db.pragma('busy_timeout = 5000')
   try {
     initSchema(db) // idempotent — guarantees sync columns + _sync_clock exist
-    const source = deps.source ?? new HttpPullSource({ remoteUrl: cfg.remoteUrl, token: cfg.token })
+    const source =
+      deps.source ??
+      new HttpPullSource({ remoteUrl: cfg.remoteUrl, token: cfg.token, getToken: cfg.getToken })
     const result = await pull(db, source)
     return {
       upserted: result.counts.reduce((n, c) => n + c.upserted, 0),
@@ -100,7 +141,9 @@ export async function runPush(
   try {
     initSchema(db)
     createSyncConflictsTable(db) // drain records LWW-dropped ops here
-    const sink = deps.sink ?? new HttpWriteClient({ remoteUrl: cfg.remoteUrl, token: cfg.token })
+    const sink =
+      deps.sink ??
+      new HttpWriteClient({ remoteUrl: cfg.remoteUrl, token: cfg.token, getToken: cfg.getToken })
     const isReachable = deps.isReachable ?? (() => isRemoteReachable(cfg.remoteUrl))
     const result = await drainPendingOps(db, sink, { origin: 'laptop', isReachable })
     return {
