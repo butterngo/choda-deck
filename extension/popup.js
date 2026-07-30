@@ -122,28 +122,29 @@ let searchQuery = ''
 // TASK-1455 — method + status-class filters, DevTools-Network-tab-style.
 let activeMethod = 'all'
 let activeStatusClass = 'all'
+// Whether the SW has heard from an interceptor in this tab. Drives the
+// wording of the empty-body hint: "reload the page" is only useful advice when
+// capture genuinely isn't running there.
+let tabInstrumented = true
 
-// TASK-1450 — search matches URL always, and response body text when captured.
-function matchesSearch(r) {
-  if (!searchQuery) return true
-  const q = searchQuery.toLowerCase()
-  if ((r.url || '').toLowerCase().includes(q)) return true
-  return typeof r.body === 'string' && r.body.toLowerCase().includes(q)
+// The four live filters as one object, for lib/reqfilter.js (which owns the
+// predicates so they're testable — the chip-count bug lived in this logic).
+function filterState() {
+  return {
+    type: activeFilter,
+    method: activeMethod,
+    statusClass: activeStatusClass,
+    query: searchQuery
+  }
 }
 
-// TASK-1455 — status class bucket (2xx/3xx/4xx/5xx); null for uncaptured/invalid status.
 function statusClass(status) {
-  const n = Number(status)
-  if (!Number.isFinite(n) || n < 100 || n > 599) return null
-  return `${Math.floor(n / 100)}xx`
+  return ChodaReqFilter.statusClass(status)
 }
 
 function filteredRequests() {
-  return capturedRequests
-    .filter((r) => activeFilter === 'all' || (r.resType || 'api') === activeFilter)
-    .filter((r) => activeMethod === 'all' || r.method === activeMethod)
-    .filter((r) => activeStatusClass === 'all' || statusClass(r.status) === activeStatusClass)
-    .filter(matchesSearch)
+  const f = filterState()
+  return capturedRequests.filter((r) => ChodaReqFilter.matches(r, f))
 }
 
 // Repopulate the method/status <select>s from whatever's currently captured, keeping
@@ -187,11 +188,9 @@ function groupedRequests() {
 function renderChips() {
   const box = el('typeChips')
   box.innerHTML = ''
+  const state = filterState()
   for (const f of FILTERS) {
-    const n =
-      f === 'all'
-        ? capturedRequests.length
-        : capturedRequests.filter((r) => (r.resType || 'api') === f).length
+    const n = ChodaReqFilter.countForType(capturedRequests, f, state)
     const b = document.createElement('button')
     b.type = 'button'
     b.textContent = `${f.toUpperCase()} ${n}`
@@ -265,7 +264,11 @@ function renderReqList() {
   list.innerHTML = ''
   const groups = groupedRequests()
   if (!groups.length) {
-    list.textContent = 'no requests seen — reload the page, then reopen'
+    // Distinguish "nothing captured" from "filters hid everything" — the old wording
+    // told you to reload the page even when the page had plenty and a filter was on.
+    list.textContent = capturedRequests.length
+      ? 'no requests match the current filters'
+      : 'no requests seen — reload the page, then reopen'
     el('selectAll').checked = false
     return
   }
@@ -305,11 +308,12 @@ function selectedRequests() {
 // Ask the service worker for the active tab's recent requests (all kinds).
 async function loadRequests() {
   try {
-    const { requests } = await chrome.runtime.sendMessage({
+    const { requests, instrumented } = await chrome.runtime.sendMessage({
       type: 'getRequests',
       tabId: activeTab.id
     })
     capturedRequests = requests || []
+    tabInstrumented = instrumented !== false
     renderChips()
     renderNetFilters()
     renderReqList()
@@ -335,96 +339,242 @@ function copyText(text, btn) {
     })
 }
 
-// TASK-1453 — headers render read-only (copy moved to the hdrPicker dropdown below,
-// replacing TASK-1449's per-row copy buttons).
-function appendHeaderRows(container, title, headers) {
-  const heading = document.createElement('div')
-  heading.className = 'hdrTitle'
-  heading.textContent = title
-  container.appendChild(heading)
+// Detail pane mirrors DevTools' Network tabs. Initiator and Timing
+// are deliberately absent: webRequest exposes neither a request-initiator stack
+// nor per-phase timings, so those tabs could only ever render empty.
+// Shown instead of "nothing captured" when the SW has never heard from an
+// interceptor in this tab — the tab predates the last extension reload, so no
+// amount of retrying in the panel will produce a body.
+const NOT_INSTRUMENTED_HINT =
+  '(capture not active in this tab — reload the PAGE, then ⟳ Refresh)'
 
-  const entries = Object.entries(headers || {})
-  if (!entries.length) {
+const DETAIL_TABS = ['headers', 'payload', 'preview', 'response', 'cookies']
+let activeDetailTab = 'headers'
+// Per-section collapse + raw-view state, keyed by section id. Both persist across
+// re-renders and across row switches — inspecting five requests in a row
+// shouldn't mean re-collapsing General five times.
+const collapsedSections = new Set()
+const rawSections = new Set()
+
+// Two-column name/value grid, DevTools-style — the value column wraps, the name
+// column doesn't, so long tokens don't push the names out of alignment.
+function appendKV(container, rows, emptyText) {
+  if (!rows.length) {
     const none = document.createElement('div')
-    none.className = 'hdrRow'
-    none.textContent = '(none)'
+    none.className = 'kvEmpty'
+    none.textContent = emptyText
     container.appendChild(none)
     return
   }
-  for (const [k, v] of entries) {
+  for (const [k, v] of rows) {
     const row = document.createElement('div')
-    row.className = 'hdrRow'
-    row.textContent = `${k}: ${v}`
+    row.className = 'kvRow'
+    const name = document.createElement('span')
+    name.className = 'kvName'
+    name.textContent = k
+    const value = document.createElement('span')
+    value.className = 'kvValue'
+    value.textContent = v
+    row.append(name, value)
     container.appendChild(row)
   }
 }
 
-// TASK-1453 — one <select> covering request + response headers (source-prefixed so
-// "content-type" from each side is distinguishable), plus a single Copy button.
-function populateHeaderPicker(r) {
-  const sel = el('hdrPicker')
-  const copyBtn = el('hdrCopyBtn')
-  sel.innerHTML = ''
+// A collapsible ▾/▸ section. `rawText` non-null adds the Raw checkbox, which
+// swaps the parsed rows for the wire-format text (DevTools' behavior).
+function appendSection(container, id, title, rows, { rawText = null, emptyText = '(none)' } = {}) {
+  const section = document.createElement('div')
+  section.className = 'detailSection'
 
-  const entries = r
-    ? [
-        ...Object.entries(r.requestHeaders || {}).map(([k, v]) => [`req: ${k}`, String(v)]),
-        ...Object.entries(r.responseHeaders || {}).map(([k, v]) => [`res: ${k}`, String(v)])
-      ]
-    : []
+  const head = document.createElement('div')
+  head.className = 'sectionHead'
+  const collapsed = collapsedSections.has(id)
 
-  sel.disabled = entries.length === 0
-  copyBtn.disabled = entries.length === 0
-  for (const [label, value] of entries) {
-    const opt = document.createElement('option')
-    opt.textContent = label
-    opt.value = value
-    sel.appendChild(opt)
+  const toggle = document.createElement('button')
+  toggle.type = 'button'
+  toggle.className = 'sectionToggle'
+  toggle.textContent = `${collapsed ? '▸' : '▾'} ${title}`
+  toggle.addEventListener('click', () => {
+    if (collapsed) collapsedSections.delete(id)
+    else collapsedSections.add(id)
+    renderReqPreview()
+  })
+  head.appendChild(toggle)
+
+  if (rawText !== null) {
+    const label = document.createElement('label')
+    label.className = 'rawToggle'
+    const cb = document.createElement('input')
+    cb.type = 'checkbox'
+    cb.checked = rawSections.has(id)
+    cb.addEventListener('change', () => {
+      if (cb.checked) rawSections.add(id)
+      else rawSections.delete(id)
+      renderReqPreview()
+    })
+    label.append(cb, document.createTextNode('Raw'))
+    head.appendChild(label)
+  }
+  section.appendChild(head)
+
+  if (!collapsed) {
+    if (rawText !== null && rawSections.has(id)) {
+      const pre = document.createElement('pre')
+      pre.className = 'bodyPre'
+      pre.textContent = rawText || emptyText
+      section.appendChild(pre)
+    } else {
+      appendKV(section, rows, emptyText)
+    }
+  }
+  container.appendChild(section)
+}
+
+// One right-aligned action row per tab. Each entry is [label, title, text|null] —
+// a null text disables the button (nothing captured to copy).
+function appendActions(container, actions) {
+  const row = document.createElement('div')
+  row.className = 'detailActions'
+  for (const [label, title, text] of actions) {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'hdrCopy'
+    btn.textContent = label
+    btn.title = title
+    btn.disabled = typeof text !== 'string' || text === ''
+    if (!btn.disabled) btn.addEventListener('click', () => copyText(text, btn))
+    row.appendChild(btn)
+  }
+  container.appendChild(row)
+}
+
+// Tab strip + the ✕ that closes the detail pane (clears the focused row).
+function renderDetailTabs(hasRequest) {
+  const bar = el('reqTabs')
+  bar.hidden = !hasRequest
+  bar.innerHTML = ''
+  if (!hasRequest) return
+
+  const close = document.createElement('button')
+  close.type = 'button'
+  close.className = 'tabClose'
+  close.textContent = '✕'
+  close.title = 'Close detail pane'
+  close.addEventListener('click', () => {
+    previewId = null
+    renderReqPreview()
+    markActiveRow()
+  })
+  bar.appendChild(close)
+
+  for (const t of DETAIL_TABS) {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.textContent = t[0].toUpperCase() + t.slice(1)
+    b.className = t === activeDetailTab ? 'active' : ''
+    b.addEventListener('click', () => {
+      activeDetailTab = t
+      renderReqPreview()
+    })
+    bar.appendChild(b)
   }
 }
 
-// Show the focused request's method/status + request & response headers (cookie
-// and token live in these) right in the popup — inspect without opening DevTools.
+// Headers — General block, then response + request headers, each collapsible with
+// its own Raw toggle. Copy-as-cURL lives here (DevTools hides it in a context menu
+// on the row; a visible button costs nothing and is what this pane is for).
+function renderHeadersTab(pre, r) {
+  appendActions(pre, [
+    ['⧉ copy as cURL', 'Copy this request as a curl command', ChodaCurl.buildCurl(r)],
+    ['⧉ copy url', 'Copy the request URL', r.url]
+  ])
+  appendSection(pre, 'general', 'General', ChodaNetView.generalRows(r))
+  appendSection(
+    pre,
+    'resHeaders',
+    'Response headers',
+    Object.entries(r.responseHeaders || {}),
+    { rawText: ChodaNetView.rawHeaderText(r.responseHeaders) }
+  )
+  appendSection(
+    pre,
+    'reqHeaders',
+    'Request headers',
+    Object.entries(r.requestHeaders || {}),
+    { rawText: ChodaNetView.rawHeaderText(r.requestHeaders) }
+  )
+}
+
+// Body panes: Preview pretty-prints JSON, Response shows the bytes as received.
+// Splitting them is the whole point of DevTools having both tabs — a raw view is
+// what you paste elsewhere, a parsed view is what you read.
+function renderBodyTab(pre, text, { pretty, missingHint, copyLabel }) {
+  const shown = typeof text === 'string' ? (pretty ? ChodaCurl.prettyJson(text) : text) : null
+  appendActions(pre, [[copyLabel, 'Copy what this tab shows', shown]])
+  const body = document.createElement('pre')
+  body.className = 'bodyPre'
+  body.textContent = shown === null ? missingHint : shown
+  pre.appendChild(body)
+}
+
+// Cookies — request-side Cookie pairs and response-side Set-Cookie, parsed out of
+// the headers (webRequest needs 'extraHeaders' to expose either, which background.js
+// already requests).
+function renderCookiesTab(pre, r) {
+  const reqCookies = ChodaNetView.parseRequestCookies(r.requestHeaders)
+  const resCookies = ChodaNetView.parseResponseCookies(r.responseHeaders)
+  appendSection(
+    pre,
+    'resCookies',
+    'Response cookies',
+    resCookies.map((c) => [c.name, [c.value, ...c.attributes].join('; ')]),
+    { emptyText: '(no Set-Cookie on this response)' }
+  )
+  appendSection(
+    pre,
+    'reqCookies',
+    'Request cookies',
+    reqCookies.map((c) => [c.name, c.value]),
+    { emptyText: '(no Cookie header sent)' }
+  )
+}
+
+// Show the focused request in the active tab, so the common inspection jobs never
+// need DevTools open alongside the panel.
 function renderReqPreview() {
   const pre = el('reqPreview')
   pre.innerHTML = ''
   const r = capturedRequests.find((x) => x.requestId === previewId)
-  if (!r) {
-    populateHeaderPicker(null)
-    return
-  }
+  renderDetailTabs(Boolean(r))
+  if (!r) return
 
   const summary = document.createElement('div')
   summary.className = 'hdrSummary'
   summary.textContent = `${r.method} ${r.url}${r.status ? '  ·  ' + r.status : ''}`
   pre.appendChild(summary)
 
-  appendHeaderRows(pre, 'REQUEST HEADERS', r.requestHeaders)
-  appendHeaderRows(pre, 'RESPONSE HEADERS', r.responseHeaders)
-  populateHeaderPicker(r)
+  if (activeDetailTab === 'headers') return renderHeadersTab(pre, r)
+  if (activeDetailTab === 'cookies') return renderCookiesTab(pre, r)
 
-  // TASK-1450 — copy-response-body button, hidden when the body wasn't captured.
-  const bodyTitle = document.createElement('div')
-  bodyTitle.className = 'hdrTitle'
-  const bodyLabel = document.createElement('span')
-  bodyLabel.textContent = 'RESPONSE BODY'
-  bodyTitle.appendChild(bodyLabel)
-  if (typeof r.body === 'string') {
-    const copyBodyBtn = document.createElement('button')
-    copyBodyBtn.type = 'button'
-    copyBodyBtn.className = 'hdrCopy'
-    copyBodyBtn.textContent = '⧉ copy'
-    copyBodyBtn.title = 'Copy response body'
-    copyBodyBtn.addEventListener('click', () => copyText(r.body, copyBodyBtn))
-    bodyTitle.appendChild(copyBodyBtn)
+  // Payload — only string request bodies survive inject.js's interceptor, so
+  // FormData / Blob / URLSearchParams posts legitimately land here empty.
+  if (activeDetailTab === 'payload') {
+    return renderBodyTab(pre, r.reqBody, {
+      pretty: true,
+      missingHint: tabInstrumented
+        ? '(no request body captured — GET, or a non-text body)'
+        : NOT_INSTRUMENTED_HINT,
+      copyLabel: '⧉ copy payload'
+    })
   }
-  pre.appendChild(bodyTitle)
 
-  const bodyPre = document.createElement('pre')
-  bodyPre.className = 'bodyPre'
-  bodyPre.textContent =
-    typeof r.body === 'string' ? r.body : '(not captured — reload the page, then retry)'
-  pre.appendChild(bodyPre)
+  return renderBodyTab(pre, r.body, {
+    pretty: activeDetailTab === 'preview',
+    missingHint: tabInstrumented
+      ? '(no body captured — a non-text response, or one the page never read)'
+      : NOT_INSTRUMENTED_HINT,
+    copyLabel: '⧉ copy body'
+  })
 }
 
 let activeTab = null
@@ -573,17 +723,22 @@ el('destination').addEventListener('change', () => {
   refreshConvPane()
   refreshKnowledgePane()
 })
+// Each of these re-renders the chips too: their badges now count post-filter, so a
+// stale chip would contradict the list right below it.
 el('reqSearch').addEventListener('input', () => {
   searchQuery = el('reqSearch').value.trim()
+  renderChips()
   renderReqList()
 })
 // TASK-1455 — method/status filters compose with search + type chips via filteredRequests().
 el('methodFilter').addEventListener('change', () => {
   activeMethod = el('methodFilter').value
+  renderChips()
   renderReqList()
 })
 el('statusFilter').addEventListener('change', () => {
   activeStatusClass = el('statusFilter').value
+  renderChips()
   renderReqList()
 })
 // TASK-1454 — re-pull requests in place; search/filter/collapse state (module-level,
@@ -596,12 +751,6 @@ el('reqRefresh').addEventListener('click', async () => {
   await loadRequests()
   btn.textContent = orig
   btn.disabled = false
-})
-// TASK-1453 — copy the header value picked in the dropdown.
-el('hdrCopyBtn').addEventListener('click', () => {
-  const sel = el('hdrPicker')
-  if (sel.disabled || !sel.options.length) return
-  copyText(sel.value, el('hdrCopyBtn'))
 })
 el('selectAll').addEventListener('change', () => {
   const rows = filteredRequests()
@@ -678,7 +827,8 @@ el('send').addEventListener('click', async () => {
       status: r.status,
       requestHeaders: r.requestHeaders,
       responseHeaders: r.responseHeaders,
-      body: r.body
+      body: r.body,
+      reqBody: r.reqBody
     })
     // One request keeps the original kind:'network' path; 2+ become ONE
     // kind:'network-bundle' → a single .har artifact linked to the entry (TASK-1374).

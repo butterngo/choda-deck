@@ -34,6 +34,9 @@
   if (origFetch) {
     window.fetch = function (...args) {
       const reqBody = reqBodyOf(args[1])
+      // Stamped at call time, not completion — the SW correlates against
+      // webRequest's request-START timestamp, which is the same epoch clock.
+      const startedAt = Date.now()
       return origFetch.apply(this, args).then((res) => {
         try {
           const url = res.url || abs(typeof args[0] === 'string' ? args[0] : args[0]?.url)
@@ -42,7 +45,9 @@
           res
             .clone()
             .text()
-            .then((t) => post({ url, method, status: res.status, body: t.slice(0, MAX), reqBody }))
+            .then((t) =>
+              post({ url, method, status: res.status, body: t.slice(0, MAX), reqBody, startedAt })
+            )
             .catch(() => {})
         } catch {
           /* ignore */
@@ -135,6 +140,7 @@
   }
   XMLHttpRequest.prototype.send = function (body) {
     const reqBody = typeof body === 'string' ? body.slice(0, MAX) : undefined
+    const startedAt = Date.now()
     this.addEventListener('load', () => {
       try {
         const resBody = typeof this.responseText === 'string' ? this.responseText : ''
@@ -143,7 +149,8 @@
           method: this.__cc?.method,
           status: this.status,
           body: resBody.slice(0, MAX),
-          reqBody
+          reqBody,
+          startedAt
         })
       } catch {
         /* responseType blob/arraybuffer — no text body */

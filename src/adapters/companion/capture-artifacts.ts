@@ -56,6 +56,9 @@ export interface NetworkRecord {
   // Response body, captured client-side by the extension's page interceptor
   // (webRequest can't see it). Optional + capped by the caller.
   body?: string
+  // Request body, same interceptor, same reason. Only string bodies
+  // are captured — a FormData / Blob post legitimately arrives without one.
+  reqBody?: string
 }
 
 // Defensive cap so a large body can't bloat the stored entry (the extension caps
@@ -90,6 +93,9 @@ export function parseNetworkRecord(record: unknown): NetworkRecord {
   }
   if (r.cookies !== undefined && isStringMap(r.cookies)) out.cookies = r.cookies
   if (typeof r.body === 'string' && r.body.length > 0) out.body = r.body.slice(0, MAX_BODY_CHARS)
+  if (typeof r.reqBody === 'string' && r.reqBody.length > 0) {
+    out.reqBody = r.reqBody.slice(0, MAX_BODY_CHARS)
+  }
   return out
 }
 
@@ -118,7 +124,15 @@ function harEntry(record: NetworkRecord, startedDateTime: string): Record<string
       queryString: [],
       cookies: harHeaders(record.cookies),
       headersSize: -1,
-      bodySize: -1
+      bodySize: record.reqBody ? record.reqBody.length : -1,
+      ...(record.reqBody
+        ? {
+            postData: {
+              mimeType: record.requestHeaders?.['content-type'] ?? 'x-unknown',
+              text: record.reqBody
+            }
+          }
+        : {})
     },
     response: {
       status: record.status ?? 0,
@@ -175,16 +189,19 @@ function headerBlock(title: string, headers?: Record<string, string>): string {
 }
 
 /**
- * Render a network capture as markdown — method/url/status + headers + cookies.
- * Deliberately excludes any response body (v1 scope, TASK-1333). Secrets in the
- * headers/cookies stay local-only (image/network can't target the sync path).
+ * Render a network capture as markdown — method/url/status + headers + cookies,
+ * plus request/response bodies when the page interceptor captured them. Secrets
+ * in the headers/cookies/bodies stay local-only (image/network can't target the
+ * sync path).
  */
 export function formatNetworkRecord(record: NetworkRecord): string {
   const status = record.status !== undefined ? ` → ${record.status}` : ''
   const body = record.body ? `\n**Response body**\n\`\`\`\n${record.body}\n\`\`\`\n` : ''
+  const payload = record.reqBody ? `\n**Request body**\n\`\`\`\n${record.reqBody}\n\`\`\`\n` : ''
   return (
     `**${record.method} ${record.url}**${status}\n` +
     headerBlock('Request headers', record.requestHeaders) +
+    payload +
     headerBlock('Response headers', record.responseHeaders) +
     headerBlock('Cookies', record.cookies) +
     body
