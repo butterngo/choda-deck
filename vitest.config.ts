@@ -1,8 +1,10 @@
 import { defineConfig } from 'vitest/config'
+// Shared with scripts/test.mjs, which asserts every file matched here actually ran.
+import { INCLUDE } from './scripts/lib/test-files.mjs'
 
 export default defineConfig({
   test: {
-    include: ['src/**/*.test.ts', 'scripts/**/*.test.ts', 'extension/**/*.test.js'],
+    include: INCLUDE,
     globals: true,
     // Linux CI runners hit beforeEach > 10s under parallel test pressure
     // (mkdtempSync + new Database + initSchema runs many DDL + ALTER statements).
