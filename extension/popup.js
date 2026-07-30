@@ -842,7 +842,10 @@ el('send').addEventListener('click', async () => {
   let kind = selectedKind()
   const projectId = el('project').value
   const destination = el('destination').value
-  const sourceUrl = activeTab?.url || 'unknown'
+  // Correct for text + image: the selected text and the grabbed pixels really do come
+  // from the focused tab. The network branch below overrides it, because those records
+  // come from a per-tab buffer and focus is not their provenance.
+  let sourceUrl = activeTab?.url || 'unknown'
   if (!projectId) return setStatus('Pick a project first', 'err')
 
   let payload
@@ -858,6 +861,10 @@ el('send').addEventListener('click', async () => {
   } else {
     const picked = selectedRequests()
     if (!picked.length) return setStatus('Select at least one request first', 'err')
+    // Provenance comes from the records, not from whichever tab the panel is bound to.
+    // Read off `picked` (which still carries pageUrl) rather than the trimmed records
+    // below, so the wire payload shape stays unchanged.
+    sourceUrl = ChodaProvenance.resolveNetworkSource(picked, activeTab?.url)
     const toRecord = (r) => ({
       method: r.method,
       url: r.url,
@@ -999,7 +1006,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
           kind: 'discovery-session',
           destination: 'inbox',
           payload: bundle,
-          sourceUrl: (activeTab && activeTab.url) || bundle.events[0].url || 'about:blank'
+          sourceUrl: ChodaProvenance.resolveSessionSource(bundle.events, activeTab && activeTab.url)
         })
       })
       const body = await res.json().catch(() => ({}))

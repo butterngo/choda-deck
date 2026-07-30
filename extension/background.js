@@ -64,6 +64,13 @@ chrome.webRequest.onSendHeaders.addListener(
     r.ts = d.timeStamp
     r.resType = RES_TYPE[d.type] || 'api'
     r.requestHeaders = toObject(d.requestHeaders)
+    // Which PAGE made this call, stamped now rather than read off the focused tab at
+    // capture time — the panel outlives tab switches, so focus is not provenance.
+    // referer carries the full url incl. path; d.initiator is origin-only but always
+    // present for page-initiated requests. Deliberately not chrome.tabs.get(tabId):
+    // that reports where the tab is NOW, so an SPA that has since navigated would
+    // hand back a confidently wrong page.
+    r.pageUrl = r.requestHeaders.referer || d.initiator || undefined
     prune(d.tabId, r.resType)
   },
   { urls: ['<all_urls>'], types: OBSERVED_TYPES },
