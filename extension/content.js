@@ -1,7 +1,8 @@
-// Choda Capture — isolated content script (TASK-1370 + TASK-1412).
+// Choda Capture — isolated content script (TASK-1370 + TASK-1412 + network-panel detail tabs).
 // Two jobs:
-//  1. Relay the MAIN-world interceptor's captured response bodies to the SW
-//     (existing network capture — unchanged).
+//  1. Relay the MAIN-world interceptor's captured request + response bodies to
+//     the SW — neither is visible to chrome.webRequest, so this relay is the
+//     only path by which the Network panel's Payload/Response tabs get a body.
 //  2. Discovery recorder (TASK-1412): when recording is on, turn clicks / inputs /
 //     SPA navigations into timeline events and forward each to the SW, which the
 //     side panel (TASK-1414) buffers into one session.
@@ -39,13 +40,30 @@ const recorder = ChodaRecorder.createRecorder({
   }
 })
 
-// ---- 1. network response-body relay (TASK-1370) + nav relay -----------------
+// ---- 1. network body relay (TASK-1370/1465) + nav relay ---------------------
+
+// Announce that this tab has a live interceptor. Reloading the extension does NOT
+// re-inject content scripts into already-open tabs, so without this the panel can't
+// tell "no body captured" from "capture was never running here" — the two look
+// identical once webRequest has recorded the headers anyway.
+chrome.runtime.sendMessage({ type: 'relayReady' }).catch(() => {})
+
 window.addEventListener('message', (e) => {
   const d = e.data
   if (e.source !== window || !d) return
   if (d.__chodaCapture === true) {
+    // reqBody rides along for the panel's Payload tab — webRequest
+    // never sees a request body either, only the MAIN-world interceptor does.
     chrome.runtime
-      .sendMessage({ type: 'responseBody', url: d.url, method: d.method, status: d.status, body: d.body })
+      .sendMessage({
+        type: 'responseBody',
+        url: d.url,
+        method: d.method,
+        status: d.status,
+        body: d.body,
+        reqBody: d.reqBody,
+        startedAt: d.startedAt
+      })
       .catch(() => {
         /* SW asleep / popup gone — body simply won't be attached */
       })

@@ -40,7 +40,9 @@
         cursor: crosshair; border: 1px solid #8883;
       }
       #reqPreview {
-        max-height: 30vh;
+        /* Roomier than the old flat pane — Headers now stacks General + both
+           header sections, and DevTools-style reading wants the vertical space. */
+        max-height: 40vh;
         overflow: auto;
         margin: 6px 0 0;
         padding: 6px 8px;
@@ -51,30 +53,28 @@
       }
       #reqPreview:empty { display: none; }
       .hdrSummary { font-weight: 600; margin-bottom: 6px; white-space: pre-wrap; }
-      .hdrTitle {
-        display: flex; align-items: center; justify-content: space-between;
-        font-weight: 600; opacity: 0.75; margin: 8px 0 2px;
-      }
-      .hdrRow {
-        display: flex; align-items: center; justify-content: space-between;
-        gap: 6px; padding: 1px 0; white-space: pre-wrap;
-      }
-      .hdrKV { flex: 1; word-break: break-all; }
       .hdrCopy {
         width: auto; flex: none; padding: 1px 6px; font-size: 10px; cursor: pointer;
         border-radius: 4px; border: 1px solid #8884; background: #8881;
       }
+      .hdrCopy:disabled { opacity: 0.4; cursor: default; }
       .bodyPre { margin: 0; white-space: pre-wrap; word-break: break-all; font: inherit; }
-      /* TASK-1454 — refresh sits beside the search box, DevTools-style toolbar row. */
-      .netToolbar { display: flex; gap: 6px; align-items: center; margin: 6px 0 4px; }
-      .netToolbar input { flex: 1; margin: 0; }
-      .netToolbar button { width: auto; flex: none; padding: 6px 10px; cursor: pointer; }
-      /* TASK-1455 — method/status filters, DevTools-Network-tab-style. */
-      .netFilterRow { display: flex; gap: 6px; margin: 0 0 4px; }
-      .netFilterRow select { flex: 1; margin: 0; padding: 4px 6px; font-size: 11px; }
+      /* One filter bar — search + method + status + refresh. Consolidates the
+         TASK-1454 search/refresh row with the TASK-1455 method/status row: every
+         control shares a height so the strip reads as one, and it wraps rather
+         than squashing when the side panel is narrow. */
+      .netToolbar {
+        display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0 4px;
+      }
+      .netToolbar > * { height: 26px; margin: 0; box-sizing: border-box; }
+      .netToolbar input {
+        flex: 1 1 140px; min-width: 110px; padding: 0 8px; font-size: 12px;
+      }
+      .netToolbar select { flex: 0 1 auto; padding: 0 4px; font-size: 11px; }
+      .netToolbar button { width: auto; flex: none; padding: 0 9px; cursor: pointer; }
       .chips { display: flex; gap: 4px; margin: 4px 0; flex-wrap: wrap; }
       .chips button {
-        width: auto; padding: 3px 9px; font-size: 11px; cursor: pointer;
+        width: auto; height: 22px; padding: 0 9px; font-size: 11px; cursor: pointer;
         border-radius: 999px; border: 1px solid #8884; background: #8881;
       }
       .chips button.active { background: #2563eb; color: #fff; border-color: #2563eb; }
@@ -109,10 +109,39 @@
       .reqRow input { width: auto; margin: 0; }
       .reqName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .reqMethod, .reqStatus, .reqType { font-size: 11px; opacity: 0.8; }
-      /* TASK-1453 — pick a header from a dropdown, copy it with one button. */
-      .hdrPickRow { display: flex; gap: 6px; margin-top: 8px; }
-      .hdrPickRow select { flex: 1; margin: 0; }
-      .hdrPickRow button { width: auto; flex: none; padding: 6px 12px; cursor: pointer; }
+      /* Detail-pane tabs (Headers / Payload / Preview / Response / Cookies),
+         replacing TASK-1453's header dropdown (copy now lives per tab). */
+      .detailTabs {
+        display: flex; gap: 2px; margin: 6px 0 0; border-bottom: 1px solid #8883;
+      }
+      .detailTabs button {
+        width: auto; flex: none; padding: 5px 10px; font-size: 11px; cursor: pointer;
+        border: none; background: none; opacity: 0.65; border-bottom: 2px solid transparent;
+      }
+      .detailTabs button:hover { opacity: 0.9; }
+      .detailTabs button.active { opacity: 1; font-weight: 600; border-bottom-color: #2563eb; }
+      .detailActions { display: flex; gap: 6px; justify-content: flex-end; margin-bottom: 4px; }
+      .detailTabs .tabClose {
+        padding: 5px 8px; opacity: 0.5; border-bottom-color: transparent; font-size: 12px;
+      }
+      .detailTabs .tabClose:hover { opacity: 1; }
+      .detailSection { margin-top: 8px; }
+      .sectionHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .sectionToggle {
+        width: auto; flex: 1; text-align: left; padding: 2px 0; font: inherit; font-weight: 600;
+        opacity: 0.75; border: none; background: none; cursor: pointer; user-select: none;
+      }
+      .rawToggle {
+        display: flex; align-items: center; gap: 4px; font-weight: 400; font-size: 11px;
+        opacity: 0.7; white-space: nowrap;
+      }
+      .rawToggle input { width: auto; margin: 0; }
+      /* Name column sized to fit, value column wraps — long tokens can't push the
+         names out of alignment. */
+      .kvRow { display: grid; grid-template-columns: minmax(90px, 34%) 1fr; gap: 8px; padding: 1px 0; }
+      .kvName { opacity: 0.7; word-break: break-word; }
+      .kvValue { word-break: break-all; white-space: pre-wrap; }
+      .kvEmpty { opacity: 0.55; padding: 1px 0; }
       #status { margin-top: 10px; min-height: 16px; font-size: 12px; }
       #status.ok { color: #16a34a; }
       #status.err { color: #dc2626; }
@@ -186,23 +215,18 @@
       <div id="typeChips" class="chips"></div>
       <div class="netToolbar">
         <input type="text" id="reqSearch" placeholder="search URL or response body…" />
-        <button type="button" id="reqRefresh" class="ghost">⟳ Refresh</button>
-      </div>
-      <div class="netFilterRow">
         <select id="methodFilter"><option value="all">All methods</option></select>
         <select id="statusFilter"><option value="all">All statuses</option></select>
+        <button type="button" id="reqRefresh" class="ghost" title="Re-read this tab's requests">⟳</button>
       </div>
       <label class="selectall"><input type="checkbox" id="selectAll" /> select all (filtered)</label>
       <div class="reqTableHead">
         <span></span><span>Name</span><span>Method</span><span>Status</span><span>Type</span>
       </div>
       <div id="reqList"></div>
+      <div id="reqTabs" class="detailTabs" hidden></div>
       <div id="reqPreview"></div>
-      <div class="hdrPickRow">
-        <select id="hdrPicker" disabled></select>
-        <button type="button" id="hdrCopyBtn" class="ghost" disabled>⧉ Copy header</button>
-      </div>
-      <p class="hint" style="margin:4px 0 0">Headers + cookies + token + response body (fetch/XHR; reload page to capture).</p>
+      <p class="hint" style="margin:4px 0 0">Headers + cookies + token + request/response bodies (fetch/XHR; reload page to capture).</p>
     </div>
 
     <button type="button" id="send" class="primary">Capture →</button>
@@ -211,6 +235,9 @@
     </div>
 
     <script src="lib/timeline.js"></script>
+    <script src="lib/curl.js"></script>
+    <script src="lib/reqfilter.js"></script>
+    <script src="lib/netview.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>
