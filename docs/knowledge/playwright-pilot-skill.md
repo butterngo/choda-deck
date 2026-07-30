@@ -1,13 +1,13 @@
 ---
 type: learning
-title: "Playwright pilot skill — global Claude Code skill for FE executor"
+title: Playwright pilot skill — global Claude Code skill for FE executor
 projectId: choda-deck
 scope: project
 refs:
   - path: docs/knowledge/playwright-executor-pilot-runbook.md
-    commitSha: 5cfe71017a81cffbb70b456f136c4cc5729f2504
+    commitSha: c0f2ccc9ff0e5170b402c5482b33ceb3f00b7ae4
 createdAt: 2026-05-08
-lastVerifiedAt: 2026-05-08
+lastVerifiedAt: 2026-07-27
 ---
 
 # Playwright pilot skill — global Claude Code skill
