@@ -110,7 +110,9 @@ function reqName(r) {
 let capturedRequests = []
 // TASK-1373 — filter + multi-select state. Selections are keyed by requestId so
 // they survive filter switches; previewId is the last row the user focused.
-const FILTERS = ['all', 'api', 'html', 'js', 'css']
+// Sourced from the lib so the rendered chips and the persisted-state validator
+// can't drift apart.
+const FILTERS = ChodaReqFilter.FILTER_TYPES
 let activeFilter = 'all'
 const selectedIds = new Set()
 let previewId = null
@@ -126,6 +128,35 @@ let activeStatusClass = 'all'
 // wording of the empty-body hint: "reload the page" is only useful advice when
 // capture genuinely isn't running there.
 let tabInstrumented = true
+
+// Filter state survives a panel close/reopen. chrome.storage.SESSION, not local:
+// a filter set five minutes ago should still be there when the panel reopens, but
+// one from last week silently hiding rows would be a trap. Session scope clears on
+// browser restart, which is about how long the intent lasts.
+const NET_FILTER_KEY = 'netFilters'
+
+function saveNetFilters() {
+  // Fire-and-forget: persistence failing must not block a filter click.
+  chrome.storage.session.set({ [NET_FILTER_KEY]: filterState() }).catch(() => {})
+}
+
+// Applies the stored state to BOTH the module vars and the controls. Must run
+// before the first renderChips()/renderReqList(), or the UI and the state
+// disagree for a frame.
+async function restoreNetFilters() {
+  let stored
+  try {
+    ;({ [NET_FILTER_KEY]: stored } = await chrome.storage.session.get(NET_FILTER_KEY))
+  } catch {
+    return // storage unavailable — start from defaults, nothing worth surfacing
+  }
+  const f = ChodaReqFilter.sanitizeFilterState(stored)
+  activeFilter = f.type
+  activeMethod = f.method
+  activeStatusClass = f.statusClass
+  searchQuery = f.query
+  el('reqSearch').value = f.query
+}
 
 // The four live filters as one object, for lib/reqfilter.js (which owns the
 // predicates so they're testable — the chip-count bug lived in this logic).
@@ -197,6 +228,7 @@ function renderChips() {
     b.className = f === activeFilter ? 'active' : ''
     b.addEventListener('click', () => {
       activeFilter = f
+      saveNetFilters()
       renderChips()
       renderReqList()
     })
@@ -677,6 +709,8 @@ document.addEventListener('paste', (e) => {
 
 async function init() {
   ;[activeTab] = await chrome.tabs.query({ active: true, currentWindow: true })
+  // Before refreshDestinations(), which can trigger the first loadRequests().
+  await restoreNetFilters()
   const { base, token } = await getConfig()
   if (!token) {
     setStatus('No token set — open Options and paste data/bridge-token.txt', 'err')
@@ -727,17 +761,20 @@ el('destination').addEventListener('change', () => {
 // stale chip would contradict the list right below it.
 el('reqSearch').addEventListener('input', () => {
   searchQuery = el('reqSearch').value.trim()
+  saveNetFilters()
   renderChips()
   renderReqList()
 })
 // TASK-1455 — method/status filters compose with search + type chips via filteredRequests().
 el('methodFilter').addEventListener('change', () => {
   activeMethod = el('methodFilter').value
+  saveNetFilters()
   renderChips()
   renderReqList()
 })
 el('statusFilter').addEventListener('change', () => {
   activeStatusClass = el('statusFilter').value
+  saveNetFilters()
   renderChips()
   renderReqList()
 })
