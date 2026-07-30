@@ -1,5 +1,5 @@
 // Request-list filtering + chip counting for the Network panel.
-const { statusClass, matches, countForType } = require('./reqfilter.js')
+const { statusClass, matches, countForType, sanitizeFilterState } = require('./reqfilter.js')
 
 const RECORDS = [
   { url: 'https://a/api/sources', method: 'GET', status: 200, resType: 'api', body: '{"ok":1}' },
@@ -67,5 +67,46 @@ describe('countForType', () => {
     const f = { ...ALL, method: 'GET' }
     const perType = ['api', 'html', 'js', 'css'].reduce((n, t) => n + countForType(RECORDS, t, f), 0)
     expect(perType).toBe(countForType(RECORDS, 'all', f))
+  })
+})
+
+// Persistence across panel reopen: storage is untrusted input, and a bad restore
+// must never leave the panel filtered to nothing with no obvious way back.
+describe('sanitizeFilterState', () => {
+  const DEFAULTS = { type: 'all', method: 'all', statusClass: 'all', query: '' }
+
+  it('round-trips a valid state', () => {
+    const state = { type: 'api', method: 'POST', statusClass: '4xx', query: 'sellers' }
+    expect(sanitizeFilterState(state)).toEqual(state)
+  })
+
+  it('falls back to defaults for a missing or non-object payload', () => {
+    expect(sanitizeFilterState(undefined)).toEqual(DEFAULTS)
+    expect(sanitizeFilterState(null)).toEqual(DEFAULTS)
+    expect(sanitizeFilterState('nonsense')).toEqual(DEFAULTS)
+    expect(sanitizeFilterState([1, 2])).toEqual(DEFAULTS)
+  })
+
+  it('drops a type chip that no longer exists', () => {
+    expect(sanitizeFilterState({ type: 'websocket' }).type).toBe('all')
+  })
+
+  it('drops an invalid status class', () => {
+    expect(sanitizeFilterState({ statusClass: '9xx' }).statusClass).toBe('all')
+    expect(sanitizeFilterState({ statusClass: 200 }).statusClass).toBe('all')
+  })
+
+  it('accepts any alphabetic HTTP verb but rejects junk', () => {
+    expect(sanitizeFilterState({ method: 'PATCH' }).method).toBe('PATCH')
+    expect(sanitizeFilterState({ method: 'GET; DROP' }).method).toBe('all')
+    expect(sanitizeFilterState({ method: 42 }).method).toBe('all')
+  })
+
+  it('caps a long query rather than restoring an unbounded string', () => {
+    expect(sanitizeFilterState({ query: 'x'.repeat(500) }).query).toHaveLength(200)
+  })
+
+  it('partial state fills the rest with defaults', () => {
+    expect(sanitizeFilterState({ type: 'js' })).toEqual({ ...DEFAULTS, type: 'js' })
   })
 })

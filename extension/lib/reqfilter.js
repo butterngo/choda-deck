@@ -50,7 +50,41 @@
     return records.filter((r) => matchesType(r, type) && matchesNonType(r, f)).length
   }
 
-  const api = { statusClass, matchesSearch, matchesType, matchesNonType, matches, countForType }
+  // The type chips, in display order. Shared with the panel so the rendered chips
+  // and the persisted-state validator can never disagree about what's valid.
+  const FILTER_TYPES = ['all', 'api', 'html', 'js', 'css']
+  const STATUS_CLASSES = ['all', '2xx', '3xx', '4xx', '5xx']
+  const MAX_QUERY_CHARS = 200
+
+  /**
+   * Coerce a restored-from-storage filter state into something safe to apply.
+   * Storage is untrusted input: it can hold a shape written by an older version,
+   * a type chip that no longer exists, or hand-edited junk — none of which may
+   * leave the panel stuck showing nothing with no obvious way back.
+   */
+  function sanitizeFilterState(raw) {
+    const f = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
+    const method =
+      typeof f.method === 'string' && /^[A-Za-z]{1,20}$/.test(f.method) ? f.method : 'all'
+    return {
+      type: FILTER_TYPES.includes(f.type) ? f.type : 'all',
+      method,
+      statusClass: STATUS_CLASSES.includes(f.statusClass) ? f.statusClass : 'all',
+      query: typeof f.query === 'string' ? f.query.slice(0, MAX_QUERY_CHARS) : ''
+    }
+  }
+
+  const api = {
+    statusClass,
+    matchesSearch,
+    matchesType,
+    matchesNonType,
+    matches,
+    countForType,
+    sanitizeFilterState,
+    FILTER_TYPES,
+    STATUS_CLASSES
+  }
   root.ChodaReqFilter = api
   if (typeof module !== 'undefined' && module.exports) module.exports = api
 })(typeof globalThis !== 'undefined' ? globalThis : this)
