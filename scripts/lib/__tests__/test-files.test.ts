@@ -1,11 +1,78 @@
 import { describe, it, expect } from 'vitest'
-import { INCLUDE, toRelPosix, parseFilters, matchesFilters, findMissing } from '../test-files.mjs'
+import {
+  INCLUDE,
+  toRelPosix,
+  parseFilters,
+  matchesFilters,
+  findMissing,
+  patternToRegExp,
+  findTestFiles
+} from '../test-files.mjs'
+
+/** Minimal readdirSync stand-in over a { path: [entries] } shape. */
+function fakeReaddir(tree: Record<string, Array<[string, 'dir' | 'file']>>) {
+  return (dir: string) =>
+    (tree[dir] ?? []).map(([name, kind]) => ({
+      name,
+      isDirectory: () => kind === 'dir'
+    }))
+}
 
 describe('INCLUDE', () => {
   it('covers every suite the repo runs', () => {
     expect(INCLUDE).toContain('src/**/*.test.ts')
     expect(INCLUDE).toContain('scripts/**/*.test.ts')
     expect(INCLUDE).toContain('extension/**/*.test.js')
+  })
+})
+
+describe('patternToRegExp', () => {
+  it('matches at any depth under a ** segment, including zero directories', () => {
+    const re = patternToRegExp('src/**/*.test.ts')
+    expect(re.test('src/a.test.ts')).toBe(true)
+    expect(re.test('src/core/domain/a.test.ts')).toBe(true)
+  })
+
+  it('does not match the wrong extension or a sibling root', () => {
+    const re = patternToRegExp('src/**/*.test.ts')
+    expect(re.test('src/core/a.ts')).toBe(false)
+    expect(re.test('src/core/a.test.js')).toBe(false)
+    expect(re.test('other/a.test.ts')).toBe(false)
+  })
+
+  it('treats a dot literally rather than as any-char', () => {
+    expect(patternToRegExp('extension/**/*.test.js').test('extension/aXtestYjs')).toBe(false)
+  })
+})
+
+describe('findTestFiles', () => {
+  // fs.globSync would be the obvious tool, but it lands in Node 22 and CI runs
+  // Node 20 — importing it there throws before a single test runs.
+  const tree = {
+    '/repo': [
+      ['src', 'dir'],
+      ['node_modules', 'dir'],
+      ['README.md', 'file']
+    ],
+    '/repo/src': [
+      ['core', 'dir'],
+      ['a.test.ts', 'file'],
+      ['a.ts', 'file']
+    ],
+    '/repo/src/core': [['deep.test.ts', 'file']],
+    '/repo/node_modules': [['evil.test.ts', 'file']]
+  } as Record<string, Array<[string, 'dir' | 'file']>>
+
+  it('finds matching files at every depth', () => {
+    expect(findTestFiles('/repo', ['src/**/*.test.ts'], fakeReaddir(tree))).toEqual([
+      'src/a.test.ts',
+      'src/core/deep.test.ts'
+    ])
+  })
+
+  it('never descends into node_modules', () => {
+    const found = findTestFiles('/repo', ['**/*.test.ts'], fakeReaddir(tree))
+    expect(found.some((p) => p.includes('node_modules'))).toBe(false)
   })
 })
 

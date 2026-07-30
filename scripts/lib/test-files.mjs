@@ -14,6 +14,56 @@
 
 export const INCLUDE = ['src/**/*.test.ts', 'scripts/**/*.test.ts', 'extension/**/*.test.js']
 
+// Directories that can never hold a test file we own, skipped so the walk stays cheap.
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'out', 'coverage', '.worktrees'])
+
+/**
+ * Translate one include pattern to a RegExp over forward-slashed relative paths.
+ * Deliberately hand-rolled rather than using fs.globSync: that lands in Node 22, and
+ * CI runs Node 20 — a dependency on the newer built-in fails at import time, before
+ * a single test runs.
+ */
+export function patternToRegExp(pattern) {
+  let out = ''
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i]
+    if (c === '*') {
+      if (pattern[i + 1] === '*') {
+        // `**/` spans any number of directories, including none.
+        out += pattern[i + 2] === '/' ? '(?:[^/]+/)*' : '.*'
+        i += pattern[i + 2] === '/' ? 2 : 1
+      } else {
+        out += '[^/]*'
+      }
+    } else if ('.+^${}()|[]\\/?'.includes(c)) {
+      out += '\\' + c
+    } else {
+      out += c
+    }
+  }
+  return new RegExp('^' + out + '$')
+}
+
+/** Every file under `root` matching any include pattern, as relative posix paths. */
+export function findTestFiles(root, patterns, readdirSync) {
+  const matchers = patterns.map(patternToRegExp)
+  const found = []
+  const walk = (relDir) => {
+    const abs = relDir ? `${root}/${relDir}` : root
+    for (const entry of readdirSync(abs, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (SKIP_DIRS.has(entry.name)) continue
+        walk(relDir ? `${relDir}/${entry.name}` : entry.name)
+      } else {
+        const rel = relDir ? `${relDir}/${entry.name}` : entry.name
+        if (matchers.some((m) => m.test(rel))) found.push(rel)
+      }
+    }
+  }
+  walk('')
+  return found.sort()
+}
+
 /** Normalize a path to forward slashes, relative to root when absolute. */
 export function toRelPosix(filePath, root) {
   const posix = String(filePath).replace(/\\/g, '/')

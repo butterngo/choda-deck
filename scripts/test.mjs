@@ -1,9 +1,16 @@
 import { spawnSync } from 'child_process'
-import { globSync, mkdtempSync, readFileSync, rmSync } from 'fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { resolve, dirname, join } from 'path'
 import { fileURLToPath } from 'url'
-import { INCLUDE, toRelPosix, parseFilters, matchesFilters, findMissing } from './lib/test-files.mjs'
+import {
+  INCLUDE,
+  toRelPosix,
+  parseFilters,
+  matchesFilters,
+  findMissing,
+  findTestFiles
+} from './lib/test-files.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const vitest = resolve(root, 'node_modules/vitest/vitest.mjs')
@@ -51,9 +58,7 @@ try {
 
 if (reportRead) {
   const filters = parseFilters(argv)
-  const onDisk = INCLUDE.flatMap((pattern) => globSync(pattern, { cwd: root })).map((p) =>
-    toRelPosix(p, root)
-  )
+  const onDisk = findTestFiles(root.replace(/\\/g, '/'), INCLUDE, readdirSync)
   const expected = [...new Set(onDisk)].filter((p) => matchesFilters(p, filters))
 
   // An empty expected set means our substring model of the CLI filters did not match
