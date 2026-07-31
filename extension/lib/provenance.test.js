@@ -1,6 +1,7 @@
 const {
   resolveNetworkSource,
   resolveSessionSource,
+  resolveTabSource,
   distinctPageUrls,
   UNKNOWN
 } = require('./provenance')
@@ -96,5 +97,51 @@ describe('distinctPageUrls', () => {
 
   it('drops records with no usable pageUrl', () => {
     expect(distinctPageUrls([rec(undefined), rec(''), {}, null])).toEqual([])
+  })
+})
+
+// TASK-1551 — the text/image half of the same bug. The panel binds activeTab once at
+// init() and re-binds only on a tab SWITCH, so a same-tab navigation leaves it naming
+// the previous page. Each case names what the artifact would have CLAIMED before.
+describe('resolveTabSource', () => {
+  const PAGE_BEFORE_NAV = 'http://localhost:3002/admin/projects'
+  const PAGE_AT_CAPTURE = 'http://localhost:3002/admin/projects/6'
+
+  it('uses the origin stamped when the content was captured', () => {
+    expect(resolveTabSource(PAGE_AT_CAPTURE, PAGE_AT_CAPTURE)).toBe(PAGE_AT_CAPTURE)
+  })
+
+  it('keeps the capture-time origin when the user navigates before pressing Send', () => {
+    // Pixels grabbed on /projects/6, Send pressed after navigating to /projects. The
+    // send-time url is the wrong answer for content taken earlier.
+    expect(resolveTabSource(PAGE_AT_CAPTURE, PAGE_BEFORE_NAV)).toBe(PAGE_AT_CAPTURE)
+  })
+
+  it('falls back to the send-time read for content with no capture moment', () => {
+    // Hand-typed or pasted text: nothing was grabbed, so the focused tab is all there is.
+    expect(resolveTabSource(null, PAGE_AT_CAPTURE)).toBe(PAGE_AT_CAPTURE)
+  })
+
+  it("says 'unknown' rather than inventing an origin", () => {
+    // The reported defect — CONV-1785332788516-7, titled "Screenshot from unknown".
+    // Honest, and deliberately preserved: a wrong url would read as a fact instead.
+    expect(resolveTabSource(null, null)).toBe(UNKNOWN)
+    expect(resolveTabSource(undefined, undefined)).toBe(UNKNOWN)
+    expect(resolveTabSource('', '')).toBe(UNKNOWN)
+  })
+
+  it('treats a blank stamp as absent and defers to the send-time read', () => {
+    expect(resolveTabSource('   ', PAGE_BEFORE_NAV)).toBe(PAGE_BEFORE_NAV)
+  })
+
+  it('trims both inputs', () => {
+    expect(resolveTabSource(` ${PAGE_AT_CAPTURE} `, null)).toBe(PAGE_AT_CAPTURE)
+    expect(resolveTabSource(null, ` ${PAGE_BEFORE_NAV} `)).toBe(PAGE_BEFORE_NAV)
+  })
+
+  it('ignores non-string inputs instead of stringifying them', () => {
+    // A tab object passed by mistake must not become "[object Object]" as an origin.
+    expect(resolveTabSource({ url: PAGE_AT_CAPTURE }, null)).toBe(UNKNOWN)
+    expect(resolveTabSource(null, 42)).toBe(UNKNOWN)
   })
 })
