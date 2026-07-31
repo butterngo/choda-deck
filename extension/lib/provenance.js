@@ -11,9 +11,13 @@
 // falling back to the request initiator), so the origin is derived from the DATA and
 // `activeTab` is only a fallback for records that carry nothing.
 //
-// Text and image captures are deliberately NOT routed through here: the selected text
-// and the grabbed pixels genuinely come from the focused tab, so `activeTab.url` is
-// already the right answer for them.
+// Text and image captures ARE routed through here (resolveTabSource), contrary to what
+// this comment said before TASK-1551. The earlier reasoning — "the selected text and the
+// grabbed pixels genuinely come from the focused tab, so activeTab.url is already right"
+// — was correct about WHICH tab and wrong about WHEN the url was read. The panel binds
+// `activeTab` once at init() and re-binds only on tab SWITCH, so after a same-tab
+// navigation the binding holds the previous page's url. Same failure as the network
+// branch, arriving by a different route.
 //
 // Dual-mode: assigns to globalThis (classic popup.js load) and module.exports
 // (vitest). No import/export keywords — those would break the classic-script load.
@@ -95,9 +99,36 @@
     return fallback || UNKNOWN
   }
 
+  /**
+   * Resolve the origin for a text or image capture.
+   *
+   * Two clocks matter here and they are not the same. Pixels are grabbed at one moment
+   * and Sent at another, and the user can navigate in between — so the honest origin is
+   * the url stamped WHEN THE CONTENT WAS TAKEN (`capturedAtUrl`), not whatever is
+   * focused when Send is clicked. `freshTabUrl` is the fallback for content with no
+   * capture moment of its own: text typed or pasted straight into the box.
+   *
+   * Neither input may be the panel's long-lived `activeTab` binding. That is set once at
+   * init() and re-bound only when the user switches tabs, so after a same-tab navigation
+   * it names the previous page. Offering it as a fallback would turn the common failure
+   * into a confident wrong origin instead of an honest missing one — and a wrong origin
+   * reads as a fact, survives the session, and misleads whoever replays the capture.
+   *
+   * @param capturedAtUrl url stamped when the content was captured, or null/undefined
+   * @param freshTabUrl url read from the active tab at send time, or null/undefined
+   * @returns string
+   */
+  function resolveTabSource(capturedAtUrl, freshTabUrl) {
+    const captured = typeof capturedAtUrl === 'string' ? capturedAtUrl.trim() : ''
+    if (captured) return captured
+    const fresh = typeof freshTabUrl === 'string' ? freshTabUrl.trim() : ''
+    return fresh || UNKNOWN
+  }
+
   const api = {
     resolveNetworkSource,
     resolveSessionSource,
+    resolveTabSource,
     distinctPageUrls,
     MAX_LISTED_PAGES,
     UNKNOWN

@@ -5,13 +5,13 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/domain/repositories/agent-memory-repository.ts
-    commitSha: 0f5b7660cf547efd5ccae6461a83c30f35c23dc3
+    commitSha: c0f2ccc9ff0e5170b402c5482b33ceb3f00b7ae4
   - path: src/adapters/mcp/mcp-tools/memory-recall.ts
-    commitSha: 0f5b7660cf547efd5ccae6461a83c30f35c23dc3
+    commitSha: c0f2ccc9ff0e5170b402c5482b33ceb3f00b7ae4
   - path: src/adapters/mcp/mcp-tools/memory-promote-to-knowledge.ts
-    commitSha: 0f5b7660cf547efd5ccae6461a83c30f35c23dc3
+    commitSha: c0f2ccc9ff0e5170b402c5482b33ceb3f00b7ae4
 createdAt: 2026-06-04
-lastVerifiedAt: 2026-06-04
+lastVerifiedAt: 2026-07-27
 anchorTaskId: TASK-790
 realizesTasks: ["TASK-790","TASK-827","TASK-846","TASK-642"]
 inWorkspaces: ["main"]

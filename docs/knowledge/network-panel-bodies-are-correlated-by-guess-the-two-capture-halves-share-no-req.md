@@ -5,13 +5,13 @@ projectId: choda-deck
 scope: project
 refs:
   - path: extension/lib/correlate.js
-    commitSha: 3b4684a0f8e76b145ff201c8c150c5cae4027cad
+    commitSha: 8bac9bb175e4b75f222076128c151545666d4392
   - path: extension/background.js
-    commitSha: 3b4684a0f8e76b145ff201c8c150c5cae4027cad
+    commitSha: 8bac9bb175e4b75f222076128c151545666d4392
   - path: extension/inject.js
-    commitSha: 3b4684a0f8e76b145ff201c8c150c5cae4027cad
+    commitSha: 8bac9bb175e4b75f222076128c151545666d4392
   - path: extension/lib/recorder.js
-    commitSha: 3b4684a0f8e76b145ff201c8c150c5cae4027cad
+    commitSha: 8bac9bb175e4b75f222076128c151545666d4392
 createdAt: 2026-07-30
 lastVerifiedAt: 2026-07-30
 ---
@@ -58,6 +58,33 @@ wrong data reads as truth.
 - When two calls start in the same millisecond, pairing is ambiguous by construction. The
   invariant that still holds: every body lands somewhere and no record is left empty.
 
+Verified live (TASK-1547 AC-3): the same endpoint fired 3x concurrently, all three rows
+matched their own request — the case unit tests could only simulate.
+
+## What else webRequest cannot give you
+
+The missing body is the well-known gap, but it is not the only one. `chrome.webRequest`
+also exposes **no request-initiator stack** and **no per-phase timings**. That is why the
+detail pane deliberately stops at Headers / Payload / Preview / Response / Cookies and has
+no **Initiator** or **Timing** tab, even though Chrome DevTools shows both:
+
+- **Initiator** needs the JS call stack that issued the request. webRequest reports only an
+  `initiator` *origin* string, not the frame/stack DevTools renders.
+- **Timing** needs DNS / connect / TLS / send / wait / receive breakdowns. webRequest gives
+  a `timeStamp` per lifecycle event, which is not the same data and cannot be decomposed
+  into phases after the fact.
+
+Both would require attaching `chrome.debugger` — the same escalation that response bodies
+were deliberately avoided with, because it shows the user a "started debugging this browser"
+banner and conflicts with DevTools being open on the same tab.
+
+**Rule: do not add a tab the data cannot fill.** An empty Initiator tab reads as a broken
+feature; its absence reads as a scoped one. If either is genuinely needed, the decision to
+take is "attach chrome.debugger", not "find a webRequest workaround" — there isn't one.
+Note the HAR writer has the same constraint: `harEntry()` emits `time: -1` and
+`timings: {send: -1, wait: -1, receive: -1}` because those are spec-mandated fields it
+cannot honestly populate.
+
 ## Note — the discovery recorder does not have this problem
 
 `lib/recorder.js:handleNetwork()` consumes the interceptor's message **directly** off
@@ -72,3 +99,4 @@ recorder captured this but the panel didn't", that asymmetry is the reason, not 
   `attachBody` until the detail-tabs change — only the discovery path consumed them.
 - Coverage: `extension/lib/correlate.test.js` (unit) + `extension/inject.test.js`
   (interceptor → message → correlation, incl. out-of-order completion).
+- Shipped in PR #224 (`59d8307`); live verification tracked by TASK-1547.

@@ -2,10 +2,21 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
-| [capture-js-eval-parity-deferred](./capture-js-eval-parity-deferred.md) | evaluation | JS-evaluation capture parity — DEFER, claude-in-chrome is the fallback | 2026-07-23 |  |
-| [discovery-capture-has-three-independent-api-body-caps-tune-the-right-one](./discovery-capture-has-three-independent-api-body-caps-tune-the-right-one.md) | learning | Discovery capture has three independent API-body caps — tune the right one | 2026-07-22 |  |
+| [a-version-gated-node-built-in-fails-at-import-time-verify-against-ci-s-node-not-](./a-version-gated-node-built-in-fails-at-import-time-verify-against-ci-s-node-not-.md) | learning | A version-gated Node built-in fails at import time — verify against CI's Node, not the one you're running | 2026-07-30 |  |
+| [https-github-com-modelcontextprotocol-ext-apps](./https-github-com-modelcontextprotocol-ext-apps.md) | learning | https://github.com/modelcontextprotocol/ext-apps | 2026-07-30 |  |
+| [network-filter-persistence-is-session-scoped-and-the-search-box-persists-with-th](./network-filter-persistence-is-session-scoped-and-the-search-box-persists-with-th.md) | decision | Network filter persistence is session-scoped, and the search box persists with the chips | 2026-07-30 | ✱ |
+| [code-ref-slugs-are-globally-unique-across-projects-but-code-ref-identity-is-proj](./code-ref-slugs-are-globally-unique-across-projects-but-code-ref-identity-is-proj.md) | gotcha | code_ref slugs are globally unique across projects, but code_ref identity is (projectId, path, symbol) | 2026-07-30 |  |
+| [vitest-can-report-pass-while-silently-not-running-test-files-check-the-file-coun](./vitest-can-report-pass-while-silently-not-running-test-files-check-the-file-coun.md) | learning | vitest can report PASS while silently not running test files — check the FILE count, not just the test count | 2026-07-30 |  |
+| [url-deny-lists-match-by-substring-use-vendor-specific-tokens-only-never-a-generi](./url-deny-lists-match-by-substring-use-vendor-specific-tokens-only-never-a-generi.md) | learning | URL deny-lists match by substring — use vendor-specific tokens only, never a generic word | 2026-07-30 |  |
+| [capture-reduction-may-be-lossy-about-volume-never-about-identity](./capture-reduction-may-be-lossy-about-volume-never-about-identity.md) | learning | Capture reduction may be lossy about VOLUME, never about IDENTITY | 2026-07-30 |  |
+| [an-extension-lib-must-be-listed-before-its-consumer-in-manifest-content-scripts-](./an-extension-lib-must-be-listed-before-its-consumer-in-manifest-content-scripts-.md) | learning | An extension lib must be listed before its consumer in manifest content_scripts — order IS load order | 2026-07-30 | ✱ |
+| [reloading-the-extension-does-not-re-inject-content-scripts-into-already-open-tab](./reloading-the-extension-does-not-re-inject-content-scripts-into-already-open-tab.md) | learning | Reloading the extension does not re-inject content scripts into already-open tabs | 2026-07-30 | ✱ |
+| [network-panel-bodies-are-correlated-by-guess-the-two-capture-halves-share-no-req](./network-panel-bodies-are-correlated-by-guess-the-two-capture-halves-share-no-req.md) | learning | Network-panel bodies are correlated by guess — the two capture halves share no request id | 2026-07-30 | ✱ |
+| [packaging-the-companion-adapter-for-electron-needs-electron-run-as-node-a-native](./packaging-the-companion-adapter-for-electron-needs-electron-run-as-node-a-native.md) | gotcha | Packaging the companion adapter for Electron needs ELECTRON_RUN_AS_NODE + a native-module rebuild | 2026-07-24 |  |
+| [capture-js-eval-parity-deferred](./capture-js-eval-parity-deferred.md) | evaluation | JS-evaluation capture parity — DEFER, claude-in-chrome is the fallback | 2026-07-23 | ✱ |
+| [discovery-capture-has-three-independent-api-body-caps-tune-the-right-one](./discovery-capture-has-three-independent-api-body-caps-tune-the-right-one.md) | learning | Discovery capture has three independent API-body caps — tune the right one | 2026-07-22 | ✱ |
 | [companion-mutations-only-writable-svc-only-workflow-routes](./companion-mutations-only-writable-svc-only-workflow-routes.md) | gotcha | Companion adapter mutations go only through the writable service, only via workflow.ts routes | 2026-07-15 |  |
-| [windows-task-scheduler-as-a-service-host-three-traps-companion-service-installer](./windows-task-scheduler-as-a-service-host-three-traps-companion-service-installer.md) | gotcha | Windows Task Scheduler as a service host — three traps (companion service installer) | 2026-07-13 |  |
+| [windows-task-scheduler-as-a-service-host-three-traps-companion-service-installer](./windows-task-scheduler-as-a-service-host-three-traps-companion-service-installer.md) | gotcha | Windows Task Scheduler as a service host — three traps (companion service installer) | 2026-07-27 |  |
 | [capture-bundle-export-formats-prefer-the-open-standard-har-1-2](./capture-bundle-export-formats-prefer-the-open-standard-har-1-2.md) | gotcha | Capture bundle/export formats prefer the open standard (HAR 1.2) | 2026-07-13 | ✱ |
 | [secret-carrying-capture-kinds-are-local-only-never-inbox-task](./secret-carrying-capture-kinds-are-local-only-never-inbox-task.md) | gotcha | Secret-carrying capture kinds are local-only (never inbox/task) | 2026-07-13 | ✱ |
 | [companion-write-actions-must-confirm-surface-result-or-error-never-silent](./companion-write-actions-must-confirm-surface-result-or-error-never-silent.md) | gotcha | Companion write-actions must confirm + surface result OR error — never silent | 2026-07-13 |  |
@@ -21,16 +32,16 @@
 | [mcp-tool-handlers-must-await-the-async-service-facade-an-un-awaited-promise-stri](./mcp-tool-handlers-must-await-the-async-service-facade-an-un-awaited-promise-stri.md) | gotcha | MCP tool handlers must await the async service facade — an un-awaited Promise stringifies to "{}" | 2026-06-05 | ✱ |
 | [feature-choda-gateway](./feature-choda-gateway.md) | feature | Choda gateway (OpenAPI ingestion + credential profiles) | 2026-07-13 |  |
 | [feature-companion-ui](./feature-companion-ui.md) | feature | Companion UI (web + mobile) | 2026-07-13 |  |
-| [feature-autonomous-queue-runner](./feature-autonomous-queue-runner.md) | feature | Autonomous queue runner + auto-safe harness (partially deprecated) | 2026-07-13 |  |
-| [feature-backup-restore](./feature-backup-restore.md) | feature | Daily SQLite backup + restore | 2026-07-13 |  |
-| [feature-embedding-search](./feature-embedding-search.md) | feature | Embedding-backed semantic search | 2026-07-13 |  |
-| [feature-agent-memory](./feature-agent-memory.md) | feature | Agent memory layer (scoped recall) | 2026-07-13 |  |
+| [feature-autonomous-queue-runner](./feature-autonomous-queue-runner.md) | feature | Autonomous queue runner + auto-safe harness (partially deprecated) | 2026-07-27 |  |
+| [feature-backup-restore](./feature-backup-restore.md) | feature | Daily SQLite backup + restore | 2026-07-27 |  |
+| [feature-embedding-search](./feature-embedding-search.md) | feature | Embedding-backed semantic search | 2026-07-27 |  |
+| [feature-agent-memory](./feature-agent-memory.md) | feature | Agent memory layer (scoped recall) | 2026-07-27 |  |
 | [feature-knowledge-graph](./feature-knowledge-graph.md) | feature | Knowledge graph (edges + TOUCHES + feature projection) | 2026-06-08 | ✱ |
-| [feature-knowledge-layer](./feature-knowledge-layer.md) | feature | Knowledge layer (typed entries + staleness) | 2026-07-13 |  |
+| [feature-knowledge-layer](./feature-knowledge-layer.md) | feature | Knowledge layer (typed entries + staleness) | 2026-07-27 |  |
 | [feature-inbox-pipeline](./feature-inbox-pipeline.md) | feature | Inbox triage pipeline (raw idea → converted task) | 2026-06-04 | ✱ |
 | [feature-conversation-protocol](./feature-conversation-protocol.md) | feature | Conversation protocol + review cycle | 2026-06-15 | ✱ |
 | [feature-session-lifecycle](./feature-session-lifecycle.md) | feature | Session lifecycle (work sessions bound to task + workspace) | 2026-06-04 | ✱ |
-| [feature-cross-device-sync](./feature-cross-device-sync.md) | feature | Cross-device sync (canonical export / import) | 2026-07-13 |  |
+| [feature-cross-device-sync](./feature-cross-device-sync.md) | feature | Cross-device sync (canonical export / import) | 2026-07-27 |  |
 | [feature-postgres-remote-backend](./feature-postgres-remote-backend.md) | feature | Narrow Postgres backend for the remote surface | 2026-06-08 | ✱ |
 | [feature-oauth-dcr](./feature-oauth-dcr.md) | feature | Self-hosted OAuth 2.0 DCR for the claude.ai connector | 2026-06-04 | ✱ |
 | [feature-dual-transport-mcp-server](./feature-dual-transport-mcp-server.md) | feature | Dual-transport MCP server (stdio + HTTP) | 2026-06-04 | ✱ |
@@ -53,10 +64,10 @@
 | [ADR-023-auto-safe-v2-hardening](./ADR-023-auto-safe-v2-hardening.md) | decision | ADR-023: auto-safe v2 hardening — 3 trust fixes từ TASK-726 retro | 2026-05-13 | ✱ |
 | [spike-3way-cold-prewarm-warm-2026-05-11](./spike-3way-cold-prewarm-warm-2026-05-11.md) | spike | Spike v2: Cold vs Pre-warm on TASK-704-shape (ADR-019 Phase 2 follow-up) | 2026-05-11 | ✱ |
 | [ADR-019-autonomous-queue-runner](./ADR-019-autonomous-queue-runner.md) | decision | ADR-019: Autonomous Queue Runner — sequential `auto-safe` task executor | 2026-05-11 | ✱ |
-| [playwright-pilot-skill](./playwright-pilot-skill.md) | learning | Playwright pilot skill — global Claude Code skill for FE executor | 2026-07-13 |  |
+| [playwright-pilot-skill](./playwright-pilot-skill.md) | learning | Playwright pilot skill — global Claude Code skill for FE executor | 2026-07-27 |  |
 | [playwright-executor-pilot-runbook](./playwright-executor-pilot-runbook.md) | learning | Playwright FE test executor pilot — runbook | 2026-05-08 | ✱ |
 | [sqlite-wal-read-consistency](./sqlite-wal-read-consistency.md) | learning | SQLite WAL read consistency — why CLI may briefly see stale state | 2026-05-07 | ✱ |
-| [cross-device-sync-export-import-spec](./cross-device-sync-export-import-spec.md) | evaluation | Cross-device sync export/import — sequential dual-machine sync without duplicating project knowledge | 2026-07-13 |  |
+| [cross-device-sync-export-import-spec](./cross-device-sync-export-import-spec.md) | evaluation | Cross-device sync export/import — sequential dual-machine sync without duplicating project knowledge | 2026-07-27 |  |
 | [auto-safe-label-spec](./auto-safe-label-spec.md) | decision | auto-safe label — task contract for autonomous execution | 2026-05-18 | ✱ |
 | [ADR-022-workspace-scoped-knowledge](./ADR-022-workspace-scoped-knowledge.md) | decision | ADR-022: Workspace-scoped knowledge — multi-repo project support | 2026-05-18 | ✱ |
 | [ADR-021-cross-project-event-routing](./ADR-021-cross-project-event-routing.md) | decision | ADR-021: Cross-Project Event Routing — Phase 3 | 2026-05-18 |  |

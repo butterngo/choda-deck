@@ -610,9 +610,30 @@ function renderReqPreview() {
 }
 
 let activeTab = null
+
+// TASK-1551 — the side panel outlives the page it is bound to. `activeTab` is set once
+// in init() and re-bound only on chrome.tabs.onActivated (a tab SWITCH), so a same-tab
+// navigation leaves it holding the previous page's url, and an init() query that came
+// back empty leaves it null for the panel's whole life. Re-read it at the moment of
+// capture instead of trusting the binding; this also repairs a failed initial bind.
+async function readActiveTab() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (tab) activeTab = tab
+    return tab || null
+  } catch {
+    return null
+  }
+}
 // TASK-1458 — the source Image backing the canvas, kept around so "Clear markup"
 // can redraw the unmarked capture instead of undoing individual strokes.
 let shotImg = null
+
+// TASK-1551 — origins stamped at the moment content was captured, because Send can come
+// much later and the user may have navigated in between. null means "no capture moment
+// of its own" (a pasted image, hand-typed text) and defers to a send-time tab read.
+let shotSourceUrl = null
+let textSourceUrl = null
 
 // TASK-1457/1458 — loads a data URL (from Grab or paste) onto the canvas at its
 // natural resolution; CSS scales it down for display, drawing math below un-scales
@@ -644,6 +665,7 @@ function clearShotMarkup() {
 // load a fresh one into a clean panel; same end state as the tab-switch reset below.
 function removeShot() {
   shotImg = null
+  shotSourceUrl = null
   const canvas = el('shotCanvas')
   canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)
   canvas.hidden = true
@@ -702,6 +724,9 @@ document.addEventListener('paste', (e) => {
   const reader = new FileReader()
   reader.onload = () => {
     setScreenshot(reader.result)
+    // Clipboard pixels have no page of origin — clear any stamp left by a previous
+    // Grab, or the pasted image would inherit that screenshot's url (TASK-1551).
+    shotSourceUrl = null
     setStatus('Pasted image ready', 'ok')
   }
   reader.readAsDataURL(file)
@@ -805,8 +830,15 @@ el('project').addEventListener('change', () => {
 
 el('grab').addEventListener('click', async () => {
   try {
-    const dataUrl = await chrome.tabs.captureVisibleTab(activeTab.windowId, { format: 'png' })
+    // Re-read rather than trust the binding — it also repairs a failed init() bind,
+    // which otherwise left this throwing on a null activeTab for the panel's whole life.
+    const tab = await readActiveTab()
+    if (!tab) return setStatus('No active tab to capture', 'err')
+    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
     setScreenshot(dataUrl)
+    // Stamp the origin NOW: the send may happen after the user has navigated away, and
+    // these pixels belong to the page that was on screen at this instant (TASK-1551).
+    shotSourceUrl = tab.url || null
     setStatus('Screenshot ready', 'ok')
   } catch (e) {
     setStatus(`Screenshot failed: ${e.message}`, 'err')
@@ -819,8 +851,10 @@ el('grab').addEventListener('click', async () => {
 const PAGE_TEXT_CAP = 60 * 1024
 el('grabText').addEventListener('click', async () => {
   try {
+    const tab = await readActiveTab()
+    if (!tab) return setStatus('No active tab to read', 'err')
     const [{ result }] = await chrome.scripting.executeScript({
-      target: { tabId: activeTab.id },
+      target: { tabId: tab.id },
       func: () => {
         const title = document.title ? `# ${document.title}\n\n` : ''
         const body = (document.body && document.body.innerText) || ''
@@ -832,6 +866,8 @@ el('grabText').addEventListener('click', async () => {
       text = text.slice(0, PAGE_TEXT_CAP) + `\n\n…(truncated at ${PAGE_TEXT_CAP} chars)`
     }
     el('text').value = text
+    // Stamp the origin at grab time, same reasoning as the screenshot path.
+    textSourceUrl = tab.url || null
     setStatus(text.trim() ? 'Page text grabbed' : 'Page had no readable text', text.trim() ? 'ok' : 'err')
   } catch {
     setStatus("Can't read this page (chrome:// or restricted) — select text manually", 'err')
@@ -842,11 +878,15 @@ el('send').addEventListener('click', async () => {
   let kind = selectedKind()
   const projectId = el('project').value
   const destination = el('destination').value
-  // Correct for text + image: the selected text and the grabbed pixels really do come
-  // from the focused tab. The network branch below overrides it, because those records
-  // come from a per-tab buffer and focus is not their provenance.
-  let sourceUrl = activeTab?.url || 'unknown'
   if (!projectId) return setStatus('Pick a project first', 'err')
+
+  // Prefer the origin stamped when the content was captured; fall back to a tab read
+  // NOW for hand-entered text. Never the panel's binding, which can be stale
+  // (TASK-1551). The network branch below overrides this entirely — those records come
+  // from a per-tab buffer and focus is not their provenance at all.
+  const stampedUrl = kind === 'image' ? shotSourceUrl : kind === 'text' ? textSourceUrl : null
+  const freshTab = await readActiveTab()
+  let sourceUrl = ChodaProvenance.resolveTabSource(stampedUrl, freshTab && freshTab.url)
 
   let payload
   if (kind === 'text') {
@@ -936,6 +976,10 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   selectedIds.clear()
   previewId = null
   shotImg = null
+  // The discarded screenshot/text took their stamped origins with them — a stale stamp
+  // outliving its content would re-introduce exactly the bug this fixes (TASK-1551).
+  shotSourceUrl = null
+  textSourceUrl = null
   el('shotCanvas').hidden = true
   el('shotClear').hidden = true
   el('shotRemove').hidden = true
