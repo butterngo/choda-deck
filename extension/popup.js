@@ -845,30 +845,49 @@ el('grab').addEventListener('click', async () => {
   }
 })
 
-// TASK-1462 — extract the whole readable page (title + body innerText, script/style
-// noise excluded by innerText) into the textarea, capped so it can't overflow the
-// text capture's 64 KB limit. Parity with claude-in-chrome's get_page_text.
+// TASK-1462 — extract the readable page into the textarea, capped so it can't overflow
+// the text capture's 64 KB limit.
+//
+// TASK-1553 — what "readable" means changed. innerText took the entire body: cookie
+// banner, mega-menu and footer link columns wrapped around the article (INBOX-1642),
+// and flattened every list and table into shapeless lines. Now the page's main content
+// is scored out and serialized to markdown. The "raw page" checkbox restores the old
+// whole-page path for a page the scorer reads wrong.
 const PAGE_TEXT_CAP = 60 * 1024
+
+// Injected on demand rather than registered in the manifest. These only matter at the
+// moment of a grab, so manifest registration would parse three files into every frame
+// of every page the user visits for the panel's whole life. On-demand injection also
+// sidesteps the stale-content-script trap: reloading the extension does not re-inject
+// into already-open tabs, so a manifest-registered lib would simply be missing there.
+const EXTRACT_FILES = ['lib/dom-walk.js', 'lib/md.js', 'lib/readability.js']
+
 el('grabText').addEventListener('click', async () => {
   try {
     const tab = await readActiveTab()
     if (!tab) return setStatus('No active tab to read', 'err')
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: EXTRACT_FILES })
     const [{ result }] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: () => {
-        const title = document.title ? `# ${document.title}\n\n` : ''
-        const body = (document.body && document.body.innerText) || ''
-        return title + body
-      }
+      func: (readable) => globalThis.ChodaReadability.extractPageMarkdown(document, { readability: readable }),
+      args: [!el('rawText').checked]
     })
-    let text = result || ''
+    let text = (result && result.markdown) || ''
     if (text.length > PAGE_TEXT_CAP) {
       text = text.slice(0, PAGE_TEXT_CAP) + `\n\n…(truncated at ${PAGE_TEXT_CAP} chars)`
     }
     el('text').value = text
     // Stamp the origin at grab time, same reasoning as the screenshot path.
     textSourceUrl = tab.url || null
-    setStatus(text.trim() ? 'Page text grabbed' : 'Page had no readable text', text.trim() ? 'ok' : 'err')
+    if (!text.trim()) {
+      setStatus('Page had no readable text', 'err')
+    } else if (result.usedFallback) {
+      // Say so rather than reporting a clean extraction: no main content was found, so
+      // this IS the whole body and the user should expect chrome in it.
+      setStatus('Grabbed whole page — no main content found', 'ok')
+    } else {
+      setStatus('Page text grabbed', 'ok')
+    }
   } catch {
     setStatus("Can't read this page (chrome:// or restricted) — select text manually", 'err')
   }

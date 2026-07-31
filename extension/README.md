@@ -46,6 +46,37 @@ Measured on the INBOX-1172 recording: 20 raw apicalls → 8 events, with no busi
 endpoint lost. Both gates are per-recorder options — `createRecorder({ excludePatterns, collapse: false })`
 opts out if you ever need the raw stream.
 
+## Grab text — main-content extraction (TASK-1553)
+
+**Grab page text** no longer takes the whole body. It scores the page for its main
+content, strips the site chrome, and serializes what's left to markdown.
+
+- **What gets dropped** — `nav` / `aside` / `form`, anything `aria-hidden` or
+  `display:none`, elements whose class or id reads as chrome (`cookie-consent`,
+  `megamenu`, `site-footer`, `newsletter`, `related`, …), and a `header`/`footer`
+  only when it is link-heavy — an article's own `<header>` keeps its `<h1>`.
+  Chrome words are matched as **whole hyphen-separated tokens**, so `site-footer`
+  matches but `bannerless-article` does not.
+- **What you gain** — real markdown: headings at the right depth, `<ul>`/`<ol>` as
+  lists, `<table>` as a pipe table, `<pre><code>` fenced with its language, and
+  `<a href>` as `[text](url)`. innerText discarded all of that.
+- **The scorer can be wrong.** Tick **raw page** next to the button for the old
+  whole-page behavior — byte-identical to pre-TASK-1553 output.
+- **No main content found** → it grabs the whole body and *says so* in the status
+  line ("Grabbed whole page — no main content found"). An empty capture is never
+  returned; a page that is genuinely a link index still comes back in full.
+
+Measured on the INBOX-1642 capture (cohere.com/blog/embed-4): the cookie banner,
+products mega-menu, recirculation block and footer link columns all disappear, and
+every paragraph of the article survives. Reduction is ~30%, not the ~70% originally
+guessed when the task was filed — on that page the article is 71.6% of the capture
+and *all* chrome is only 28.4%. See `docs/reports/task-1553-ac-verification.md`.
+
+The three libs (`lib/dom-walk.js`, `lib/md.js`, `lib/readability.js`) are injected on
+demand by the panel, not registered in `manifest.json` — they only matter at the moment
+of a grab, and on-demand injection also survives an extension reload, which does not
+re-inject manifest content scripts into already-open tabs.
+
 ## Notes / limits (v1)
 
 - Screenshot = visible viewport (no region-drag crop yet).
