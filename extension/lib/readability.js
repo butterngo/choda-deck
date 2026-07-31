@@ -26,7 +26,7 @@
   // they attach their score to an ancestor rather than competing as candidates.
   const MIN_PARAGRAPH_TEXT = 25
 
-  const CONTENT_TAGS = ['p', 'pre', 'blockquote', 'article', 'section', 'li', 'td']
+  const CONTENT_TAGS = new Set(['P', 'PRE', 'BLOCKQUOTE', 'ARTICLE', 'SECTION', 'LI', 'TD'])
 
   // Structural site chrome. Removed from the extracted subtree unconditionally — none
   // of these ever carries the article itself.
@@ -101,7 +101,18 @@
       scores.set(el, (scores.get(el) || 0) + n)
     }
 
-    const carriers = scope.querySelectorAll ? Array.from(scope.querySelectorAll(CONTENT_TAGS.join(','))) : []
+    // Collected through the shared walk rather than querySelectorAll so this module has
+    // exactly one way of crossing the DOM (AC-1). It also inherits the walk's skip set,
+    // which a selector query would not.
+    const carriers = []
+    walkApi.walk(
+      scope,
+      ({ el, tag }) => {
+        if (CONTENT_TAGS.has(tag)) carriers.push(el)
+      },
+      { includeRoot: false }
+    )
+
     for (const el of carriers) {
       const len = textLength(el)
       if (len < MIN_PARAGRAPH_TEXT) continue

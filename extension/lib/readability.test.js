@@ -10,6 +10,25 @@ function loadCohere() {
   document.body.innerHTML = cohere.html()
 }
 
+describe('single shared traversal (AC-1)', () => {
+  const source = () => require('fs').readFileSync(require.resolve('./readability.js'), 'utf8').replace(/\/\/.*$/gm, '')
+
+  it('crosses the DOM only through ChodaDomWalk', () => {
+    // Asserted against the source, because nothing about the OUTPUT differs between a
+    // dom-walk traversal and a querySelectorAll one — a behavioural test here could not
+    // fail, and AC-1 is precisely a claim about how the module is built.
+    expect(source()).not.toMatch(/querySelector/)
+    expect(source()).toMatch(/walkApi\.walk\(/)
+  })
+
+  it('exposes readability and md dual-mode, like every other lib in this bundle', () => {
+    expect(globalThis.ChodaReadability).toBeTruthy()
+    expect(globalThis.ChodaMd).toBeTruthy()
+    expect(globalThis.ChodaDomWalk).toBeTruthy()
+    expect(typeof globalThis.ChodaReadability.extractPageMarkdown).toBe('function')
+  })
+})
+
 describe('the INBOX-1642 page (AC-2)', () => {
   beforeEach(loadCohere)
 
