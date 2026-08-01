@@ -116,7 +116,42 @@ export class CompanionCaptureDispatcher implements CaptureDispatcher {
         return this.dispatchDiscoverySession(capture)
       case 'design':
         return this.dispatchDesign(capture)
+      case 'element':
+        return this.dispatchElement(capture)
     }
+  }
+
+  // A picked element (TASK-1555) → one local entry carrying its selector, curated
+  // computed styles, capped outerHTML and the user's note, plus a cropped screenshot
+  // stored as an artifact when one was captured.
+  //
+  // Local-only: the outerHTML and the crop are whatever the page was rendering, which on
+  // a signed-in app screen is customer data (ADR-036). The crop is OPTIONAL — a pick
+  // whose element scrolled out of the viewport still carries the load-bearing half.
+  private async dispatchElement(capture: CaptureRequest): Promise<CaptureResult> {
+    guardLocalOnly('element', capture.destination)
+    const p = asObject(
+      capture.payload,
+      'element payload must be an object { pick, markdown, projectId, ... }'
+    )
+    const target = parseTarget(p)
+    const pick = asObject(p.pick, 'element payload requires a "pick" object')
+    const selector = str(pick.selector)
+    if (!selector) {
+      throw new CaptureBadRequestError('element payload requires a non-empty "pick.selector"')
+    }
+    const markdown = str(p.markdown)
+    if (!markdown) {
+      throw new CaptureBadRequestError('element payload requires a non-empty "markdown" string')
+    }
+
+    let body = markdown
+    if (p.dataUrl !== undefined) {
+      const stored = writeImageArtifact(this.artifactsDir, p.dataUrl)
+      body += `\n\n![element](${stored.filePath})\n\n(${stored.bytes} bytes)`
+    }
+    const title = titleFrom(target, `${str(pick.label) ?? selector} on ${capture.sourceUrl}`, capture.sourceUrl)
+    return this.persistLocal(capture.destination, target, title, withSource(body, capture.sourceUrl))
   }
 
   // A page's design tokens (TASK-1554) → ONE .design.json artifact + ONE local entry

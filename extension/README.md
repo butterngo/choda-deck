@@ -77,6 +77,35 @@ demand by the panel, not registered in `manifest.json` — they only matter at t
 of a grab, and on-demand injection also survives an extension reload, which does not
 re-inject manifest content scripts into already-open tabs.
 
+## Element picker (TASK-1555)
+
+Pick the **Element** kind → **Pick element** → hover, click. Escape cancels. The capture
+carries a stable selector, the element's curated computed styles *and its parent's*,
+capped `outerHTML`, a short ancestor chain, a screenshot cropped to the element's
+bounding box, and your note about what's wrong.
+
+**This captures; it does not edit.** You cannot persist a change to a site you don't own
+— there is nothing to save to. What the pick produces is precise enough for Claude to fix
+the *source*, when the page is served from a repo on your disk. That's why the selector
+prefers `data-testid` → `id` → `aria-label` before falling back to a structural path: the
+first three are greppable.
+
+- **The crop is corroboration, not the payload.** An element scrolled out of the viewport
+  has no pixels; the capture still carries the selector and styles rather than failing.
+- **Origin is stamped when you pick, not when you send.** Pick, navigate away, then
+  Send — the record still names the page the element came from (the TASK-1551 rule).
+- **Switching tabs or clicking Clear discards the pick** so the next capture can't
+  inherit the previous element's selector and origin.
+- The overlay renders in a **closed shadow root** and adds no stylesheet to the page. A
+  picker that restyled the page to describe it would corrupt what it's reporting.
+
+Known limit: an element inside a **shadow root** is not addressable —
+`document.querySelector` can't pierce the boundary, so the selector resolves to the host
+at best. Recorded rather than silently unsupported.
+
+Local-only (ADR-036): the `outerHTML` and the crop are whatever the page was rendering,
+which on a signed-in app screen is customer data.
+
 ## Design discovery (TASK-1554)
 
 Pick the **Design** kind → **Extract design tokens**. Reads the page's palette, type

@@ -161,6 +161,7 @@
       <label><input type="radio" name="kind" value="image" /> Screenshot</label>
       <label><input type="radio" name="kind" value="network" /> Network</label>
       <label><input type="radio" name="kind" value="design" /> Design</label>
+      <label><input type="radio" name="kind" value="element" /> Element</label>
     </div>
 
     <div class="row">
@@ -200,6 +201,15 @@
         <input type="checkbox" id="rawText" /> raw page
       </label>
       <textarea id="text" placeholder="Select text on the page, or type here…"></textarea>
+    </div>
+
+    <div id="elementPane" hidden>
+      <button type="button" id="pickElement" class="ghost">🎯 Pick element</button>
+      <button type="button" id="pickClear" class="ghost" hidden>✕ Clear pick</button>
+      <div id="pickSummary" class="kvEmpty"></div>
+      <canvas id="pickCanvas" hidden></canvas>
+      <label for="pickNote">What's wrong with it?</label>
+      <textarea id="pickNote" placeholder="e.g. text is clipped and it's half the height of the Cancel button next to it — should match"></textarea>
     </div>
 
     <div id="designPane" hidden>

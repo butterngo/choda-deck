@@ -603,3 +603,90 @@ describe('design capture (TASK-1554)', () => {
     ).rejects.toBeInstanceOf(CaptureNotFoundError)
   })
 })
+
+// TASK-1555 — a picked element → one local entry with selector/styles/HTML/note, plus a
+// cropped screenshot artifact when one was captured.
+describe('element capture (TASK-1555)', () => {
+  const pick = {
+    selector: '[data-testid="submit-order"]',
+    label: 'button.btn--primary',
+    rect: { x: 10, y: 20, width: 84, height: 28 },
+    styles: { display: 'inline-flex', padding: '6px 10px' },
+    parentStyles: { display: 'flex', gap: '32px' },
+    ancestors: ['div.actions'],
+    outerHTML: '<button data-testid="submit-order">Submit order</button>',
+    sourceUrl: 'https://app.example.com/orders/new'
+  }
+  const elReq = (over: Record<string, unknown> = {}): CaptureRequest => ({
+    kind: 'element',
+    destination: 'conversation',
+    sourceUrl: 'https://app.example.com/orders/new',
+    payload: {
+      pick,
+      markdown: '**Selector:** `[data-testid="submit-order"]`\n\ntext is clipped',
+      projectId: 'choda-deck',
+      ...over
+    }
+  })
+
+  it('creates a local entry carrying the selector and the note', async () => {
+    const svc = makeSvc()
+    const res = await make(svc).dispatch(elReq())
+    expect(res.destination).toBe('conversation')
+    const content = (svc.openConversation as unknown as { mock: { calls: [{ initialMessage: { content: string } }][] } })
+      .mock.calls[0][0].initialMessage.content
+    expect(content).toContain('[data-testid="submit-order"]')
+    expect(content).toContain('text is clipped')
+  })
+
+  it('writes the cropped screenshot as an artifact and references it', async () => {
+    const svc = makeSvc()
+    await make(svc).dispatch(elReq({ dataUrl: PNG_DATA_URL }))
+    const written = fs.readdirSync(path.join(ARTIFACTS, 'captures'))
+    expect(written).toHaveLength(1)
+    expect(written[0]).toMatch(/\.png$/)
+    const content = (svc.openConversation as unknown as { mock: { calls: [{ initialMessage: { content: string } }][] } })
+      .mock.calls[0][0].initialMessage.content
+    expect(content).toContain(written[0])
+  })
+
+  it('succeeds with NO screenshot — the crop is corroboration, not the payload', async () => {
+    // A pick whose element scrolled out of the viewport has no pixels; the selector and
+    // styles are still the load-bearing half and must not be lost with it.
+    const svc = makeSvc()
+    await expect(make(svc).dispatch(elReq())).resolves.toBeTruthy()
+    expect(fs.existsSync(path.join(ARTIFACTS, 'captures'))).toBe(false)
+  })
+
+  it.each(['inbox', 'task'] as const)('refuses to target %s — local-only (ADR-036)', async (destination) => {
+    const svc = makeSvc()
+    await expect(make(svc).dispatch({ ...elReq(), destination })).rejects.toBeInstanceOf(
+      CaptureBadRequestError
+    )
+    expect(svc.createInbox).not.toHaveBeenCalled()
+  })
+
+  it('rejects a pick with no selector — the whole point of the capture', async () => {
+    await expect(
+      make(makeSvc()).dispatch(elReq({ pick: { ...pick, selector: '' } }))
+    ).rejects.toBeInstanceOf(CaptureBadRequestError)
+  })
+
+  it('rejects a payload with no pick object', async () => {
+    await expect(make(makeSvc()).dispatch(elReq({ pick: undefined }))).rejects.toBeInstanceOf(
+      CaptureBadRequestError
+    )
+  })
+
+  it('rejects a payload with no markdown', async () => {
+    await expect(make(makeSvc()).dispatch(elReq({ markdown: '' }))).rejects.toBeInstanceOf(
+      CaptureBadRequestError
+    )
+  })
+
+  it('404s on an unknown projectId', async () => {
+    await expect(
+      make(makeSvc()).dispatch(elReq({ projectId: 'nope' }))
+    ).rejects.toBeInstanceOf(CaptureNotFoundError)
+  })
+})
