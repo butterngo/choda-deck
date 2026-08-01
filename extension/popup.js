@@ -43,6 +43,7 @@ function refreshDestinations() {
   el('imagePane').hidden = kind !== 'image'
   el('networkPane').hidden = kind !== 'network'
   el('designPane').hidden = kind !== 'design'
+  el('elementPane').hidden = kind !== 'element'
   if (kind === 'network') loadRequests()
   refreshConvPane()
   refreshKnowledgePane()
@@ -642,6 +643,10 @@ let textSourceUrl = null
 // screenshot, so the origin is stamped at extraction rather than read at send.
 let designSourceUrl = null
 let designTokens = null
+// TASK-1555 — the picked element, its stamped origin, and the cropped screenshot. Same
+// stamp-at-capture rule: a user can pick, navigate, then Send.
+let pendingPick = null
+let pickShotDataUrl = null
 
 // TASK-1457/1458 — loads a data URL (from Grab or paste) onto the canvas at its
 // natural resolution; CSS scales it down for display, drawing math below un-scales
@@ -876,6 +881,84 @@ const DESIGN_FILES = ['lib/dom-walk.js', 'lib/design-tokens.js', 'lib/design-doc
 // are reported. Reporting this list itself would be a framework guess dressed as a
 // measurement, which is the failure the whole module avoids.
 const BREAKPOINT_PROBE_WIDTHS = [360, 480, 640, 768, 1024, 1280, 1440]
+const PICKER_FILES = ['lib/selector.js', 'lib/picker.js']
+
+// TASK-1555 — clear the pending pick. Called on tab switch and on Clear, for the same
+// reason shotSourceUrl/textSourceUrl are cleared: a stamp outliving its content would
+// let the next capture inherit the previous element's selector and origin (AC-6).
+function clearPick() {
+  pendingPick = null
+  pickShotDataUrl = null
+  el('pickSummary').textContent = ''
+  el('pickCanvas').hidden = true
+  el('pickClear').hidden = true
+}
+
+el('pickClear').addEventListener('click', () => {
+  clearPick()
+  setStatus('Pick cleared', 'ok')
+})
+
+el('pickElement').addEventListener('click', async () => {
+  try {
+    const tab = await readActiveTab()
+    if (!tab) return setStatus('No active tab', 'err')
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: PICKER_FILES })
+    setStatus('Click an element on the page — Escape cancels', 'ok')
+
+    // The picker resolves in the page; the panel waits for the click. The overlay lives
+    // in the page's isolated world, so this promise is the only channel back.
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (sourceUrl) =>
+        new Promise((resolve) => {
+          globalThis.ChodaPicker.startPicker(document, {
+            onPick: (pick) => resolve({ pick, dpr: window.devicePixelRatio || 1 }),
+            onCancel: () => resolve(null)
+          })
+          // Re-stamp onto the pick rather than trusting the panel's binding.
+          void sourceUrl
+        }),
+      args: [tab.url || '']
+    })
+
+    if (!result) return setStatus('Pick cancelled', 'ok')
+    pendingPick = result.pick
+    // Stamped at pick time (TASK-1551 rule). executeScript's own tab read is the origin,
+    // not a send-time query.
+    pendingPick.sourceUrl = tab.url || pendingPick.sourceUrl || ''
+
+    await cropShotForPick(tab, result.dpr)
+
+    el('pickSummary').textContent = `${pendingPick.label} — ${pendingPick.selector}`
+    el('pickClear').hidden = false
+    setStatus(`Picked ${pendingPick.label}`, 'ok')
+  } catch {
+    setStatus("Can't pick on this page (chrome:// or restricted)", 'err')
+  }
+})
+
+// Crop the visible-tab screenshot down to the element's rect, so the artifact shows the
+// broken pixels rather than the whole viewport (AC-4). A failure here is non-fatal — the
+// selector + styles are the load-bearing part; the crop is corroboration.
+async function cropShotForPick(tab, dpr) {
+  try {
+    const shot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
+    const bitmap = await createImageBitmap(await (await fetch(shot)).blob())
+    const crop = ChodaPicker.cropRect(pendingPick.rect, dpr, bitmap.width, bitmap.height)
+    if (!crop) return
+    const canvas = el('pickCanvas')
+    canvas.width = crop.width
+    canvas.height = crop.height
+    canvas
+      .getContext('2d')
+      .drawImage(bitmap, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height)
+    canvas.hidden = false
+    pickShotDataUrl = canvas.toDataURL('image/png')
+  } catch {
+    /* no crop — the pick still carries selector, styles and HTML */
+  }
+}
 
 el('grabDesign').addEventListener('click', async () => {
   const btn = el('grabDesign')
@@ -973,7 +1056,9 @@ el('send').addEventListener('click', async () => {
         ? textSourceUrl
         : kind === 'design'
           ? designSourceUrl
-          : null
+          : kind === 'element'
+            ? pendingPick && pendingPick.sourceUrl
+            : null
   const freshTab = await readActiveTab()
   let sourceUrl = ChodaProvenance.resolveTabSource(stampedUrl, freshTab && freshTab.url)
 
@@ -985,6 +1070,14 @@ el('send').addEventListener('click', async () => {
   } else if (kind === 'design') {
     if (!designTokens) return setStatus('Extract design tokens first', 'err')
     payload = { tokens: designTokens, markdown: el('designOut').value, projectId }
+  } else if (kind === 'element') {
+    if (!pendingPick) return setStatus('Pick an element first', 'err')
+    payload = {
+      pick: pendingPick,
+      markdown: ChodaPicker.formatPick(pendingPick, el('pickNote').value),
+      dataUrl: pickShotDataUrl || undefined,
+      projectId
+    }
   } else if (kind === 'image') {
     // TASK-1458 — read the canvas's live pixels so any highlighter markup is baked in.
     const canvas = el('shotCanvas')
@@ -1074,6 +1167,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   textSourceUrl = null
   designSourceUrl = null
   designTokens = null
+  clearPick()
   el('shotCanvas').hidden = true
   el('shotClear').hidden = true
   el('shotRemove').hidden = true
