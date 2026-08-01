@@ -160,6 +160,7 @@
       <label><input type="radio" name="kind" value="text" checked /> Text</label>
       <label><input type="radio" name="kind" value="image" /> Screenshot</label>
       <label><input type="radio" name="kind" value="network" /> Network</label>
+      <label><input type="radio" name="kind" value="design" /> Design</label>
     </div>
 
     <div class="row">
@@ -199,6 +200,14 @@
         <input type="checkbox" id="rawText" /> raw page
       </label>
       <textarea id="text" placeholder="Select text on the page, or type here…"></textarea>
+    </div>
+
+    <div id="designPane" hidden>
+      <button type="button" id="grabDesign" class="ghost">🎨 Extract design tokens</button>
+      <label class="selectall" title="Re-sample the page at several widths to find where the token set actually changes. Resizes the window while it runs.">
+        <input type="checkbox" id="designBreakpoints" /> probe breakpoints
+      </label>
+      <textarea id="designOut" placeholder="Click Extract to read this page's palette, type scale and spacing…"></textarea>
     </div>
 
     <div id="imagePane" hidden>

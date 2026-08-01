@@ -513,3 +513,93 @@ describe('CompanionCaptureDispatcher — unknown project guard', () => {
     expect(svc.getProject).toHaveBeenCalledWith('choda-deck')
   })
 })
+
+// TASK-1554 — design tokens → one .design.json artifact + one local entry holding the
+// rendered design.md and a pointer to it.
+describe('design capture (TASK-1554)', () => {
+  const tokens = {
+    elements: 42,
+    palette: [{ hex: '#FF7759', alpha: 1, count: 38, usedOn: ['background'], merged: [] }],
+    type: [{ tag: 'h1', family: 'Inter', size: 48, weight: '700', lineHeight: '52px', count: 3 }],
+    spacing: { grid: 4, steps: [4, 8, 16] },
+    radii: [4],
+    shadows: [],
+    borders: [],
+    zIndex: [],
+    breakpoints: []
+  }
+  const designReq = (over: Record<string, unknown> = {}): CaptureRequest => ({
+    kind: 'design',
+    destination: 'knowledge',
+    sourceUrl: 'https://cohere.com/blog/embed-4',
+    payload: { tokens, markdown: '# Design tokens\n\n## Limits\n\n- hover states', projectId: 'choda-deck', ...over }
+  })
+
+  it('writes the raw tokens to a .design.json artifact and creates a knowledge entry', async () => {
+    const svc = makeSvc()
+    const res = await make(svc).dispatch(designReq())
+    expect(res).toEqual({ id: 'adr-x', destination: 'knowledge' })
+
+    const written = fs.readdirSync(path.join(ARTIFACTS, 'captures'))
+    expect(written).toHaveLength(1)
+    expect(written[0]).toMatch(/\.design\.json$/)
+    const onDisk = JSON.parse(
+      fs.readFileSync(path.join(ARTIFACTS, 'captures', written[0]), 'utf8')
+    )
+    expect(onDisk.palette[0].hex).toBe('#FF7759')
+  })
+
+  it('references the artifact by path instead of inlining the token JSON (AC-7)', async () => {
+    const svc = makeSvc()
+    await make(svc).dispatch(designReq())
+    const body = (svc.createKnowledge as unknown as { mock: { calls: [{ body: string }][] } })
+      .mock.calls[0][0].body
+    expect(body).toContain('.design.json')
+    expect(body).toContain('# Design tokens')
+    // The discriminator: the rendered markdown is in the body, the raw token structure
+    // is NOT — otherwise "referenced by path" would be satisfied by a body that also
+    // carries the whole payload inline.
+    expect(body).not.toContain('"usedOn"')
+    expect(body).not.toContain('"merged"')
+  })
+
+  it('carries the source url into the entry body', async () => {
+    const svc = makeSvc()
+    await make(svc).dispatch(designReq())
+    const body = (svc.createKnowledge as unknown as { mock: { calls: [{ body: string }][] } })
+      .mock.calls[0][0].body
+    expect(body).toContain('Source: https://cohere.com/blog/embed-4')
+  })
+
+  it.each(['inbox', 'task'] as const)('refuses to target %s — local-only (ADR-036)', async (destination) => {
+    const svc = makeSvc()
+    await expect(
+      make(svc).dispatch({ ...designReq(), destination })
+    ).rejects.toBeInstanceOf(CaptureBadRequestError)
+    expect(svc.createKnowledge).not.toHaveBeenCalled()
+  })
+
+  it('allows conversation as well as knowledge', async () => {
+    const svc = makeSvc()
+    const res = await make(svc).dispatch({ ...designReq(), destination: 'conversation' })
+    expect(res.destination).toBe('conversation')
+  })
+
+  it('rejects a payload with no markdown', async () => {
+    await expect(make(makeSvc()).dispatch(designReq({ markdown: '' }))).rejects.toBeInstanceOf(
+      CaptureBadRequestError
+    )
+  })
+
+  it('rejects a payload with no tokens object', async () => {
+    await expect(make(makeSvc()).dispatch(designReq({ tokens: undefined }))).rejects.toBeInstanceOf(
+      CaptureBadRequestError
+    )
+  })
+
+  it('404s on an unknown projectId rather than a raw FK error', async () => {
+    await expect(
+      make(makeSvc()).dispatch(designReq({ projectId: 'nope' }))
+    ).rejects.toBeInstanceOf(CaptureNotFoundError)
+  })
+})

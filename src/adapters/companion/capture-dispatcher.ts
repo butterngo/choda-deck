@@ -21,6 +21,7 @@ import {
 import {
   formatNetworkRecord,
   parseNetworkRecord,
+  writeDesignTokensArtifact,
   writeHarArtifact,
   writeImageArtifact
 } from './capture-artifacts'
@@ -113,7 +114,34 @@ export class CompanionCaptureDispatcher implements CaptureDispatcher {
         return this.dispatchNetworkBundle(capture)
       case 'discovery-session':
         return this.dispatchDiscoverySession(capture)
+      case 'design':
+        return this.dispatchDesign(capture)
     }
+  }
+
+  // A page's design tokens (TASK-1554) → ONE .design.json artifact + ONE local entry
+  // carrying the rendered design.md and a pointer to it. Local-only for the same reason
+  // image/network are: the markdown embeds whatever text the page rendered, which on a
+  // signed-in app screen can include customer data, and knowledge never rides the sync
+  // path (ADR-036).
+  private async dispatchDesign(capture: CaptureRequest): Promise<CaptureResult> {
+    guardLocalOnly('design', capture.destination)
+    const p = asObject(
+      capture.payload,
+      'design payload must be an object { tokens, markdown, projectId, ... }'
+    )
+    const target = parseTarget(p)
+    const markdown = str(p.markdown)
+    if (!markdown) {
+      throw new CaptureBadRequestError('design payload requires a non-empty "markdown" string')
+    }
+    const stored = writeDesignTokensArtifact(this.artifactsDir, p.tokens)
+    const title = titleFrom(target, `Design tokens from ${capture.sourceUrl}`, capture.sourceUrl)
+    const body = withSource(
+      `${markdown}\n\nRaw tokens: [${stored.bytes} bytes of JSON](${stored.filePath})`,
+      capture.sourceUrl
+    )
+    return this.persistLocal(capture.destination, target, title, body)
   }
 
   // A recorded browsing session → ONE local artifact (jsonl timeline + md draft +
