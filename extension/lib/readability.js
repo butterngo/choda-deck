@@ -183,6 +183,23 @@
   // ---- entry points ----------------------------------------------------------
 
   /**
+   * Text of the document's first non-empty <h1>, searched across the WHOLE document —
+   * including the chrome that cleanSubtree removed, since a site header is exactly where
+   * a real article title tends to live. Uses the shared walk, not querySelector (AC-1).
+   */
+  function firstHeadingText(doc) {
+    if (!doc || !doc.body) return ''
+    let found = ''
+    walkApi.walk(doc.body, ({ el, tag }) => {
+      if (found) return false
+      if (tag !== 'H1') return
+      const text = (el.textContent || '').replace(/\s+/g, ' ').trim()
+      if (text) found = text
+    })
+    return found
+  }
+
+  /**
    * The pre-TASK-1553 behavior, preserved exactly (AC-5): document title as an H1 plus
    * body.innerText. The textContent fallback is inert in a real browser — innerText is
    * always defined there — and only exists so the escape hatch is testable.
@@ -219,10 +236,17 @@
     // — take the uncleaned body rather than hand back an empty capture (AC-6).
     if (!markdown.trim()) markdown = mdApi.toMarkdown(scope)
 
-    // Prefer the article's own H1; it is the real title and it lacks the " | Site Name"
-    // suffix document.title carries. Only prepend when the extract has no heading.
-    if (doc.title && !/^#\s/.test(markdown)) {
-      markdown = `# ${doc.title}\n\n${markdown}`
+    // Only prepend a title when the extract has no heading of its own.
+    //
+    // The page's <h1> beats document.title, which carries a " | Site Name" suffix. This
+    // is NOT a rare path: on the live cohere.com/blog/embed-4 capture the article's h1
+    // sits in a <header> that cleanSubtree strips as chrome, so the extract had no
+    // heading and the document.title fallback shipped "… | Cohere Blog". A fixture with
+    // the h1 inside <article> never reaches this branch and agrees with itself.
+    if (!/^#\s/.test(markdown)) {
+      const heading = firstHeadingText(doc)
+      const title = heading || doc.title
+      if (title) markdown = `# ${title}\n\n${markdown}`
     }
 
     return { markdown: markdown.trim(), usedFallback, sourceTag: tagOf(scope) }
