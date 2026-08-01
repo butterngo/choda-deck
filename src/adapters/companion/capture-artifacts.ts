@@ -170,6 +170,25 @@ export function buildHar(records: NetworkRecord[]): string {
   )
 }
 
+/**
+ * Write a design-token set as JSON under `<artifactsDir>/captures/` (TASK-1554).
+ *
+ * The tokens go to disk rather than inline into the knowledge entry: a full palette +
+ * type scale + spacing set for a real page is far larger than a readable entry body,
+ * and the entry only needs to reference it. Same reasoning as the HAR bundle above.
+ */
+export function writeDesignTokensArtifact(artifactsDir: string, tokens: unknown): StoredArtifact {
+  if (typeof tokens !== 'object' || tokens === null) {
+    throw new CaptureBadRequestError('design payload requires a "tokens" object')
+  }
+  const json = JSON.stringify(tokens, null, 2)
+  const dir = path.join(artifactsDir, 'captures')
+  fs.mkdirSync(dir, { recursive: true })
+  const filePath = path.join(dir, `${randomBytes(8).toString('hex')}.design.json`)
+  fs.writeFileSync(filePath, json, 'utf8')
+  return { filePath, bytes: Buffer.byteLength(json) }
+}
+
 /** Write a HAR bundle under `<artifactsDir>/captures/` and return its path. */
 export function writeHarArtifact(artifactsDir: string, records: NetworkRecord[]): StoredArtifact {
   const har = buildHar(records)

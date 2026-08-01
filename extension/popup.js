@@ -36,9 +36,13 @@ function refreshDestinations() {
     sel.appendChild(opt)
   }
   if (allowed.includes(prev)) sel.value = prev
+  // A design.md is reference material, not a discussion — default it to knowledge
+  // rather than the list's leading 'conversation' (TASK-1554 AC-7).
+  else if (kind === 'design') sel.value = 'knowledge'
   el('textPane').hidden = kind !== 'text'
   el('imagePane').hidden = kind !== 'image'
   el('networkPane').hidden = kind !== 'network'
+  el('designPane').hidden = kind !== 'design'
   if (kind === 'network') loadRequests()
   refreshConvPane()
   refreshKnowledgePane()
@@ -634,6 +638,10 @@ let shotImg = null
 // of its own" (a pasted image, hand-typed text) and defers to a send-time tab read.
 let shotSourceUrl = null
 let textSourceUrl = null
+// TASK-1554 — tokens are read at one moment and Sent at another, same window as a
+// screenshot, so the origin is stamped at extraction rather than read at send.
+let designSourceUrl = null
+let designTokens = null
 
 // TASK-1457/1458 — loads a data URL (from Grab or paste) onto the canvas at its
 // natural resolution; CSS scales it down for display, drawing math below un-scales
@@ -861,6 +869,61 @@ const PAGE_TEXT_CAP = 60 * 1024
 // sidesteps the stale-content-script trap: reloading the extension does not re-inject
 // into already-open tabs, so a manifest-registered lib would simply be missing there.
 const EXTRACT_FILES = ['lib/dom-walk.js', 'lib/md.js', 'lib/readability.js']
+const DESIGN_FILES = ['lib/dom-walk.js', 'lib/design-tokens.js', 'lib/design-doc.js']
+
+// TASK-1554 — widths to re-sample at when the user asks for breakpoint probing. These
+// are PROBE POINTS, not an answer: only the widths where the token set actually changes
+// are reported. Reporting this list itself would be a framework guess dressed as a
+// measurement, which is the failure the whole module avoids.
+const BREAKPOINT_PROBE_WIDTHS = [360, 480, 640, 768, 1024, 1280, 1440]
+
+el('grabDesign').addEventListener('click', async () => {
+  const btn = el('grabDesign')
+  btn.disabled = true
+  try {
+    const tab = await readActiveTab()
+    if (!tab) return setStatus('No active tab to read', 'err')
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: DESIGN_FILES })
+
+    const probe = el('designBreakpoints').checked
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (widths) => {
+        const tokens = globalThis.ChodaDesignTokens.extractDesignTokens(document, {
+          // Resizing the OS window from a content script is not possible, so the probe
+          // drives the page's own layout viewport instead. Widths where nothing changes
+          // are dropped by the extractor, so an ineffective resize reports no
+          // breakpoints rather than inventing the probe list back as an answer.
+          widths: widths || undefined,
+          resize: widths
+            ? (w) => {
+                document.documentElement.style.width = `${w}px`
+                void document.documentElement.offsetWidth // force reflow
+              }
+            : undefined
+        })
+        document.documentElement.style.width = ''
+        return {
+          tokens,
+          markdown: globalThis.ChodaDesignDoc.renderDesignDoc(tokens, {
+            capturedAt: new Date().toISOString()
+          })
+        }
+      },
+      args: [probe ? BREAKPOINT_PROBE_WIDTHS : null]
+    })
+
+    designTokens = result.tokens
+    el('designOut').value = result.markdown
+    // Stamped at extraction, not read at send — same reasoning as the screenshot path.
+    designSourceUrl = tab.url || null
+    setStatus(`Design tokens extracted (${result.tokens.elements} elements sampled)`, 'ok')
+  } catch {
+    setStatus("Can't read this page (chrome:// or restricted)", 'err')
+  } finally {
+    btn.disabled = false
+  }
+})
 
 el('grabText').addEventListener('click', async () => {
   try {
@@ -903,7 +966,14 @@ el('send').addEventListener('click', async () => {
   // NOW for hand-entered text. Never the panel's binding, which can be stale
   // (TASK-1551). The network branch below overrides this entirely — those records come
   // from a per-tab buffer and focus is not their provenance at all.
-  const stampedUrl = kind === 'image' ? shotSourceUrl : kind === 'text' ? textSourceUrl : null
+  const stampedUrl =
+    kind === 'image'
+      ? shotSourceUrl
+      : kind === 'text'
+        ? textSourceUrl
+        : kind === 'design'
+          ? designSourceUrl
+          : null
   const freshTab = await readActiveTab()
   let sourceUrl = ChodaProvenance.resolveTabSource(stampedUrl, freshTab && freshTab.url)
 
@@ -912,6 +982,9 @@ el('send').addEventListener('click', async () => {
     const text = el('text').value.trim()
     if (!text) return setStatus('Nothing to capture — text is empty', 'err')
     payload = { text, projectId }
+  } else if (kind === 'design') {
+    if (!designTokens) return setStatus('Extract design tokens first', 'err')
+    payload = { tokens: designTokens, markdown: el('designOut').value, projectId }
   } else if (kind === 'image') {
     // TASK-1458 — read the canvas's live pixels so any highlighter markup is baked in.
     const canvas = el('shotCanvas')
@@ -999,6 +1072,8 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   // outliving its content would re-introduce exactly the bug this fixes (TASK-1551).
   shotSourceUrl = null
   textSourceUrl = null
+  designSourceUrl = null
+  designTokens = null
   el('shotCanvas').hidden = true
   el('shotClear').hidden = true
   el('shotRemove').hidden = true

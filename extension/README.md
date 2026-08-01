@@ -77,6 +77,38 @@ demand by the panel, not registered in `manifest.json` — they only matter at t
 of a grab, and on-demand injection also survives an extension reload, which does not
 re-inject manifest content scripts into already-open tabs.
 
+## Design discovery (TASK-1554)
+
+Pick the **Design** kind → **Extract design tokens**. Reads the page's palette, type
+scale, spacing, radii, shadows, borders and z-index bands, renders a `design.md`, and
+sends it to **knowledge** with the raw token JSON written to
+`data/artifacts/captures/*.design.json` and referenced by path.
+
+**It does not read the authored CSS, and that is the point.**
+`lib/snapshot.js:collectCss` goes through `sheet.cssRules`, which throws on every
+cross-origin stylesheet — and most real sites serve CSS from a CDN. That path yields
+only same-origin inline `<style>` blocks *and reports no error*, producing a
+confidently incomplete document. Tokens come from `getComputedStyle` instead: origin-
+blind, post-cascade, and what you actually need to rebuild a look.
+
+The trade-off is stated inside every generated document, not just here. Computed styles
+cannot show you authored variable names (`--brand-500`), `:hover` / `:focus` /
+`:disabled` states, dark mode if it wasn't active, or anything behind a closed modal.
+A design.md that silently omitted hover states would invite the reader to assume there
+are none — so the **Limits** section names each blind spot.
+
+- **Breakpoints** are off by default. Tick **probe breakpoints** and the extractor
+  re-samples at 360/480/640/768/1024/1280/1440px and reports only the widths where the
+  token set actually *changed*. Unprobed, the document says "not probed" rather than
+  implying the page has none. No `@media` rule is ever read — same cross-origin problem.
+- **No grid detected** is a real answer. A page on arbitrary spacing has no base step,
+  and reporting `1px` (which divides everything) would be true and useless.
+- Colours merge by perceptual distance, so `#3B82F6`, `rgb(59,130,246)` and `#3b82f7`
+  become one swatch — named after the *most-used* member, not the first seen.
+
+Local-only, like image and network captures: the markdown embeds whatever text the page
+rendered, which on a signed-in app screen can include customer data (ADR-036).
+
 ## Notes / limits (v1)
 
 - Screenshot = visible viewport (no region-drag crop yet).
