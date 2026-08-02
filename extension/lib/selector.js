@@ -5,6 +5,9 @@
 // import/export so it stays a valid MV3 classic content script.
 
 ;(function (root) {
+  // Tags that can only appear once per document — indexing them says nothing.
+  const UNIQUE_TAGS = new Set(['body', 'head', 'html'])
+
   function attrSelector(el) {
     const testid = el.getAttribute && el.getAttribute('data-testid')
     if (testid) return `[data-testid="${cssEscape(testid)}"]`
@@ -54,7 +57,10 @@
         parts.unshift(anchored)
         return parts.join(' > ')
       }
-      parts.unshift(`${tag(node)}:nth-of-type(${nthOfType(node)})`)
+      // body is unique in a document, so :nth-of-type(1) on it is pure noise — it was
+      // showing up on every fallback path ("body:nth-of-type(1) > div:nth-of-type(5) …",
+      // seen live 2026-08-02). Emit the bare tag instead.
+      parts.unshift(UNIQUE_TAGS.has(tag(node)) ? tag(node) : `${tag(node)}:nth-of-type(${nthOfType(node)})`)
       node = node.parentElement
     }
     return parts.join(' > ') || tag(el) || 'unknown'
