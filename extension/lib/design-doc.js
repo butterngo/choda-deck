@@ -57,10 +57,29 @@
     const steps = spacing.steps.length ? spacing.steps.map(fmtPx).join(' · ') : '_none observed_'
     // "No grid detected" is a real finding, not a failure — a page on arbitrary spacing
     // has none, and naming a step that merely divides everything would be useless.
+    //
+    // But the steps listed below are only the most FREQUENT values, while the grid is
+    // computed over every observed one. On the live cohere.com capture that produced a
+    // document contradicting itself: a tidy 2·4·6·8 list directly under "none detected",
+    // with nothing explaining the hundreds of sub-pixel values also seen. The counts
+    // below are what reconciles the two.
+    const total = spacing.distinctValues
     const grid = spacing.grid
-      ? `Base grid: **${fmtPx(spacing.grid)}**`
-      : 'Base grid: **none detected** — observed values do not sit on a consistent step.'
-    return `${grid}\n\nObserved steps: ${steps}`
+      ? `Base grid: **${fmtPx(spacing.grid)}**` +
+        (total ? ` — ${spacing.onGrid} of ${total} distinct values sit on it.` : '')
+      : 'Base grid: **none detected**' +
+        // "Not enough data" and "no common step" are different findings and must not be
+        // conflated: the first says nothing about the page, the second is a real claim.
+        // detectGrid needs at least 4 positive values before it will call either way.
+        (total >= 4
+          ? ` — ${total} distinct values were observed and too few share a common step.`
+          : total
+            ? ` — only ${total} distinct spacing value${total === 1 ? '' : 's'} observed, too few to judge.`
+            : ' — no spacing values observed.')
+    const note = total && total > spacing.steps.length
+      ? `\n\n_Showing the ${spacing.steps.length} most frequent of ${total} distinct values, so this list is tidier than the full set the grid was computed over._`
+      : ''
+    return `${grid}\n\nMost frequent steps: ${steps}${note}`
   }
 
   function listOrNone(values, fmt) {
@@ -97,7 +116,19 @@
 
     out.push('## Type scale')
     out.push('')
-    out.push(typeSection(tokens.type))
+    // Headings get their own table, in h1..h6 order rather than by frequency. A page has
+    // one h1 and hundreds of divs, so a single frequency-ranked table hides exactly the
+    // rows you would rebuild from — observed live on cohere.com, where the scale
+    // contained div/a/li/span/img and not one heading.
+    const headings = tokens.typeHeadings || []
+    const body = tokens.typeBody || tokens.type || []
+    out.push('**Headings**')
+    out.push('')
+    out.push(headings.length ? typeSection(headings) : '_no h1–h6 rendered on this page_')
+    out.push('')
+    out.push('**Body & UI** (most frequent)')
+    out.push('')
+    out.push(typeSection(body))
     out.push('')
 
     out.push('## Spacing')

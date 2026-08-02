@@ -141,3 +141,60 @@ describe('end to end', () => {
     expect(renderDesignDoc(t)).not.toContain('[object Object]')
   })
 })
+
+describe('live regressions (cohere.com capture)', () => {
+  const split = (over) =>
+    tokens({
+      typeHeadings: [{ tag: 'h1', family: 'Unica77', size: 48, weight: '600', lineHeight: '52px', count: 1 }],
+      typeBody: [{ tag: 'div', family: 'Unica77', size: 16, weight: '400', lineHeight: '24px', count: 434 }],
+      ...over
+    })
+
+  it('gives headings their own table, above the frequency-ranked body rows', () => {
+    const md = renderDesignDoc(split())
+    expect(md).toContain('**Headings**')
+    expect(md).toContain('**Body & UI**')
+    expect(md.indexOf('**Headings**')).toBeLessThan(md.indexOf('**Body & UI**'))
+    expect(md).toContain('| h1 | Unica77 | 48px |')
+  })
+
+  it('says so explicitly when a page rendered no headings at all', () => {
+    const md = renderDesignDoc(split({ typeHeadings: [] }))
+    expect(md).toContain('_no h1–h6 rendered on this page_')
+  })
+
+  it('reconciles a "none detected" grid with the tidy step list under it', () => {
+    const md = renderDesignDoc(
+      tokens({ spacing: { grid: null, steps: [2, 4, 6, 8], distinctValues: 312, onGrid: 0 } })
+    )
+    expect(md).toContain('312 distinct values were observed')
+    expect(md).toMatch(/Showing the 4 most frequent of 312/)
+  })
+
+  it('quantifies a detected grid rather than just naming it', () => {
+    const md = renderDesignDoc(
+      tokens({ spacing: { grid: 4, steps: [4, 8, 16], distinctValues: 20, onGrid: 18 } })
+    )
+    expect(md).toContain('Base grid: **4px** — 18 of 20 distinct values sit on it.')
+  })
+})
+
+describe('grid verdict distinguishes no-data from no-pattern', () => {
+  it('says "too few to judge" when there is not enough data', () => {
+    // detectGrid needs >= 4 positive values. Reporting "too few share a common step"
+    // here would be a claim about the page made from no evidence.
+    const md = renderDesignDoc(tokens({ spacing: { grid: null, steps: [8, 16], distinctValues: 2, onGrid: 0 } }))
+    expect(md).toContain('only 2 distinct spacing values observed, too few to judge')
+    expect(md).not.toContain('too few share a common step')
+  })
+
+  it('says "too few share a common step" only once there IS enough data', () => {
+    const md = renderDesignDoc(tokens({ spacing: { grid: null, steps: [3, 7, 11, 13], distinctValues: 40, onGrid: 0 } }))
+    expect(md).toContain('40 distinct values were observed and too few share a common step')
+  })
+
+  it('handles a page with no spacing at all', () => {
+    const md = renderDesignDoc(tokens({ spacing: { grid: null, steps: [], distinctValues: 0, onGrid: 0 } }))
+    expect(md).toContain('no spacing values observed')
+  })
+})
