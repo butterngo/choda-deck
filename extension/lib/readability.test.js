@@ -11,7 +11,14 @@ function loadCohere() {
 }
 
 describe('single shared traversal (AC-1)', () => {
-  const source = () => require('fs').readFileSync(require.resolve('./readability.js'), 'utf8').replace(/\/\/.*$/gm, '')
+  // Strips BOTH comment styles: the guard is about what the code does, and a block
+  // comment explaining why querySelector is avoided must not trip it. (It did, on the
+  // first run after this comment was written — the guard works.)
+  const source = () =>
+    require('fs')
+      .readFileSync(require.resolve('./readability.js'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '')
 
   it('crosses the DOM only through ChodaDomWalk', () => {
     // Asserted against the source, because nothing about the OUTPUT differs between a
@@ -239,5 +246,48 @@ describe('findMain', () => {
   it('returns null when nothing reaches the minimum content length', () => {
     document.body.innerHTML = '<p>too short</p>'
     expect(findMain(document)).toBeNull()
+  })
+})
+
+describe('title selection (live regression)', () => {
+  // Found on the live cohere.com/blog/embed-4 capture, NOT by the fixture. The real
+  // page keeps its <h1> inside a <header> that cleanSubtree strips as chrome, so the
+  // extract has no heading of its own and falls through to document.title — which
+  // carries the " | Cohere Blog" site suffix. The original fixture put the h1 inside
+  // <article>, never reached that branch, and agreed with itself.
+  it('uses the page h1 even when it was stripped as chrome, not document.title', () => {
+    document.title = 'Introducing Embed 4: Multimodal search for business | Cohere Blog'
+    document.body.innerHTML = `
+      <header class="site-header"><nav><a href="/">Home</a></nav>
+        <h1>Introducing Embed 4: Multimodal search for business</h1>
+      </header>
+      <main><article>
+        <p>${'Real article prose, with commas, running long enough to score. '.repeat(6)}</p>
+      </article></main>`
+    const { markdown } = extractPageMarkdown(document)
+    expect(markdown.startsWith('# Introducing Embed 4: Multimodal search for business\n')).toBe(true)
+    expect(markdown).not.toContain('| Cohere Blog')
+  })
+
+  it('still falls back to document.title when the page has no h1 at all', () => {
+    document.title = 'Some Page | Site'
+    document.body.innerHTML = `<main><p>${'Prose, with commas, long enough to score here. '.repeat(6)}</p></main>`
+    expect(extractPageMarkdown(document).markdown.startsWith('# Some Page | Site')).toBe(true)
+  })
+
+  it('does not prepend anything when the extract already starts with a heading', () => {
+    document.title = 'Ignored | Site'
+    document.body.innerHTML = `<main><article><h1>Own Heading</h1>
+      <p>${'Prose, with commas, long enough to score here. '.repeat(6)}</p></article></main>`
+    const { markdown } = extractPageMarkdown(document)
+    expect(markdown.startsWith('# Own Heading')).toBe(true)
+    expect(markdown).not.toContain('Ignored')
+  })
+
+  it('ignores an empty h1 rather than emitting a bare #', () => {
+    document.title = 'Fallback | Site'
+    document.body.innerHTML = `<header><h1>   </h1></header>
+      <main><p>${'Prose, with commas, long enough to score here. '.repeat(6)}</p></main>`
+    expect(extractPageMarkdown(document).markdown.startsWith('# Fallback | Site')).toBe(true)
   })
 })

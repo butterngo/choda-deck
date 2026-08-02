@@ -142,3 +142,37 @@ describe('escaping', () => {
     expect(escapeInline('Cost: $1.50 (approx) — 20% off!')).toBe('Cost: $1.50 (approx) — 20% off!')
   })
 })
+
+describe('boundary whitespace inside emphasis (live regression)', () => {
+  // Found on the live cohere.com/blog/embed-4 capture, not by a fixture: the source is
+  // `<strong>Key Contributors: </strong>Carlos`, with the separating space INSIDE the
+  // tag. Trimming before emitting the markers fused the words together.
+  it('keeps the space when it lives inside <strong>', () => {
+    expect(render('<p><strong>Key Contributors: </strong>Carlos Lassance</p>')).toBe(
+      '**Key Contributors:** Carlos Lassance'
+    )
+  })
+
+  it('keeps a leading space inside <strong> too', () => {
+    expect(render('<p>see<strong> the docs</strong></p>')).toBe('see **the docs**')
+  })
+
+  it('does the same for em, del and inline code', () => {
+    expect(render('<p><em>label: </em>value</p>')).toBe('*label:* value')
+    expect(render('<p><del>old </del>new</p>')).toBe('~~old~~ new')
+    expect(render('<p><code>cmd </code>arg</p>')).toBe('`cmd` arg')
+  })
+
+  it('never emits padded markers, which markdown will not parse as emphasis', () => {
+    // The space must move OUTSIDE the markers, not merely be preserved: `** bold **`
+    // renders as literal asterisks rather than bold text.
+    const out = render('<p>a<strong> bold </strong>x</p>')
+    expect(out).toBe('a **bold** x')
+    expect(out).not.toContain('** bold')
+    expect(out).not.toContain('bold **')
+  })
+
+  it('still drops emphasis that contains only whitespace', () => {
+    expect(render('<p>a<strong>   </strong>b</p>')).toBe('a b')
+  })
+})

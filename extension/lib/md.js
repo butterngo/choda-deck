@@ -77,22 +77,31 @@
       return `[${text}](${href})`
     }
     if (t === 'CODE' || t === 'KBD' || t === 'SAMP') {
-      const text = inner.trim()
-      return text ? '`' + text.replace(/\\([\\`*_[\]])/g, '$1') + '`' : ''
+      return wrap(inner, '`', '`', (s) => s.replace(/\\([\\`*_[\]])/g, '$1'))
     }
-    if (t === 'STRONG' || t === 'B') {
-      const text = inner.trim()
-      return text ? `**${text}**` : ''
-    }
-    if (t === 'EM' || t === 'I') {
-      const text = inner.trim()
-      return text ? `*${text}*` : ''
-    }
-    if (t === 'DEL' || t === 'S') {
-      const text = inner.trim()
-      return text ? `~~${text}~~` : ''
-    }
+    if (t === 'STRONG' || t === 'B') return wrap(inner, '**', '**')
+    if (t === 'EM' || t === 'I') return wrap(inner, '*', '*')
+    if (t === 'DEL' || t === 'S') return wrap(inner, '~~', '~~')
     return inner
+  }
+
+  /**
+   * Wrap inline content in markers, keeping any boundary whitespace OUTSIDE them.
+   *
+   * `<strong>Key Contributors: </strong>Carlos` carries its separating space inside the
+   * tag. Trimming before emitting the markers destroyed it and produced
+   * `**Key Contributors:**Carlos` — words fused together, found on the live cohere.com
+   * capture. Markdown also will not parse `** bold **` with inner padding, so the space
+   * has to move out rather than simply be kept.
+   */
+  function wrap(inner, open, close, transform) {
+    const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(inner)
+    if (!m) return ''
+    // Whitespace-only content emits the whitespace, not nothing: `a<b>   </b>c` still
+    // separates the two words, and dropping it would fuse them.
+    if (!m[2]) return m[1] ? ' ' : ''
+    const core = transform ? transform(m[2]) : m[2]
+    return `${m[1]}${open}${core}${close}${m[3]}`
   }
 
   function childrenInline(el) {
