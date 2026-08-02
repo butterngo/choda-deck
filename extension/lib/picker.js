@@ -37,6 +37,112 @@
     return ((el && el.tagName) || '').toLowerCase()
   }
 
+  // Landmarks worth anchoring a path to. A selector rooted at the nearest one survives a
+  // wrapper <div> being inserted higher up; a path walked all the way to <body> does not.
+  const LANDMARK_TAGS = new Set(['main', 'nav', 'aside', 'header', 'footer', 'article', 'section', 'form', 'dialog', 'table'])
+
+  // Classes that carry no identity. Utility frameworks generate these in bulk, and a
+  // selector built from them is neither unique nor meaningful. Matched as whole classes.
+  const UTILITY_CLASS =
+    /^(?:[a-z]+-\d+|[pmwh][xytblr]?-\d+|flex|grid|block|inline(?:-\w+)?|hidden|relative|absolute|fixed|sticky|static|box-\w+|items-\w+|justify-\w+|self-\w+|text-\w+|bg-\w+|border(?:-\w+)?|rounded(?:-\w+)?|shadow(?:-\w+)?|gap-\w+|space-\w+|overflow-\w+|font-\w+|leading-\w+|tracking-\w+|opacity-\d+|z-\d+|w-\w+|h-\w+|min-\w+|max-\w+|transition(?:-\w+)?|duration-\d+|ease-\w+|cursor-\w+|select-\w+|whitespace-\w+|truncate|sr-only|container|group|peer)$/
+
+  function isUtilityClass(c) {
+    return UTILITY_CLASS.test(c)
+  }
+
+  /** Classes that plausibly name a component rather than a style utility. */
+  function semanticClasses(el) {
+    return String((el && el.getAttribute && el.getAttribute('class')) || '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .filter((c) => !isUtilityClass(c) && !/^[a-z]$/.test(c))
+  }
+
+  function hasStableAttr(el) {
+    if (!el || !el.getAttribute) return false
+    return Boolean(el.getAttribute('data-testid') || el.id || el.getAttribute('aria-label'))
+  }
+
+  /**
+   * How findable this selector is in a repo — the whole point of the picker is Claude
+   * fixing the SOURCE, and a positional path cannot be grepped for.
+   *
+   * `semantic`   — anchored on data-testid / id / aria-label. Grep it directly.
+   * `class`      — anchored on a non-utility class. Usually greppable.
+   * `positional` — nth-of-type only. Correct, but tells a reader nothing about where the
+   *                code lives. Observed live on a Tailwind page, where EVERY pick lands
+   *                here: `body > div:nth-of-type(5) > … > span:nth-of-type(1)`.
+   *
+   * Reported so a positional selector cannot pass for a semantic one in the artifact —
+   * the same false-confidence failure TASK-1549/1551 exist to prevent.
+   */
+  function selectorQuality(el) {
+    if (hasStableAttr(el)) return 'semantic'
+    let node = el && el.parentElement
+    while (node && tagOf(node) !== 'html') {
+      if (hasStableAttr(node)) return 'semantic'
+      node = node.parentElement
+    }
+    if (semanticClasses(el).length) return 'class'
+    return 'positional'
+  }
+
+  /**
+   * Shorten a fallback path by rooting it at the nearest landmark ancestor, when doing so
+   * still resolves uniquely. Verified against the live document before being returned —
+   * a shorter selector that matches two elements is worse than a long one that matches
+   * one, so this never trades correctness for brevity.
+   */
+  function shortenPath(el, fullPath) {
+    const doc = el && el.ownerDocument
+    if (!doc || typeof doc.querySelectorAll !== 'function') return fullPath
+
+    const segments = []
+    let node = el
+    while (node && tagOf(node) !== 'html' && tagOf(node) !== 'body') {
+      const cls = semanticClasses(node)
+      const own = cls.length
+        ? `${tagOf(node)}.${cls.slice(0, 2).map(cssEscapeLocal).join('.')}`
+        : `${tagOf(node)}:nth-of-type(${nthOfTypeLocal(node)})`
+      segments.unshift(own)
+
+      // Try this suffix on its own, and rooted at a landmark, shortest first.
+      const candidate = segments.join(' > ')
+      if (resolvesUniquely(doc, candidate, el)) return candidate
+      if (LANDMARK_TAGS.has(tagOf(node.parentElement))) {
+        const anchored = `${tagOf(node.parentElement)} > ${candidate}`
+        if (resolvesUniquely(doc, anchored, el)) return anchored
+      }
+      node = node.parentElement
+    }
+    return fullPath
+  }
+
+  function resolvesUniquely(doc, selector, el) {
+    try {
+      const hits = doc.querySelectorAll(selector)
+      return hits.length === 1 && hits[0] === el
+    } catch {
+      return false
+    }
+  }
+
+  function cssEscapeLocal(s) {
+    if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(s)
+    return String(s).replace(/["\\\]#.:]/g, '\\$&')
+  }
+
+  function nthOfTypeLocal(el) {
+    let i = 1
+    let sib = el.previousElementSibling
+    while (sib) {
+      if (sib.tagName === el.tagName) i++
+      sib = sib.previousElementSibling
+    }
+    return i
+  }
+
   /** A short human label — `button.btn.btn--primary#submit`. */
   function describe(el) {
     if (!el || !el.tagName) return ''
@@ -109,8 +215,14 @@
   function buildPick(el, opts) {
     const options = opts || {}
     if (!el || !el.tagName) return null
+    const quality = selectorQuality(el)
+    const raw = selectorApi.cssPath(el)
+    // Only a positional path is worth shortening; a semantic one is already short and
+    // already greppable, and rewriting it would lose the very anchor that makes it good.
+    const selector = quality === 'semantic' ? raw : shortenPath(el, raw)
     return {
-      selector: selectorApi.cssPath(el),
+      selector,
+      selectorQuality: quality,
       label: describe(el),
       tag: tagOf(el),
       rect: rectOf(el),
@@ -134,6 +246,19 @@
       return `\n**${title}**\n\n\`\`\`css\n${rows.map(([k, v]) => `${k}: ${v};`).join('\n')}\n\`\`\`\n`
     }
     const out = [`**Element:** \`${pick.label}\``, `**Selector:** \`${pick.selector}\``]
+    // Say plainly when the selector cannot be grepped for. Without this a positional
+    // path reads as authoritative as a data-testid, and whoever picks up the artifact
+    // wastes time searching the repo for a string that was never in it.
+    if (pick.selectorQuality === 'positional') {
+      out.push(
+        '**⚠ Positional selector** — this element has no `data-testid`, `id`, `aria-label`' +
+          ' or meaningful class, so the selector describes WHERE it sits, not WHAT it is.' +
+          ' It will not be found by searching the source, and it breaks if the markup' +
+          ' shifts. Identify the component from the HTML and styles below instead.'
+      )
+    } else if (pick.selectorQuality === 'class') {
+      out.push('_Selector anchored on a class name — greppable, but not guaranteed unique in source._')
+    }
     if (pick.rect) out.push(`**Size:** ${pick.rect.width}×${pick.rect.height} at (${pick.rect.x}, ${pick.rect.y})`)
     if (pick.ancestors.length) out.push(`**Inside:** ${pick.ancestors.map((a) => `\`${a}\``).join(' ← ')}`)
     let body = out.join('\n')
@@ -260,6 +385,11 @@
   const api = {
     startPicker,
     cropRect,
+    selectorQuality,
+    shortenPath,
+    semanticClasses,
+    isUtilityClass,
+    LANDMARK_TAGS,
     buildPick,
     formatPick,
     captureStyles,

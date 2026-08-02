@@ -9,6 +9,8 @@ const {
   ancestorChain,
   describe: label,
   cropRect,
+  selectorQuality,
+  isUtilityClass,
   CAPTURED_PROPS,
   OVERLAY_ID
 } = require('./picker.js')
@@ -326,4 +328,99 @@ describe('formatPick', () => {
   it('returns an empty string for a null pick', () => {
     expect(formatPick(null)).toBe('')
   })
+})
+
+// Live findings from the 2026-08-02 pick on a Tailwind-style page. The structure below
+// mirrors the real one that produced:
+//   body:nth-of-type(1) > div:nth-of-type(5) > … > a:nth-of-type(1) > span:nth-of-type(1)
+describe('selector quality and shortening (live regression)', () => {
+  const TAILWIND_PAGE = `
+    <div></div><div></div><div></div><div></div>
+    <div><div></div>
+      <div>
+        <main><div><section><aside><div></div>
+          <div>
+            <ul>
+              <li><a href="/a"><span class="box-border inline-flex items-center">A</span></a></li>
+              <li><a href="/b"><span class="box-border inline-flex items-center">B</span></a></li>
+            </ul>
+          </div>
+        </aside></section></div></main>
+      </div>
+    </div>`
+
+  const pickTarget = () => {
+    document.body.innerHTML = TAILWIND_PAGE
+    return document.querySelectorAll('aside ul li')[1].querySelector('span')
+  }
+
+  it('reports a utility-class-only element as positional, not semantic', () => {
+    expect(selectorQuality(pickTarget())).toBe('positional')
+  })
+
+  it('still round-trips to the same element after shortening', () => {
+    // Correctness is never traded for brevity: shortenPath verifies each candidate
+    // against the live document before returning it.
+    const el = pickTarget()
+    const pick = buildPick(el)
+    const hits = document.querySelectorAll(pick.selector)
+    expect(hits).toHaveLength(1)
+    expect(hits[0]).toBe(el)
+  })
+
+  it('produces a shorter selector than the full walk to body', () => {
+    const el = pickTarget()
+    const full = require('./selector.js').cssPath(el)
+    expect(buildPick(el).selector.length).toBeLessThan(full.length)
+  })
+
+  it('never emits body:nth-of-type — body is unique, the index is noise', () => {
+    const el = pickTarget()
+    expect(require('./selector.js').cssPath(el)).not.toContain('body:nth-of-type')
+    expect(buildPick(el).selector).not.toContain('body:nth-of-type')
+  })
+
+  it('warns in the markdown that a positional selector is not greppable', () => {
+    const md = formatPick(buildPick(pickTarget()))
+    expect(md).toContain('Positional selector')
+    expect(md).toMatch(/will not be found by searching the source/)
+  })
+
+  it('does NOT warn when the selector is semantic', () => {
+    // The discriminator: if the warning appeared unconditionally it would prove nothing
+    // and would train the reader to ignore it.
+    document.body.innerHTML = '<button data-testid="submit-order">Go</button>'
+    const pick = buildPick(document.querySelector('button'))
+    expect(pick.selectorQuality).toBe('semantic')
+    expect(formatPick(pick)).not.toContain('Positional selector')
+  })
+
+  it('leaves a semantic selector untouched rather than rewriting it', () => {
+    document.body.innerHTML = '<div><section><button data-testid="go">x</button></section></div>'
+    expect(buildPick(document.querySelector('button')).selector).toBe('[data-testid="go"]')
+  })
+
+  it('treats an element inheriting a stable ancestor id as semantic', () => {
+    document.body.innerHTML = '<div id="checkout"><div><span>total</span></div></div>'
+    expect(selectorQuality(document.querySelector('span'))).toBe('semantic')
+  })
+
+  it('recognises a meaningful class as better than positional', () => {
+    document.body.innerHTML = '<div><span class="order-summary__total">x</span></div>'
+    expect(selectorQuality(document.querySelector('span'))).toBe('class')
+  })
+
+  it.each([
+    'flex', 'inline-flex', 'box-border', 'items-center', 'justify-between',
+    'p-4', 'mt-2', 'text-sm', 'bg-white', 'rounded-lg', 'w-full', 'z-10'
+  ])('classifies "%s" as a utility class', (cls) => {
+    expect(isUtilityClass(cls)).toBe(true)
+  })
+
+  it.each(['order-summary', 'btn--primary', 'ProductCard', 'site-header__nav'])(
+    'does NOT classify "%s" as a utility class',
+    (cls) => {
+      expect(isUtilityClass(cls)).toBe(false)
+    }
+  )
 })
