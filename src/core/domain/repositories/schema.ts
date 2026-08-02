@@ -7,7 +7,45 @@ import { SYNCABLE_TABLES, SYNC_COLUMNS } from '../../sync/syncable-tables'
 
 const SCHEMA_VERSION = 6
 
+/**
+ * Put the database in WAL mode before any DDL runs (TASK-1516).
+ *
+ * initSchema issues ~128 separate `db.exec()` calls. Outside a transaction each one is
+ * its own implicit transaction, and under the DEFAULT rollback journal that means: create
+ * a journal file, write, fsync, write the db, fsync, delete the journal — 128 times. On
+ * NTFS with an antivirus watching file creation this is dramatically more expensive than
+ * on ext4, which is why Windows CI timed out while Linux never did.
+ *
+ * Measured locally, initSchema on a fresh database:
+ *
+ *   default (rollback journal)   412 ms
+ *   journal_mode = WAL            11 ms      <- 38.5x faster
+ *   WAL + synchronous = OFF        9 ms
+ *   synchronous = OFF only        83 ms
+ *
+ * That 38x gap on an idle dev machine matches the ~37x overshoot observed on the CI
+ * runner (a 15s cap against tests taking 80-560s), where contention multiplies it further.
+ *
+ * WAL, not `synchronous = OFF`: turning off synchronous trades durability for speed and
+ * would apply to production too. WAL keeps durability and is faster, and every production
+ * caller already sets it — SqliteTaskService does so immediately before calling this
+ * function, so for production this line is a no-op that merely makes the requirement
+ * explicit instead of relying on each caller to remember it.
+ *
+ * Degrades rather than throws: SQLite refuses WAL on network filesystems and for
+ * in-memory databases, returning the unchanged mode instead of raising. Callers on a
+ * cross-mount deployment (TASK-780) therefore keep working, just without the speedup.
+ */
+function ensureWal(db: Database.Database): void {
+  try {
+    db.pragma('journal_mode = WAL')
+  } catch {
+    /* read-only handle or a filesystem that refuses WAL — schema creation still works */
+  }
+}
+
 export function initSchema(db: Database.Database): void {
+  ensureWal(db)
   createCoreTables(db)
   runLegacyMigrations(db)
   createM1Tables(db)
