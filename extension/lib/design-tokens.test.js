@@ -298,3 +298,58 @@ describe('breakpoint detection (AC-5)', () => {
     expect(fingerprintTokens(summarize(collectTokens(document)))).not.toBe(a)
   })
 })
+
+// Live findings from the 2026-08-02 cohere.com/blog/embed-4 capture. Each reproduces the
+// real shape that produced the defect, not a synthetic case.
+describe('live regressions (cohere.com capture)', () => {
+  it('titles the doc from the page h1, not document.title with its site suffix', () => {
+    document.title = 'Introducing Embed 4: Multimodal search for business | Cohere Blog'
+    document.body.innerHTML = '<h1>Introducing Embed 4: Multimodal search for business</h1><p style="color:#111">x</p>'
+    const tokens = extractDesignTokens(document)
+    expect(tokens.title).toBe('Introducing Embed 4: Multimodal search for business')
+    expect(tokens.title).not.toContain('| Cohere Blog')
+  })
+
+  it('falls back to document.title when the page has no h1', () => {
+    document.title = 'Some Page | Site'
+    document.body.innerHTML = '<p style="color:#111">x</p>'
+    expect(extractDesignTokens(document).title).toBe('Some Page | Site')
+  })
+
+  it('keeps headings in the type scale even when hundreds of divs outrank them', () => {
+    // The live failure: one h1 vs 434 divs meant a top-10-by-count scale contained
+    // div/a/li/span/img and not a single heading.
+    document.head.innerHTML = '<style>h1{font-size:48px}h2{font-size:32px}div{font-size:16px}</style>'
+    document.body.innerHTML =
+      '<h1>Title</h1><h2>Section</h2>' + '<div>x</div>'.repeat(200)
+    const tokens = extractDesignTokens(document)
+    const headingTags = tokens.typeHeadings.map((t) => t.tag)
+    expect(headingTags).toContain('h1')
+    expect(headingTags).toContain('h2')
+    expect(tokens.typeBody.every((t) => !/^h[1-6]$/.test(t.tag))).toBe(true)
+  })
+
+  it('orders headings h1..h6, not by frequency', () => {
+    document.head.innerHTML = '<style>h1{font-size:48px}h3{font-size:24px}</style>'
+    document.body.innerHTML = '<h3>a</h3><h3>b</h3><h3>c</h3><h1>once</h1>'
+    expect(extractDesignTokens(document).typeHeadings[0].tag).toBe('h1')
+  })
+
+  it('excludes negative values from the displayed spacing steps', () => {
+    // "-0.5px" appeared among the observed steps live: detectGrid filtered negatives,
+    // the display did not.
+    document.head.innerHTML = '<style>.a{margin-top:-4px;padding:8px}</style>'
+    document.body.innerHTML = '<div class="a">x</div>'
+    expect(extractDesignTokens(document).spacing.steps.every((v) => v > 0)).toBe(true)
+  })
+
+  it('reports how many distinct values the grid verdict was computed over', () => {
+    // Without this the document contradicts itself: a tidy 2/4/6/8 list of the most
+    // frequent values sitting under a "none detected" line computed over all of them.
+    document.head.innerHTML = '<style>.a{padding:8px;margin:16px}</style>'
+    document.body.innerHTML = '<div class="a">x</div>'
+    const { spacing } = extractDesignTokens(document)
+    expect(typeof spacing.distinctValues).toBe('number')
+    expect(spacing.distinctValues).toBeGreaterThanOrEqual(spacing.steps.length)
+  })
+})

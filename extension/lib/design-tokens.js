@@ -257,15 +257,54 @@
     if (Number.isFinite(z)) bump(out.zIndex, z)
   }
 
+  const HEADING_TAGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']
+
+  /**
+   * Split the type scale into headings and everything else.
+   *
+   * Frequency ranking alone buries the headings: on the live cohere.com capture an h1
+   * appears once while `div` appears 434 times, so a top-10-by-count list contained no
+   * heading at all — and the heading hierarchy is the single most useful thing in a type
+   * scale you intend to rebuild from. Headings are therefore listed in h1..h6 order
+   * regardless of count, and the frequency ranking governs only the body/UI rows.
+   */
+  function splitTypeScale(fonts, limit) {
+    const all = [...fonts.entries()].map(([value, count]) => ({ ...JSON.parse(value), count }))
+    const headings = all
+      .filter((t) => HEADING_TAGS.includes(t.tag))
+      .sort((a, b) => HEADING_TAGS.indexOf(a.tag) - HEADING_TAGS.indexOf(b.tag) || b.size - a.size)
+    const body = all
+      .filter((t) => !HEADING_TAGS.includes(t.tag))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, limit || 10)
+    return { headings, body }
+  }
+
   /** Turn raw observations into the ranked, clustered token set design-doc.js renders. */
   function summarize(raw, opts) {
     const options = opts || {}
-    const spacingValues = [...raw.spacing.keys()]
+    // Negatives are excluded from BOTH the grid maths and the displayed steps. They
+    // leaked into the display on the live capture ("-0.5px" among the steps) because
+    // only detectGrid filtered them — a spacing scale does not contain negative values.
+    const spacingValues = [...raw.spacing.keys()].filter((v) => v > 0)
+    const grid = detectGrid(spacingValues, options.gridCandidates)
+    const { headings, body } = splitTypeScale(raw.fonts, options.typeLimit)
     return {
       elements: raw.elements,
       palette: clusterColors(raw.colors, options.colorMergeDistance).slice(0, options.paletteLimit || 12),
-      type: rank(raw.fonts, options.typeLimit || 10).map(({ value, count }) => ({ ...JSON.parse(value), count })),
-      spacing: { grid: detectGrid(spacingValues, options.gridCandidates), steps: rank(raw.spacing, 16).map((s) => s.value).sort((a, b) => a - b) },
+      type: [...headings, ...body],
+      typeHeadings: headings,
+      typeBody: body,
+      spacing: {
+        grid,
+        steps: rank(raw.spacing, 16).map((s) => s.value).filter((v) => v > 0).sort((a, b) => a - b),
+        // The displayed steps are the top 16 by frequency while `grid` is computed over
+        // EVERY observed value. Without these counts the document contradicts itself:
+        // a clean-looking 2/4/6/8 list above a "no grid detected" line, with nothing to
+        // explain that hundreds of sub-pixel values were also seen.
+        distinctValues: spacingValues.length,
+        onGrid: grid ? spacingValues.filter((v) => Math.abs(v % grid) < 0.01).length : 0
+      },
       radii: rank(raw.radii, 8).map((r) => r.value).sort((a, b) => a - b),
       shadows: rank(raw.shadows, 6),
       borders: rank(raw.borders, 6),
@@ -308,8 +347,25 @@
     const tokens = summarize(collectTokens(doc, options), options)
     tokens.breakpoints = options.widths ? detectBreakpoints(doc, options.widths, options.resize) : []
     tokens.url = (doc && doc.location && doc.location.href) || options.url || ''
-    tokens.title = (doc && doc.title) || ''
+    // Page h1 over document.title, which carries a " | Site Name" suffix — the live
+    // cohere.com capture produced "Design tokens — Introducing Embed 4: … | Cohere Blog".
+    // Same defect readability.js hit and the same fix; missed here because the two
+    // modules resolve their titles independently.
+    tokens.title = firstHeadingText(doc) || (doc && doc.title) || ''
     return tokens
+  }
+
+  /** Text of the document's first non-empty <h1>. Uses the shared walk, not a selector. */
+  function firstHeadingText(doc) {
+    if (!doc || !doc.body) return ''
+    let found = ''
+    walkApi.walk(doc.body, ({ el, tag }) => {
+      if (found) return false
+      if (tag !== 'H1') return
+      const text = (el.textContent || '').replace(/\s+/g, ' ').trim()
+      if (text) found = text
+    })
+    return found
   }
 
   const api = {
