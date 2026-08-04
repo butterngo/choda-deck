@@ -3,8 +3,6 @@
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
 | [textcontent-is-not-the-code-two-dom-shapes-that-silently-gut-a-lt-pre-gt](./textcontent-is-not-the-code-two-dom-shapes-that-silently-gut-a-lt-pre-gt.md) | learning | textContent is not the code — two DOM shapes that silently gut a &lt;pre&gt; | 2026-08-04 |  |
-| [design-tokens-from-https-cohere-com-blog-tag-product-launch](./design-tokens-from-https-cohere-com-blog-tag-product-launch.md) | learning | Design tokens from https://cohere.com/blog/tag/product-launch | 2026-08-04 |  |
-| [img-h-full-w-full-rounded-8px-on-https-cohere-com-blog-tag-product-launch](./img-h-full-w-full-rounded-8px-on-https-cohere-com-blog-tag-product-launch.md) | learning | img.h-full.w-full.rounded-[8px] on https://cohere.com/blog/tag/product-launch | 2026-08-04 |  |
 | [no-package-json-lifecycle-hook-closes-the-stale-bundle-gap](./no-package-json-lifecycle-hook-closes-the-stale-bundle-gap.md) | learning | No package.json lifecycle hook closes the stale-bundle gap | 2026-08-03 |  |
 | [a-live-verification-needs-a-discriminator-if-pass-and-fail-look-identical-the-te](./a-live-verification-needs-a-discriminator-if-pass-and-fail-look-identical-the-te.md) | learning | A live verification needs a discriminator — if pass and fail look identical, the test proved nothing | 2026-07-31 | ✱ |
 | [a-version-gated-node-built-in-fails-at-import-time-verify-against-ci-s-node-not-](./a-version-gated-node-built-in-fails-at-import-time-verify-against-ci-s-node-not-.md) | learning | A version-gated Node built-in fails at import time — verify against CI's Node, not the one you're running | 2026-08-03 |  |
