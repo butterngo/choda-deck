@@ -176,3 +176,61 @@ describe('boundary whitespace inside emphasis (live regression)', () => {
     expect(render('<p>a<strong>   </strong>b</p>')).toBe('a b')
   })
 })
+
+describe('renderPre — <code> child must wrap the whole block (live regression)', () => {
+  it('keeps the full <pre> when <code> is only an inline annotation', () => {
+    // The exact shape from postgresql.org/docs/current/functions-matching.html: a
+    // <pre class="screen"> holding two statements with inline result annotations. The
+    // old `querySelector('code')` returned "123" and dropped the rest.
+    document.body.innerHTML =
+      '<pre class="screen">' +
+      "SELECT SUBSTRING('XY1234Z', 'Y*([0-9]{1,3})');\n" +
+      '<em class="lineannotation">Result: </em><code class="computeroutput">123</code>\n' +
+      "SELECT SUBSTRING('XY1234Z', 'Y*?([0-9]{1,3})');\n" +
+      '<em class="lineannotation">Result: </em><code class="computeroutput">1</code>' +
+      '</pre>'
+    const out = toMarkdown(document.querySelector('pre'))
+    expect(out).toContain('SELECT SUBSTRING')
+    expect(out).toContain("'Y*?([0-9]{1,3})'")
+    // The discriminator: the OLD behaviour produced exactly this and nothing else.
+    expect(out.replace(/`/g, '').trim()).not.toBe('123')
+  })
+
+  it('still unwraps the conventional <pre><code> form', () => {
+    document.body.innerHTML = '<pre><code class="language-js">const a = 1</code></pre>'
+    const out = toMarkdown(document.querySelector('pre'))
+    expect(out).toContain('```js')
+    expect(out).toContain('const a = 1')
+  })
+})
+
+describe('renderPre — highlighter line structure (live regression)', () => {
+  it('restores line breaks when the highlighter emits one element per line', () => {
+    // The exact shape from tailwindcss.com (Shiki): nested <code>, one <span class="line">
+    // per line, and ZERO literal newlines in textContent.
+    document.body.innerHTML =
+      '<pre><code><code>' +
+      '<span class="line">&lt;div class="flex"&gt;</span>' +
+      '<span class="line">  &lt;img src="/a.png" /&gt;</span>' +
+      '<span class="line">&lt;/div&gt;</span>' +
+      '</code></code></pre>'
+    const pre = document.querySelector('pre')
+    expect(pre.textContent).not.toContain('\n') // precondition: the trap is real
+    const out = toMarkdown(pre)
+    expect(out).toContain('<div class="flex">\n')
+    expect(out).toContain('  <img src="/a.png" />')
+    expect(out.split('\n').length).toBeGreaterThan(4) // fence + 3 lines + fence
+  })
+
+  it('leaves a <pre> that already has real newlines alone', () => {
+    document.body.innerHTML = '<pre><code>a = 1\nb = 2</code></pre>'
+    const out = toMarkdown(document.querySelector('pre'))
+    expect(out).toContain('a = 1\nb = 2')
+  })
+
+  it('does not invent line breaks in a single-line block', () => {
+    document.body.innerHTML = '<pre><code><span>const a = 1</span></code></pre>'
+    const out = toMarkdown(document.querySelector('pre'))
+    expect(out.replace(/```\w*\n?/g, '').trim()).toBe('const a = 1')
+  })
+})
