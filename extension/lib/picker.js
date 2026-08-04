@@ -41,13 +41,100 @@
   // wrapper <div> being inserted higher up; a path walked all the way to <body> does not.
   const LANDMARK_TAGS = new Set(['main', 'nav', 'aside', 'header', 'footer', 'article', 'section', 'form', 'dialog', 'table'])
 
+  // A utility's value part. `\d+` alone was not enough: Tailwind emits decimals
+  // (`py-1.5`), fractions (`w-1/2`) and keywords (`mx-auto`, `w-full`), and every one of
+  // those slipped through and got treated as a component name — observed live on
+  // cohere.com, where 5 of a span's 8 classes were misread as semantic.
+  const UTIL_VALUE = String.raw`(?:\d+(?:\.\d+)?(?:\/\d+)?|auto|full|screen|fit|min|max|none|px|\*)`
+
+  // The vocabulary a utility's tail is allowed to use. A CLOSED list rather than `\w+`,
+  // because `order-first` is Tailwind while `order-summary` is a component name and a
+  // wildcard tail cannot tell them apart.
+  //
+  // Which way to lean when a class is unknown: a MISSED utility is the dangerous one. It
+  // leaves the element graded `class`, which suppresses the ⚠ and asserts the selector is
+  // greppable when it is not — the exact false confidence this module exists to prevent.
+  // A wrongly-flagged component name only costs a ⚠ nobody needed. So this list is kept
+  // generous, and it grows from live picks: `flex-col`, `transition-colors` and a bare
+  // `border` all escaped the first version, observed on cohere.com 2026-08-04.
+  const UTIL_WORD =
+    'auto|none|full|screen|fit|px|min|max|first|last|initial|inherit|current|transparent|' +
+    'center|start|end|between|around|evenly|baseline|stretch|wrap|nowrap|reverse|clip|' +
+    'ellipsis|normal|pre|words|all|solid|dashed|dotted|double|hidden|visible|scroll|' +
+    'default|pointer|move|wait|help|grab|text|top|bottom|left|right|flex|grid|block|' +
+    'inline|border|contain|cover|middle|super|sub|thin|light|medium|semibold|bold|' +
+    'extrabold|black|italic|tight|tighter|snug|relaxed|loose|wide|wider|widest|' +
+    'col|row|colors|shadow|transform|opacity|serif|sans|mono|both|only|odd|even|' +
+    'square|disc|decimal|inside|outside|separate|collapse|sticky|relative|absolute|' +
+    'nowrap|justify|dense|inherit|revert|unset|' +
+    'xs|sm|md|lg|xl|[2-9]xl'
+
+  // Utilities that stand alone, with no tail at all. `border`, `shadow` and `rounded`
+  // are valid Tailwind classes by themselves and were being read as component names.
+  const UTIL_BARE =
+    'flex|grid|block|hidden|relative|absolute|fixed|sticky|static|contents|isolate|' +
+    'truncate|sr-only|container|group|peer|antialiased|italic|underline|uppercase|' +
+    'lowercase|capitalize|border|shadow|rounded|transition|ring|blur|filter|grow|' +
+    'shrink|transform|invisible|visible|overflow-auto|resize|appearance-none'
+
+  // Tailwind palette names, with or without a numeric shade.
+  const UTIL_COLOR =
+    '(?:slate|gray|grey|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|' +
+    'teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|white|black)(?:-\\d{1,3})?'
+
+  // Theme tokens a project defines itself — `text-pureWhite`, `bg-brandNavy`. Unbounded
+  // by nature, so matched by SHAPE not by name: a camelCase tail after a known utility
+  // root is a theme value, never a component name (components are `order-summary`,
+  // `card-body` — lowercase). Found live: `hover:text-pureWhitet` escaped two rounds of
+  // list-extending, which is what made shape-matching necessary.
+  const UTIL_CAMEL = '[a-z]+[A-Z][A-Za-z]*(?:-\\d{1,3})?'
+
+  // The conventional theme names (shadcn/ui and most design systems use these verbatim),
+  // which are lowercase and so invisible to the camelCase rule above.
+  const UTIL_THEME =
+    '(?:brand|primary|secondary|accent|muted|surface|danger|success|warning|info|' +
+    'foreground|background|card|popover|input|destructive|neutral|base|body|heading|' +
+    'subtle|inverse|overlay|highlight)(?:-\\d{1,3})?'
+
+  const UTIL_TAIL = `(?:${UTIL_VALUE}|${UTIL_WORD}|${UTIL_COLOR}|${UTIL_CAMEL}|${UTIL_THEME})`
+
+  // Roots that take a tail. Compound forms like `flex-wrap` and `grid-cols-3` must be
+  // here: anchoring `flex` exactly let every one of them past.
+  const UTIL_ROOT =
+    'inline|box|items|justify|self|place|text|bg|border|rounded|shadow|gap|space|overflow|' +
+    'overscroll|font|leading|tracking|opacity|z|order|col|row|flex|grid|w|h|min|max|aspect|' +
+    'object|transition|duration|delay|ease|animate|cursor|select|pointer|resize|whitespace|' +
+    'break|list|align|ring|outline|divide|scroll|snap|touch|translate|rotate|scale|skew|blur|' +
+    'backdrop|filter|float|clear|table|decoration|from|via|to|basis|grow|shrink|inset|size'
+
+  // Optional middle segment: `grid-cols-3`, `max-w-*`, `space-y-4`, `border-t-2`.
+  const UTIL_MID = 'cols|rows|flow|offset|width|color|opacity|w|h|[xytblrse]'
+
   // Classes that carry no identity. Utility frameworks generate these in bulk, and a
   // selector built from them is neither unique nor meaningful. Matched as whole classes.
-  const UTILITY_CLASS =
-    /^(?:[a-z]+-\d+|[pmwh][xytblr]?-\d+|flex|grid|block|inline(?:-\w+)?|hidden|relative|absolute|fixed|sticky|static|box-\w+|items-\w+|justify-\w+|self-\w+|text-\w+|bg-\w+|border(?:-\w+)?|rounded(?:-\w+)?|shadow(?:-\w+)?|gap-\w+|space-\w+|overflow-\w+|font-\w+|leading-\w+|tracking-\w+|opacity-\d+|z-\d+|w-\w+|h-\w+|min-\w+|max-\w+|transition(?:-\w+)?|duration-\d+|ease-\w+|cursor-\w+|select-\w+|whitespace-\w+|truncate|sr-only|container|group|peer)$/
+  const UTILITY_CLASS = new RegExp(
+    '^(?:' +
+      `[pmwh][xytblrse]?-${UTIL_VALUE}|` +
+      `${UTIL_BARE}|` +
+      `(?:${UTIL_ROOT})(?:-(?:${UTIL_MID}))?-${UTIL_TAIL}` +
+      ')$'
+  )
+
+  /**
+   * Strip what wraps an otherwise ordinary utility before matching:
+   * variant prefixes (`lg:`, `hover:`, `dark:md:`), a leading `-` on negative values,
+   * and arbitrary bracket values (`max-w-[670px]` → `max-w-*`). Without this,
+   * `lg:max-w-[670px]` never matched anything and passed for a component name.
+   */
+  function baseUtility(c) {
+    return c
+      .slice(c.lastIndexOf(':') + 1)
+      .replace(/^-/, '')
+      .replace(/\[[^\]]*\]/g, '*')
+  }
 
   function isUtilityClass(c) {
-    return UTILITY_CLASS.test(c)
+    return UTILITY_CLASS.test(baseUtility(c))
   }
 
   /** Classes that plausibly name a component rather than a style utility. */
@@ -74,16 +161,17 @@
    *                code lives. Observed live on a Tailwind page, where EVERY pick lands
    *                here: `body > div:nth-of-type(5) > … > span:nth-of-type(1)`.
    *
+   * Judged on the PICKED element alone. An earlier version walked ancestors and returned
+   * `semantic` when any of them carried a stable attribute — so a pick inside
+   * `<section aria-label="Read this next">` was graded semantic while its own path was
+   * eight nth-of-type segments, and the warning stayed silent. An ancestor's attribute
+   * anchors the path; it does not make the leaf findable in source.
+   *
    * Reported so a positional selector cannot pass for a semantic one in the artifact —
    * the same false-confidence failure TASK-1549/1551 exist to prevent.
    */
   function selectorQuality(el) {
     if (hasStableAttr(el)) return 'semantic'
-    let node = el && el.parentElement
-    while (node && tagOf(node) !== 'html') {
-      if (hasStableAttr(node)) return 'semantic'
-      node = node.parentElement
-    }
     if (semanticClasses(el).length) return 'class'
     return 'positional'
   }
@@ -107,14 +195,27 @@
         : `${tagOf(node)}:nth-of-type(${nthOfTypeLocal(node)})`
       segments.unshift(own)
 
-      // Try this suffix on its own, and rooted at a landmark, shortest first.
       const candidate = segments.join(' > ')
-      if (resolvesUniquely(doc, candidate, el)) return candidate
-      if (LANDMARK_TAGS.has(tagOf(node.parentElement))) {
-        const anchored = `${tagOf(node.parentElement)} > ${candidate}`
+      const parent = node.parentElement
+
+      // An attribute anchor beats brevity. Checked BEFORE the bare candidate because a
+      // shorter all-positional path can also resolve uniquely, and returning it would
+      // discard a perfectly good `#checkout` that cssPath had already found — observed
+      // against a <div id> ancestor, which is not a landmark tag and so was invisible
+      // to the landmark check below.
+      const parentAnchor = parent ? selectorApi.attrSelector(parent) : null
+      if (parentAnchor) {
+        const anchored = `${parentAnchor} > ${candidate}`
         if (resolvesUniquely(doc, anchored, el)) return anchored
       }
-      node = node.parentElement
+
+      // Try this suffix on its own, and rooted at a landmark, shortest first.
+      if (resolvesUniquely(doc, candidate, el)) return candidate
+      if (LANDMARK_TAGS.has(tagOf(parent))) {
+        const anchored = `${tagOf(parent)} > ${candidate}`
+        if (resolvesUniquely(doc, anchored, el)) return anchored
+      }
+      node = parent
     }
     return fullPath
   }
