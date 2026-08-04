@@ -2,7 +2,10 @@
 // TASK-1553 — main-content extraction. Needs a DOM (happy-dom).
 require('./dom-walk.js') // side-effect: globalThis.ChodaDomWalk
 require('./md.js') // side-effect: globalThis.ChodaMd
-const { extractPageMarkdown, rawPageText, findMain, cleanSubtree, isChrome } = require('./readability.js')
+// rawPageText is no longer imported here: its only consumer was the size-reduction
+// assertion dropped by TASK-1559 AC-13. The escape-hatch test below builds the legacy
+// string directly, which is a stronger check than round-tripping our own helper.
+const { extractPageMarkdown, findMain, cleanSubtree, isChrome } = require('./readability.js')
 const cohere = require('./__fixtures__/cohere-embed4.js')
 
 function loadCohere() {
@@ -105,24 +108,26 @@ describe('the INBOX-1642 page — nothing of the article is lost (AC-3)', () => 
     expect(markdown).toContain('## Embed 4 is available today')
   })
 
-  // AC-3 asked for "at least 70%". That number was wrong at filing and this test does
-  // NOT assert it. Measured against the real INBOX-1642 row (12,065 chars total, article
-  // region chars 2,128–10,769): the article is 71.6% of the capture and ALL chrome —
-  // cookie banner, mega-menu, footer, recirculation — is only 28.4%. A 70% reduction is
-  // therefore unreachable without deleting 42% of the article, which is the opposite of
-  // what this task is for. The criterion is left unticked and carried forward rather
-  // than quietly restated at a number the code happens to hit.
-  const MEASURED_CHROME_SHARE = 0.284
-
-  it('removes substantially all of the page chrome, at the measured scale', () => {
-    const raw = rawPageText(document)
-    const { markdown } = extractPageMarkdown(document)
-    const reduction = 1 - markdown.length / raw.length
-    expect(raw.length).toBeGreaterThan(0)
-    // Floor set a little under the measured chrome share to tolerate fixture drift; the
-    // chrome-absence assertions above are what actually prove the removal happened.
-    expect(reduction).toBeGreaterThanOrEqual(MEASURED_CHROME_SHARE - 0.04)
-  })
+  // TASK-1553's AC-3 asked for "at least 70% size reduction". That number was invented at
+  // filing time and is unreachable: measured against the real INBOX-1642 row (12,065
+  // chars, article region 2,128–10,769) the article is 71.6% of the capture and ALL
+  // chrome is 28.4%, so hitting 70% would mean deleting 42% of the article.
+  //
+  // TASK-1559 AC-13 decided the fix is to DROP the size metric, not to restate it at a
+  // reachable number. A percentage is a proxy for "chrome was removed" and it measures
+  // the wrong thing in both directions: a build that deleted half the ARTICLE would score
+  // better on it, and a page that is mostly chrome scores well no matter how bad the
+  // extraction is. Confirmed live 2026-08-04 — an MDN page whose code examples never
+  // render gave a large "reduction" that meant nothing, while a PostgreSQL page full of
+  // retained tables and code gave a small one while extracting correctly.
+  //
+  // What replaces it is already above, and is strictly stronger because it pins both
+  // sides: chrome ABSENT (cookie banner, mega-menu, footer, "Read this next") and article
+  // INTACT (first and last sentence, every feature bullet, the pull quote, the ## heading).
+  // Those cannot both hold unless the extraction did its job, and neither can be gamed by
+  // deleting content. The old assertion floor was also set 4 points under an already-loose
+  // measurement, so it could not have failed on any realistic regression — a check that
+  // cannot fail proves nothing.
 })
 
 describe('raw escape hatch (AC-5)', () => {

@@ -153,10 +153,41 @@
     return out.join('\n')
   }
 
+  /**
+   * The code inside a <pre>, with its line structure intact.
+   *
+   * Syntax highlighters (Shiki, Prism, hljs) emit one element per line and NO literal
+   * newline text nodes — the breaks come from CSS. `textContent` then collapses a
+   * 12-line example onto a single unreadable line. Faithful to textContent is not the
+   * same as faithful to the code. Observed live on tailwindcss.com 2026-08-04, where
+   * the <pre> contained zero "\n" characters.
+   *
+   * Only used when the text genuinely has no newlines, so a normal <pre> is untouched.
+   */
+  function preText(el) {
+    const raw = el.textContent || ''
+    if (raw.includes('\n')) return raw
+    // Descend through single-child wrappers (<pre><code><code>…) to the element that
+    // actually holds the per-line children.
+    let node = el
+    while (node.children && node.children.length === 1) node = node.firstElementChild
+    const lines = Array.from((node && node.children) || [])
+    if (lines.length > 1) return lines.map((l) => l.textContent || '').join('\n')
+    return raw
+  }
+
   function renderPre(el) {
-    const codeEl = el.querySelector && el.querySelector('code')
-    const source = codeEl || el
-    const text = (source.textContent || '').replace(/\s+$/, '')
+    // Use the <code> child ONLY when it wraps the whole <pre> — the conventional
+    // `<pre><code>…</code></pre>`. PostgreSQL's docs put inline
+    // `<code class="computeroutput">` annotations INSIDE `<pre class="screen">`, and
+    // taking the first one turned a 117-character example into "123": 114 characters
+    // dropped with no marker. Found live on functions-matching.html 2026-08-04.
+    const onlyChild =
+      el.children && el.children.length === 1 && el.firstElementChild === el.querySelector('code')
+        ? el.firstElementChild
+        : null
+    const source = onlyChild || el
+    const text = preText(source).replace(/\s+$/, '')
     if (!text.trim()) return ''
     // Language from the conventional `language-x` / `lang-x` class hljs and Prism emit.
     const cls = attr(source, 'class') || attr(el, 'class')

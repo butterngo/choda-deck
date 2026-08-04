@@ -261,6 +261,14 @@
     <script src="lib/reqfilter.js"></script>
     <script src="lib/netview.js"></script>
     <script src="lib/provenance.js"></script>
+    <!-- picker.js is used by the PANEL too, not only injected into the page: cropRect
+         builds the screenshot crop and formatPick renders the artifact markdown. Without
+         these, ChodaPicker was undefined in the panel — formatPick threw outside any try
+         and Capture → silently did nothing, while cropRect's failure was swallowed by a
+         bare catch so no crop was EVER produced. selector.js must come first; picker.js
+         resolves ChodaSelector at load time. -->
+    <script src="lib/selector.js"></script>
+    <script src="lib/picker.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>
