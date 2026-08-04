@@ -73,14 +73,24 @@ describe('WAL is enabled before the DDL runs (TASK-1516)', () => {
   })
 
   it('is the reason a fresh initSchema is fast — regression guard on the timing', () => {
-    // Not a benchmark: the threshold is deliberately loose (10x the measured WAL median,
-    // still 4x under the rollback-journal median) so it fires on a genuine regression to
-    // non-WAL without flaking on a slow machine. Without WAL this takes ~412ms locally
-    // and far longer on a contended CI runner.
+    // Threshold raised 100 → 500 after this flaked on windows-latest at 105.4ms
+    // (PR #238, 2026-08-04) with 1,511 other tests green. The original was derived from a
+    // LOCAL IDLE measurement — 10x the 11ms WAL median — and its comment claimed that was
+    // loose enough for a slow machine. It was not: runner contention alone consumed the
+    // margin, so the guard was measuring CI load, not journal mode.
+    //
+    // 500ms still discriminates by a wide margin. The regression this exists to catch is
+    // not marginal — without WAL, initSchema took ~412ms on an IDLE local machine and
+    // windows CI did not merely slow down, it TIMED OUT past five minutes. Anything that
+    // reintroduces the rollback journal lands orders of magnitude above this line.
+    //
+    // The direct property — journal_mode === 'wal' — is asserted by the test above and
+    // cannot flake. This one adds what that cannot: it catches a slowdown from any OTHER
+    // cause (e.g. another 128 unwrapped exec calls) while the mode still reads WAL.
     const t0 = process.hrtime.bigint()
     initSchema(db)
     const ms = Number(process.hrtime.bigint() - t0) / 1e6
-    expect(ms).toBeLessThan(100)
+    expect(ms).toBeLessThan(500)
   })
 
   it('does not throw on an in-memory database, which cannot use WAL', () => {
