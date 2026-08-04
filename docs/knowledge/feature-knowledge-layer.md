@@ -5,11 +5,11 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/domain/repositories/knowledge-repository.ts
-    commitSha: c0f2ccc9ff0e5170b402c5482b33ceb3f00b7ae4
+    commitSha: 306045e706dad87bc85ee857b43c2154a7f69479
   - path: src/core/domain/knowledge-suggestions.ts
-    commitSha: c0f2ccc9ff0e5170b402c5482b33ceb3f00b7ae4
+    commitSha: 306045e706dad87bc85ee857b43c2154a7f69479
 createdAt: 2026-06-04
-lastVerifiedAt: 2026-07-27
+lastVerifiedAt: 2026-08-03
 realizesTasks: ["TASK-634","TASK-635","TASK-636","TASK-637","TASK-643","TASK-651"]
 inWorkspaces: ["main"]
 effortBand: L

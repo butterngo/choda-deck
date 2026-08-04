@@ -5,15 +5,15 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/sync/canonical-remote.ts
-    commitSha: c0f2ccc9ff0e5170b402c5482b33ceb3f00b7ae4
+    commitSha: 306045e706dad87bc85ee857b43c2154a7f69479
   - path: src/core/sync/canonical-json.ts
-    commitSha: c0f2ccc9ff0e5170b402c5482b33ceb3f00b7ae4
+    commitSha: 306045e706dad87bc85ee857b43c2154a7f69479
   - path: src/core/sync/export-service.ts
-    commitSha: c0f2ccc9ff0e5170b402c5482b33ceb3f00b7ae4
+    commitSha: 306045e706dad87bc85ee857b43c2154a7f69479
   - path: src/core/sync/import-service.ts
-    commitSha: c0f2ccc9ff0e5170b402c5482b33ceb3f00b7ae4
+    commitSha: 306045e706dad87bc85ee857b43c2154a7f69479
 createdAt: 2026-05-07
-lastVerifiedAt: 2026-07-27
+lastVerifiedAt: 2026-08-03
 ---
 
 - Keep **two sync flows**: project repos carry code + `docs/knowledge/*.md`; a separate sync repo carries exported DB state only.

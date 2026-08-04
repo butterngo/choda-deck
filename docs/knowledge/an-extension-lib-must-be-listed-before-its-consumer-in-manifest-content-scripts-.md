@@ -5,17 +5,19 @@ projectId: choda-deck
 scope: project
 refs:
   - path: extension/manifest.json
-    commitSha: 3b4684a0f8e76b145ff201c8c150c5cae4027cad
+    commitSha: c936434814688c3e45d842a1dc4bd2e9f353b367
   - path: extension/lib/noise-filter.js
-    commitSha: 3b4684a0f8e76b145ff201c8c150c5cae4027cad
+    commitSha: c936434814688c3e45d842a1dc4bd2e9f353b367
   - path: extension/lib/recorder.js
-    commitSha: 3b4684a0f8e76b145ff201c8c150c5cae4027cad
+    commitSha: c936434814688c3e45d842a1dc4bd2e9f353b367
   - path: extension/popup.html
-    commitSha: 3b4684a0f8e76b145ff201c8c150c5cae4027cad
+    commitSha: c936434814688c3e45d842a1dc4bd2e9f353b367
   - path: extension/background.js
-    commitSha: 3b4684a0f8e76b145ff201c8c150c5cae4027cad
+    commitSha: c936434814688c3e45d842a1dc4bd2e9f353b367
+  - path: extension/popup-wiring.test.js
+    commitSha: c936434814688c3e45d842a1dc4bd2e9f353b367
 createdAt: 2026-07-30
-lastVerifiedAt: 2026-07-30
+lastVerifiedAt: 2026-08-04
 ---
 
 ## Trigger
@@ -61,3 +63,34 @@ the same rule in their own context — `curl.js` / `netview.js` / `reqfilter.js`
 When adding a lib, check which of the three lists needs the entry; it is easy to add the file
 and the tests and forget the wiring entirely, in which case tests pass and the feature is dead
 in the browser.
+
+## Confirmed instance — and why the note alone was not enough (2026-08-04, TASK-1559)
+
+The paragraph above predicted a real defect five days before it shipped, and did not prevent
+it. `8d09033` (TASK-1555) added the element picker: `popup.js` calls `ChodaPicker.formatPick()`
+to render the artifact and `ChodaPicker.cropRect()` to build the screenshot crop — both in the
+**side panel**, not the page — while `popup.html` never gained the `<script src="lib/picker.js">`
+tag. The whole element-capture path was dead from the day it shipped until 2026-08-04.
+
+Two silences hid it, and both are worth copying as anti-patterns:
+
+- `formatPick()` was called **outside any `try`**, so the async click handler rejected and
+  Capture → changed nothing at all — no error, no status, a button that looked merely inert.
+- `cropRect()` sat inside a bare `catch {}` justified as "no crop — the pick still carries
+  selector, styles and HTML". Legitimate degradation, but it meant **no element screenshot was
+  ever produced** and nothing ever said so.
+
+The realm distinction is what makes this trap sharper than the manifest case: `picker.js` WAS
+being loaded — into the page, via `chrome.scripting.executeScript`. `globalThis.ChodaPicker`
+resolved fine there. The same identifier in the panel resolved to `undefined`. One name, two
+realms, one of them wired.
+
+**The fix that matters is not the script tag — it is `extension/popup-wiring.test.js`.** It
+parses `popup.html` for its script list, executes those libs in order in a bare VM, and asserts
+every `Choda*` global that `popup.js` references **in the panel's own realm** resolves. It
+deliberately excludes `globalThis.ChodaPicker`, since that reference executes in the page. No
+DOM, no fixture, ~210ms. Proven to discriminate: with the two script tags removed it fails
+naming `ChodaPicker` exactly.
+
+Standing lesson: when a documented discipline gets violated anyway, the answer is a mechanical
+guard, not a firmer note. This entry was correct and ignored; the test cannot be.

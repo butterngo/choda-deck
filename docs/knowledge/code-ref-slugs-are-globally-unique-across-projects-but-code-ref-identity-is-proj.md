@@ -5,11 +5,11 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/domain/task-types.ts
-    commitSha: 3b4684a0f8e76b145ff201c8c150c5cae4027cad
+    commitSha: 306045e706dad87bc85ee857b43c2154a7f69479
   - path: src/adapters/mcp/mcp-tools
-    commitSha: 3b4684a0f8e76b145ff201c8c150c5cae4027cad
+    commitSha: 306045e706dad87bc85ee857b43c2154a7f69479
 createdAt: 2026-07-30
-lastVerifiedAt: 2026-07-30
+lastVerifiedAt: 2026-08-03
 affectedFeatureId: feature-knowledge-graph
 ---
 
