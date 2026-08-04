@@ -887,6 +887,11 @@ const PICKER_FILES = ['lib/selector.js', 'lib/picker.js']
 // reason shotSourceUrl/textSourceUrl are cleared: a stamp outliving its content would
 // let the next capture inherit the previous element's selector and origin (AC-6).
 function clearPick() {
+  // Clear the status too when it is still describing the pick being discarded. Without
+  // this, switching tabs wiped pendingPick and the summary but left a green
+  // "Picked <label>" behind — the panel asserting a pick that no longer existed, so
+  // Capture → looked like it silently did nothing. Observed live 2026-08-04.
+  if (pendingPick && statusEl.textContent === `Picked ${pendingPick.label}`) setStatus('')
   pendingPick = null
   pickShotDataUrl = null
   el('pickSummary').textContent = ''
@@ -966,8 +971,12 @@ async function cropShotForPick(tab, dpr) {
       .drawImage(bitmap, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height)
     canvas.hidden = false
     pickShotDataUrl = canvas.toDataURL('image/png')
-  } catch {
-    /* no crop — the pick still carries selector, styles and HTML */
+  } catch (err) {
+    // Degrading to no-crop is legitimate (an off-screen element, a restricted page), but
+    // a bare swallow also hid ChodaPicker being undefined in the panel for this feature's
+    // whole life — every crop failed and nothing ever said so. Log it: the pick still
+    // carries selector, styles and HTML, so this stays non-fatal.
+    console.warn('[choda] element crop skipped:', err)
   }
 }
 
