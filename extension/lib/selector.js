@@ -66,7 +66,10 @@
     return parts.join(' > ') || tag(el) || 'unknown'
   }
 
-  const api = { cssPath }
+  // Exported additively for picker.js's shortenPath, which must know whether a candidate
+  // ancestor carries a real anchor before deciding to root a path there. cssPath's own
+  // behaviour is unchanged, so the recorder (TASK-1412) is unaffected.
+  const api = { cssPath, attrSelector }
   root.ChodaSelector = api
   if (typeof module !== 'undefined' && module.exports) module.exports = api
 })(typeof globalThis !== 'undefined' ? globalThis : self)

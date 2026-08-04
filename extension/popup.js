@@ -930,7 +930,18 @@ el('pickElement').addEventListener('click', async () => {
 
     await cropShotForPick(tab, result.dpr)
 
-    el('pickSummary').textContent = `${pendingPick.label} — ${pendingPick.selector}`
+    // Show the quality grade HERE, not only in the sent artifact. formatPick's ⚠ runs at
+    // Capture time, so until now a positional selector looked identical to a data-testid
+    // one at the moment the person was deciding whether the pick was any good — the
+    // warning arrived after the decision it exists to inform.
+    const gradeNote =
+      pendingPick.selectorQuality === 'positional'
+        ? '  ⚠ positional — not greppable in source'
+        : pendingPick.selectorQuality === 'class'
+          ? '  · class-anchored'
+          : '  · semantic'
+    el('pickSummary').textContent =
+      `${pendingPick.label} — ${pendingPick.selector}${gradeNote}`
     el('pickClear').hidden = false
     setStatus(`Picked ${pendingPick.label}`, 'ok')
   } catch {

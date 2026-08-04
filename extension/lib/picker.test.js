@@ -400,9 +400,21 @@ describe('selector quality and shortening (live regression)', () => {
     expect(buildPick(document.querySelector('button')).selector).toBe('[data-testid="go"]')
   })
 
-  it('treats an element inheriting a stable ancestor id as semantic', () => {
-    document.body.innerHTML = '<div id="checkout"><div><span>total</span></div></div>'
-    expect(selectorQuality(document.querySelector('span'))).toBe('semantic')
+  // Was asserted the other way round until a live pick disproved it: an element inside
+  // <section aria-label="Read this next"> graded `semantic` while its own path was eight
+  // nth-of-type segments, so the ⚠ never fired on exactly the case it exists for. The
+  // ancestor still ANCHORS the selector — that part was always right — but it does not
+  // make the leaf greppable, and the grade describes the leaf.
+  it('grades an element by its own hooks, not an ancestor id', () => {
+    // Two matching spans, so the bare `span:nth-of-type(1)` is ambiguous and the anchor
+    // is genuinely load-bearing. With one span the short path resolves on its own and the
+    // assertion would pass without proving anything about anchoring.
+    document.body.innerHTML =
+      '<div id="cart"><div><span>total</span></div></div>' +
+      '<div id="checkout"><div><span>total</span></div></div>'
+    const span = document.querySelectorAll('#checkout span')[0]
+    expect(selectorQuality(span)).toBe('positional')
+    expect(buildPick(span).selector).toContain('#checkout')
   })
 
   it('recognises a meaningful class as better than positional', () => {
@@ -417,10 +429,49 @@ describe('selector quality and shortening (live regression)', () => {
     expect(isUtilityClass(cls)).toBe(true)
   })
 
-  it.each(['order-summary', 'btn--primary', 'ProductCard', 'site-header__nav'])(
+  it.each(['order-summary', 'btn--primary', 'ProductCard', 'site-header__nav', 'card-body', 'nav-primary', 'text-editor', 'grid-container'])(
     'does NOT classify "%s" as a utility class',
     (cls) => {
       expect(isUtilityClass(cls)).toBe(false)
     }
   )
+
+  // Every class below was read as a COMPONENT NAME by the previous filter, live on
+  // cohere.com 2026-08-04: 5 of the picked span's 8 classes slipped through, so the
+  // selector was built from spacing utilities and graded `class` — "greppable, but not
+  // guaranteed unique in source", which is false about `gap-2.5`.
+  it.each(['mx-auto', 'lg:max-w-[670px]', 'flex-wrap', 'gap-2.5', 'py-1.5', 'w-1/2', '-mt-4', 'grid-cols-3', 'hover:bg-blue-500', 'order-first', 'flex-col', 'transition-colors', 'border', 'shadow', 'rounded', 'hover:text-pureWhitet', 'bg-brandNavy', 'text-brand', 'bg-surface'])(
+    'classifies the live-observed escapee "%s" as a utility class',
+    (cls) => {
+      expect(isUtilityClass(cls)).toBe(true)
+    }
+  )
+
+  it('grades a utility-class-only element positional and warns in the markdown', () => {
+    document.body.innerHTML =
+      '<div><span class="box-border inline-flex items-center gap-2.5 py-1.5">x</span></div>'
+    const span = document.querySelector('span')
+    expect(selectorQuality(span)).toBe('positional')
+    expect(formatPick(buildPick(span))).toContain('Positional selector')
+  })
+
+  // The live shape exactly: a landmark ancestor carrying aria-label, leaf with nothing.
+  // Graded `semantic` before, so the ⚠ stayed silent on an eight-segment path.
+  it('does not let an ancestor aria-label suppress the warning', () => {
+    document.body.innerHTML =
+      '<section aria-label="Read this next"><div><ul><li><a><span>x</span></a></li></ul></div></section>'
+    const span = document.querySelector('span')
+    expect(selectorQuality(span)).toBe('positional')
+    expect(formatPick(buildPick(span))).toContain('Positional selector')
+  })
+
+  it('prefers an id anchor over a shorter all-positional path', () => {
+    document.body.innerHTML =
+      '<div id="cart"><div><span>total</span></div></div>' +
+      '<div id="checkout"><div><span>total</span></div></div>'
+    const span = document.querySelectorAll('#checkout span')[0]
+    const selector = buildPick(span).selector
+    expect(selector).toContain('#checkout')
+    expect(document.querySelectorAll(selector)).toHaveLength(1)
+  })
 })
