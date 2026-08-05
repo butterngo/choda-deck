@@ -690,3 +690,114 @@ describe('element capture (TASK-1555)', () => {
     ).rejects.toBeInstanceOf(CaptureNotFoundError)
   })
 })
+
+// TASK-1567 — entry bodies must carry an artifacts-RELATIVE path, never the
+// absolute one. An absolute `C:\...\captures\x.png` is unresolvable from the
+// companion's http origin and non-portable across machines; `GET /artifacts/<rel>`
+// (TASK-1566) is what resolves these.
+describe('artifact paths in entry bodies are artifacts-relative', () => {
+  // The knowledge destination is the one that renders markdown, so assert there.
+  function bodyOf(svc: BackendTaskService): string {
+    const call = (svc.createKnowledge as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]
+    return (call[0] as { body: string }).body
+  }
+
+  function expectRelative(body: string, pattern: RegExp): void {
+    expect(body).toMatch(pattern)
+    // The discriminating half: a regression re-embedding the absolute path still
+    // matches a loose `captures/...` check, because the absolute path CONTAINS
+    // that substring. Assert the absolute prefix is absent explicitly.
+    //
+    // Scoped to the markdown LINK TARGET — a bare drive-letter regex would also
+    // match the `http://` in the "Source:" line every body carries.
+    expect(body).not.toMatch(/\]\(\s*[A-Za-z]:[\\/]/)
+    expect(body).not.toContain(ARTIFACTS)
+  }
+
+  it('image → ![capture](captures/<hex>.png)', async () => {
+    const svc = makeSvc()
+    await make(svc).dispatch({
+      kind: 'image',
+      sourceUrl: 'http://ex.com/p',
+      destination: 'knowledge',
+      payload: { dataUrl: PNG_DATA_URL, projectId: 'choda-deck' }
+    } as unknown as CaptureRequest)
+    expectRelative(bodyOf(svc), /!\[capture\]\(captures\/[0-9a-f]{16}\.png\)/)
+  })
+
+  it('element → ![element](captures/<hex>.png)', async () => {
+    const svc = makeSvc()
+    await make(svc).dispatch({
+      kind: 'element',
+      sourceUrl: 'http://ex.com/p',
+      destination: 'knowledge',
+      payload: {
+        projectId: 'choda-deck',
+        markdown: '# picked',
+        pick: { selector: '#main > .btn' },
+        dataUrl: PNG_DATA_URL
+      }
+    } as unknown as CaptureRequest)
+    expectRelative(bodyOf(svc), /!\[element\]\(captures\/[0-9a-f]{16}\.png\)/)
+  })
+
+  it('design → tokens link is captures/<hex>.design.json', async () => {
+    const svc = makeSvc()
+    await make(svc).dispatch({
+      kind: 'design',
+      sourceUrl: 'http://ex.com/p',
+      destination: 'knowledge',
+      payload: { projectId: 'choda-deck', markdown: '# tokens', tokens: { color: { fg: '#000' } } }
+    } as unknown as CaptureRequest)
+    expectRelative(bodyOf(svc), /\]\(captures\/[0-9a-f]{16}\.design\.json\)/)
+  })
+
+  it('network-bundle → HAR link is captures/<hex>.har', async () => {
+    const svc = makeSvc()
+    await make(svc).dispatch({
+      kind: 'network-bundle',
+      sourceUrl: 'http://ex.com/p',
+      destination: 'knowledge',
+      payload: {
+        projectId: 'choda-deck',
+        entries: [{ method: 'GET', url: 'http://api/x', status: 200 }]
+      }
+    } as unknown as CaptureRequest)
+    expectRelative(bodyOf(svc), /\]\(captures\/[0-9a-f]{16}\.har\)/)
+  })
+
+  it('the file still lands on disk under <artifactsDir>/captures/', async () => {
+    const svc = makeSvc()
+    await make(svc).dispatch({
+      kind: 'image',
+      sourceUrl: 'http://ex.com/p',
+      destination: 'knowledge',
+      payload: { dataUrl: PNG_DATA_URL, projectId: 'choda-deck' }
+    } as unknown as CaptureRequest)
+    const rel = /!\[capture\]\((captures\/[0-9a-f]{16}\.png)\)/.exec(bodyOf(svc))?.[1]
+    expect(rel).toBeTruthy()
+    // relPath resolves against the artifacts root — the contract TASK-1566's
+    // route depends on.
+    expect(fs.existsSync(path.join(ARTIFACTS, rel as string))).toBe(true)
+  })
+
+  it('discovery-session pointer is unchanged (already relative)', async () => {
+    const svc = makeSvc()
+    await make(svc).dispatch({
+      kind: 'discovery-session',
+      sourceUrl: 'http://ex.com/p',
+      destination: 'inbox',
+      payload: {
+        projectId: 'choda-deck',
+        events: [{ type: 'nav', ts: 1, url: 'http://ex.com/p' }]
+      }
+    } as unknown as CaptureRequest)
+    const content = (svc.createInbox as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as {
+      content: string
+    }
+    expect(content.content).toMatch(/captures\/discovery-[0-9a-f]{16}\/timeline\.jsonl/)
+    // The pointer is inside backticks here, not a markdown link.
+    expect(content.content).not.toMatch(/`\s*[A-Za-z]:[\\/]/)
+    expect(content.content).not.toContain(ARTIFACTS)
+  })
+})

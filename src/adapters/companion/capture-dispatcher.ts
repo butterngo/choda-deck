@@ -148,7 +148,7 @@ export class CompanionCaptureDispatcher implements CaptureDispatcher {
     let body = markdown
     if (p.dataUrl !== undefined) {
       const stored = writeImageArtifact(this.artifactsDir, p.dataUrl)
-      body += `\n\n![element](${stored.filePath})\n\n(${stored.bytes} bytes)`
+      body += `\n\n![element](${stored.relPath})\n\n(${stored.bytes} bytes)`
     }
     const title = titleFrom(target, `${str(pick.label) ?? selector} on ${capture.sourceUrl}`, capture.sourceUrl)
     return this.persistLocal(capture.destination, target, title, withSource(body, capture.sourceUrl))
@@ -173,7 +173,7 @@ export class CompanionCaptureDispatcher implements CaptureDispatcher {
     const stored = writeDesignTokensArtifact(this.artifactsDir, p.tokens)
     const title = titleFrom(target, `Design tokens from ${capture.sourceUrl}`, capture.sourceUrl)
     const body = withSource(
-      `${markdown}\n\nRaw tokens: [${stored.bytes} bytes of JSON](${stored.filePath})`,
+      `${markdown}\n\nRaw tokens: [${stored.bytes} bytes of JSON](${stored.relPath})`,
       capture.sourceUrl
     )
     return this.persistLocal(capture.destination, target, title, body)
@@ -233,7 +233,7 @@ export class CompanionCaptureDispatcher implements CaptureDispatcher {
     const target = parseTarget(p)
     const stored = writeImageArtifact(this.artifactsDir, p.dataUrl)
     const title = titleFrom(target, `Screenshot from ${capture.sourceUrl}`, capture.sourceUrl)
-    const body = withSource(`![capture](${stored.filePath})\n\n(${stored.bytes} bytes)`, capture.sourceUrl)
+    const body = withSource(`![capture](${stored.relPath})\n\n(${stored.bytes} bytes)`, capture.sourceUrl)
     return this.persistLocal(capture.destination, target, title, body)
   }
 
@@ -267,7 +267,7 @@ export class CompanionCaptureDispatcher implements CaptureDispatcher {
       capture.sourceUrl
     )
     const body = withSource(
-      `HAR bundle: [${records.length} requests](${stored.filePath}) (${stored.bytes} bytes)\n\n` +
+      `HAR bundle: [${records.length} requests](${stored.relPath}) (${stored.bytes} bytes)\n\n` +
         records.map((r) => `- ${r.method} ${r.url}${r.status !== undefined ? ` → ${r.status}` : ''}`).join('\n'),
       capture.sourceUrl
     )
