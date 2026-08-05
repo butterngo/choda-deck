@@ -8,6 +8,7 @@ import Database from 'better-sqlite3'
 import { createTaskService } from '../../core/domain/task-service-factory'
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
 import { resolveBackendConfig, resolveDataPaths } from '../../core/paths'
+import { warnIfSilentlyEmpty } from '../../core/warn-empty-data-dir'
 import {
   resolveRemoteConfig,
   runPull,
@@ -41,6 +42,9 @@ export interface CompanionServices {
 
 export async function createCompanionServices(): Promise<CompanionServices> {
   const dataPaths = resolveDataPaths()
+  // TASK-1510 — this is the process the packaged Electron app spawns, so it is the one
+  // that matters most: on a fresh install its dataDir is an empty %APPDATA% profile.
+  warnIfSilentlyEmpty(dataPaths.dataDir)
   const backend = resolveBackendConfig(dataPaths)
   // The companion serves the laptop's local SQLite working copy. A postgres
   // backend has no local file to scan — and the laptop is the source of truth, so
