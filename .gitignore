@@ -9,6 +9,9 @@ out
 # Personal Claude Code context — never commit
 CLAUDE.local.md
 .claude/settings.local.json
+# Harness runtime lock — machine-local (sessionId + pid). Committed by accident in
+# dd84af5; nothing in this repo reads or writes it.
+.claude/scheduled_tasks.lock
 
 # Sensitive data — tokens, secrets, identifiers (see global CLAUDE.md)
 sensitive_information/
