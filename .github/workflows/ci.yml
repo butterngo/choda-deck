@@ -33,3 +33,25 @@ jobs:
       - run: pnpm run build
       - name: Smoke CLI (fresh DB)
         run: node scripts/smoke-cli.mjs
+
+  # The suite above never touches the Dockerfile, so a change that only breaks
+  # the image build lands on main green — that is exactly how TASK-1579 shipped.
+  docker-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build --platform linux/amd64 -t choda-deck:ci .
+
+      - name: Native bindings load in the built image
+        # esbuild bundles mark these external, so a broken install surfaces here
+        # and nowhere else. vec_version() forces a real native call.
+        run: |
+          docker run --rm --entrypoint node choda-deck:ci -e "
+            const Database = require('better-sqlite3');
+            const vec = require('sqlite-vec');
+            const db = new Database(':memory:');
+            vec.load(db);
+            console.log('sqlite-vec', db.prepare('select vec_version() as v').get().v);
+          "

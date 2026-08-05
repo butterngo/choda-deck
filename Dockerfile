@@ -31,8 +31,11 @@ RUN corepack enable
 
 WORKDIR /app
 
-# Manifests first for layer cache
+# Manifests first for layer cache. scripts/prepare.mjs rides along because
+# package.json's `prepare` hook runs during the install below (and during the
+# prune further down) — it must exist to be able to skip itself (TASK-1579).
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY scripts/prepare.mjs ./scripts/prepare.mjs
 
 # Install ALL deps (dev needed for esbuild build step).
 # --shamefully-hoist flattens pnpm symlinks → standard node_modules tree that
