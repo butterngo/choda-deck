@@ -45,7 +45,7 @@
     "build:cli": "esbuild src/adapters/cli/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/cli.cjs --external:better-sqlite3 --external:sqlite-vec --external:@huggingface/transformers --external:onnxruntime-node --external:onnxruntime-web --external:sharp",
     "build:companion": "esbuild src/adapters/companion/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/companion-server.cjs --external:better-sqlite3 --external:sqlite-vec --external:@huggingface/transformers --external:onnxruntime-node --external:onnxruntime-web --external:sharp",
     "build": "pnpm run build:mcp && pnpm run build:cli && pnpm run build:companion",
-    "prepare": "pnpm run build"
+    "prepare": "node scripts/prepare.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
