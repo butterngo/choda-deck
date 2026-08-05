@@ -142,9 +142,34 @@ export async function runSyncCycle(deps: SyncCycleDeps): Promise<void> {
   writeLoopHeartbeat(deps.db, { at: nowIso(), pulled, reachable: drain.reachable, jwtState: deps.jwtState })
 }
 
-// Write a raw inbox item recording a dropped op, directly (not via the wrapped
-// service). Mints an INBOX-NNN id from the shared counter, matching the inbox repo.
-function surfaceConflict(db: Database.Database, c: ConflictRecord): void {
+/**
+ * Write a raw inbox item recording a dropped op, directly (not via the wrapped service).
+ * Mints an INBOX-NNN id from the shared counter, matching the inbox repo.
+ *
+ * Returns whether an item was actually written. The durable record in `sync_conflicts`
+ * and the activity-feed event are written by the caller either way — this gate is about
+ * what is worth putting in FRONT OF A HUMAN, not about what is recorded.
+ *
+ * TASK-1508: this path produced 931 raw rows (95% of the inbox) before a bulk archive on
+ * 2026-07-30, and nobody has ever acted on one as a real task.
+ */
+function surfaceConflict(db: Database.Database, c: ConflictRecord): boolean {
+  // AC-1 — at lamport EQUALITY the local write was a no-op against an identical remote
+  // copy: nothing was lost, so "your local change was not applied. Review and re-apply if
+  // needed." is alarming and false. Every one of the 53 rows still in the inbox on
+  // 2026-08-05 was this case; not one showed a strict `<` with divergent content.
+  if (c.lamport === c.canonicalLamport) return false
+
+  const content = conflictContent(c)
+
+  // AC-2 — one item per conflict, not one per attempt. The drain retries the same op
+  // across cycles, which produced byte-identical rows 0.08s apart (INBOX-1632/1633/1634
+  // for TASK-1500). Matching on content covers that without needing a schema change.
+  const duplicate = db
+    .prepare(`SELECT 1 FROM inbox_items WHERE status = 'raw' AND content = ? LIMIT 1`)
+    .get(content)
+  if (duplicate) return false
+
   const row = db
     .prepare(
       `INSERT INTO global_counters (entity_type, last_number) VALUES ('inbox', 1)
@@ -154,12 +179,18 @@ function surfaceConflict(db: Database.Database, c: ConflictRecord): void {
     .get() as { last_number: number }
   const id = `INBOX-${String(row.last_number).padStart(3, '0')}`
   const ts = now()
-  const content =
-    `[sync conflict] ${c.op} on ${c.tableName} ${c.rowId} dropped by last-writer-wins ` +
-    `(local lamport ${c.lamport} ≤ canonical ${c.canonicalLamport}). The remote copy won; ` +
-    `your local change was not applied. Review and re-apply if needed.`
   db.prepare(
     `INSERT INTO inbox_items (id, project_id, content, status, created_at, updated_at)
      VALUES (?, NULL, ?, 'raw', ?, ?)`
   ).run(id, content, ts, ts)
+  return true
+}
+
+/** The human-facing text. Split out so the dedup check compares the exact stored string. */
+function conflictContent(c: ConflictRecord): string {
+  return (
+    `[sync conflict] ${c.op} on ${c.tableName} ${c.rowId} dropped by last-writer-wins ` +
+    `(local lamport ${c.lamport} < canonical ${c.canonicalLamport}). The remote copy won; ` +
+    `your local change was not applied. Review and re-apply if needed.`
+  )
 }

@@ -195,3 +195,114 @@ describe('runSyncCycle — sync_events instrumentation', () => {
     expect(inbox).toHaveLength(1)
   })
 })
+
+// ---- TASK-1508 : the inbox is for humans, not for every dropped upsert ----------
+
+/**
+ * Sink that returns the row's OWN lamport as the canonical value — the equality case.
+ * ScriptedSink hardcodes canonicalLamport 99, which is always a strict loss, so it
+ * cannot reach the branch this suite is about.
+ */
+class EqualityConflictSink implements ApplySink {
+  async applyDelta(deltas: TableDelta[], _origin: string): Promise<ApplyResult> {
+    const verdicts: RowVerdict[] = []
+    for (const d of deltas) {
+      for (const r of d.rows) {
+        verdicts.push({
+          table: d.table,
+          id: r.id,
+          verdict: 'conflict',
+          canonicalLamport: r.sync_updated_at // equal → nothing was actually lost
+        })
+      }
+    }
+    return { applied: 0, tombstoned: 0, conflicts: verdicts.length, verdicts }
+  }
+}
+
+describe('runSyncCycle — conflict inbox noise (TASK-1508)', () => {
+  let db: Database.Database
+  let at: number
+  const nowMs = (): number => ++at
+  const nowIso = (): string => '2026-08-05T00:00:00.000Z'
+  const reachable = (): Promise<boolean> => Promise.resolve(true)
+
+  beforeEach(() => {
+    db = new Database(':memory:')
+    initSchema(db)
+    at = 0
+  })
+  afterEach(() => db.close())
+
+  const enqueue = (id: string, lamport: number): void =>
+    enqueueOp(db, {
+      tableName: 'inbox_items',
+      rowId: id,
+      op: 'upsert',
+      row: row(id, lamport),
+      lamport,
+      enqueuedAt: lamport
+    })
+
+  const cycle = (client: ApplySink): Promise<void> =>
+    runSyncCycle({
+      db,
+      client,
+      pullSource: pullSource([]),
+      origin: 'laptop',
+      isReachable: reachable,
+      jwtState: 'none',
+      nowMs,
+      nowIso
+    })
+
+  const inboxRows = (): unknown[] =>
+    db.prepare("SELECT content FROM inbox_items WHERE content LIKE '%sync conflict%'").all()
+
+  it('AC-1: writes NO inbox item when local and canonical lamports are equal', async () => {
+    enqueue('A', 7)
+    await cycle(new EqualityConflictSink())
+    expect(inboxRows()).toHaveLength(0)
+  })
+
+  it('AC-1: but still records the conflict durably — this suppresses noise, not evidence', async () => {
+    // The discriminator. Without this assertion, deleting the whole conflict path
+    // outright would also pass the test above.
+    enqueue('A', 7)
+    await cycle(new EqualityConflictSink())
+    expect(db.prepare('SELECT row_id FROM sync_conflicts').all()).toEqual([{ row_id: 'A' }])
+    expect(listSyncEvents(db).filter((e) => e.kind === 'conflict')).toHaveLength(1)
+  })
+
+  it('AC-1: a genuine loss (local strictly less than canonical) still reaches the inbox', async () => {
+    enqueue('B', 1) // ScriptedSink answers canonical 99 → a real loss
+    await cycle(new ScriptedSink({ B: 'conflict' }))
+    expect(inboxRows()).toHaveLength(1)
+  })
+
+  it('AC-2: a repeated conflict on the same row does not add a second identical row', async () => {
+    // The drain retries the same op across cycles, which produced byte-identical rows
+    // 0.08s apart live (INBOX-1632/1633/1634 for TASK-1500).
+    enqueue('C', 1)
+    await cycle(new ScriptedSink({ C: 'conflict' }))
+    enqueue('C', 1)
+    await cycle(new ScriptedSink({ C: 'conflict' }))
+    expect(inboxRows()).toHaveLength(1)
+  })
+
+  it('AC-2: a DIFFERENT row still gets its own item — dedup is not a global mute', async () => {
+    enqueue('D', 1)
+    await cycle(new ScriptedSink({ D: 'conflict' }))
+    enqueue('E', 1)
+    await cycle(new ScriptedSink({ E: 'conflict' }))
+    expect(inboxRows()).toHaveLength(2)
+  })
+
+  it('reports the relation as strict, since equality no longer reaches this text', async () => {
+    enqueue('F', 1)
+    await cycle(new ScriptedSink({ F: 'conflict' }))
+    const [item] = inboxRows() as { content: string }[]
+    expect(item.content).toContain('local lamport 1 < canonical 99')
+    expect(item.content).not.toContain('≤')
+  })
+})
