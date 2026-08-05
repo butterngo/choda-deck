@@ -17,7 +17,21 @@ const MIME_EXT: Record<string, string> = {
 
 export interface StoredArtifact {
   filePath: string
+  // TASK-1566/1567 — the same file expressed relative to the artifacts root, in
+  // forward slashes (e.g. `captures/ab12.png`). This is what goes into an entry
+  // body: an absolute `C:\...` path is unresolvable from the companion's http
+  // origin and non-portable across machines. `GET /artifacts/<relPath>` serves it.
+  // Mirrors what writeDiscoverySession already returns as `relDir`.
+  relPath: string
   bytes: number
+}
+
+// Every capture artifact lives under `<artifactsDir>/captures/`. Centralized so
+// the three writers cannot drift on the prefix the route depends on.
+const CAPTURES_DIR = 'captures'
+
+function relFrom(fileName: string): string {
+  return `${CAPTURES_DIR}/${fileName}`
 }
 
 /**
@@ -39,11 +53,12 @@ export function writeImageArtifact(artifactsDir: string, dataUrl: unknown): Stor
   const buf = Buffer.from(b64, 'base64')
   if (buf.length === 0) throw new CaptureBadRequestError('image payload decoded to zero bytes')
 
-  const dir = path.join(artifactsDir, 'captures')
+  const dir = path.join(artifactsDir, CAPTURES_DIR)
   fs.mkdirSync(dir, { recursive: true })
-  const filePath = path.join(dir, `${randomBytes(8).toString('hex')}.${ext}`)
+  const name = `${randomBytes(8).toString('hex')}.${ext}`
+  const filePath = path.join(dir, name)
   fs.writeFileSync(filePath, buf)
-  return { filePath, bytes: buf.length }
+  return { filePath, relPath: relFrom(name), bytes: buf.length }
 }
 
 export interface NetworkRecord {
@@ -182,21 +197,23 @@ export function writeDesignTokensArtifact(artifactsDir: string, tokens: unknown)
     throw new CaptureBadRequestError('design payload requires a "tokens" object')
   }
   const json = JSON.stringify(tokens, null, 2)
-  const dir = path.join(artifactsDir, 'captures')
+  const dir = path.join(artifactsDir, CAPTURES_DIR)
   fs.mkdirSync(dir, { recursive: true })
-  const filePath = path.join(dir, `${randomBytes(8).toString('hex')}.design.json`)
+  const name = `${randomBytes(8).toString('hex')}.design.json`
+  const filePath = path.join(dir, name)
   fs.writeFileSync(filePath, json, 'utf8')
-  return { filePath, bytes: Buffer.byteLength(json) }
+  return { filePath, relPath: relFrom(name), bytes: Buffer.byteLength(json) }
 }
 
 /** Write a HAR bundle under `<artifactsDir>/captures/` and return its path. */
 export function writeHarArtifact(artifactsDir: string, records: NetworkRecord[]): StoredArtifact {
   const har = buildHar(records)
-  const dir = path.join(artifactsDir, 'captures')
+  const dir = path.join(artifactsDir, CAPTURES_DIR)
   fs.mkdirSync(dir, { recursive: true })
-  const filePath = path.join(dir, `${randomBytes(8).toString('hex')}.har`)
+  const name = `${randomBytes(8).toString('hex')}.har`
+  const filePath = path.join(dir, name)
   fs.writeFileSync(filePath, har, 'utf8')
-  return { filePath, bytes: Buffer.byteLength(har) }
+  return { filePath, relPath: relFrom(name), bytes: Buffer.byteLength(har) }
 }
 
 function headerBlock(title: string, headers?: Record<string, string>): string {
