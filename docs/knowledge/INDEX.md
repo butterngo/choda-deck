@@ -2,6 +2,7 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
+| [changing-the-embedding-model-variant-silently-degrades-ranking-it-never-fails](./changing-the-embedding-model-variant-silently-degrades-ranking-it-never-fails.md) | gotcha | Changing the embedding model variant silently degrades ranking — it never fails | 2026-08-05 |  |
 | [textcontent-is-not-the-code-two-dom-shapes-that-silently-gut-a-lt-pre-gt](./textcontent-is-not-the-code-two-dom-shapes-that-silently-gut-a-lt-pre-gt.md) | learning | textContent is not the code — two DOM shapes that silently gut a &lt;pre&gt; | 2026-08-04 |  |
 | [no-package-json-lifecycle-hook-closes-the-stale-bundle-gap](./no-package-json-lifecycle-hook-closes-the-stale-bundle-gap.md) | learning | No package.json lifecycle hook closes the stale-bundle gap | 2026-08-03 |  |
 | [a-live-verification-needs-a-discriminator-if-pass-and-fail-look-identical-the-te](./a-live-verification-needs-a-discriminator-if-pass-and-fail-look-identical-the-te.md) | learning | A live verification needs a discriminator — if pass and fail look identical, the test proved nothing | 2026-07-31 | ✱ |
