@@ -306,3 +306,101 @@ describe('runSyncCycle — conflict inbox noise (TASK-1508)', () => {
     expect(item.content).not.toContain('≤')
   })
 })
+
+describe('runSyncCycle — conflict scoping and growth bound (TASK-1508 AC-3/AC-4)', () => {
+  let db: Database.Database
+  let at: number
+  const nowMs = (): number => ++at
+  const nowIso = (): string => '2026-08-05T00:00:00.000Z'
+  const reachable = (): Promise<boolean> => Promise.resolve(true)
+
+  beforeEach(() => {
+    db = new Database(':memory:')
+    initSchema(db)
+    db.prepare("INSERT INTO projects (id, name, cwd) VALUES ('p1', 'P1', '/p1')").run()
+    at = 0
+  })
+  afterEach(() => db.close())
+
+  const enqueue = (table: string, id: string, lamport: number): void =>
+    enqueueOp(db, {
+      tableName: table,
+      rowId: id,
+      op: 'upsert',
+      row: row(id, lamport),
+      lamport,
+      enqueuedAt: lamport
+    })
+
+  const cycle = (client: ApplySink): Promise<void> =>
+    runSyncCycle({
+      db,
+      client,
+      pullSource: pullSource([]),
+      origin: 'laptop',
+      isReachable: reachable,
+      jwtState: 'none',
+      nowMs,
+      nowIso
+    })
+
+  const conflictItems = (): { project_id: string | null; content: string }[] =>
+    db
+      .prepare("SELECT project_id, content FROM inbox_items WHERE content LIKE '[sync conflict]%'")
+      .all() as { project_id: string | null; content: string }[]
+
+  it('AC-3: carries the affected task’s project_id', async () => {
+    db.prepare(
+      "INSERT INTO tasks (id, project_id, title, status, created_at, updated_at) VALUES ('T9','p1','t','TODO','x','x')"
+    ).run()
+    enqueue('tasks', 'T9', 1)
+    await cycle(new ScriptedSink({ T9: 'conflict' }))
+    expect(conflictItems()[0].project_id).toBe('p1')
+  })
+
+  it('AC-3: leaves project_id null for a table that has no project column', async () => {
+    // conversation_messages hangs off conversation_id. Guessing a project here would
+    // attach the conflict to the wrong one, which is worse than leaving it unscoped.
+    enqueue('conversation_messages', 'M1', 1)
+    await cycle(new ScriptedSink({ M1: 'conflict' }))
+    expect(conflictItems()[0].project_id).toBeNull()
+  })
+
+  it('AC-3: leaves project_id null when the row itself has vanished', async () => {
+    enqueue('tasks', 'GONE', 1)
+    await cycle(new ScriptedSink({ GONE: 'conflict' }))
+    expect(conflictItems()[0].project_id).toBeNull()
+  })
+
+  it('AC-4: stops writing past the cap so a storm cannot re-bury the inbox', async () => {
+    for (let i = 0; i < 30; i++) {
+      enqueue('tasks', `S${i}`, 1)
+      await cycle(new ScriptedSink({ [`S${i}`]: 'conflict' }))
+    }
+    expect(conflictItems()).toHaveLength(20)
+  })
+
+  it('AC-4: the cap bounds the INBOX, not the record — sync_conflicts keeps all 30', async () => {
+    // The discriminator. Without this, silently dropping conflicts on the floor would
+    // also satisfy the assertion above, and the evidence would be gone.
+    for (let i = 0; i < 30; i++) {
+      enqueue('tasks', `S${i}`, 1)
+      await cycle(new ScriptedSink({ [`S${i}`]: 'conflict' }))
+    }
+    const durable = db.prepare('SELECT COUNT(*) AS n FROM sync_conflicts').get() as { n: number }
+    expect(durable.n).toBe(30)
+    expect(listSyncEvents(db).filter((e) => e.kind === 'conflict')).toHaveLength(30)
+  })
+
+  it('AC-4: archiving the backlog lets new conflicts through again', async () => {
+    for (let i = 0; i < 25; i++) {
+      enqueue('tasks', `S${i}`, 1)
+      await cycle(new ScriptedSink({ [`S${i}`]: 'conflict' }))
+    }
+    expect(conflictItems()).toHaveLength(20)
+    db.prepare("UPDATE inbox_items SET status='archived' WHERE content LIKE '[sync conflict]%'").run()
+    enqueue('tasks', 'AFTER', 1)
+    await cycle(new ScriptedSink({ AFTER: 'conflict' }))
+    expect(conflictItems().filter((i) => i.content.includes('AFTER'))).toHaveLength(1)
+  })
+})

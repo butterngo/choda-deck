@@ -170,6 +170,12 @@ function surfaceConflict(db: Database.Database, c: ConflictRecord): boolean {
     .get(content)
   if (duplicate) return false
 
+  // AC-4 — a storm must not be able to re-bury the inbox. Past the cap we stop writing
+  // entirely; `sync_conflicts` and the activity feed keep every record, so this bounds
+  // what a HUMAN is asked to read, not what the system knows. 931 rows (95% of the
+  // inbox) is what the unbounded version produced.
+  if (rawConflictCount(db) >= MAX_RAW_CONFLICT_ITEMS) return false
+
   const row = db
     .prepare(
       `INSERT INTO global_counters (entity_type, last_number) VALUES ('inbox', 1)
@@ -181,15 +187,61 @@ function surfaceConflict(db: Database.Database, c: ConflictRecord): boolean {
   const ts = now()
   db.prepare(
     `INSERT INTO inbox_items (id, project_id, content, status, created_at, updated_at)
-     VALUES (?, NULL, ?, 'raw', ?, ?)`
-  ).run(id, content, ts, ts)
+     VALUES (?, ?, ?, 'raw', ?, ?)`
+  ).run(id, projectIdFor(db, c.tableName, c.rowId), content, ts, ts)
   return true
 }
+
+// AC-4's ceiling on raw conflict items awaiting triage.
+const MAX_RAW_CONFLICT_ITEMS = 20
+
+function rawConflictCount(db: Database.Database): number {
+  const row = db
+    .prepare(`SELECT COUNT(*) AS n FROM inbox_items WHERE status = 'raw' AND content LIKE ?`)
+    .get(`${CONFLICT_PREFIX}%`) as { n: number }
+  return row.n
+}
+
+/**
+ * Tables reached by sync that carry a `project_id` directly. Kept as an explicit list
+ * rather than interpolating `c.tableName`: the value arrives from a remote verdict, and
+ * concatenating it into SQL would put a remote-controlled identifier in a query.
+ *
+ * `conversation_messages` and `conversation_actions` are absent because they have no
+ * `project_id` column — they hang off `conversation_id`. Resolving those through a join
+ * is possible but unproven, and guessing wrong here would attach a conflict to the wrong
+ * project, which is worse than leaving it unscoped.
+ */
+const PROJECT_SCOPED_TABLES = new Set(['tasks', 'inbox_items', 'conversations', 'workspaces'])
+
+/**
+ * AC-3 — carry the affected entity's project so the item is visible to project-scoped
+ * inbox views. Every one of the 931 rows had `project_id IS NULL`, which is why they hid:
+ * a `inbox_list({ projectId })` call cannot return them, and the 2026-08-05 re-measurement
+ * initially missed all 53 survivors for exactly that reason.
+ *
+ * Returns null when the table is not project-scoped or the row has since vanished —
+ * unscoped is the honest answer there, not a guess.
+ */
+function projectIdFor(db: Database.Database, tableName: string, rowId: string): string | null {
+  if (!PROJECT_SCOPED_TABLES.has(tableName)) return null
+  try {
+    const row = db.prepare(`SELECT project_id FROM ${tableName} WHERE id = ?`).get(rowId) as
+      | { project_id: string | null }
+      | undefined
+    return row?.project_id ?? null
+  } catch {
+    // A missing table on an older schema must not break the sync cycle.
+    return null
+  }
+}
+
+const CONFLICT_PREFIX = '[sync conflict]'
 
 /** The human-facing text. Split out so the dedup check compares the exact stored string. */
 function conflictContent(c: ConflictRecord): string {
   return (
-    `[sync conflict] ${c.op} on ${c.tableName} ${c.rowId} dropped by last-writer-wins ` +
+    `${CONFLICT_PREFIX} ${c.op} on ${c.tableName} ${c.rowId} dropped by last-writer-wins ` +
     `(local lamport ${c.lamport} < canonical ${c.canonicalLamport}). The remote copy won; ` +
     `your local change was not applied. Review and re-apply if needed.`
   )
