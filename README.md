@@ -211,6 +211,11 @@ $CHODA_DATA_DIR/
 └── backups/choda-deck-<date>.db  ← auto daily, retained
 ```
 
+> **Packaged app:** `CHODA_DATA_DIR` is not set, so the Electron build falls back to
+> `%APPDATA%\<appName>` — which on a fresh install is empty, and the app comes up looking
+> like it lost everything. The directory-junction workaround and its pitfalls are in
+> [docs/data-directory.md](docs/data-directory.md). Open bug: TASK-1510.
+
 ### HTTP transport
 
 The same binary also speaks **Streamable HTTP** for remote / k8s use, selected at startup via `MCP_TRANSPORT=http` (ADR-026):
