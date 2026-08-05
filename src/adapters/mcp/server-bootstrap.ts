@@ -7,6 +7,7 @@ import {
   requireBackendForTransport
 } from '../../core/domain/task-service-factory'
 import { resolveBackendConfig, resolveDataPaths } from '../../core/paths'
+import { warnIfSilentlyEmpty } from '../../core/warn-empty-data-dir'
 import {
   createInstrumentedServer,
   type ToolInvocationSink
@@ -114,6 +115,9 @@ function buildMcpServer(
 
 export async function startMcpServer(): Promise<void> {
   const dataPaths = resolveDataPaths()
+  // TASK-1510 — say so BEFORE opening a database in an empty dir. stderr only: stdout
+  // carries JSON-RPC on the stdio transport, so a stray line there corrupts the protocol.
+  warnIfSilentlyEmpty(dataPaths.dataDir)
   const backend = resolveBackendConfig(dataPaths)
   const mode = (process.env.MCP_TRANSPORT ?? 'stdio').toLowerCase()
 
