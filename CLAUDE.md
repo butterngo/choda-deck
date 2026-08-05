@@ -116,6 +116,10 @@ data/
 
 Legacy `CHODA_DB_PATH` still accepted as override (logs a warning). Migration: `node scripts/migrate-data-layout.mjs`.
 
+**`CHODA_DATA_DIR` does NOT cover knowledge entries.** They are file-backed and code-coupled (ADR-018), so `KnowledgeService.resolveFilePath` writes them to `<project-or-workspace cwd>/docs/knowledge/<slug>.md` — a path read from the database row — and regenerates `INDEX.md` in the same tree. `CHODA_CONTENT_ROOT` doesn't govern this either; it only applies to `scope=cross` entries.
+
+Practical consequence when smoke-testing: pointing `CHODA_DATA_DIR` at a scratch dir isolates the database and artifacts but still writes into the **real repo**. A `destination=knowledge` capture run against a scratch profile will add files to `docs/knowledge/` and modify `INDEX.md` in your working tree — check `git status` afterwards, and prefer `destination=conversation` for probes.
+
 ## MCP Transport Modes (ADR-026)
 
 The server supports two transports from a single binary, selected at startup via `MCP_TRANSPORT`.
