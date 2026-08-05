@@ -17,6 +17,7 @@ import { handleKnowledgeRoute } from './knowledge'
 import { handleGraphRoute } from './graph'
 import { handleSearchRoute } from './search'
 import { handleTaskDetailRoute } from './task-detail'
+import { handleArtifactsRoute } from './artifacts'
 import {
   CAPTURE_MAX_IMAGE_BYTES,
   capForKind,
@@ -81,6 +82,19 @@ async function route(
   // Task-detail read for the graph node panel. GET /tasks/:id (POST
   // /tasks/:id/ready is a workflow route, handled above).
   if (await handleTaskDetailRoute(req, res, services.svc)) {
+    return
+  }
+
+  // TASK-1566 — capture artifacts (bytes, not JSON). Matched on the RAW url
+  // before the exact-match switch below, because `new URL()` would collapse a
+  // traversal attempt into a path that never reaches this route. Token-gated:
+  // these files carry cookies, auth headers and screenshots.
+  if (
+    handleArtifactsRoute(req, res, {
+      artifactsDir: services.artifactsDir,
+      bridgeToken: services.bridgeToken
+    })
+  ) {
     return
   }
 

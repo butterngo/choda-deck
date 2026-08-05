@@ -32,6 +32,9 @@ export interface CompanionServices {
   // TASK-1331 — routes a validated capture onto inbox/task/conversation/knowledge.
   // Absent in the skeleton → POST /capture 501s.
   dispatch?: CaptureDispatcher
+  // TASK-1566 — root for GET /artifacts/*, so the web app can read back what a
+  // capture wrote. Optional for the same reason as `dispatch`: absent → 501.
+  artifactsDir?: string
   // TASK-1175 — mutating sync actions (own writable connection per call). Injected
   // so http-server stays decoupled and tests can pass fakes. Throw
   // SyncNotConfiguredError when the laptop has no remote configured.
@@ -69,6 +72,7 @@ export async function createCompanionServices(): Promise<CompanionServices> {
     intervalMs,
     bridgeToken,
     dispatch: new CompanionCaptureDispatcher(svc, dataPaths.artifactsDir),
+    artifactsDir: dataPaths.artifactsDir,
     pull: () => runPull(dataPaths.dbPath, resolveRemoteConfig()),
     push: () => runPush(dataPaths.dbPath, resolveRemoteConfig()),
     close: () => {
