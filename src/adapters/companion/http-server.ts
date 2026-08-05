@@ -18,6 +18,7 @@ import { handleGraphRoute } from './graph'
 import { handleSearchRoute } from './search'
 import { handleTaskDetailRoute } from './task-detail'
 import { handleArtifactsRoute } from './artifacts'
+import { handleVaultRoute } from './vault'
 import { handleConversationDetailRoute } from './conversation-detail'
 import {
   CAPTURE_MAX_IMAGE_BYTES,
@@ -99,6 +100,19 @@ async function route(
   if (
     handleArtifactsRoute(req, res, {
       artifactsDir: services.artifactsDir,
+      bridgeToken: services.bridgeToken
+    })
+  ) {
+    return
+  }
+
+  // TASK-1576 — vault notes (markdown + embedded frames). Matched on the RAW url
+  // for the same reason as artifacts above. Token-gated inside the handler, and
+  // sandboxed to <vaultDir>/30-Knowledge so 20-Areas is structurally unreachable
+  // rather than merely unlisted.
+  if (
+    handleVaultRoute(req, res, {
+      vaultDir: services.vaultDir,
       bridgeToken: services.bridgeToken
     })
   ) {
