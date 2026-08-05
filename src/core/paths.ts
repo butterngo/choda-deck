@@ -22,6 +22,18 @@ export interface DataPaths {
  *   database/choda-deck.db
  *   artifacts/
  *   backups/
+ *
+ * NOT under dataDir: knowledge entries. They are file-backed and code-coupled
+ * (ADR-018), so `KnowledgeService.resolveFilePath` writes them to
+ * `<project-or-workspace cwd>/docs/knowledge/<slug>.md` — a path read from the
+ * database row, not derived from anything here. `INDEX.md` is regenerated in the
+ * same tree. (`CHODA_CONTENT_ROOT` does not govern this either; it only applies
+ * to scope=cross entries.)
+ *
+ * Practical consequence: pointing CHODA_DATA_DIR at a scratch directory gives you
+ * an isolated database and artifacts dir that still writes into the REAL repo.
+ * A `destination=knowledge` capture smoke-tested against a scratch profile will
+ * add files to docs/knowledge/ and modify INDEX.md in your working tree.
  */
 export function resolveDataPaths(electronDataDir?: string): DataPaths {
   const legacyDbPath = process.env.CHODA_DB_PATH
