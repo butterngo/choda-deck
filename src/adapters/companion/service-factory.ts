@@ -35,6 +35,12 @@ export interface CompanionServices {
   // TASK-1566 — root for GET /artifacts/*, so the web app can read back what a
   // capture wrote. Optional for the same reason as `dispatch`: absent → 501.
   artifactsDir?: string
+  // TASK-1576 — vault root for GET /vault/*. The vault lives outside the data
+  // dir entirely (it is plain markdown the user also edits by hand), so it is
+  // configured explicitly rather than derived: absent → 501, and the vault stays
+  // unreachable on any laptop that has not opted in. Only 30-Knowledge beneath
+  // this root is ever served — see vault.ts.
+  vaultDir?: string
   // TASK-1175 — mutating sync actions (own writable connection per call). Injected
   // so http-server stays decoupled and tests can pass fakes. Throw
   // SyncNotConfiguredError when the laptop has no remote configured.
@@ -73,6 +79,8 @@ export async function createCompanionServices(): Promise<CompanionServices> {
     bridgeToken,
     dispatch: new CompanionCaptureDispatcher(svc, dataPaths.artifactsDir),
     artifactsDir: dataPaths.artifactsDir,
+    // Opt-in: unset means the vault routes 501 rather than serving anything.
+    vaultDir: process.env.CHODA_VAULT_DIR?.trim() || undefined,
     pull: () => runPull(dataPaths.dbPath, resolveRemoteConfig()),
     push: () => runPush(dataPaths.dbPath, resolveRemoteConfig()),
     close: () => {
