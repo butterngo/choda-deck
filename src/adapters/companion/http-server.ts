@@ -18,6 +18,7 @@ import { handleGraphRoute } from './graph'
 import { handleSearchRoute } from './search'
 import { handleTaskDetailRoute } from './task-detail'
 import { handleArtifactsRoute } from './artifacts'
+import { handleConversationDetailRoute } from './conversation-detail'
 import {
   CAPTURE_MAX_IMAGE_BYTES,
   capForKind,
@@ -82,6 +83,12 @@ async function route(
   // Task-detail read for the graph node panel. GET /tasks/:id (POST
   // /tasks/:id/ready is a workflow route, handled above).
   if (await handleTaskDetailRoute(req, res, services.svc)) {
+    return
+  }
+
+  // TASK-1568 — conversation detail. Only matches /conversations/:id, so bare
+  // /conversations still falls through to the exact-match switch below.
+  if (await handleConversationDetailRoute(req, res, services.svc)) {
     return
   }
 
