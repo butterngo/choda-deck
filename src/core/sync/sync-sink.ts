@@ -48,14 +48,19 @@ export async function applyDeltaToPg(
           affectedConvIds.add(row.conversation_id)
         }
         maxLamport = Math.max(maxLamport, row.sync_updated_at)
-        const cur = await tx.query<{ sync_updated_at: string | null }>(
-          `SELECT sync_updated_at FROM ${delta.table} WHERE id = $1`,
+        const cur = await tx.query<{ sync_updated_at: string | null; sync_origin: string | null }>(
+          `SELECT sync_updated_at, sync_origin FROM ${delta.table} WHERE id = $1`,
           [row.id]
         )
         const existing = cur.rows[0]
         const canonical =
           existing && existing.sync_updated_at !== null ? Number(existing.sync_updated_at) : null
-        const verdict = planApplyRow(canonical, row)
+        // TASK-1508 AC-5 — the origin is what tells an equal-Lamport re-delivery of OUR
+        // OWN accepted write apart from a genuine tie against another device.
+        const verdict = planApplyRow(canonical, row, {
+          origin: existing?.sync_origin ?? null,
+          pushOrigin: origin
+        })
 
         if (verdict === 'conflict') {
           conflicts++
@@ -171,11 +176,14 @@ export function applyDeltaToSqlite(
       for (const row of delta.rows) {
         maxLamport = Math.max(maxLamport, row.sync_updated_at)
         const existing = db
-          .prepare(`SELECT sync_updated_at FROM ${delta.table} WHERE id = ?`)
-          .get(row.id) as { sync_updated_at: number | null } | undefined
+          .prepare(`SELECT sync_updated_at, sync_origin FROM ${delta.table} WHERE id = ?`)
+          .get(row.id) as { sync_updated_at: number | null; sync_origin: string | null } | undefined
         const canonical =
           existing && existing.sync_updated_at !== null ? existing.sync_updated_at : null
-        const verdict = planApplyRow(canonical, row)
+        const verdict = planApplyRow(canonical, row, {
+          origin: existing?.sync_origin ?? null,
+          pushOrigin: origin
+        })
 
         if (verdict === 'conflict') {
           conflicts++

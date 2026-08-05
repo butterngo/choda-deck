@@ -59,12 +59,45 @@ export interface ApplySink {
   applyDelta(deltas: TableDelta[], origin: string): Promise<ApplyResult>
 }
 
+/** What the canonical store already holds for a row, when it holds anything. */
+export interface CanonicalRowState {
+  /** Origin stamped on the canonical row — the device whose write is standing. */
+  origin: string | null
+  /** Origin of the push being judged. */
+  pushOrigin: string
+}
+
 // Pure LWW decision for one pushed row against the canonical row's current
 // Lamport value (null = the row does not exist canonically yet). Canonical wins
 // ties. A winning row with `sync_deleted_at` set is a tombstone, else an upsert.
-export function planApplyRow(canonicalLamport: number | null, row: PulledRow): ApplyVerdict {
+//
+// TASK-1508 AC-5 — the tie is not always a loss. `sync-write-through.ts` enqueues to
+// pending_ops in its CATCH block, so a push that SUCCEEDS remotely but whose response is
+// lost gets re-pushed at the same Lamport value. Under a bare `<=` the canonical store
+// then reports our own already-accepted write back to us as a dropped change, and the
+// laptop surfaces "your local change was not applied" about a write that was applied.
+//
+// Every one of the 53 conflict rows surviving on 2026-08-05 was this case — equality, not
+// a strict loss. At-least-once delivery meeting a tie-loses rule.
+//
+// So: an equal Lamport from the SAME origin that already owns the canonical row is a
+// re-delivery, not a conflict. You cannot lose a write to yourself. A differing origin at
+// equal Lamport is still a genuine tie and still loses, unchanged.
+//
+// `canonical` is optional so existing callers keep the old behaviour — a caller that
+// cannot cheaply read the origin is no worse off than before.
+export function planApplyRow(
+  canonicalLamport: number | null,
+  row: PulledRow,
+  canonical?: CanonicalRowState
+): ApplyVerdict {
   if (canonicalLamport !== null && row.sync_updated_at <= canonicalLamport) {
-    return 'conflict'
+    const idempotentRedelivery =
+      row.sync_updated_at === canonicalLamport &&
+      canonical !== undefined &&
+      canonical.origin !== null &&
+      canonical.origin === canonical.pushOrigin
+    if (!idempotentRedelivery) return 'conflict'
   }
   return row.sync_deleted_at !== null && row.sync_deleted_at !== undefined
     ? 'tombstoned'

@@ -98,6 +98,27 @@ describeIfDocker('ADR-030 Phase 3 — POST /sync/apply → canonical Postgres', 
     expect((await rawTask('TASK-1'))?.title).toBe('first')
   })
 
+  // TASK-1508 AC-5 — against a REAL Postgres, not the SQLite sink. This is the path the
+  // pod actually runs, and the change adds sync_origin to its canonical SELECT.
+  it('treats an equal-lamport re-push from the SAME origin as applied, not a conflict', async () => {
+    // What happens for real: the push lands, the response is lost, the op is re-queued by
+    // sync-write-through's catch block, and the drain sends it again at the same lamport.
+    await svc.applyDelta([taskRow('TASK-1', 5, 'first')], 'laptop')
+    const res = await svc.applyDelta([taskRow('TASK-1', 5, 'first')], 'laptop')
+    expect(res).toMatchObject({ conflicts: 0 })
+    expect((await rawTask('TASK-1'))?.title).toBe('first')
+  })
+
+  it('still reports an equal-lamport push from a DIFFERENT origin as a conflict', async () => {
+    // The discriminator, and the one that matters most: without the origin check, a
+    // genuine concurrent write from another device would be silently accepted instead of
+    // reported — noise suppression turning into actual data loss.
+    await svc.applyDelta([taskRow('TASK-1', 5, 'from-laptop')], 'laptop')
+    const res = await svc.applyDelta([taskRow('TASK-1', 5, 'from-desktop')], 'desktop')
+    expect(res).toMatchObject({ applied: 0, conflicts: 1 })
+    expect((await rawTask('TASK-1'))?.title).toBe('from-laptop') // canonical unchanged
+  })
+
   it('applies a strictly-newer push over the canonical row', async () => {
     await svc.applyDelta([taskRow('TASK-1', 5, 'first')], 'laptop')
     await svc.applyDelta([taskRow('TASK-1', 9, 'updated')], 'laptop')

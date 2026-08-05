@@ -114,3 +114,55 @@ describe('applyDeltaToSqlite — sink against in-memory SQLite', () => {
     ).toThrow(/apply scope/)
   })
 })
+
+// TASK-1508 AC-5 — a tie is not always a loss.
+//
+// sync-write-through enqueues to pending_ops in its CATCH block, so a push that SUCCEEDS
+// remotely but whose response is lost gets re-pushed at the same Lamport. Under a bare
+// `<=` the store reports our own accepted write back as dropped, and the laptop says
+// "your local change was not applied" about a write that WAS applied.
+describe('planApplyRow — idempotent re-delivery vs a genuine tie (TASK-1508 AC-5)', () => {
+  const at = (lamport: number, origin: string | null = 'laptop'): PulledRow => ({
+    id: 'R1',
+    content: 'x',
+    sync_updated_at: lamport,
+    sync_deleted_at: null,
+    sync_origin: origin
+  })
+
+  it('equal lamport from the SAME origin is a re-delivery, not a conflict', () => {
+    expect(planApplyRow(7, at(7), { origin: 'laptop', pushOrigin: 'laptop' })).toBe('applied')
+  })
+
+  it('equal lamport from a DIFFERENT origin is still a genuine tie and still loses', () => {
+    // The discriminator. Without this, "never conflict at equality" would also pass the
+    // test above while silently dropping a real concurrent write from another device.
+    expect(planApplyRow(7, at(7), { origin: 'desktop', pushOrigin: 'laptop' })).toBe('conflict')
+  })
+
+  it('a strictly lower lamport still loses, even from the same origin', () => {
+    // Same device, genuinely stale write — that IS a loss and must still be reported.
+    expect(planApplyRow(9, at(7), { origin: 'laptop', pushOrigin: 'laptop' })).toBe('conflict')
+  })
+
+  it('equal lamport with an UNKNOWN canonical origin stays a conflict', () => {
+    // Conservative: a null origin (seeded/imported row) proves nothing about ownership,
+    // so the old behaviour stands rather than assuming the write is ours.
+    expect(planApplyRow(7, at(7), { origin: null, pushOrigin: 'laptop' })).toBe('conflict')
+  })
+
+  it('keeps the old behaviour when no canonical state is supplied', () => {
+    // The third argument is optional so existing callers are unaffected.
+    expect(planApplyRow(7, at(7))).toBe('conflict')
+  })
+
+  it('a re-delivered TOMBSTONE at equal lamport is applied as a tombstone, not a conflict', () => {
+    const deleted: PulledRow = { ...at(7), sync_deleted_at: 123 }
+    expect(planApplyRow(7, deleted, { origin: 'laptop', pushOrigin: 'laptop' })).toBe('tombstoned')
+  })
+
+  it('a higher lamport is unaffected by any of this', () => {
+    expect(planApplyRow(5, at(9), { origin: 'desktop', pushOrigin: 'laptop' })).toBe('applied')
+    expect(planApplyRow(null, at(1))).toBe('applied')
+  })
+})
