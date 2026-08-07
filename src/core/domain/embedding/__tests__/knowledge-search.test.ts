@@ -159,4 +159,64 @@ describe('KnowledgeService.searchKnowledge', () => {
     const hits = await svc.searchKnowledge('this is a transient entry', 5)
     expect(hits.results.find((r) => r.slug === 'temp')).toBeUndefined()
   })
+
+  // TASK-1599 — excerpt on every hit.
+  describe('excerpt', () => {
+    it('carries an excerpt on EVERY hit, not just the first', async () => {
+      seedKnowledge('one', 'alpha content about routing and transport')
+      seedKnowledge('two', 'beta content about routing and storage')
+      seedKnowledge('three', 'gamma content about routing and caching')
+      await waitForEmbedQueue()
+
+      const hits = await svc.searchKnowledge('content about routing', 3)
+      expect(hits.results.length).toBe(3)
+      // Asserting on every element is the point: an implementation that
+      // excerpted results[0] only would pass a first-element check.
+      for (const r of hits.results) {
+        expect(typeof r.excerpt).toBe('string')
+        expect(r.excerpt.length).toBeGreaterThan(0)
+      }
+    })
+
+    it('strips frontmatter and the leading heading', async () => {
+      seedKnowledge('headed', '# A Title Line\n\nthe real prose starts here')
+      await waitForEmbedQueue()
+
+      const hits = await svc.searchKnowledge('the real prose starts here', 1)
+      const { excerpt } = hits.results[0]
+      expect(excerpt.startsWith('---')).toBe(false)
+      expect(excerpt.startsWith('#')).toBe(false)
+      expect(excerpt).toContain('the real prose starts here')
+      expect(excerpt).not.toContain('A Title Line')
+    })
+
+    it('caps the excerpt at 240 characters', async () => {
+      seedKnowledge('long', 'x'.repeat(50) + ' ' + 'lorem ipsum dolor sit amet '.repeat(40))
+      await waitForEmbedQueue()
+
+      const hits = await svc.searchKnowledge('lorem ipsum dolor sit amet', 1)
+      expect(hits.results[0].excerpt.length).toBeLessThanOrEqual(240)
+    })
+
+    it('returns "" rather than null or undefined for an empty body', async () => {
+      seedKnowledge('hollow', '# Only A Heading')
+      await waitForEmbedQueue()
+
+      const hits = await svc.searchKnowledge('Only A Heading', 1)
+      const hit = hits.results.find((r) => r.slug === 'hollow')
+      expect(hit).toBeDefined()
+      expect(hit!.excerpt).toBe('')
+    })
+
+    it('still returns the hit when the entry file is missing', async () => {
+      seedKnowledge('orphan', 'this entry will lose its file')
+      await waitForEmbedQueue()
+      const row = await new KnowledgeRepository(db).get('orphan')
+      fs.rmSync(row!.filePath)
+
+      const hits = await svc.searchKnowledge('this entry will lose its file', 1)
+      expect(hits.results[0].slug).toBe('orphan')
+      expect(hits.results[0].excerpt).toBe('')
+    })
+  })
 })
