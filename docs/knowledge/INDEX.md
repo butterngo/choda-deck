@@ -2,6 +2,7 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
+| [registered-to-auto-start-is-not-serving-prove-which-path-owns-the-port](./registered-to-auto-start-is-not-serving-prove-which-path-owns-the-port.md) | gotcha | Registered to auto-start is not serving — prove which path owns the port | 2026-08-07 |  |
 | [a-flat-distance-profile-from-knowledge-search-means-no-match-not-n-matches](./a-flat-distance-profile-from-knowledge-search-means-no-match-not-n-matches.md) | gotcha | A flat distance profile from knowledge_search means NO match, not N matches | 2026-08-07 |  |
 | [never-reuse-the-sessionid-echoed-by-ac-check-it-may-be-another-agent-s-session](./never-reuse-the-sessionid-echoed-by-ac-check-it-may-be-another-agent-s-session.md) | gotcha | Never reuse the sessionId echoed by ac_check — it may be another agent's session | 2026-08-05 |  |
 | [jsdom-has-no-layout-engine-component-tests-cannot-see-off-screen-or-lazy-image-d](./jsdom-has-no-layout-engine-component-tests-cannot-see-off-screen-or-lazy-image-d.md) | gotcha | jsdom has no layout engine — component tests cannot see off-screen or lazy-image defects | 2026-08-05 |  |
@@ -26,7 +27,7 @@
 | [capture-js-eval-parity-deferred](./capture-js-eval-parity-deferred.md) | evaluation | JS-evaluation capture parity — DEFER, claude-in-chrome is the fallback | 2026-07-23 | ✱ |
 | [discovery-capture-has-three-independent-api-body-caps-tune-the-right-one](./discovery-capture-has-three-independent-api-body-caps-tune-the-right-one.md) | learning | Discovery capture has three independent API-body caps — tune the right one | 2026-07-22 | ✱ |
 | [companion-mutations-only-writable-svc-only-workflow-routes](./companion-mutations-only-writable-svc-only-workflow-routes.md) | gotcha | Companion adapter mutations go only through the writable service, only via workflow.ts routes | 2026-07-15 |  |
-| [windows-task-scheduler-as-a-service-host-three-traps-companion-service-installer](./windows-task-scheduler-as-a-service-host-three-traps-companion-service-installer.md) | gotcha | Windows Task Scheduler as a service host — three traps (companion service installer) | 2026-08-03 |  |
+| [windows-task-scheduler-as-a-service-host-three-traps-companion-service-installer](./windows-task-scheduler-as-a-service-host-three-traps-companion-service-installer.md) | gotcha | Windows Task Scheduler as a service host — three traps (companion service installer) | 2026-08-07 |  |
 | [capture-bundle-export-formats-prefer-the-open-standard-har-1-2](./capture-bundle-export-formats-prefer-the-open-standard-har-1-2.md) | gotcha | Capture bundle/export formats prefer the open standard (HAR 1.2) | 2026-07-13 | ✱ |
 | [secret-carrying-capture-kinds-are-local-only-never-inbox-task](./secret-carrying-capture-kinds-are-local-only-never-inbox-task.md) | gotcha | Secret-carrying capture kinds are local-only (never inbox/task) | 2026-07-13 | ✱ |
 | [companion-write-actions-must-confirm-surface-result-or-error-never-silent](./companion-write-actions-must-confirm-surface-result-or-error-never-silent.md) | gotcha | Companion write-actions must confirm + surface result OR error — never silent | 2026-07-13 |  |
