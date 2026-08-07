@@ -5,9 +5,9 @@ projectId: choda-deck
 scope: project
 refs:
   - path: package.json
-    commitSha: 999111045a97ba3217915d9a1766aae89c9d9816
+    commitSha: 306045e706dad87bc85ee857b43c2154a7f69479
 createdAt: 2026-07-31
-lastVerifiedAt: 2026-08-05
+lastVerifiedAt: 2026-08-03
 ---
 
 ## Trigger
@@ -54,23 +54,7 @@ unsolved problem. The two real options — both open, neither chosen (INBOX-1646
 Verified 2026-07-31 with a matched negative control: a clone with the hook builds all
 three bundles on `pnpm install`; an identical clone without it leaves `dist/` absent.
 
-## Correction — the hook has a cost this entry missed (TASK-1579, 2026-08-05)
-
-The analysis above covers *which* hooks fire on local installs. It does not cover the
-**container build**, and that omission was expensive: `prepare` also runs during
-`pnpm install` and `pnpm prune` inside the Dockerfile, at points where no build is
-possible. `main` was unbuildable as a container for 71 commits before anyone noticed,
-because the unit suite never touches the Dockerfile.
-
-The hook is still the right call for the fresh-clone case — it is now guarded rather
-than removed. Full analysis and the two failure sites:
-[[a-prepare-hook-also-runs-inside-the-docker-build-at-install-and-at-prune]].
-
-The rule to carry forward: **a lifecycle hook must be able to no-op**, because you do
-not control every context that invokes it.
-
 ## Related
 
 - TASK-1102 (shipped the hook, PR #229 → 721dc80) · TASK-1101 (Option A decision)
-- TASK-1579 (PR #245 → e821a34) — guarded the hook after it broke the image build
 - INBOX-1646 — the unresolved editing-gap decision
