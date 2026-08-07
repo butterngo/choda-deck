@@ -179,6 +179,16 @@ export interface KnowledgeVerifyResult {
 
 export interface KnowledgeSearchHit extends KnowledgeListItem {
   distance: number
+  /**
+   * TASK-1599 — leading prose of the entry body, so a result carries context
+   * without a second fetch. Always a string; `''` when the body is empty or
+   * the file could not be read.
+   *
+   * NOT a matched-term snippet. Search here is semantic (sqlite-vec +
+   * embeddings), so a hit may share no literal term with the query — there is
+   * no matched span to highlight, and callers must not imply one.
+   */
+  excerpt: string
 }
 
 export interface KnowledgeSearchResult {

@@ -25,6 +25,10 @@ import type { KnowledgeOperations } from './interfaces/knowledge-operations.inte
 import type { EmbeddingProvider } from './embedding/embedding-provider.interface'
 import type { RelationType } from './task-types'
 
+// TASK-1599 — cap for search-result excerpts. Long enough for two rendered
+// lines in the companion, short enough that a 50-hit response stays small.
+const EXCERPT_MAX_CHARS = 240
+
 type Awaitable<T> = T | Promise<T>
 
 /**
@@ -650,6 +654,32 @@ export class KnowledgeService implements KnowledgeOperations {
     return staleness.some((s) => s.commitsSince > 0)
   }
 
+  // TASK-1599 — leading prose of a knowledge body, for search result context.
+  //
+  // Deliberately NOT a matched-term snippet: search is semantic, so a hit may
+  // share no literal term with the query and there is no span to highlight.
+  // Frontmatter is already gone (parseFrontmatter); this additionally drops
+  // leading `#` headings so the excerpt starts on real prose rather than
+  // repeating the title the caller already renders.
+  private excerptOf(filePath: string): string {
+    let body: string
+    try {
+      body = parseFrontmatter(fs.readFileSync(filePath, 'utf8')).body
+    } catch {
+      // A row whose file has been moved or deleted still deserves a hit — an
+      // absent excerpt is not an absent result.
+      return ''
+    }
+    const prose = body
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !l.startsWith('#'))
+      .join(' ')
+    return prose.length <= EXCERPT_MAX_CHARS
+      ? prose
+      : `${prose.slice(0, EXCERPT_MAX_CHARS - 1).trimEnd()}…`
+  }
+
   async searchKnowledge(query: string, k = 5): Promise<KnowledgeSearchResult> {
     if (!this.embeddingStore || !this.embeddingProvider) {
       return { enabled: false, reason: 'embedding store not configured', results: [] }
@@ -695,7 +725,8 @@ export class KnowledgeService implements KnowledgeOperations {
           filePath: row.filePath,
           createdAt: row.createdAt,
           lastVerifiedAt: row.lastVerifiedAt,
-          distance: h.distance
+          distance: h.distance,
+          excerpt: this.excerptOf(row.filePath)
         }
       })
       .filter((r): r is NonNullable<typeof r> => r !== null)
