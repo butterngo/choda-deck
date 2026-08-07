@@ -106,6 +106,13 @@ beforeAll(async () => {
   fs.writeFileSync(path.join(notes, 'note-one.md'), NOTE, 'utf8')
   fs.writeFileSync(path.join(notes, 'note-two.md'), '# no frontmatter here\n', 'utf8')
   fs.writeFileSync(path.join(notes, 'ignored.txt'), 'not a note', 'utf8')
+  // TASK-1601 link fixtures: one resolvable plain link, one aliased and one
+  // anchored link to the same note, and one target with no file behind it.
+  fs.writeFileSync(
+    path.join(notes, 'note-linker.md'),
+    'Links to [[note-two]], [[note-one|An Alias]], [[note-one#a-heading]] and [[does-not-exist]].\n',
+    'utf8'
+  )
 
   const assets = path.join(notes, 'assets', 'note-one')
   fs.mkdirSync(assets, { recursive: true })
@@ -149,8 +156,10 @@ describe('GET /vault/notes', () => {
     expect(r.status).toBe(200)
     const notes = JSON.parse(r.body.toString('utf8')) as Array<Record<string, unknown>>
 
-    // .txt is not a note; exactly the two .md files come back.
-    expect(notes.map((n) => n.slug).sort()).toEqual(['note-one', 'note-two'])
+    // .txt is not a note; exactly the .md files come back. (note-linker was
+    // added as a TASK-1601 link fixture — the assertion still pins the exact
+    // set, so the .txt exclusion this guards is unweakened.)
+    expect(notes.map((n) => n.slug).sort()).toEqual(['note-linker', 'note-one', 'note-two'])
 
     const one = notes.find((n) => n.slug === 'note-one')!
     expect(one.title).toBe('A Test Note About Gateways')
@@ -263,6 +272,58 @@ describe('configuration', () => {
     } finally {
       await h.close()
     }
+  })
+})
+
+// TASK-1601 — GET /vault/links. Fixtures live in the same 30-Knowledge root as
+// the rest of the suite: note-one links to note-two and to a target that does
+// not exist, note-two links back to note-one.
+describe('GET /vault/links', () => {
+  it('maps every note slug to outgoing + incoming', async () => {
+    const r = await get('/vault/links')
+    expect(r.status).toBe(200)
+    const links = JSON.parse(r.body.toString('utf8'))
+    for (const slug of ['note-one', 'note-two', 'note-linker']) {
+      expect(links[slug]).toBeDefined()
+      expect(Array.isArray(links[slug].outgoing)).toBe(true)
+      expect(Array.isArray(links[slug].incoming)).toBe(true)
+    }
+  })
+
+  it('is symmetric across every resolvable link', async () => {
+    const links = JSON.parse((await get('/vault/links')).body.toString('utf8'))
+    // Asserting the whole payload, not one pair: an implementation that filled
+    // `outgoing` and left `incoming` empty would pass a single-pair check.
+    for (const [slug, entry] of Object.entries<{ outgoing: string[]; incoming: string[] }>(links)) {
+      for (const target of entry.outgoing) {
+        if (links[target]) expect(links[target].incoming).toContain(slug)
+      }
+    }
+    expect(links['note-two'].incoming).toContain('note-linker')
+    expect(links['note-linker'].outgoing).toContain('note-two')
+  })
+
+  it('reports a dangling link without inventing a note for it', async () => {
+    const links = JSON.parse((await get('/vault/links')).body.toString('utf8'))
+    expect(links['note-linker'].outgoing).toContain('does-not-exist')
+    // The whole point: a target with no file must not become a top-level key.
+    expect(Object.keys(links)).not.toContain('does-not-exist')
+  })
+
+  it('resolves aliased and anchored links to the same note', async () => {
+    const links = JSON.parse((await get('/vault/links')).body.toString('utf8'))
+    // note-linker carries [[note-one|An Alias]] and [[note-one#a-heading]];
+    // both must collapse to `note-one`, not two dangling slugs.
+    expect(links['note-linker'].outgoing).toContain('note-one')
+    expect(links['note-linker'].outgoing.filter((t: string) => t.includes('|'))).toEqual([])
+    expect(links['note-linker'].outgoing.filter((t: string) => t.includes('#'))).toEqual([])
+  })
+
+  it('requires the bridge token', async () => {
+    const r = await get('/vault/links', {})
+    expect(r.status).toBe(401)
+    const wrong = await get('/vault/links', { 'x-choda-bridge-token': 'nope' })
+    expect(wrong.status).toBe(401)
   })
 })
 
