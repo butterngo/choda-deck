@@ -23,7 +23,14 @@ import type { IncomingMessage, ServerResponse } from 'http'
 const ROUTE_PREFIX = '/vault/'
 const NOTES_DIR = '30-Knowledge'
 const NOTES_ROUTE = '/vault/notes'
+const LINKS_ROUTE = '/vault/links'
 const ASSETS_ROUTE = '/vault/assets/'
+
+// TASK-1601 — `[[target]]`, `[[target|alias]]`, `[[target#heading]]`. The
+// capture stops at `|` and `#` so an aliased or anchored link resolves to the
+// same note as a bare one; otherwise `[[ddd-basics|DDD]]` would be a dangling
+// link to a note named "ddd-basics|DDD".
+const WIKILINK_RE = /\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g
 
 // Only what the notes actually embed. Anything else is an opaque download
 // rather than a guessed type.
@@ -33,6 +40,19 @@ const MIME: Record<string, string> = {
   '.png': 'image/png',
   '.webp': 'image/webp',
   '.gif': 'image/gif'
+}
+
+/**
+ * TASK-1601 — the link graph over the served notes.
+ *
+ * `outgoing` is what a note links to, including targets that do not exist
+ * (a dangling link is a fact about the note, worth surfacing). `incoming` is
+ * the inverse, and only ever names notes that exist — which is why a dangling
+ * target never becomes a key of its own.
+ */
+export interface VaultNoteLinks {
+  outgoing: string[]
+  incoming: string[]
 }
 
 export interface VaultNoteSummary {
@@ -161,6 +181,7 @@ export function handleVaultRoute(
   const root = path.resolve(opts.vaultDir, NOTES_DIR)
 
   if (rawPath === NOTES_ROUTE) return listNotes(res, root)
+  if (rawPath === LINKS_ROUTE) return listLinks(res, root)
   if (rawPath.startsWith(ASSETS_ROUTE)) {
     return serveAsset(res, root, rawPath.slice(ASSETS_ROUTE.length))
   }
@@ -193,6 +214,65 @@ function listNotes(res: ServerResponse, root: string): boolean {
   }
   notes.sort((a, b) => a.title.localeCompare(b.title))
   sendJson(res, 200, notes)
+  return true
+}
+
+/**
+ * GET /vault/links -> Record<slug, VaultNoteLinks>
+ *
+ * TASK-1601 — backlinks cannot be computed client-side: knowing what links
+ * INTO a note requires every other note's body, which the companion never
+ * has. Outgoing links it could parse itself; they are returned here anyway so
+ * both directions come from one consistent scan.
+ *
+ * Scans on request. At ~50 notes that is a few milliseconds, and a cache would
+ * need invalidating against a directory the user edits by hand — correctness
+ * before speed until a measurement says otherwise.
+ */
+function listLinks(res: ServerResponse, root: string): boolean {
+  let entries: string[]
+  try {
+    entries = fs.readdirSync(root)
+  } catch {
+    sendJson(res, 404, { error: 'vault notes directory not found' })
+    return true
+  }
+
+  const outgoing = new Map<string, string[]>()
+  for (const name of entries.filter((n) => n.toLowerCase().endsWith('.md'))) {
+    const slug = name.replace(/\.md$/i, '')
+    let text: string
+    try {
+      text = fs.readFileSync(path.join(root, name), 'utf8')
+    } catch {
+      // Same rule as listNotes: one unreadable note must not blank the graph.
+      // It still gets an entry, so it stays a valid backlink target.
+      outgoing.set(slug, [])
+      continue
+    }
+    const targets = new Set<string>()
+    for (const m of text.matchAll(WIKILINK_RE)) {
+      const target = m[1].trim()
+      if (target.length > 0) targets.add(target)
+    }
+    outgoing.set(slug, [...targets].sort())
+  }
+
+  // Invert, but only onto slugs that exist — a dangling target is reported in
+  // its source's `outgoing` and never invented as a note of its own.
+  const links: Record<string, VaultNoteLinks> = {}
+  for (const slug of outgoing.keys()) {
+    links[slug] = { outgoing: outgoing.get(slug) ?? [], incoming: [] }
+  }
+  for (const [slug, targets] of outgoing) {
+    for (const target of targets) {
+      const entry = links[target]
+      if (entry) entry.incoming.push(slug)
+    }
+  }
+  for (const entry of Object.values(links)) entry.incoming.sort()
+
+  sendJson(res, 200, links)
   return true
 }
 
