@@ -2,6 +2,7 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
+| [a-flat-distance-profile-from-knowledge-search-means-no-match-not-n-matches](./a-flat-distance-profile-from-knowledge-search-means-no-match-not-n-matches.md) | gotcha | A flat distance profile from knowledge_search means NO match, not N matches | 2026-08-07 |  |
 | [never-reuse-the-sessionid-echoed-by-ac-check-it-may-be-another-agent-s-session](./never-reuse-the-sessionid-echoed-by-ac-check-it-may-be-another-agent-s-session.md) | gotcha | Never reuse the sessionId echoed by ac_check — it may be another agent's session | 2026-08-05 |  |
 | [jsdom-has-no-layout-engine-component-tests-cannot-see-off-screen-or-lazy-image-d](./jsdom-has-no-layout-engine-component-tests-cannot-see-off-screen-or-lazy-image-d.md) | gotcha | jsdom has no layout engine — component tests cannot see off-screen or lazy-image defects | 2026-08-05 |  |
 | [commonmark-eats-backslashes-in-link-destinations-normalize-before-parsing](./commonmark-eats-backslashes-in-link-destinations-normalize-before-parsing.md) | gotcha | CommonMark eats backslashes in link destinations — normalize before parsing | 2026-08-05 |  |
