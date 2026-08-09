@@ -193,6 +193,27 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
   )
 
   server.registerTool(
+    'conversation_reopen',
+    {
+      description:
+        'Recover a conversation that was marked `decided` without a real decision — e.g. swept closed by the pre-TASK-1621 session_end, which stamped every linked thread with the session resumePoint. Refolds the header from the append-only message log: status returns to `open` and decisionSummary to null, with no new turn written and nothing re-stamped. Refused when the conversation was decided by a genuine `decision` turn — post a new decision via conversation_decide instead.',
+      inputSchema: {
+        conversationId: z.string()
+      }
+    },
+    async ({ conversationId }) =>
+      tryLifecycle(async () => {
+        const conv = await svc.reopenConversation(conversationId)
+        return {
+          conversationId,
+          status: conv.status,
+          decisionSummary: conv.decisionSummary,
+          decidedAt: conv.decidedAt
+        }
+      })
+  )
+
+  server.registerTool(
     'conversation_signoff',
     {
       description:

@@ -50,4 +50,11 @@ export interface ConversationLifecycleOperations {
   openConversation(input: OpenConversationInput): Promise<Conversation>
   decideConversation(id: string, input: DecideConversationInput): Promise<DecideConversationResult>
   signoffConversation(id: string, name: string): Promise<SignoffConversationResult>
+  /**
+   * TASK-1621 — refold a conversation's header from its message log, returning
+   * a thread that was stamped `decided` by a direct write back to `open`
+   * without writing a new turn. Rejects conversations decided via a real
+   * `decision` turn.
+   */
+  reopenConversation(id: string): Promise<Conversation>
 }

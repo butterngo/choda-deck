@@ -25,6 +25,7 @@ import { findAcItems } from './ac-check'
 export type RecallMemoriesFn = (input: MemoryRecallInput) => AgentMemory[]
 import { now } from '../repositories/shared'
 import {
+  ConversationNotFoundError,
   SessionNotFoundError,
   SessionStatusError,
   TaskLockedBySessionError,
@@ -108,19 +109,38 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
       }
 
       const endedAt = now()
-      const decisionSummary =
-        input.decisionSummary ?? input.handoff.resumePoint ?? 'Session ended'
 
+      // TASK-1621 — closing a conversation is opt-in and per-conversation.
+      // Previously every linked conversation was decided and stamped with the
+      // session's own `handoff.resumePoint`, which silently resolved unrelated
+      // open threads and overwrote their decision record. Nothing is closed
+      // unless the caller names it and supplies that thread's own summary.
       const closedConversationIds: string[] = []
-      const linkedConvs = this.conversations.findByLink('session', id)
-      for (const conv of linkedConvs) {
+      const linkedIds = new Set(this.conversations.findByLink('session', id).map((c) => c.id))
+      for (const request of input.closeConversations ?? []) {
+        const conv = this.conversations.get(request.conversationId)
+        if (!conv) throw new ConversationNotFoundError(request.conversationId)
+        if (!linkedIds.has(conv.id)) {
+          throw new Error(
+            `Conversation ${conv.id} is not linked to session ${id} — session_end may only close its own linked conversations`
+          )
+        }
         if (conv.status === 'decided') continue
-        this.conversations.update(conv.id, {
-          status: 'decided',
-          decisionSummary,
-          decidedAt: endedAt
+        // Append-only decision turn (TASK-1067), then refold. Writing the
+        // header directly would leave state no message backs, which any later
+        // recomputeHeader silently erases.
+        this.conversations.addMessage({
+          conversationId: conv.id,
+          authorName: 'session_end',
+          content: request.decisionSummary,
+          kind: 'decision'
         })
-        closedConversationIds.push(conv.id)
+        this.conversations.recomputeHeader(conv.id)
+        // The fold only flips to `decided` once every registered participant
+        // has signed off — report what actually closed, not what was asked for.
+        if (this.conversations.get(conv.id)?.status === 'decided') {
+          closedConversationIds.push(conv.id)
+        }
       }
 
       let taskUpdated: EndSessionResult['taskUpdated'] = null

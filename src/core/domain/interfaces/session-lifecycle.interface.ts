@@ -70,9 +70,36 @@ export interface SessionSummaryPayload {
   branchState?: string
 }
 
+/**
+ * TASK-1621 — one conversation the caller explicitly wants closed as part of
+ * ending the session, with the summary that belongs to *that thread*. Both
+ * fields are required: naming a conversation without saying what was decided
+ * is what produced the original defect.
+ */
+export interface CloseConversationOnEnd {
+  conversationId: string
+  decisionSummary: string
+}
+
 export interface EndSessionInput {
   handoff: SessionHandoff
-  decisionSummary?: string
+  /**
+   * TASK-1621 — conversations to close, named one by one. Omitted or empty
+   * leaves every linked conversation untouched.
+   *
+   * `session_end` used to close **every** conversation merely linked to the
+   * session and stamp each one with the session's own `handoff.resumePoint`,
+   * silently marking unrelated open threads `decided` and destroying their
+   * decision record. Auto-link (`conversation_open` links to the sole active
+   * session) made that trivially easy to trigger. Closure is now opt-in and
+   * per-conversation, and no code path may write `resumePoint` into a
+   * `decisionSummary`.
+   *
+   * Each entry must name a conversation actually linked to this session, and
+   * is applied as an append-only `decision` turn (TASK-1067) so the folded
+   * header and the message log agree.
+   */
+  closeConversations?: CloseConversationOnEnd[]
   /**
    * Optional structured session-summary payload (ADR-028). When provided,
    * `endSession` writes one `session_events` observation row with

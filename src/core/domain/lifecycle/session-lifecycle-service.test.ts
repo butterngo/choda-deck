@@ -160,7 +160,11 @@ describe('endSession', () => {
     expect(r.closedConversationIds).toEqual([])
   })
 
-  it('closes session-linked conversations opened mid-session', async () => {
+  // TASK-1621 — this used to assert the sweep (every linked conversation
+  // decided, stamped with the session's resumePoint). That was the defect:
+  // closing is now opt-in per conversation. See
+  // session-end-conversation-sweep.test.ts for the full behaviour.
+  it('leaves session-linked conversations open when none are named for closure', async () => {
     const started = await svc.startSession({ projectId: 'proj-s' })
     const conv = await svc.openConversation({
       projectId: 'proj-s',
@@ -173,10 +177,10 @@ describe('endSession', () => {
       handoff: { resumePoint: 'done for the day' }
     })
 
-    expect(r.closedConversationIds).toEqual([conv.id])
+    expect(r.closedConversationIds).toEqual([])
     const after = await svc.getConversation(conv.id)
-    expect(after?.status).toBe('decided')
-    expect(after?.decisionSummary).toBe('done for the day')
+    expect(after?.status).toBe('open')
+    expect(after?.decisionSummary).toBeNull()
   })
 
   it('marks linked task IMPLEMENTED when session had a taskId', async () => {
@@ -192,7 +196,7 @@ describe('endSession', () => {
     expect((await svc.getTask(task.id))?.status).toBe('IMPLEMENTED')
   })
 
-  it('uses custom decisionSummary when provided', async () => {
+  it('uses the per-conversation decisionSummary when a conversation is named', async () => {
     const started = await svc.startSession({ projectId: 'proj-s' })
     const conv = await svc.openConversation({
       projectId: 'proj-s',
@@ -202,7 +206,7 @@ describe('endSession', () => {
     })
     await svc.endSession(started.session.id, {
       handoff: { resumePoint: 'r' },
-      decisionSummary: 'custom summary'
+      closeConversations: [{ conversationId: conv.id, decisionSummary: 'custom summary' }]
     })
     expect((await svc.getConversation(conv.id))?.decisionSummary).toBe('custom summary')
   })
