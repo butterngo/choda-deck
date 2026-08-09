@@ -108,6 +108,20 @@ const handoffInputSchema = {
     .optional()
     .describe(
       'ADR-028 typed session-summary. When provided, persisted as one observation event with payload.kind="session_summary", atomic with session close. Omit for backward compat.'
+    ),
+  closeConversations: z
+    .array(
+      z.object({
+        conversationId: z.string(),
+        decisionSummary: z
+          .string()
+          .min(1)
+          .describe('What THIS thread decided — never the session resumePoint')
+      })
+    )
+    .optional()
+    .describe(
+      'TASK-1621 — conversations to close, named one at a time, each with its own decision summary. Omit to leave every linked conversation open (the default). session_end no longer auto-closes linked conversations: it used to decide all of them and stamp each with the session resumePoint, silently resolving unrelated threads. Only conversations actually linked to this session may be named.'
     )
 }
 
@@ -313,7 +327,11 @@ export const register = (
           tasksUpdated: [],
           testResults: input.testResults
         }
-        const result = await svc.endSession(input.sessionId, { handoff, summary: input.summary })
+        const result = await svc.endSession(input.sessionId, {
+          handoff,
+          summary: input.summary,
+          closeConversations: input.closeConversations
+        })
         if (result.taskUpdated) handoff.tasksUpdated = [result.taskUpdated.id]
 
         const looseEndInboxIds = await createLooseEndInboxes(svc, input.looseEnds, result.session)

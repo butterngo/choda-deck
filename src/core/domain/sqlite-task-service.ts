@@ -565,6 +565,9 @@ export class SqliteTaskService
   async signoffConversation(id: string, name: string): Promise<SignoffConversationResult> {
     return this.conversationLifecycle.signoffConversation(id, name)
   }
+  async reopenConversation(id: string): Promise<Conversation> {
+    return this.conversationLifecycle.reopenConversation(id)
+  }
 
   // ── Session lifecycle (composite, transactional) ──────────────────────────
   async startSession(input: StartSessionInput): Promise<StartSessionResult> {

@@ -11,7 +11,7 @@ import type {
   SignoffConversationResult
 } from '../interfaces/conversation-lifecycle.interface'
 import type { Conversation } from '../task-types'
-import { ConversationNotFoundError } from './errors'
+import { ConversationNotFoundError, ConversationStatusError } from './errors'
 
 export class ConversationLifecycleService implements ConversationLifecycleOperations {
   constructor(
@@ -100,6 +100,41 @@ export class ConversationLifecycleService implements ConversationLifecycleOperat
       const updated = this.conversations.get(id)
       if (!updated) throw new ConversationNotFoundError(id)
       return { conversation: updated, actions }
+    })
+    return tx()
+  }
+
+  /**
+   * TASK-1621 — recovery route for a conversation whose header was stamped
+   * `decided` by a direct write rather than by a real decision.
+   *
+   * This is a refold, not a re-stamp: `recomputeHeader` derives the header
+   * purely from the append-only message log, so a thread with no `decision`
+   * turn returns to `open` with a null `decisionSummary` and no new turn is
+   * written. A conversation that *was* decided through a decision turn is
+   * refused — reopening it would need that turn retracted, which the
+   * append-only log deliberately does not support.
+   */
+  async reopenConversation(id: string): Promise<Conversation> {
+    const tx = this.db.transaction((): Conversation => {
+      const conv = this.conversations.get(id)
+      if (!conv) throw new ConversationNotFoundError(id)
+
+      const hasDecisionTurn = this.conversations
+        .getMessages(id)
+        .some((m) => m.kind === 'decision')
+      if (hasDecisionTurn) {
+        throw new ConversationStatusError(
+          id,
+          conv.status,
+          'conversation was decided by a decision turn — reopening would require retracting it; post a new decision instead'
+        )
+      }
+
+      this.conversations.recomputeHeader(id)
+      const updated = this.conversations.get(id)
+      if (!updated) throw new ConversationNotFoundError(id)
+      return updated
     })
     return tx()
   }

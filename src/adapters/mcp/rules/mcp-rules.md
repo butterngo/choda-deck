@@ -90,6 +90,26 @@ Every candidate loose end falls into exactly one of 3 buckets. Pick the bucket f
 
 `looseEnds` are auto-converted to inbox entries (status=raw) under the session's project — one entry per item, tagged with the source session/task ID. Butter reviews the inbox in `/daily` and decides which deserve `inbox_convert` → task. If you find yourself dumping action items or observations into `looseEnds`, you skipped step 1 — go back and classify.
 
+### Closing conversations (TASK-1621)
+
+`session_end` does **not** close linked conversations. It used to close every conversation merely *linked* to the session and stamp each one's `decisionSummary` with the session's own `resumePoint` — which silently marked unrelated open threads `decided` and destroyed their decision record. Auto-link (`conversation_open` links to the sole active session) made that easy to trigger by accident.
+
+To close a thread as part of ending the session, name it explicitly and give it **its own** summary:
+
+```json
+"closeConversations": [
+  { "conversationId": "CONV-...", "decisionSummary": "What THIS thread decided" }
+]
+```
+
+Rules:
+
+- Omit the field to leave every linked conversation open. That is the right default — a thread you did not consciously resolve should stay open.
+- Never pass the session `resumePoint` as a `decisionSummary`. They answer different questions.
+- Only conversations actually linked to the session may be named; anything else is rejected.
+- The close is written as an append-only `decision` turn, so the folded header and the message log agree. Status flips to `decided` only once every registered participant has signed off — `closedConversationIds` reports what actually closed, not what you asked for.
+- A thread wrongly marked `decided` by the old behaviour can be recovered with `conversation_reopen`, which refolds the header from the message log without re-stamping anything.
+
 ### Structured summary payload (ADR-028)
 
 `session_end` accepts an optional typed `summary` field. When provided, the server writes one `session_events` row (`event_type='observation'`, `payload.kind='session_summary'`) atomic with the session close. Use it on real implementation sessions — TASK-846 auto-recall and the Dashboard Sessions tab both read this shape.
