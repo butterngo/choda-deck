@@ -309,7 +309,12 @@ CHODA_PG_URL="postgres://choda:choda@localhost:5432/choda" \
 
 The script is idempotent (skips tables that already have rows; pass `--force` to wipe + reload). Embedding vectors are NOT copied — re-run `scripts/backfill-embeddings.mjs` against the Postgres backend after migration to rebuild them.
 
-Cross-device sync is **partial** as of `0.3.0`: read-only pull (ADR-030 Phase 2) ships — `choda-deck sync pull` drains a remote MCP's `GET /sync/since` into the local SQLite file. Full bidirectional pending-ops sync (write-through + last-writer-wins, Phases 3–6) is **not** in this release; for writes, pick `CHODA_BACKEND` per process.
+Cross-device sync is **bidirectional** as of `0.4.0` (ADR-030 Phases 2–6). Two ways to use it:
+
+- **Read-only pull** — `choda-deck sync pull` drains a remote MCP's `GET /sync/since` into the local SQLite file. One-shot, no background loop.
+- **Write-through** — set `CHODA_BACKEND=sync` (stdio only; rejected at boot on `http`) and the local SQLite file becomes a working copy: every mutating `task_*` / `inbox_*` / `conversation_*` call also POSTs to the remote `POST /sync/apply`, which resolves last-writer-wins and returns per-row verdicts. If the remote is unreachable the op queues to a local `pending_ops` table and the call still succeeds; a background loop drains the queue and pulls deltas every `CHODA_SYNC_INTERVAL_MS` (default `30000`). A dropped op (the canonical row was newer) is written to `sync_conflicts` **and** raised as a raw inbox item, so a lost write is never silent.
+
+Point it at the remote with `CHODA_PULL_REMOTE_URL` + `CHODA_PULL_REMOTE_TOKEN`. Against an OAuth remote the static bearer expires in ~300s — set `CHODA_SYNC_OIDC_ISSUER` / `_CLIENT_ID` / `_USERNAME` / `_PASSWORD` (each also accepts a `_FILE` variant) and the loop mints + refreshes its own tokens instead.
 
 ## Architecture
 
@@ -324,6 +329,14 @@ See [`docs/architecture.md`](https://github.com/butterngo/choda-deck/blob/main/d
 
 Full notes per release: [GitHub Releases](https://github.com/butterngo/choda-deck/releases).
 
+### 0.4.0
+- **Bidirectional cross-device sync** — `CHODA_BACKEND=sync` write-through engine for tasks, inbox, conversations, projects and workspaces (ADR-030 Phases 3–6). Failed pushes queue to `pending_ops`; a background loop drains + pulls; dropped writes land in `sync_conflicts` **and** the inbox. Keycloak token refresh keeps the loop alive past the remote's 300s JWT TTL, and a durable `sync_events` log makes the loop auditable.
+- **Companion REST adapter** — a local HTTP read API over the same DB (focus feed, `GET /tasks/:id`, `/workspaces`, `/search`, graph + knowledge reads, `/conversations/:id`, `/vault/*` notes with a `/vault/links` backlink index, `/artifacts/*`, `/sync/log`), plus an auto-start Windows service installer.
+- **Choda Capture browser extension (MV3)** — side-panel capture of page text, screenshots, console and network into a conversation or knowledge entry: DevTools-style network panel with filters and body correlation, an element picker, design-token extraction, and streaming Discovery Capture sessions.
+- **`IMPLEMENTED` task status** — a stage between `IN-PROGRESS` and `DONE`, so "code merged" and "acceptance proven" stop being the same event.
+- **Append-only conversation fold** — `conversation_decide` / `conversation_signoff` are now typed turns on an append-only log, which is what makes conversations safe to sync convergently.
+- `knowledge_search` returns a body excerpt on every hit; investigation evidence can be snapshotted by value; `session_end` no longer sweeps linked conversations closed; the `prepare` hook is guarded so the Docker image builds again.
+
 ### 0.3.0
 - **Investigation** — first-class, stdio-only container for nonlinear debugging (hypotheses + typed evidence across sessions; `resolve` drafts a knowledge gotcha). 6 new tools (ADR-035).
 - **Cross-device sync foundation** — sync-metadata columns + Lamport clock (Phase 1) and read-only pull `choda-deck sync pull` (Phase 2, ADR-030).
@@ -332,7 +345,7 @@ Full notes per release: [GitHub Releases](https://github.com/butterngo/choda-dec
 
 ## Status
 
-`0.3.0` — early, dogfooded daily by the author. API may move before `1.0`. Issues + PRs welcome.
+`0.4.0` — early, dogfooded daily by the author. API may move before `1.0`. Issues + PRs welcome.
 
 ## License
 
