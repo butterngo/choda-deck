@@ -108,6 +108,56 @@ Note: Copilot uses `servers` (not `mcpServers`) and requires `"type": "stdio"`. 
 
 Any MCP-compatible client works. Use the `command` / `args` / `env` triple — drop it into whatever the client calls its MCP config block.
 
+## Run from source (local setup)
+
+Use this if you want to hack on choda-deck, or run an unreleased `main`. The published package is the same code — this just points your MCP client at your own checkout instead of at npm.
+
+**Prerequisites:** Node.js >= 20, [pnpm](https://pnpm.io) (the repo pins `pnpm@10.33.0` via `packageManager`, so `corepack enable` is enough), and a C toolchain for `better-sqlite3`'s native build — Xcode CLT on macOS, `build-essential` on Linux, Visual Studio Build Tools on Windows.
+
+```bash
+git clone https://github.com/butterngo/choda-deck.git
+cd choda-deck
+pnpm install          # the `prepare` hook builds dist/ for you
+```
+
+If `dist/` is missing (the hook no-ops when esbuild or `src/` is absent), build it explicitly:
+
+```bash
+pnpm run build        # -> dist/mcp-server.cjs, dist/cli.cjs, dist/companion-server.cjs
+```
+
+Verify the checkout before wiring anything up:
+
+```bash
+pnpm run lint
+pnpm run typecheck
+pnpm run test
+```
+
+Then point your client at the bundle you just built instead of at `npx`. Use **absolute paths** — MCP clients don't launch from your repo directory:
+
+```json
+{
+  "mcpServers": {
+    "choda-tasks": {
+      "command": "node",
+      "args": ["/absolute/path/to/choda-deck/dist/mcp-server.cjs"],
+      "cwd": "/absolute/path/to/choda-deck",
+      "env": {
+        "CHODA_DATA_DIR": "/absolute/path/to/choda-deck/data",
+        "CHODA_CONTENT_ROOT": "/absolute/path/to/your/notes-or-vault"
+      }
+    }
+  }
+}
+```
+
+On Windows, escape the backslashes: `"C:\\dev\\choda-deck\\dist\\mcp-server.cjs"`.
+
+`CHODA_DATA_DIR` is optional — omit it and the server creates `./data` relative to its working directory. Setting it explicitly is strongly recommended, because "relative to the working directory" means a client that launches from somewhere else silently gets a **different, empty database**. Nothing else needs provisioning: the schema is created on first boot, and daily backups land in `<CHODA_DATA_DIR>/backups/`.
+
+**Editing the source.** The MCP client runs the *bundle*, not your TypeScript. After changing anything under `src/`, run `pnpm run build:mcp` and reconnect the server (`/mcp reconnect` in Claude Code) — otherwise you are still testing the old build.
+
 ## CLI
 
 `choda-deck` is first and foremost an MCP server — the binary exposes two commands:
