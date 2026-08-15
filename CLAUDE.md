@@ -162,7 +162,7 @@ The HTTP server exposes `GET /sync/since?since=<lamport>` (bearer/OAuth-gated, s
 
 ### Write-through + drain — `CHODA_BACKEND=sync` (ADR-030 Phase 3-6)
 
-Set `CHODA_BACKEND=sync` (stdio only — rejected at boot on http) to run the laptop as a write-through client: local SQLite is the working copy and every mutating `task_*` / `inbox_*` tool call also POSTs to the remote `POST /sync/apply` (bearer/OAuth-gated, symmetric to `/sync/since`), which applies server-side last-writer-wins and returns per-row verdicts. On a remote failure the op is queued to local `pending_ops` and the call still succeeds. A background loop drains the queue + pulls deltas on a cadence; a dropped op (canonical was newer) is recorded to `sync_conflicts` **and** surfaced as a raw `inbox_add` so loss is never silent. `conversation_*` is out of scope (gated — see TASK-1067 / 979e).
+Set `CHODA_BACKEND=sync` (stdio only — rejected at boot on http) to run the laptop as a write-through client: local SQLite is the working copy and every mutating `task_*` / `inbox_*` / `conversation_*` tool call (plus project + workspace rows — TASK-1146) also POSTs to the remote `POST /sync/apply` (bearer/OAuth-gated, symmetric to `/sync/since`), which applies server-side last-writer-wins and returns per-row verdicts. On a remote failure the op is queued to local `pending_ops` and the call still succeeds. A background loop drains the queue + pulls deltas on a cadence; a dropped op (canonical was newer) is recorded to `sync_conflicts` **and** surfaced as a raw `inbox_add` so loss is never silent. Conversations sync convergently because the fold is append-only (TASK-1067 core): `conversation_decide` / `conversation_signoff` are typed turns on the log, not header column writes, so two devices folding the same thread converge instead of clobbering (TASK-1136).
 
 | Env var | Required | Purpose |
 |---|---|---|
@@ -189,7 +189,7 @@ Refresh mode engages only when issuer + client id + username + password all reso
 
 ### Remote tool allowlist
 
-HTTP mode exposes a narrowed surface — the **6-tool read + capture allowlist** (`REMOTE_TOOL_ALLOWLIST` in `src/adapters/mcp/server-bootstrap.ts`):
+HTTP mode exposes a narrowed surface — the **10-tool read + capture + conversation allowlist** (`REMOTE_TOOL_ALLOWLIST` in `src/adapters/mcp/server-bootstrap.ts`):
 
 - `project_list`
 - `task_list`
@@ -197,8 +197,14 @@ HTTP mode exposes a narrowed surface — the **6-tool read + capture allowlist**
 - `inbox_list`
 - `inbox_get`
 - `inbox_add`
+- `conversation_open`
+- `conversation_add`
+- `conversation_read`
+- `conversation_list`
 
-Everything else (`task_create`, `task_update`, `session_*`, `backup_*`, `cleanup_*`, `workspace_*`, `conversation_*`, `memory_*`, `knowledge_*`, `code_ref_*`, `touches_*`, `task_touches`, `graph_edges`, `feature_projection`, `inbox_update|convert|archive|ready|research`, `stats_report`) stays **stdio-only**. Non-allowlisted tools are not registered at all — they never appear in `tools/list` and respond `MCP error -32602: Tool <name> not found` if called by name. Stdio mode keeps every tool (local trust contract, unchanged). See ADR-026 §Per-tool scoping for rationale.
+The conversation four were added for the claude.ai connector (TASK-1136 AC-4) and are **append-only** — `conversation_decide` / `conversation_signoff` deliberately stay stdio-only.
+
+Everything else (`task_create`, `task_update`, `session_*`, `backup_*`, `cleanup_*`, `workspace_*`, `conversation_decide|signoff|mark_read|poll|reopen`, `investigation_*`, `memory_*`, `knowledge_*`, `code_ref_*`, `touches_*`, `task_touches`, `graph_edges`, `feature_projection`, `inbox_update|convert|archive|ready|research`, `stats_report`) stays **stdio-only**. Non-allowlisted tools are not registered at all — they never appear in `tools/list` and respond `MCP error -32602: Tool <name> not found` if called by name. Stdio mode keeps every tool (local trust contract, unchanged). See ADR-026 §Per-tool scoping for rationale.
 
 ### Backend surface for HTTP mode (2026-05-28 narrowing)
 
