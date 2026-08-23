@@ -83,7 +83,7 @@ async function route(
 
   // Task-detail read for the graph node panel. GET /tasks/:id (POST
   // /tasks/:id/ready is a workflow route, handled above).
-  if (await handleTaskDetailRoute(req, res, services.svc)) {
+  if (await handleTaskDetailRoute(req, res, services.svc, services.bridgeToken)) {
     return
   }
 
