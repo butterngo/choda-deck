@@ -19,6 +19,7 @@ import { handleSearchRoute } from './search'
 import { handleTaskDetailRoute } from './task-detail'
 import { handleArtifactsRoute } from './artifacts'
 import { handleVaultRoute } from './vault'
+import { handleWorkspaceDocsRoute } from './workspace-docs'
 import { handleConversationDetailRoute } from './conversation-detail'
 import {
   CAPTURE_MAX_IMAGE_BYTES,
@@ -100,6 +101,17 @@ async function route(
   if (
     handleArtifactsRoute(req, res, {
       artifactsDir: services.artifactsDir,
+      bridgeToken: services.bridgeToken
+    })
+  ) {
+    return
+  }
+
+  // TASK-1749 — a workspace's own .md docs. Matched on the RAW url for the same
+  // reason as artifacts and vault below; token-gated, .md-only, read-only.
+  if (
+    await handleWorkspaceDocsRoute(req, res, {
+      svc: services.svc,
       bridgeToken: services.bridgeToken
     })
   ) {
