@@ -141,11 +141,28 @@ async function collectCommits(
   return commits
 }
 
-async function collectAdrs(svc: ProvenanceDeps, taskId: string): Promise<ProvenanceAdr[]> {
-  const decisions = await svc.listKnowledge({ type: 'decision' })
+async function collectAdrs(
+  svc: ProvenanceDeps,
+  projectId: string,
+  taskId: string
+): Promise<ProvenanceAdr[]> {
+  // Scoped to the task's own project. Unscoped, this walks every project's
+  // decisions — including entries whose files live in other repositories, which
+  // is both wrong (another project's ADR is not this task's provenance) and the
+  // reason a single unreadable file could reach this loop at all.
+  const decisions = await svc.listKnowledge({ type: 'decision', projectId })
   const adrs: ProvenanceAdr[] = []
   for (const item of decisions) {
-    const entry = await svc.getKnowledge(item.slug)
+    // Reading an entry parses its frontmatter, which THROWS on a malformed
+    // refs block. One bad file must not sink the whole task read: provenance
+    // is supplementary, and losing the task entirely to learn nothing about
+    // one ADR is the worst of both. Skip it and keep going.
+    let entry: Awaited<ReturnType<typeof svc.getKnowledge>> = null
+    try {
+      entry = await svc.getKnowledge(item.slug)
+    } catch {
+      continue
+    }
     if (!entry) continue
     const realizes = entry.frontmatter.structured?.realizesTasks ?? []
     if (realizes.includes(taskId)) {
@@ -175,10 +192,14 @@ export async function buildTaskProvenance(
     return cwdCache.get(workspaceId)
   }
 
+  // Each section degrades on its own. Provenance is supplementary to the task,
+  // so a failure in one collector must cost that section and nothing more —
+  // returning 500 for the whole task read because one ADR file is unreadable
+  // is a worse answer than an incomplete but honest one.
   const [files, commits, adrs] = await Promise.all([
-    collectFiles(svc, taskId, cwdFor),
-    collectCommits(svc, projectId, taskId),
-    collectAdrs(svc, taskId)
+    collectFiles(svc, taskId, cwdFor).catch(() => [] as ProvenanceFile[]),
+    collectCommits(svc, projectId, taskId).catch(() => [] as ProvenanceCommit[]),
+    collectAdrs(svc, projectId, taskId).catch(() => [] as ProvenanceAdr[])
   ])
 
   return {
