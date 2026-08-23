@@ -182,6 +182,17 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
         this.deriveTouchesFromFileEdits(id, session.taskId, session.projectId, endedAt)
       }
 
+      // TASK-1751: record when the modifies set could not be derived, so a
+      // consumer can tell "changed nothing" apart from "we could not see".
+      // Editing through a Bash heredoc or sed bypasses the file_modified hook
+      // (INBOX-1841), so a session with real commits derives zero TOUCHES and
+      // closes looking identical to one that touched nothing. TASK-1734 prints a
+      // warning at close; this leaves a durable mark, because a consumer reading
+      // the session six weeks later never sees stdout. Commits are the evidence
+      // that work happened: commits AND zero events is the undeterminable case,
+      // while no commits and no events stays plainly "nothing changed".
+      this.recordUnderivableModifies(id, input.handoff.commits ?? [])
+
       // TASK-998 (GOTCHA-AUTO): draft one candidate gotcha per handoff decision.
       // Emitted as memory_candidate observation rows (kind='gotcha_draft') — they
       // surface in `memoryCandidates` for the agent to refine and the human to
@@ -270,6 +281,38 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
   // convention for non-symbol refs) + a `modifies` TOUCHES edge for each DISTINCT
   // path the session edited. Pure-derivation: reads channel-1 events, writes the
   // graph projection; no AC / summary side effects.
+  // TASK-1751: count this session's file_modified observations. Shared by the
+  // TOUCHES derivation and the underivable mark so the two can never disagree
+  // about whether the hook saw anything.
+  private countFileModifiedEvents(sessionId: string): number {
+    let count = 0
+    for (const evt of this.sessionEvents.listBySession(sessionId, 'observation')) {
+      const payload = parseObservationPayload(evt.payloadJson)
+      if (payload?.kind === 'file_modified' && typeof payload.path === 'string') count++
+    }
+    return count
+  }
+
+  // TASK-1751: persist the "modifies set undeterminable" mark as an observation
+  // row, the same durable channel session_summary and gotcha_draft already use —
+  // it survives the close and is readable through session_event_list. Written
+  // only for the ambiguous shape (commits present, hook saw nothing); marking
+  // every session would make the signal worthless.
+  private recordUnderivableModifies(sessionId: string, commits: string[]): void {
+    if (commits.length === 0) return
+    if (this.countFileModifiedEvents(sessionId) > 0) return
+    this.sessionEvents.create({
+      sessionId,
+      eventType: 'observation',
+      payloadJson: JSON.stringify({
+        kind: 'modifies_underivable',
+        reason: 'commits present but no file_modified events — the edit path bypassed the hook',
+        commitCount: commits.length
+      }),
+      memoryCandidate: false
+    })
+  }
+
   private deriveTouchesFromFileEdits(
     sessionId: string,
     taskId: string,

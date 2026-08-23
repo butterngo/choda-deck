@@ -34,7 +34,11 @@ function makeGit(overrides: Partial<GitOps> = {}): GitOps {
 function makeSvc(session: Session | null, cwd: string | null): Parameters<typeof resolveCommits>[0] {
   return {
     getSession: async () => session,
-    getProject: async () => (cwd === null ? null : ({ id: 'proj', cwd } as never))
+    getProject: async () => (cwd === null ? null : ({ id: 'proj', cwd } as never)),
+    // TASK-1747 — these cases pin the project-cwd fallback, so the workspace
+    // lookup misses on purpose. The workspace-resolution cases build their own
+    // svc below.
+    getWorkspace: async () => null
   } as unknown as Parameters<typeof resolveCommits>[0]
 }
 
@@ -174,5 +178,127 @@ describe('resolveResumePoint — TASK-985 resumePoint derivation (AI-wins)', () 
     const out = await resolveResumePoint(makeSvc(SESSION, null), t, 'SESSION-1', undefined)
     expect(out).toBeUndefined()
     expect(called).toBe(false)
+  })
+})
+
+// TASK-1747 — derivation must run on the WORKSPACE's repo, not the project's.
+// project.cwd and workspace.cwd routinely differ (choda-deck vs
+// choda-deck-companion), and four projects point project.cwd at the vault, so
+// deriving on the project answers with another repo's commits: confidently
+// wrong rather than empty.
+
+const PROJECT_CWD = 'C:/dev/choda-deck'
+const COMPANION_CWD = 'C:/dev/choda-deck-companion'
+
+// Only the companion repo contains a6ec575 — the real TASK-1597 commit that
+// project-cwd derivation could never find.
+function makeTwoRepoGit(): GitOps {
+  return makeGit({
+    commitsInWindow: (cwd) =>
+      cwd === COMPANION_CWD ? ['a6ec575 feat(web): TASK-1597 companion commit'] : []
+  })
+}
+
+function makeWorkspaceSvc(
+  session: Session | null,
+  workspaces: Record<string, string>
+): Parameters<typeof resolveCommits>[0] {
+  return {
+    getSession: async () => session,
+    getProject: async () => ({ id: 'proj', cwd: PROJECT_CWD }) as never,
+    getWorkspace: async (id: string) =>
+      workspaces[id] ? ({ id, cwd: workspaces[id] } as never) : null
+  } as unknown as Parameters<typeof resolveCommits>[0]
+}
+
+describe('resolveCommits — TASK-1747 derives on workspace.cwd', () => {
+  it('a workspace-bound session derives from the WORKSPACE repo, not the project repo', async () => {
+    const session = { ...SESSION, workspaceId: 'choda-deck-companion' } as Session
+    const out = await resolveCommits(
+      makeWorkspaceSvc(session, { 'choda-deck-companion': COMPANION_CWD }),
+      makeTwoRepoGit(),
+      'SESSION-1',
+      undefined
+    )
+    // Fails on the pre-TASK-1747 code: it asks git for PROJECT_CWD, which has
+    // no such commit, and returns undefined.
+    expect(out).toEqual(['a6ec575 feat(web): TASK-1597 companion commit'])
+  })
+
+  it('resolves the cwd from session.workspaceId, never the project, when both exist', async () => {
+    const seen: string[] = []
+    const git = makeGit({
+      commitsInWindow: (cwd) => {
+        seen.push(cwd)
+        return ['abc1234 derived']
+      }
+    })
+    const session = { ...SESSION, workspaceId: 'choda-deck-companion' } as Session
+    await resolveCommits(
+      makeWorkspaceSvc(session, { 'choda-deck-companion': COMPANION_CWD }),
+      git,
+      'SESSION-1',
+      undefined
+    )
+    expect(seen).toEqual([COMPANION_CWD])
+    expect(seen).not.toContain(PROJECT_CWD)
+  })
+
+  it('a session with no workspaceId still falls back to project.cwd — no worse than before', async () => {
+    const seen: string[] = []
+    const git = makeGit({
+      commitsInWindow: (cwd) => {
+        seen.push(cwd)
+        return ['abc1234 derived from project']
+      }
+    })
+    const session = { ...SESSION, workspaceId: null } as unknown as Session
+    const out = await resolveCommits(makeWorkspaceSvc(session, {}), git, 'SESSION-1', undefined)
+    expect(seen).toEqual([PROJECT_CWD])
+    expect(out).toEqual(['abc1234 derived from project'])
+  })
+
+  it('an unknown/archived workspace row falls back to project.cwd rather than throwing', async () => {
+    const session = { ...SESSION, workspaceId: 'deleted-workspace' } as Session
+    const git = makeGit({ commitsInWindow: (cwd) => (cwd === PROJECT_CWD ? ['abc1234 fallback'] : []) })
+    const out = await resolveCommits(makeWorkspaceSvc(session, {}), git, 'SESSION-1', undefined)
+    expect(out).toEqual(['abc1234 fallback'])
+  })
+
+  it('provided commits still win over workspace derivation — priority order unchanged', async () => {
+    let called = false
+    const git = makeGit({
+      commitsInWindow: () => {
+        called = true
+        return ['a6ec575 should-not-be-used']
+      }
+    })
+    const session = { ...SESSION, workspaceId: 'choda-deck-companion' } as Session
+    const out = await resolveCommits(
+      makeWorkspaceSvc(session, { 'choda-deck-companion': COMPANION_CWD }),
+      git,
+      'SESSION-1',
+      ['1ad7243 TASK-1597 provided by the caller']
+    )
+    expect(out).toEqual(['1ad7243 TASK-1597 provided by the caller'])
+    expect(called).toBe(false)
+  })
+
+  it('git throwing on a non-repo cwd leaves derivation best-effort, never breaks session_end', async () => {
+    const session = { ...SESSION, workspaceId: 'choda-deck-companion' } as Session
+    const git = makeGit({
+      commitsInWindow: () => {
+        // knowledge-git.ts:66-70 swallows git failure and answers []; this pins
+        // that resolveCommits does not reintroduce a throw on top of it.
+        return []
+      }
+    })
+    const out = await resolveCommits(
+      makeWorkspaceSvc(session, { 'choda-deck-companion': COMPANION_CWD }),
+      git,
+      'SESSION-1',
+      undefined
+    )
+    expect(out).toBeUndefined()
   })
 })

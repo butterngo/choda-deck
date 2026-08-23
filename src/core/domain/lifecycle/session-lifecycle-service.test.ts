@@ -1068,3 +1068,63 @@ describe('draftGotchaFromDecision (TASK-998 unit)', () => {
     expect(d.resolution).toBe('clamp server-side')
   })
 })
+
+// TASK-1751 — a session that could not derive its modifies set must say so
+// durably. Editing through a Bash heredoc or sed bypasses the file_modified
+// hook (INBOX-1841), so a session with real commits derives zero TOUCHES and
+// closes looking exactly like one that changed nothing. Three shapes, three
+// different meanings; the mark exists to keep the middle one from reading as
+// the last one.
+describe('endSession — TASK-1751 marks an underivable modifies set', () => {
+  function findUnderivable(
+    events: Array<{ payloadJson: string | null }>
+  ): Record<string, unknown> | undefined {
+    const evt = events.find((e) => {
+      const p = JSON.parse(e.payloadJson ?? '{}') as Record<string, unknown>
+      return p.kind === 'modifies_underivable'
+    })
+    return evt ? (JSON.parse(evt.payloadJson ?? '{}') as Record<string, unknown>) : undefined
+  }
+
+  async function addFileModified(sessionId: string, path: string): Promise<void> {
+    await svc.createSessionEvent({
+      sessionId,
+      eventType: 'observation',
+      payloadJson: JSON.stringify({ kind: 'file_modified', path, linesAdded: 1, linesRemoved: 0 }),
+      memoryCandidate: false
+    })
+  }
+
+  it('commits + zero file_modified events → the mark is written and survives the close', async () => {
+    const started = await svc.startSession({ projectId: 'proj-s' })
+    await svc.endSession(started.session.id, {
+      handoff: { resumePoint: 'r', commits: ['abc1234 TASK-1751 edited via heredoc'] }
+    })
+
+    // Read back AFTER the session is closed — a warning on stdout would not
+    // survive this, which is the whole point of the criterion.
+    const events = await svc.listSessionEvents(started.session.id, 'observation')
+    const mark = findUnderivable(events)
+    expect(mark).toBeDefined()
+    expect(mark?.commitCount).toBe(1)
+  })
+
+  it('commits AND file_modified events → NO mark; the hook saw the work', async () => {
+    const started = await svc.startSession({ projectId: 'proj-s' })
+    await addFileModified(started.session.id, 'src/foo.ts')
+    await svc.endSession(started.session.id, {
+      handoff: { resumePoint: 'r', commits: ['abc1234 TASK-1751 edited via the Edit tool'] }
+    })
+
+    const events = await svc.listSessionEvents(started.session.id, 'observation')
+    expect(findUnderivable(events)).toBeUndefined()
+  })
+
+  it('no commits and no events → NO mark; "did nothing" is not "could not tell"', async () => {
+    const started = await svc.startSession({ projectId: 'proj-s' })
+    await svc.endSession(started.session.id, { handoff: { resumePoint: 'r' } })
+
+    const events = await svc.listSessionEvents(started.session.id, 'observation')
+    expect(findUnderivable(events)).toBeUndefined()
+  })
+})
