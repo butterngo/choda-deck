@@ -385,12 +385,36 @@ export const register = (
   )
 }
 
+// TASK-1747 — where a session's code actually lives. workspace.cwd when the
+// session is bound to a workspace, project.cwd otherwise. Best-effort like the
+// rest of derivation: a missing or archived workspace falls back rather than
+// throwing, so session_end is never broken by a stale workspace row.
+async function resolveSessionCwd(
+  svc: ProjectOperations & WorkspaceOperations,
+  session: Session
+): Promise<string | undefined> {
+  if (session.workspaceId) {
+    const workspace = await svc.getWorkspace(session.workspaceId)
+    if (workspace?.cwd) return workspace.cwd
+  }
+  const project = await svc.getProject(session.projectId)
+  return project?.cwd ?? undefined
+}
+
 // TASK-985 (ADR-031 Tier 1) — auto-derive handoff.commits from the session window
 // when the caller omits them. AI-supplied commits always win (ADR-029 merge rule);
 // derivation only fills the gap. Runs here in the async handler because git is async
 // I/O — the sync endSession transaction stays pure.
+// TASK-1747 — the window is resolved on the WORKSPACE's cwd, not the project's.
+// A session already carries workspaceId (task-types.ts), and the code it changed
+// lives in that workspace's repo: project choda-deck.cwd is C:\dev\choda-deck
+// while workspace choda-deck-companion.cwd is C:\dev\choda-deck-companion, so
+// deriving on the project missed every companion commit. Four projects point
+// project.cwd at the vault, where git log answers with the VAULT's commits —
+// confidently wrong rather than empty. project.cwd stays as the fallback for a
+// session with no workspaceId, which is no worse than the previous behaviour.
 export async function resolveCommits(
-  svc: SessionOperations & ProjectOperations,
+  svc: SessionOperations & ProjectOperations & WorkspaceOperations,
   git: GitOps,
   sessionId: string,
   provided: string[] | undefined
@@ -398,8 +422,7 @@ export async function resolveCommits(
   if (provided && provided.length > 0) return provided
   const session = await svc.getSession(sessionId)
   if (!session) return provided
-  const project = await svc.getProject(session.projectId)
-  const cwd = project?.cwd
+  const cwd = await resolveSessionCwd(svc, session)
   if (!cwd) return provided
   const derived = git.commitsInWindow(cwd, session.startedAt, session.taskId ?? undefined)
   return derived.length > 0 ? derived : provided
