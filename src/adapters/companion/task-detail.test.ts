@@ -60,7 +60,16 @@ interface ProvenanceFixture {
     workspaceId: string | null
     handoff: { commits?: string[] } | null
   }>
-  decisions?: Array<{ slug: string; title: string; body: string; realizesTasks?: string[] }>
+  decisions?: Array<{
+    slug: string
+    title: string
+    body: string
+    realizesTasks?: string[]
+    /** Reading this entry throws, as a malformed frontmatter refs block does. */
+    unreadable?: boolean
+  }>
+  /** Captures the filter listKnowledge was called with, to prove project scoping. */
+  seenKnowledgeFilter?: { projectId?: string; type?: string }
 }
 
 function fakeSvc(fx: ProvenanceFixture = {}): BackendTaskService {
@@ -75,9 +84,13 @@ function fakeSvc(fx: ProvenanceFixture = {}): BackendTaskService {
     getWorkspace: async (id: string) =>
       (fx.workspaces ?? {})[id] ? { id, cwd: (fx.workspaces ?? {})[id] } : null,
     findSessions: async () => fx.sessions ?? [],
-    listKnowledge: async () => (fx.decisions ?? []).map((d) => ({ slug: d.slug, title: d.title })),
+    listKnowledge: async (filter?: { projectId?: string; type?: string }) => {
+      fx.seenKnowledgeFilter = filter
+      return (fx.decisions ?? []).map((d) => ({ slug: d.slug, title: d.title }))
+    },
     getKnowledge: async (slug: string) => {
       const d = (fx.decisions ?? []).find((x) => x.slug === slug)
+      if (d?.unreadable) throw new Error('Frontmatter parse: ref missing path or commitSha')
       return d
         ? { slug, body: d.body, frontmatter: { structured: { realizesTasks: d.realizesTasks } } }
         : null
@@ -255,5 +268,58 @@ describe('handleTaskDetailRoute — TASK-1748 provenance', () => {
     const cap = {} as Captured
     await handleTaskDetailRoute(req('/tasks/TASK-1', 'GET', 'wrong-token-x'), fakeRes(cap), fakeSvc(), TOKEN)
     expect(cap.status).toBe(401)
+  })
+})
+
+// Found by running the route against the real database rather than a stub: one
+// ADR whose frontmatter failed to parse threw FrontmatterParseError out of
+// getKnowledge, the router's catch-all turned it into a 500, and the whole task
+// became unreadable. The unit tests could not have caught it — they stubbed the
+// service, so nothing ever threw.
+describe('handleTaskDetailRoute — provenance must not sink the task read', () => {
+  it('an ADR whose frontmatter will not parse is skipped, not fatal', async () => {
+    const cap = {} as Captured
+    const fx: ProvenanceFixture = {
+      decisions: [
+        { slug: 'ADR-broken', title: 'Broken', body: 'about TASK-1', unreadable: true },
+        { slug: 'ADR-fine', title: 'Fine', body: 'also about TASK-1' }
+      ]
+    }
+    await handleTaskDetailRoute(req('/tasks/TASK-1'), fakeRes(cap), fakeSvc(fx), TOKEN)
+
+    expect(cap.status).toBe(200)
+    // The readable one still comes through — skipping is per entry, not a
+    // bail-out that silently empties the section.
+    expect((cap.body as { adrs: Array<{ slug: string }> }).adrs).toEqual([
+      { slug: 'ADR-fine', title: 'Fine', via: 'body' }
+    ])
+  })
+
+  it('ADRs are queried scoped to the task’s own project', async () => {
+    // Unscoped, this walks every project's decisions — another project's ADR is
+    // not this task's provenance, and entries whose files live in other repos
+    // are how the unreadable one reached the loop at all.
+    const cap = {} as Captured
+    const fx: ProvenanceFixture = { decisions: [] }
+    await handleTaskDetailRoute(req('/tasks/TASK-1'), fakeRes(cap), fakeSvc(fx), TOKEN)
+
+    expect(fx.seenKnowledgeFilter).toEqual({ type: 'decision', projectId: 'p1' })
+  })
+
+  it('a collector throwing outright costs its own section, not the task', async () => {
+    const cap = {} as Captured
+    const broken = {
+      ...fakeSvc(),
+      getTouchesForTask: async () => {
+        throw new Error('code_ref store unavailable')
+      }
+    } as unknown as Parameters<typeof handleTaskDetailRoute>[2]
+
+    await handleTaskDetailRoute(req('/tasks/TASK-1'), fakeRes(cap), broken, TOKEN)
+
+    const body = cap.body as { title: string; files: unknown[] };
+    expect(cap.status).toBe(200)
+    expect(body.title).toBe('graph view')
+    expect(body.files).toEqual([])
   })
 })
