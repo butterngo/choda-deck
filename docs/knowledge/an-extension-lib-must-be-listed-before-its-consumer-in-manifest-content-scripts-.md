@@ -5,19 +5,19 @@ projectId: choda-deck
 scope: project
 refs:
   - path: extension/manifest.json
-    commitSha: c936434814688c3e45d842a1dc4bd2e9f353b367
+    commitSha: d69ac90d1948a597a8e0205859a3b567585d7bbb
   - path: extension/lib/noise-filter.js
-    commitSha: c936434814688c3e45d842a1dc4bd2e9f353b367
+    commitSha: d69ac90d1948a597a8e0205859a3b567585d7bbb
   - path: extension/lib/recorder.js
-    commitSha: c936434814688c3e45d842a1dc4bd2e9f353b367
+    commitSha: d69ac90d1948a597a8e0205859a3b567585d7bbb
   - path: extension/popup.html
-    commitSha: c936434814688c3e45d842a1dc4bd2e9f353b367
+    commitSha: d69ac90d1948a597a8e0205859a3b567585d7bbb
   - path: extension/background.js
-    commitSha: c936434814688c3e45d842a1dc4bd2e9f353b367
+    commitSha: d69ac90d1948a597a8e0205859a3b567585d7bbb
   - path: extension/popup-wiring.test.js
-    commitSha: c936434814688c3e45d842a1dc4bd2e9f353b367
+    commitSha: d69ac90d1948a597a8e0205859a3b567585d7bbb
 createdAt: 2026-07-30
-lastVerifiedAt: 2026-08-04
+lastVerifiedAt: 2026-08-24
 ---
 
 ## Trigger

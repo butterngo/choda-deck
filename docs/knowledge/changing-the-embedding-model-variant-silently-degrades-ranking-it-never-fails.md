@@ -5,11 +5,11 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/domain/embedding/local-embedding-provider.ts
-    commitSha: 1a0eea4b1687cbdfbe66144169069fa64a5d21c9
+    commitSha: 8196107e0024ed9e5aacab466b5c296f352b17dc
   - path: src/core/domain/embedding/embedding-provider-factory.ts
-    commitSha: 1a0eea4b1687cbdfbe66144169069fa64a5d21c9
+    commitSha: 8196107e0024ed9e5aacab466b5c296f352b17dc
 createdAt: 2026-08-05
-lastVerifiedAt: 2026-08-05
+lastVerifiedAt: 2026-08-17
 affectedFeatureId: feature-embedding-search
 ---
 

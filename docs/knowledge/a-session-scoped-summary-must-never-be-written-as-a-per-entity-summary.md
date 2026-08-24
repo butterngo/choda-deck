@@ -5,13 +5,13 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/domain/lifecycle/session-lifecycle-service.ts
-    commitSha: 29e4551e69996b805723960e2ca271ce3c860623
+    commitSha: 8196107e0024ed9e5aacab466b5c296f352b17dc
   - path: src/core/domain/interfaces/session-lifecycle.interface.ts
-    commitSha: 29e4551e69996b805723960e2ca271ce3c860623
+    commitSha: 8196107e0024ed9e5aacab466b5c296f352b17dc
   - path: src/adapters/mcp/rules/mcp-rules.md
-    commitSha: 29e4551e69996b805723960e2ca271ce3c860623
+    commitSha: 8196107e0024ed9e5aacab466b5c296f352b17dc
 createdAt: 2026-08-10
-lastVerifiedAt: 2026-08-10
+lastVerifiedAt: 2026-08-17
 affectedFeatureId: feature-session-lifecycle
 ---
 

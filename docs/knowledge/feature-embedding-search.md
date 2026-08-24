@@ -5,11 +5,11 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/domain/embedding/local-embedding-provider.ts
-    commitSha: 306045e706dad87bc85ee857b43c2154a7f69479
+    commitSha: 8196107e0024ed9e5aacab466b5c296f352b17dc
   - path: src/core/domain/embedding/embedding-provider-factory.ts
-    commitSha: 306045e706dad87bc85ee857b43c2154a7f69479
+    commitSha: 8196107e0024ed9e5aacab466b5c296f352b17dc
 createdAt: 2026-06-04
-lastVerifiedAt: 2026-08-03
+lastVerifiedAt: 2026-08-17
 realizesTasks: ["TASK-643"]
 inWorkspaces: ["main"]
 effortBand: M

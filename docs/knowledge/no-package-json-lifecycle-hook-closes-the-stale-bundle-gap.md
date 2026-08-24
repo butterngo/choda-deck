@@ -5,9 +5,9 @@ projectId: choda-deck
 scope: project
 refs:
   - path: package.json
-    commitSha: 999111045a97ba3217915d9a1766aae89c9d9816
+    commitSha: 8196107e0024ed9e5aacab466b5c296f352b17dc
 createdAt: 2026-07-31
-lastVerifiedAt: 2026-08-05
+lastVerifiedAt: 2026-08-17
 ---
 
 ## Trigger
