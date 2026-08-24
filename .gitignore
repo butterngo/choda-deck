@@ -45,3 +45,17 @@ data/
 *.png
 knowledge-staleness-report-*.md
 docs/knowledge-staleness-report-*.md
+
+# Butter's call, 2026-08-24: these six specific files stop showing in git status.
+# They stay ON DISK — ignored, not deleted — so nothing is lost, only untracked.
+#
+# Listed file-by-file rather than as docs/reports/ and docs/knowledge/, so a
+# future report or knowledge entry still appears. Blanket-ignoring those
+# directories would silently swallow every entry the knowledge service writes
+# from here on.
+docs/knowledge/conversation-add-caps-content-at-1500-chars-design-the-thread-post-don-t-discove.md
+docs/knowledge/session-end-lands-on-implemented-done-needs-a-second-deliberate-call.md
+docs/reports/companion-task-code-git-view-discovery.md
+docs/reports/embedding-variant-migration-discovery.md
+docs/reports/knowledge-staleness-2026-08-17.md
+docs/reports/zalo-group-message-bridge-discovery.md
