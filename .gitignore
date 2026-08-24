@@ -32,3 +32,16 @@ tsconfig.web.tsbuildinfo
 
 # Runtime data (databases, artifacts, backups)
 data/
+
+# Scratch images and stray staleness reports that keep landing at the repo root.
+# Both are throwaway output — the images are editing scratch, and the staleness
+# reports are a snapshot of a moment, regenerated on demand rather than read
+# back. They accumulated until `git status` was 32 lines of noise, which is how
+# a real uncommitted change gets lost.
+#
+# NOT ignored, deliberately: docs/reports/ and docs/knowledge/, which hold real
+# discovery output and knowledge entries. Ignoring those would mean work that
+# can never be committed and quietly disappears.
+*.png
+knowledge-staleness-report-*.md
+docs/knowledge-staleness-report-*.md
