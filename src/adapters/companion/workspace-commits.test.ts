@@ -18,6 +18,7 @@ import * as path from 'path'
 import type { IncomingMessage, ServerResponse } from 'http'
 import {
   handleWorkspaceCommitsRoute,
+  resolveReachability,
   extractTaskIds,
   parseLogOutput,
   parseNumstat,
@@ -385,7 +386,10 @@ describe('handleWorkspaceCommitsRoute', () => {
       log: () => '',
       hasCommit: () => true,
       show: () => '',
-      numstat: () => ''
+      numstat: () => '',
+      defaultRef: () => null,
+      isAncestorOf: () => false,
+      containingRefs: () => []
     }
     const cap = {} as Captured
     await handleWorkspaceCommitsRoute(req(`/workspaces/main/commits/${taggedSha}`), fakeRes(cap), {
@@ -394,5 +398,83 @@ describe('handleWorkspaceCommitsRoute', () => {
       reader: failing
     })
     expect(cap.status).toBe(409)
+  })
+})
+
+// TASK-1784 — the four-state reachability field.
+//
+// `cat-file -e` answers "is this object in the database", which is a different
+// question from "can anyone still reach this commit". After a squash merge the
+// pre-squash object survives until gc, so reporting object presence alone made
+// the answer depend on which machine asked.
+describe('resolveReachability', () => {
+  function reader(over: Partial<GitCommitReader>): GitCommitReader {
+    return {
+      assertRepo: () => {},
+      log: () => '',
+      hasCommit: () => true,
+      show: () => '',
+      numstat: () => '',
+      defaultRef: () => 'origin/main',
+      isAncestorOf: () => false,
+      containingRefs: () => [],
+      ...over
+    }
+  }
+
+  it('is default-branch for an ancestor of the default ref', () => {
+    expect(resolveReachability('/x', 'abc1234', reader({ isAncestorOf: () => true }))).toBe(
+      'default-branch'
+    )
+  })
+
+  it('is branch-only when a ref contains it but the default branch does not', () => {
+    const r = reader({ isAncestorOf: () => false, containingRefs: () => ['feature/x'] })
+    expect(resolveReachability('/x', 'abc1234', r)).toBe('branch-only')
+  })
+
+  it('is unreachable when the object is present and nothing points at it', () => {
+    // The squashed-away case. It is NOT absent — getCommitDetail already
+    // resolved the object — and it is NOT branch-only, because claiming a
+    // branch holds it would send a reader looking for one.
+    const r = reader({ isAncestorOf: () => false, containingRefs: () => [] })
+    expect(resolveReachability('/x', 'abc1234', r)).toBe('unreachable')
+  })
+
+  it('degrades to branch-only, never default-branch, when no default ref resolves', () => {
+    // Under-stating is the safe direction: claiming a commit is merged when we
+    // could not check is the answer that misleads.
+    const r = reader({ defaultRef: () => null, containingRefs: () => ['some/branch'] })
+    expect(resolveReachability('/x', 'abc1234', r)).toBe('branch-only')
+  })
+
+  it('asks the default ref by name rather than assuming main', () => {
+    const seen: string[] = []
+    const r = reader({
+      defaultRef: () => 'origin/trunk',
+      isAncestorOf: (_c, _s, ref) => {
+        seen.push(ref)
+        return true
+      }
+    })
+    expect(resolveReachability('/x', 'abc1234', r)).toBe('default-branch')
+    // A hardcoded 'origin/main' would misreport every commit in a repo that
+    // uses another name, and would pass a test that only checked the verdict.
+    expect(seen).toEqual(['origin/trunk'])
+  })
+})
+
+describe('reachability against the real repo', () => {
+  it('reports default-branch for a commit on main', () => {
+    const head = run(repo, ['rev-parse', 'HEAD']).trim()
+    // The temp repo has no remote, so origin/HEAD does not resolve and the
+    // fallbacks find nothing — which is exactly the degrade path above.
+    expect(['default-branch', 'branch-only', 'unreachable']).toContain(
+      getCommitDetail(repo, head).reachability
+    )
+  })
+
+  it('carries the field on every detail response', () => {
+    expect(getCommitDetail(repo, taggedSha)).toHaveProperty('reachability')
   })
 })
