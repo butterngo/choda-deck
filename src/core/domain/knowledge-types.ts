@@ -113,11 +113,22 @@ export interface KnowledgeRefStaleness {
   commitsSince: number
 }
 
-export interface KnowledgeEntry {
+/**
+ * TASK-1785 — an entry's text with NO staleness attached.
+ *
+ * Deliberately not `Omit<KnowledgeEntry, 'staleness' | 'isStale'>` written
+ * inline at each call site: the absence is the point, and it deserves a name a
+ * reader can look up. Computing staleness costs a git subprocess per ref, so
+ * callers that only need the text should say so in the type they ask for.
+ */
+export interface KnowledgeSource {
   slug: string
   frontmatter: KnowledgeFrontmatter
   body: string
   filePath: string
+}
+
+export interface KnowledgeEntry extends KnowledgeSource {
   staleness: KnowledgeRefStaleness[]
   isStale: boolean
 }

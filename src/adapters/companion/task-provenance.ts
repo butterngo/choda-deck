@@ -157,9 +157,12 @@ async function collectAdrs(
     // refs block. One bad file must not sink the whole task read: provenance
     // is supplementary, and losing the task entirely to learn nothing about
     // one ADR is the worst of both. Skip it and keep going.
-    let entry: Awaited<ReturnType<typeof svc.getKnowledge>> = null
+    // TASK-1785 — the SOURCE read, not getKnowledge. Staleness costs a `git log`
+    // per ref and nothing below reads it; paying for it across all 44 decision
+    // entries is what made this route take 15 seconds.
+    let entry: Awaited<ReturnType<typeof svc.readKnowledgeSource>> = null
     try {
-      entry = await svc.getKnowledge(item.slug)
+      entry = await svc.readKnowledgeSource(item.slug)
     } catch {
       continue
     }
