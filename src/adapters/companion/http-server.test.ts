@@ -37,7 +37,12 @@ const fakeSvc = {
   findTasks: async () => [{ id: 'TASK-1', title: 't' }],
   findInbox: async () => [{ id: 'INBOX-1' }],
   findConversations: async () => [{ id: 'CONV-1' }],
-  findWorkspaces: async () => [{ id: 'w1', projectId: 'choda-deck', label: 'Main', cwd: 'C:/x', archivedAt: null }]
+  findWorkspaces: async () => [{ id: 'w1', projectId: 'choda-deck', label: 'Main', cwd: 'C:/x', archivedAt: null }],
+  // TASK-1779 — the commits route resolves a workspace through this. Absent, it
+  // throws a TypeError and the route 500s while every unit test stays green;
+  // that is exactly how TASK-1748 shipped a route that 500'd for every task.
+  getWorkspace: async (id: string) =>
+    id === 'w1' ? { id, projectId: 'choda-deck', label: 'Main', cwd: 'C:/definitely-not-here', archivedAt: null } : null
 } as unknown as BackendTaskService
 
 describe('companion http server', () => {
@@ -89,6 +94,25 @@ describe('companion http server', () => {
     expect(await (await fetch(`${base}/workspaces`)).json()).toEqual({
       workspaces: [{ id: 'w1', projectId: 'choda-deck', label: 'Main', cwd: 'C:/x', archivedAt: null }]
     })
+  })
+
+  // TASK-1779 — WIRING, not behaviour. The handler's own suite covers parsing and
+  // status codes against a real repo; what only a real router can prove is that
+  // the route is reachable at all. A 404 here means the registration is missing,
+  // and no amount of unit coverage would have said so.
+  it('reaches the commits route through the real router', async () => {
+    const res = await fetch(`${base}/workspaces/w1/commits`, {
+      headers: { 'x-choda-bridge-token': 'test-token' }
+    })
+    // The fixture cwd does not exist, so 409 is the correct answer — and it
+    // proves the handler ran rather than the router falling through.
+    expect(res.status).toBe(409)
+    expect((await res.json()).cwd).toBe('C:/definitely-not-here')
+  })
+
+  it('gates the commits route on the bridge token', async () => {
+    const res = await fetch(`${base}/workspaces/w1/commits`)
+    expect(res.status).toBe(401)
   })
 
   it('serves the sync ledger with the remote-only row counted', async () => {
