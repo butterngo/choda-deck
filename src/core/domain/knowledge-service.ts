@@ -10,6 +10,7 @@ import { isLikelyWorktreePath } from '../worktree-path'
 import type {
   CreateKnowledgeInput,
   KnowledgeEntry,
+  KnowledgeSource,
   KnowledgeFrontmatter,
   KnowledgeIndexRow,
   KnowledgeListFilter,
@@ -328,6 +329,35 @@ export class KnowledgeService implements KnowledgeOperations {
   }
 
   async getKnowledge(slug: string): Promise<KnowledgeEntry | null> {
+    const source = await this.readKnowledgeSource(slug)
+    if (!source) return null
+
+    const row = await this.knowledge.get(slug)
+    if (!row) return null
+
+    // The expensive half, kept behind the method whose name promises it:
+    // resolveStalenessCwd is a workspace lookup and computeStaleness spawns a
+    // `git log` per ref. See readKnowledgeSource for who must not pay this.
+    const cwd = await this.resolveStalenessCwd(row.projectId, row.workspaceId)
+    const staleness = this.computeStaleness(source.frontmatter.refs, cwd, row.scope)
+
+    return {
+      ...source,
+      staleness,
+      isStale: staleness.some((s) => s.commitsSince > 0)
+    }
+  }
+
+  /**
+   * TASK-1785 — the text, and nothing that costs a subprocess to learn.
+   *
+   * Measured 2026-08-25 before this existed: GET /tasks/:id took 14,994 ms,
+   * because task provenance read all 44 decision entries through getKnowledge
+   * and each one ran a `git log` per ref to compute staleness that provenance
+   * never looks at. The adapter is single-threaded, so that also blocked every
+   * other caller for the duration.
+   */
+  async readKnowledgeSource(slug: string): Promise<KnowledgeSource | null> {
     const row = await this.knowledge.get(slug)
     if (!row) return null
     if (!fs.existsSync(row.filePath)) return null
@@ -335,17 +365,7 @@ export class KnowledgeService implements KnowledgeOperations {
     const raw = fs.readFileSync(row.filePath, 'utf8')
     const { frontmatter, body } = parseFrontmatter(raw)
 
-    const cwd = await this.resolveStalenessCwd(row.projectId, row.workspaceId)
-    const staleness = this.computeStaleness(frontmatter.refs, cwd, row.scope)
-
-    return {
-      slug,
-      frontmatter,
-      body,
-      filePath: row.filePath,
-      staleness,
-      isStale: staleness.some((s) => s.commitsSince > 0)
-    }
+    return { slug, frontmatter, body, filePath: row.filePath }
   }
 
   async listKnowledge(filter: KnowledgeListFilter = {}): Promise<KnowledgeListItem[]> {

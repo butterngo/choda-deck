@@ -88,6 +88,19 @@ function fakeSvc(fx: ProvenanceFixture = {}): BackendTaskService {
       fx.seenKnowledgeFilter = filter
       return (fx.decisions ?? []).map((d) => ({ slug: d.slug, title: d.title }))
     },
+    // TASK-1785 — provenance reads through readKnowledgeSource now, because
+    // getKnowledge computes staleness with a `git log` per ref and nothing on
+    // this path reads it. Both are stubbed: the route must keep working
+    // whichever one a future caller reaches for, and stubbing only the one
+    // under test is how this fake silently emptied `adrs` when the production
+    // call moved (typecheck passed the whole time — the fake is a cast).
+    readKnowledgeSource: async (slug: string) => {
+      const d = (fx.decisions ?? []).find((x) => x.slug === slug)
+      if (d?.unreadable) throw new Error('Frontmatter parse: ref missing path or commitSha')
+      return d
+        ? { slug, body: d.body, frontmatter: { structured: { realizesTasks: d.realizesTasks } } }
+        : null
+    },
     getKnowledge: async (slug: string) => {
       const d = (fx.decisions ?? []).find((x) => x.slug === slug)
       if (d?.unreadable) throw new Error('Frontmatter parse: ref missing path or commitSha')

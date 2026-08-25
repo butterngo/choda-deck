@@ -70,6 +70,7 @@ import type {
 import type {
   CreateKnowledgeInput,
   KnowledgeEntry,
+  KnowledgeSource,
   KnowledgeListFilter,
   KnowledgeListItem,
   KnowledgeSearchResult,
@@ -616,6 +617,10 @@ export class SqliteTaskService
   async registerExistingKnowledge(input: RegisterExistingKnowledgeInput): Promise<KnowledgeEntry> {
     return this.knowledgeService.registerExistingKnowledge(input)
   }
+  async readKnowledgeSource(slug: string): Promise<KnowledgeSource | null> {
+    return this.knowledgeService.readKnowledgeSource(slug)
+  }
+
   async getKnowledge(slug: string): Promise<KnowledgeEntry | null> {
     return this.knowledgeService.getKnowledge(slug)
   }
