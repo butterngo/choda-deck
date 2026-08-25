@@ -40,6 +40,13 @@ const LOG_FORMAT = ['%H', '%h', '%aI', '%s'].join(SEP)
 const SHOW_FORMAT = ['%H', '%h', '%aI', '%s', '%b'].join(SEP)
 
 /** A sha as it may appear in a URL. Anything else never reaches `git`. */
+// Built with RegExp rather than written as literals: this file is edited by
+// tooling that has silently turned a backslash escape into a control character
+// before (a regex  became 0x08, and it typechecked). A string source has no
+// escape to lose.
+const LINE_BREAK = new RegExp(String.fromCharCode(13) + '?' + String.fromCharCode(10))
+const LEADING_MARKER = new RegExp('^[*+]?[ ' + String.fromCharCode(9) + ']*')
+
 const SHA_PATTERN = /^[0-9a-fA-F]{4,40}$/
 
 export interface CommitRow {
@@ -62,7 +69,29 @@ export interface CommitFileStat {
   binary: boolean
 }
 
+/**
+ * TASK-1784 — how attached a commit is to this repository's refs.
+ *
+ * `cat-file -e` answers "is this object in the database", which is NOT the same
+ * question. After a squash merge the pre-squash object survives until `git gc`
+ * collects it, so the same sha reads as present on the laptop that made the
+ * branch and absent on a fresh clone. Measured 2026-08-25: all four shas the
+ * recent session handoffs recorded (bf781db, 915f191, 78637ef, db70bf7) are
+ * readable here and reachable from no ref at all.
+ *
+ * Reporting object presence alone made the answer depend on which machine
+ * asked, which is worse than either answer on its own.
+ */
+export type CommitReachability =
+  /** An ancestor of the remote's default branch. The ordinary case. */
+  | 'default-branch'
+  /** Reachable from some ref, but not merged into the default branch. */
+  | 'branch-only'
+  /** The object is here and nothing points at it — squashed away, still readable. */
+  | 'unreachable'
+
 export interface CommitDetail extends CommitRow {
+  reachability: CommitReachability
   /** Commit body below the subject. Empty string when there is none. */
   body: string
   files: CommitFileStat[]
@@ -95,6 +124,11 @@ export interface GitCommitReader {
   hasCommit(cwd: string, sha: string): boolean
   show(cwd: string, sha: string): string
   numstat(cwd: string, sha: string): string
+  /** TASK-1784 — the remote's default ref, e.g. `origin/main`, or null. */
+  defaultRef(cwd: string): string | null
+  isAncestorOf(cwd: string, sha: string, ref: string): boolean
+  /** Refs that contain `sha`. Empty means the object is attached to nothing. */
+  containingRefs(cwd: string, sha: string): string[]
 }
 
 function git(cwd: string, args: string[]): string {
@@ -139,6 +173,49 @@ export const execGitCommitReader: GitCommitReader = {
   },
   numstat(cwd, sha) {
     return git(cwd, ['show', '--numstat', '--format=', sha, '--'])
+  },
+  defaultRef(cwd) {
+    // symbolic-ref is the honest answer and it IS set in every registered
+    // workspace (verified across all four on 2026-08-25). The fallbacks exist
+    // because a fresh clone made with --no-checkout, or a repo whose remote was
+    // added by hand, can leave origin/HEAD unset — and guessing 'main' silently
+    // would misreport every commit in a repo that uses another name.
+    try {
+      return git(cwd, ['symbolic-ref', 'refs/remotes/origin/HEAD']).trim().replace(/^refs\/remotes\//, '')
+    } catch {
+      /* fall through */
+    }
+    for (const candidate of ['origin/main', 'origin/master']) {
+      try {
+        git(cwd, ['rev-parse', '--verify', '--quiet', candidate])
+        return candidate
+      } catch {
+        /* try the next one */
+      }
+    }
+    return null
+  },
+  isAncestorOf(cwd, sha, ref) {
+    try {
+      git(cwd, ['merge-base', '--is-ancestor', sha, ref])
+      return true
+    } catch {
+      return false
+    }
+  },
+  containingRefs(cwd, sha) {
+    try {
+      const out = git(cwd, ['branch', '-a', '--contains', sha]).trim()
+      if (out === '') return []
+      // `git branch --contains` marks the current branch with `*` and a
+      // worktree's branch with `+`; both are noise here, only the count matters.
+      return out
+        .split(LINE_BREAK)
+        .map((l) => l.replace(LEADING_MARKER, '').trim())
+        .filter((l) => l.length > 0)
+    } catch {
+      return []
+    }
   }
 }
 
@@ -225,6 +302,7 @@ export function getCommitDetail(
   // this sha — which is the pre-squash-orphan case, and a 404 rather than a 409.
   if (!reader.hasCommit(cwd, sha)) throw new UnknownShaError(sha)
 
+  const reachability = resolveReachability(cwd, sha, reader)
   const parts = reader.show(cwd, sha).split(SEP)
   const [full, shortSha, authorDate, subject, ...bodyParts] = parts
   const body = bodyParts.join(SEP).trim()
@@ -234,9 +312,30 @@ export function getCommitDetail(
     authorDate,
     subject,
     taskIds: extractTaskIds(subject ?? ''),
+    reachability,
     body,
     files: parseNumstat(reader.numstat(cwd, sha))
   }
+}
+
+/**
+ * Which of the three attached states this commit is in. The fourth state,
+ * absent, never reaches here: getCommitDetail throws UnknownShaError first and
+ * the route answers 404, because an object that is not here has no detail to
+ * report.
+ *
+ * With no resolvable default ref the answer degrades to branch-only rather than
+ * default-branch. Claiming a commit is merged when we could not check is the
+ * dangerous direction; claiming it is only on a branch merely under-states it.
+ */
+export function resolveReachability(
+  cwd: string,
+  sha: string,
+  reader: GitCommitReader = execGitCommitReader
+): CommitReachability {
+  const ref = reader.defaultRef(cwd)
+  if (ref !== null && reader.isAncestorOf(cwd, sha, ref)) return 'default-branch'
+  return reader.containingRefs(cwd, sha).length > 0 ? 'branch-only' : 'unreachable'
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
