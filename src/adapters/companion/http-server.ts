@@ -20,6 +20,7 @@ import { handleTaskDetailRoute } from './task-detail'
 import { handleArtifactsRoute } from './artifacts'
 import { handleVaultRoute } from './vault'
 import { handleWorkspaceDocsRoute } from './workspace-docs'
+import { handleWorkspaceCommitsRoute } from './workspace-commits'
 import { handleConversationDetailRoute } from './conversation-detail'
 import {
   CAPTURE_MAX_IMAGE_BYTES,
@@ -101,6 +102,18 @@ async function route(
   if (
     handleArtifactsRoute(req, res, {
       artifactsDir: services.artifactsDir,
+      bridgeToken: services.bridgeToken
+    })
+  ) {
+    return
+  }
+
+  // TASK-1779 — a workspace's git history. Registered before the GET-only guard
+  // below so it owns its own 405, and before /workspace-docs only for reading
+  // order; the two prefixes cannot collide.
+  if (
+    await handleWorkspaceCommitsRoute(req, res, {
+      svc: services.svc,
       bridgeToken: services.bridgeToken
     })
   ) {
