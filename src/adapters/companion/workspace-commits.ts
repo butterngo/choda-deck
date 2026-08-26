@@ -26,6 +26,7 @@ import { Buffer } from 'buffer'
 import { timingSafeEqual } from 'crypto'
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { WorkspaceOperations } from '../../core/domain/interfaces/workspace-repository.interface'
+import { parseUnifiedDiff, type Hunks } from './commit-diff'
 
 const ROUTE_PREFIX = '/workspaces/'
 const COMMITS_SEGMENT = '/commits'
@@ -63,6 +64,19 @@ export interface CommitRow {
 
 export interface CommitFileStat {
   path: string
+  /**
+   * TASK-1791 — the changed lines, present only when `patch=1` was asked for.
+   *
+   * `null` (not `[]`) means the patch was NOT produced: the file is binary, or
+   * it exceeded the per-file cap. An empty array would say the file changed
+   * nothing, which is a different and wrong claim — same rule as
+   * filesConfidence:'undeterminable'.
+   */
+  hunks?: Hunks
+  /** Why hunks is null, when it is. */
+  omitted?: 'binary' | 'too-large'
+  /** Set only on a rename, so a reader can see where the file came from. */
+  oldPath?: string
   /** null for a binary file — git reports `-`, and 0 would be a lie. */
   insertions: number | null
   deletions: number | null
@@ -124,6 +138,8 @@ export interface GitCommitReader {
   hasCommit(cwd: string, sha: string): boolean
   show(cwd: string, sha: string): string
   numstat(cwd: string, sha: string): string
+  /** TASK-1791 — the full unified patch for a commit. */
+  patch(cwd: string, sha: string): string
   /** TASK-1784 — the remote's default ref, e.g. `origin/main`, or null. */
   defaultRef(cwd: string): string | null
   isAncestorOf(cwd: string, sha: string, ref: string): boolean
@@ -173,6 +189,11 @@ export const execGitCommitReader: GitCommitReader = {
   },
   numstat(cwd, sha) {
     return git(cwd, ['show', '--numstat', '--format=', sha, '--'])
+  },
+  patch(cwd, sha) {
+    // -M detects renames, so a moved file reports as a rename rather than as a
+    // whole-file delete plus a whole-file add.
+    return git(cwd, ['show', '--format=', '--unified=3', '-M', sha, '--'])
   },
   defaultRef(cwd) {
     // symbolic-ref is the honest answer and it IS set in every registered
@@ -295,7 +316,8 @@ export function listCommits(
 export function getCommitDetail(
   cwd: string,
   sha: string,
-  reader: GitCommitReader = execGitCommitReader
+  reader: GitCommitReader = execGitCommitReader,
+  opts: { patch?: boolean } = {}
 ): CommitDetail {
   reader.assertRepo(cwd)
   // Repo-level health is established above, so a miss here is genuinely about
@@ -314,8 +336,36 @@ export function getCommitDetail(
     taskIds: extractTaskIds(subject ?? ''),
     reachability,
     body,
-    files: parseNumstat(reader.numstat(cwd, sha))
+    files: withHunks(parseNumstat(reader.numstat(cwd, sha)), cwd, sha, reader, opts.patch === true)
   }
+}
+
+/**
+ * Attach hunks to the stat rows, matching on path.
+ *
+ * The stat is the source of truth for WHICH files changed; the patch only says
+ * how. A file the patch does not mention keeps its stat and gets no hunks key
+ * at all, rather than an empty array claiming it changed nothing.
+ */
+function withHunks(
+  files: CommitFileStat[],
+  cwd: string,
+  sha: string,
+  reader: GitCommitReader,
+  wanted: boolean
+): CommitFileStat[] {
+  if (!wanted) return files
+  const byPath = new Map(parseUnifiedDiff(reader.patch(cwd, sha)).map((d) => [d.path, d]))
+  return files.map((f) => {
+    const d = byPath.get(f.path)
+    if (!d) return f
+    return {
+      ...f,
+      hunks: d.hunks,
+      ...(d.omitted ? { omitted: d.omitted } : {}),
+      ...(d.oldPath ? { oldPath: d.oldPath } : {})
+    }
+  })
 }
 
 /**
@@ -459,8 +509,12 @@ export async function handleWorkspaceCommitsRoute(
     sendJson(res, 400, { error: 'sha must be hex, 4 to 40 characters' })
     return true
   }
+  // TASK-1791 — a new OPTIONAL param, so an adapter without it answers as it
+  // always did rather than 404ing a route the client had to guess about
+  // (the TASK-1787 precedent; the vendored bundle lags a release, INBOX-1888).
+  const wantPatch = new URL(req.url ?? '/', 'http://localhost').searchParams.get('patch') === '1'
   try {
-    sendJson(res, 200, getCommitDetail(workspace.cwd, sha, reader))
+    sendJson(res, 200, getCommitDetail(workspace.cwd, sha, reader, { patch: wantPatch }))
   } catch (e) {
     if (e instanceof UnknownShaError) {
       sendJson(res, 404, { error: `unknown commit: ${sha}`, workspaceId, cwd: workspace.cwd })
