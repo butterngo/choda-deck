@@ -387,6 +387,7 @@ describe('handleWorkspaceCommitsRoute', () => {
       hasCommit: () => true,
       show: () => '',
       numstat: () => '',
+      patch: () => '',
       defaultRef: () => null,
       isAncestorOf: () => false,
       containingRefs: () => []
@@ -415,6 +416,7 @@ describe('resolveReachability', () => {
       hasCommit: () => true,
       show: () => '',
       numstat: () => '',
+      patch: () => '',
       defaultRef: () => 'origin/main',
       isAncestorOf: () => false,
       containingRefs: () => [],
@@ -476,5 +478,50 @@ describe('reachability against the real repo', () => {
 
   it('carries the field on every detail response', () => {
     expect(getCommitDetail(repo, taggedSha)).toHaveProperty('reachability')
+  })
+})
+
+// TASK-1791 — hunks arrive only when asked for, and their absence never reads
+// as "this file changed nothing".
+describe('patch=1 on the detail route', () => {
+  it('omits hunks entirely by default', async () => {
+    const cap = {} as Captured
+    await handleWorkspaceCommitsRoute(req(`/workspaces/main/commits/${taggedSha}`), fakeRes(cap), {
+      svc: svcFor(repo),
+      bridgeToken: TOKEN
+    })
+    const body = cap.body as { files: Array<Record<string, unknown>> }
+    // Not `hunks: null` — the key is absent, so an old client sees exactly
+    // what it saw before.
+    expect(body.files.every((f) => !('hunks' in f))).toBe(true)
+  })
+
+  it('includes hunks with real line numbers when asked', async () => {
+    const cap = {} as Captured
+    await handleWorkspaceCommitsRoute(
+      req(`/workspaces/main/commits/${taggedSha}?patch=1`),
+      fakeRes(cap),
+      { svc: svcFor(repo), bridgeToken: TOKEN }
+    )
+    const body = cap.body as {
+      files: Array<{ path: string; hunks: Array<{ lines: Array<{ newNo: number | null }> }> | null }>
+    }
+    const a = body.files.find((f) => f.path === 'a.txt')
+    expect(a?.hunks).not.toBeNull()
+    expect(a!.hunks!.length).toBeGreaterThan(0)
+    expect(a!.hunks![0]!.lines.some((l) => typeof l.newNo === 'number')).toBe(true)
+  })
+
+  it('marks the binary file null rather than empty, with a text control', async () => {
+    const cap = {} as Captured
+    await handleWorkspaceCommitsRoute(
+      req(`/workspaces/main/commits/${binarySha}?patch=1`),
+      fakeRes(cap),
+      { svc: svcFor(repo), bridgeToken: TOKEN }
+    )
+    const body = cap.body as { files: Array<{ path: string; hunks: unknown; omitted?: string }> }
+    const bin = body.files.find((f) => f.path === 'blob.bin')
+    expect(bin?.hunks).toBeNull()
+    expect(bin?.omitted).toBe('binary')
   })
 })
