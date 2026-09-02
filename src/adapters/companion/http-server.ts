@@ -20,6 +20,7 @@ import { handleTaskDetailRoute } from './task-detail'
 import { handleArtifactsRoute } from './artifacts'
 import { handleVaultRoute } from './vault'
 import { handleWorkspaceDocsRoute } from './workspace-docs'
+import { handleWorkspaceSymbolsRoute } from './workspace-symbols'
 import { handleWorkspaceCommitsRoute } from './workspace-commits'
 import { handleConversationDetailRoute } from './conversation-detail'
 import {
@@ -124,6 +125,17 @@ async function route(
   // reason as artifacts and vault below; token-gated, .md-only, read-only.
   if (
     await handleWorkspaceDocsRoute(req, res, {
+      svc: services.svc,
+      bridgeToken: services.bridgeToken
+    })
+  ) {
+    return
+  }
+
+  // TASK-1797 — where is this name declared? A live text scan over the same
+  // tree workspace-docs serves, so the viewer can follow what a line calls.
+  if (
+    await handleWorkspaceSymbolsRoute(req, res, {
       svc: services.svc,
       bridgeToken: services.bridgeToken
     })
