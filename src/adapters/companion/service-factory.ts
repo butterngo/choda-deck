@@ -4,6 +4,8 @@
 // (sync_origin / sync_updated_at / _sync_state) — data the typed service surface
 // doesn't expose. WAL mode lets this reader run alongside the MCP server's writer.
 
+import * as os from 'os'
+import * as path from 'path'
 import Database from 'better-sqlite3'
 import { createTaskService } from '../../core/domain/task-service-factory'
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
@@ -41,6 +43,14 @@ export interface CompanionServices {
   // unreachable on any laptop that has not opted in. Only 30-Knowledge beneath
   // this root is ever served — see vault.ts.
   vaultDir?: string
+  // TASK-1828 — root for GET /claude-config. Unlike vaultDir this DEFAULTS to
+  // ~/.claude rather than being opt-in, and the difference is deliberate: the
+  // vault route could reach a whole personal tree, so it stays dark until asked
+  // for, whereas this one serves an allowlist of four named roots and cannot
+  // reach transcripts or history however it is called. An inventory that 501s
+  // until an env var is set would read as a broken tab, not as a safe default.
+  // Override with CHODA_CLAUDE_HOME.
+  claudeHome?: string
   // TASK-1175 — mutating sync actions (own writable connection per call). Injected
   // so http-server stays decoupled and tests can pass fakes. Throw
   // SyncNotConfiguredError when the laptop has no remote configured.
@@ -81,6 +91,7 @@ export async function createCompanionServices(): Promise<CompanionServices> {
     artifactsDir: dataPaths.artifactsDir,
     // Opt-in: unset means the vault routes 501 rather than serving anything.
     vaultDir: process.env.CHODA_VAULT_DIR?.trim() || undefined,
+    claudeHome: process.env.CHODA_CLAUDE_HOME?.trim() || path.join(os.homedir(), '.claude'),
     pull: () => runPull(dataPaths.dbPath, resolveRemoteConfig()),
     push: () => runPush(dataPaths.dbPath, resolveRemoteConfig()),
     close: () => {
