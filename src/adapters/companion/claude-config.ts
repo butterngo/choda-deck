@@ -61,6 +61,7 @@ import type { IncomingMessage, ServerResponse } from 'http'
 import type { WorkspaceOperations } from '../../core/domain/interfaces/workspace-repository.interface'
 
 import { parseSkillFrontmatter, runChecks } from './config-checks'
+import { AiError, resolveAiKey, reviewFile, type FetchLike } from './ai-review'
 
 // Re-exported: the reader moved to config-checks.ts so the import runs one way
 // only (claude-config -> config-checks). Callers that already had it here keep
@@ -74,6 +75,15 @@ const LIST_ROUTE = '/claude-config'
  * a future root literally named `validate` from being shadowed by this route.
  */
 const VALIDATE_ROUTE = '/claude-config/validate'
+/**
+ * TASK-1843 — the model call has its OWN route, and that is the cost control.
+ *
+ * If review were `validate?ai=true`, adding a query parameter would spend money
+ * and a well-meaning refactor could default it on. Two routes make "no model
+ * call without a click" structural rather than a convention someone has to
+ * remember: the free answer is unreachable from the paid one by accident.
+ */
+const REVIEW_ROUTE = '/claude-config/review'
 const FILE_ROUTE_PREFIX = '/claude-config/'
 
 /** How deep a commands tree is walked. Commands nest one level at most today. */
@@ -627,7 +637,16 @@ function resolveForRead(roots: AllowedRoot[], rootId: string, rel: string): Reso
 export async function handleClaudeConfigRoute(
   req: IncomingMessage,
   res: ServerResponse,
-  opts: { claudeHome?: string; bridgeToken: string; svc: WorkspaceOperations }
+  opts: {
+    claudeHome?: string
+    bridgeToken: string
+    svc: WorkspaceOperations
+    /** Where the AI key lives, beside the bridge token. Absent → review 501s. */
+    dataDir?: string
+    /** Injectable so every provider failure path is testable without a network. */
+    fetchImpl?: FetchLike
+    env?: NodeJS.ProcessEnv
+  }
 ): Promise<boolean> {
   // Match on the RAW url: `new URL()` collapses dot segments before a handler
   // sees them, which would turn a refusal into a silent 404.
@@ -640,8 +659,11 @@ export async function handleClaudeConfigRoute(
   const method = req.method ?? 'GET'
   const methodAllowed =
     method === 'GET' ||
-    (method === 'PUT' && rawPath.startsWith(FILE_ROUTE_PREFIX) && rawPath !== VALIDATE_ROUTE) ||
-    (method === 'POST' && rawPath === VALIDATE_ROUTE)
+    (method === 'PUT' &&
+      rawPath.startsWith(FILE_ROUTE_PREFIX) &&
+      rawPath !== VALIDATE_ROUTE &&
+      rawPath !== REVIEW_ROUTE) ||
+    (method === 'POST' && (rawPath === VALIDATE_ROUTE || rawPath === REVIEW_ROUTE))
   if (!methodAllowed) {
     sendJson(res, 405, { error: 'method not allowed' })
     return true
@@ -719,6 +741,66 @@ export async function handleClaudeConfigRoute(
         text: bytes.toString('utf8')
       })
     })
+    return true
+  }
+
+  if (rawPath === REVIEW_ROUTE) {
+    const raw = await readRawBody(req)
+    if (raw === null) {
+      sendJson(res, 413, { error: 'too large' })
+      return true
+    }
+    let parsed: { rootId?: unknown; rel?: unknown; text?: unknown; checkId?: unknown }
+    try {
+      parsed = raw.length === 0 ? {} : (JSON.parse(raw.toString('utf8')) as typeof parsed)
+    } catch {
+      sendJson(res, 400, { error: 'body is not valid JSON' })
+      return true
+    }
+    if (typeof parsed.rootId !== 'string' || typeof parsed.rel !== 'string') {
+      sendJson(res, 400, { error: 'rootId and rel are required' })
+      return true
+    }
+
+    const found = resolveForRead(resolveRoots(opts.claudeHome), parsed.rootId, parsed.rel)
+    if (found.kind === 'err') {
+      sendJson(res, found.status, found.body)
+      return true
+    }
+
+    // Read BEFORE the key is resolved, so a request for a file outside the
+    // allowlist is refused whether or not a model is configured. The order
+    // matters: the opposite would leak "this path exists" through the 501.
+    const text =
+      typeof parsed.text === 'string' ? parsed.text : fs.readFileSync(found.resolved, 'utf8')
+
+    const key = opts.dataDir ? resolveAiKey(opts.dataDir, opts.env) : null
+    try {
+      const notes = await reviewFile({
+        key,
+        rel: parsed.rel,
+        text,
+        checkId: typeof parsed.checkId === 'string' ? parsed.checkId : undefined,
+        fetchImpl: opts.fetchImpl
+      })
+      sendJson(res, 200, { notes })
+    } catch (err) {
+      if (!(err instanceof AiError)) throw err
+      // no_key is the normal state of a machine that never configured a model —
+      // an absent capability, not a failure, and 501 is how this adapter has
+      // always said that (vault.ts, artifacts.ts).
+      if (err.kind === 'no_key') {
+        sendJson(res, 501, { error: 'no model configured' })
+      } else if (err.kind === 'rate_limit') {
+        if (err.retryAfter) res.setHeader('retry-after', err.retryAfter)
+        sendJson(res, 429, { error: err.message, kind: err.kind })
+      } else {
+        // The message is the adapter's own. A provider body can carry the key
+        // back in an echoed request, and forwarding it verbatim is how a secret
+        // reaches a log nobody thought was sensitive.
+        sendJson(res, 502, { error: 'provider failed', kind: err.kind })
+      }
+    }
     return true
   }
 

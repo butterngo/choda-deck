@@ -153,7 +153,9 @@ async function route(
     await handleClaudeConfigRoute(req, res, {
       claudeHome: services.claudeHome,
       bridgeToken: services.bridgeToken,
-      svc: services.svc
+      svc: services.svc,
+      dataDir: services.dataDir,
+      fetchImpl: services.fetchImpl
     })
   ) {
     return
