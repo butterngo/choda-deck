@@ -150,9 +150,10 @@ async function route(
   // than to ~/.claude itself, which also holds history.jsonl, sessions/ and
   // projects/ — see claude-config.ts.
   if (
-    handleClaudeConfigRoute(req, res, {
+    await handleClaudeConfigRoute(req, res, {
       claudeHome: services.claudeHome,
-      bridgeToken: services.bridgeToken
+      bridgeToken: services.bridgeToken,
+      svc: services.svc
     })
   ) {
     return
