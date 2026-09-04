@@ -56,7 +56,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { Buffer } from 'buffer'
-import { timingSafeEqual } from 'crypto'
+import { createHash, timingSafeEqual } from 'crypto'
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { WorkspaceOperations } from '../../core/domain/interfaces/workspace-repository.interface'
 
@@ -530,6 +530,75 @@ export function readMcpServers(claudeHome: string, workspaceCwd?: string): McpSe
 }
 
 /**
+ * TASK-1841 — the write cap. The largest config file on this machine is
+ * template-registry.json at 117 KB; 2 MB leaves room without letting a runaway
+ * client stream forever into memory.
+ */
+const MAX_WRITE_BYTES = 2 * 1024 * 1024
+
+function sha256(buf: Buffer): string {
+  return createHash('sha256').update(buf).digest('hex')
+}
+
+/**
+ * The request body as RAW BYTES, or null once the cap is exceeded.
+ *
+ * Deliberately not `readBody` from workflow.ts, which decodes to utf8 and
+ * JSON.parses. A config file's bytes are the payload here: decoding and
+ * re-encoding is exactly the round trip that loses a BOM and rewrites line
+ * endings, and this route's whole promise is that it does not transform what it
+ * is given.
+ *
+ * The cap is enforced while reading, not after — a 500 MB body must not be
+ * buffered first and rejected second.
+ */
+function readRawBody(req: IncomingMessage): Promise<Buffer | null> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    let total = 0
+    let over = false
+    req.on('data', (c: Buffer) => {
+      if (over) return
+      total += c.length
+      if (total > MAX_WRITE_BYTES) {
+        over = true
+        chunks.length = 0
+        return
+      }
+      chunks.push(c)
+    })
+    req.on('end', () => resolve(over ? null : Buffer.concat(chunks)))
+    req.on('error', reject)
+  })
+}
+
+/**
+ * Write via a temp file in the SAME directory, then rename.
+ *
+ * bridge-token.ts writes in place, and the stakes are what differ: truncating
+ * settings.local.json halfway leaves an unusable config, and this feature keeps
+ * no backup — the 409 is the only thing between two writers and a lost edit, and
+ * it cannot help if the file is already half-written. Rename within a directory
+ * is atomic on both platforms; across directories it is not, which is why the
+ * temp file is a sibling rather than in os.tmpdir().
+ */
+function writeAtomic(target: string, bytes: Buffer): void {
+  const tmp = path.join(path.dirname(target), `.${path.basename(target)}.${process.pid}.tmp`)
+  try {
+    fs.writeFileSync(tmp, bytes)
+    fs.renameSync(tmp, target)
+  } catch (err) {
+    try {
+      fs.unlinkSync(tmp)
+    } catch {
+      // The temp file may never have been created; failing to remove it must
+      // not mask the write error being thrown.
+    }
+    throw err
+  }
+}
+
+/**
  * GET /claude-config[?workspaceId=<id>]       -> { skills, commands, rules,
  *                                                 mcpServers, mcpScope }
  * GET /claude-config/<rootId>/<relative path> -> text/plain
@@ -547,7 +616,11 @@ export async function handleClaudeConfigRoute(
   const rawPath = (req.url ?? '/').split('?')[0]
   if (rawPath !== LIST_ROUTE && !rawPath.startsWith(FILE_ROUTE_PREFIX)) return false
 
-  if ((req.method ?? 'GET') !== 'GET') {
+  // GET everywhere; PUT only on the FILE route. The inventory is a projection
+  // and has nothing to write back to, so a PUT there is a client bug, not a
+  // feature nobody built yet.
+  const method = req.method ?? 'GET'
+  if (method !== 'GET' && !(method === 'PUT' && rawPath.startsWith(FILE_ROUTE_PREFIX))) {
     sendJson(res, 405, { error: 'method not allowed' })
     return true
   }
@@ -641,10 +714,49 @@ export async function handleClaudeConfigRoute(
     return true
   }
 
+  const current = fs.readFileSync(resolved)
+
+  if (method === 'PUT') {
+    // The precondition is REQUIRED, not optional. A save with nothing to compare
+    // against is a save that can silently overwrite an edit made two seconds ago
+    // — and since this feature keeps no backup, that edit is simply gone.
+    const ifMatch = req.headers['if-match']
+    if (typeof ifMatch !== 'string' || ifMatch.length === 0) {
+      sendJson(res, 400, { error: 'if-match required' })
+      return true
+    }
+
+    const body = await readRawBody(req)
+    if (body === null) {
+      sendJson(res, 413, { error: 'too large' })
+      return true
+    }
+
+    // Compared against the bytes on disk RIGHT NOW, read above — not against a
+    // value cached when the route was entered.
+    const currentHash = sha256(current)
+    if (ifMatch.replace(/^"|"$/g, '') !== currentHash) {
+      sendJson(res, 409, { error: 'file changed on disk', sha256: currentHash })
+      return true
+    }
+
+    // Written verbatim. The server does not decode, re-encode, normalise line
+    // endings or strip a BOM — every one of those would change bytes the human
+    // did not touch, and a diff would show the whole file as modified with the
+    // real edit buried inside it.
+    writeAtomic(resolved, body)
+    sendJson(res, 200, { sha256: sha256(body), bytes: body.length })
+    return true
+  }
+
   const isMd = resolved.toLowerCase().endsWith('.md')
   res.writeHead(200, {
-    'content-type': isMd ? 'text/markdown; charset=utf-8' : 'text/plain; charset=utf-8'
+    'content-type': isMd ? 'text/markdown; charset=utf-8' : 'text/plain; charset=utf-8',
+    // The client needs something to send back as if-match. A content hash rather
+    // than an mtime: mtimes have coarse resolution, move backwards across clock
+    // changes, and are altered by tools that changed no bytes.
+    etag: sha256(current)
   })
-  res.end(fs.readFileSync(resolved, 'utf8'))
+  res.end(current)
   return true
 }
