@@ -51,6 +51,12 @@ export interface CompanionServices {
   // until an env var is set would read as a broken tab, not as a safe default.
   // Override with CHODA_CLAUDE_HOME.
   claudeHome?: string
+  // TASK-1843 — the profile directory the bridge token already lives in. The AI
+  // key is a sibling of it, for the same reason and with the same 0o600.
+  dataDir?: string
+  // TASK-1843 — injectable so the review route is testable without a network.
+  // Unset in production; the client falls back to globalThis.fetch.
+  fetchImpl?: (url: string, init: Record<string, unknown>) => Promise<Response>
   // TASK-1175 — mutating sync actions (own writable connection per call). Injected
   // so http-server stays decoupled and tests can pass fakes. Throw
   // SyncNotConfiguredError when the laptop has no remote configured.
@@ -92,6 +98,7 @@ export async function createCompanionServices(): Promise<CompanionServices> {
     // Opt-in: unset means the vault routes 501 rather than serving anything.
     vaultDir: process.env.CHODA_VAULT_DIR?.trim() || undefined,
     claudeHome: process.env.CHODA_CLAUDE_HOME?.trim() || path.join(os.homedir(), '.claude'),
+    dataDir: dataPaths.dataDir,
     pull: () => runPull(dataPaths.dbPath, resolveRemoteConfig()),
     push: () => runPush(dataPaths.dbPath, resolveRemoteConfig()),
     close: () => {
