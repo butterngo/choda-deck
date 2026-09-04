@@ -66,6 +66,27 @@ const FILE_ROUTE_PREFIX = '/claude-config/'
 /** How deep a commands tree is walked. Commands nest one level at most today. */
 const COMMAND_WALK_DEPTH = 3
 
+/**
+ * How to ASK for this file, as opposed to where it happens to live.
+ *
+ * TASK-1831. The file route deliberately refuses absolute paths — an absolute
+ * path in a URL is a traversal surface that then has to be defended. That left
+ * a client holding a display path with no way to turn it into a request, and
+ * the consequence was worse than inconvenient: the route shipped in TASK-1828
+ * with five criteria and twenty-one tests, and nothing ever called it.
+ *
+ * Reconstructing rootId and rel from the display path is the obvious repair and
+ * the wrong one — it makes every client re-derive what this module already
+ * knows, and it breaks the moment a skill nests deeper than one directory. So
+ * the answer travels with the row.
+ */
+export interface ClaudeRef {
+  /** 'skills' | 'commands' | 'claude-md' | 'plugin:<key>' */
+  rootId: string
+  /** Forward-slashed, relative to the resolved root. Empty for a file root. */
+  rel: string
+}
+
 export interface ClaudeSkill {
   name: string
   description: string
@@ -74,16 +95,19 @@ export interface ClaudeSkill {
   pluginId: string | null
   /** Absolute path, for display and copying only — never accepted as input. */
   path: string
+  ref: ClaudeRef
 }
 
 export interface ClaudeCommand {
   name: string
   path: string
+  ref: ClaudeRef
 }
 
 export interface ClaudeRule {
   name: string
   path: string
+  ref: ClaudeRef
 }
 
 export interface ClaudeConfigInventory {
@@ -233,6 +257,12 @@ export function isWithinRoots(roots: AllowedRoot[], resolved: string): boolean {
   })
 }
 
+/** Forward-slashed path of `file` relative to a root, for the file route. */
+function refFor(root: AllowedRoot, file: string): ClaudeRef {
+  if (root.kind === 'file' || root.real === null) return { rootId: root.id, rel: '' }
+  return { rootId: root.id, rel: path.relative(root.real, file).split(path.sep).join('/') }
+}
+
 /** Skill directories under one root: a directory is a skill only if it has SKILL.md. */
 function skillsUnder(root: AllowedRoot, scope: 'global' | 'plugin', pluginId: string | null): ClaudeSkill[] {
   if (root.real === null) return []
@@ -266,7 +296,8 @@ function skillsUnder(root: AllowedRoot, scope: 'global' | 'plugin', pluginId: st
       description: fm.description ?? '',
       scope,
       pluginId,
-      path: file
+      path: file,
+      ref: refFor(root, file)
     })
   }
   return out.sort((a, b) => a.name.localeCompare(b.name))
@@ -291,7 +322,7 @@ function commandsUnder(root: AllowedRoot): ClaudeCommand[] {
         walk(full, depth + 1)
       } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
         const rel = path.relative(base, full).replace(/\\/g, '/')
-        out.push({ name: rel.replace(/\.md$/i, ''), path: full })
+        out.push({ name: rel.replace(/\.md$/i, ''), path: full, ref: refFor(root, full) })
       }
     }
   }
@@ -319,7 +350,10 @@ export function readInventory(claudeHome: string, workspaceCwd?: string): Claude
   return {
     skills,
     commands: commandsRoot ? commandsUnder(commandsRoot) : [],
-    rules: rulesRoot && rulesRoot.real !== null ? [{ name: 'CLAUDE.md', path: rulesRoot.real }] : [],
+    rules:
+      rulesRoot && rulesRoot.real !== null
+        ? [{ name: 'CLAUDE.md', path: rulesRoot.real, ref: refFor(rulesRoot, rulesRoot.real) }]
+        : [],
     mcpServers: readMcpServers(claudeHome, workspaceCwd),
     mcpScope: MCP_SCOPE
   }
