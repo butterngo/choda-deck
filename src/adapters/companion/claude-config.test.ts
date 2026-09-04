@@ -382,3 +382,54 @@ describe('the route follows the adapter conventions', () => {
     expect(res.status).toBe(405)
   })
 })
+
+describe('TASK-1831 — every row carries an addressable reference', () => {
+  // The file route refuses absolute paths, so a display path is not a request.
+  // Without `ref`, a client has to reconstruct rootId and rel by parsing the
+  // path — which is how the route shipped with no caller at all.
+  it('a global skill can be fetched back through its own ref', async () => {
+    const inv = JSON.parse((await get('/claude-config')).body)
+    const skill = inv.skills.find((s: { name: string }) => s.name === 'session-start')
+    expect(skill.ref.rootId).toBe('skills')
+    expect(skill.ref.rel).toBe('session-start/SKILL.md')
+
+    const res = await get(`/claude-config/${skill.ref.rootId}/${skill.ref.rel}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toContain('name: session-start')
+  })
+
+  it('a plugin skill names its plugin root, not the skills root', async () => {
+    const inv = JSON.parse((await get('/claude-config')).body)
+    const skill = inv.skills.find((s: { name: string }) => s.name === 'frontend-design')
+    expect(skill.ref.rootId).toBe('plugin:frontend-design@official')
+    const res = await get(`/claude-config/${skill.ref.rootId}/${skill.ref.rel}`)
+    expect(res.status).toBe(200)
+  })
+
+  it('a nested command keeps its subdirectory in the ref', async () => {
+    const inv = JSON.parse((await get('/claude-config')).body)
+    const cmd = inv.commands.find((c: { name: string }) => c.name === 'nested/rollback')
+    // Forward slashes regardless of platform — this goes into a URL.
+    expect(cmd.ref.rel).toBe('nested/rollback.md')
+    expect((await get(`/claude-config/${cmd.ref.rootId}/${cmd.ref.rel}`)).status).toBe(200)
+  })
+
+  it('a file root carries an empty rel and is fetchable with it', async () => {
+    const inv = JSON.parse((await get('/claude-config')).body)
+    expect(inv.rules[0].ref).toEqual({ rootId: 'claude-md', rel: '' })
+    expect((await get('/claude-config/claude-md')).status).toBe(200)
+  })
+
+  it('CONTROL — every ref round-trips, not just the ones named above', async () => {
+    // A ref that cannot be fetched is worse than no ref: it looks like a link.
+    const inv = JSON.parse((await get('/claude-config')).body)
+    const refs = [...inv.skills, ...inv.commands, ...inv.rules].map(
+      (r: { ref: { rootId: string; rel: string } }) => r.ref,
+    )
+    expect(refs.length).toBeGreaterThan(0)
+    for (const ref of refs) {
+      const url = ref.rel === '' ? `/claude-config/${ref.rootId}` : `/claude-config/${ref.rootId}/${ref.rel}`
+      expect((await get(url)).status).toBe(200)
+    }
+  })
+})
