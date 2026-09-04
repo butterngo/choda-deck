@@ -19,6 +19,7 @@ import { handleSearchRoute } from './search'
 import { handleTaskDetailRoute } from './task-detail'
 import { handleArtifactsRoute } from './artifacts'
 import { handleVaultRoute } from './vault'
+import { handleClaudeConfigRoute } from './claude-config'
 import { handleWorkspaceDocsRoute } from './workspace-docs'
 import { handleWorkspaceSymbolsRoute } from './workspace-symbols'
 import { handleWorkspaceCommitsRoute } from './workspace-commits'
@@ -137,6 +138,20 @@ async function route(
   if (
     await handleWorkspaceSymbolsRoute(req, res, {
       svc: services.svc,
+      bridgeToken: services.bridgeToken
+    })
+  ) {
+    return
+  }
+
+  // TASK-1828 — what is configured in ~/.claude: skills, slash commands and the
+  // global CLAUDE.md. Matched on the RAW url for the same reason as vault and
+  // artifacts below, and sandboxed to an ALLOWLIST of four resolved roots rather
+  // than to ~/.claude itself, which also holds history.jsonl, sessions/ and
+  // projects/ — see claude-config.ts.
+  if (
+    handleClaudeConfigRoute(req, res, {
+      claudeHome: services.claudeHome,
       bridgeToken: services.bridgeToken
     })
   ) {
