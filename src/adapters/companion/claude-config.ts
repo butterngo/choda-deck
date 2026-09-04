@@ -58,6 +58,7 @@ import * as path from 'path'
 import { Buffer } from 'buffer'
 import { timingSafeEqual } from 'crypto'
 import type { IncomingMessage, ServerResponse } from 'http'
+import type { WorkspaceOperations } from '../../core/domain/interfaces/workspace-repository.interface'
 
 const LIST_ROUTE = '/claude-config'
 const FILE_ROUTE_PREFIX = '/claude-config/'
@@ -89,6 +90,8 @@ export interface ClaudeConfigInventory {
   skills: ClaudeSkill[]
   commands: ClaudeCommand[]
   rules: ClaudeRule[]
+  mcpServers: McpServer[]
+  mcpScope: McpScope
 }
 
 export type RootKind = 'dir' | 'file'
@@ -298,7 +301,7 @@ function commandsUnder(root: AllowedRoot): ClaudeCommand[] {
 }
 
 /** The whole global inventory. Never throws on a missing or dangling root. */
-export function readInventory(claudeHome: string): ClaudeConfigInventory {
+export function readInventory(claudeHome: string, workspaceCwd?: string): ClaudeConfigInventory {
   const roots = resolveRoots(claudeHome)
   const byId = (id: string): AllowedRoot | undefined => roots.find((r) => r.id === id)
 
@@ -316,22 +319,195 @@ export function readInventory(claudeHome: string): ClaudeConfigInventory {
   return {
     skills,
     commands: commandsRoot ? commandsUnder(commandsRoot) : [],
-    rules: rulesRoot && rulesRoot.real !== null ? [{ name: 'CLAUDE.md', path: rulesRoot.real }] : []
+    rules: rulesRoot && rulesRoot.real !== null ? [{ name: 'CLAUDE.md', path: rulesRoot.real }] : [],
+    mcpServers: readMcpServers(claudeHome, workspaceCwd),
+    mcpScope: MCP_SCOPE
   }
 }
 
+export interface McpServer {
+  name: string
+  /** Where it is DECLARED: the user's ~/.claude.json, or a repo's .mcp.json. */
+  origin: 'global' | 'project'
+  transport: string | null
+  /**
+   * Measured, not assumed (TASK-1829, 2026-09-04). A scratch project with two
+   * probes in .mcp.json was run through `claude mcp list` two ways:
+   *
+   *   no project entry          -> both probes "Pending approval"
+   *   one enabled, one disabled -> the enabled one connects; the disabled one
+   *                                is ABSENT from the output entirely
+   *
+   * So there are three states, not two. A boolean would render a pending server
+   * as on or off and both are wrong. And because a disabled server vanishes from
+   * what is running, "disabled" is knowable only from config — which is exactly
+   * why an INVENTORY still lists it rather than agreeing with the runtime.
+   */
+  status: 'active' | 'disabled' | 'pending'
+  /** Absolute path of the file it was read from. Display and copy only. */
+  source: string
+  /** Parse failure. When set, the other fields carry no meaning. */
+  error: string | null
+}
+
+export interface McpScope {
+  localOnly: true
+  note: string
+}
+
 /**
- * GET /claude-config                          -> { skills, commands, rules }
+ * What this inventory cannot see, said out loud.
+ *
+ * `claude mcp list` reports 16 servers on the machine this was built for;
+ * ~/.claude.json declares 6. The other ten are claude.ai connectors configured
+ * ACCOUNT-side — locally there is only mcp-needs-auth-cache.json, which holds
+ * names and ids but no URLs and no complete list. They cannot be enumerated
+ * from disk at all.
+ *
+ * That is the same class of error as the 42-skills count, inverted: 42 lies by
+ * including what is not there, 6-of-16 lies by omitting what is. The count is
+ * only honest if the boundary travels with it, so the boundary is a field.
+ */
+export const MCP_SCOPE: McpScope = {
+  localOnly: true,
+  note: 'claude.ai connectors are configured account-side and cannot be listed from disk'
+}
+
+/** Windows path comparison is case-insensitive; POSIX is not. */
+function samePath(a: string, b: string): boolean {
+  const norm = (p: string): string => {
+    const resolved = path.resolve(p)
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved
+  }
+  return norm(a) === norm(b)
+}
+
+/**
+ * The enable/disable lists for one workspace, unioned across EVERY matching
+ * project key.
+ *
+ * .claude.json really carries both `C:/dev/choda-deck` and `c:/dev/choda-deck`
+ * — two entries differing only in drive-letter case, each with its own
+ * settings. A string-keyed lookup finds one and silently ignores the other, so
+ * the keys are compared as resolved paths and the matches are merged.
+ */
+function approvalLists(
+  claudeJson: unknown,
+  cwd: string
+): { enabled: Set<string>; disabled: Set<string> } {
+  const enabled = new Set<string>()
+  const disabled = new Set<string>()
+  const projects = (claudeJson as { projects?: Record<string, unknown> })?.projects
+  if (!projects || typeof projects !== 'object') return { enabled, disabled }
+
+  for (const [key, entry] of Object.entries(projects)) {
+    if (!samePath(key, cwd)) continue
+    const e = entry as { enabledMcpjsonServers?: unknown; disabledMcpjsonServers?: unknown }
+    if (Array.isArray(e?.enabledMcpjsonServers)) {
+      for (const n of e.enabledMcpjsonServers) if (typeof n === 'string') enabled.add(n)
+    }
+    if (Array.isArray(e?.disabledMcpjsonServers)) {
+      for (const n of e.disabledMcpjsonServers) if (typeof n === 'string') disabled.add(n)
+    }
+  }
+  return { enabled, disabled }
+}
+
+function transportOf(entry: unknown): string | null {
+  const t = (entry as { type?: unknown })?.type
+  return typeof t === 'string' && t.length > 0 ? t : null
+}
+
+/**
+ * MCP servers as a PROJECTION of .claude.json and a repo's .mcp.json.
+ *
+ * .claude.json is never served as a file and never gets a root in the
+ * allowlist: it is ~123 KB of which MCP is a minority, sharing the document
+ * with userID, per-project allowedTools and trust-dialog state.
+ */
+export function readMcpServers(claudeHome: string, workspaceCwd?: string): McpServer[] {
+  const claudeJsonPath = path.join(path.dirname(claudeHome), '.claude.json')
+  let claudeJson: unknown = {}
+  try {
+    claudeJson = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf8'))
+  } catch {
+    claudeJson = {}
+  }
+
+  const out: McpServer[] = []
+
+  const globals = (claudeJson as { mcpServers?: Record<string, unknown> })?.mcpServers
+  if (globals && typeof globals === 'object') {
+    for (const [name, entry] of Object.entries(globals)) {
+      // Approval does not apply to a globally declared server — it is simply on.
+      out.push({
+        name,
+        origin: 'global',
+        transport: transportOf(entry),
+        status: 'active',
+        source: claudeJsonPath,
+        error: null
+      })
+    }
+  }
+
+  if (!workspaceCwd) return out
+
+  const mcpJsonPath = path.join(workspaceCwd, '.mcp.json')
+  if (!fs.existsSync(mcpJsonPath)) return out
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(fs.readFileSync(mcpJsonPath, 'utf8'))
+  } catch (err) {
+    // One unreadable row naming the reason, rather than a failed request: a repo
+    // with a broken .mcp.json still has skills and commands worth showing, and a
+    // 500 would hide all of them.
+    out.push({
+      name: '.mcp.json',
+      origin: 'project',
+      transport: null,
+      status: 'pending',
+      source: mcpJsonPath,
+      error: err instanceof Error ? err.message : String(err)
+    })
+    return out
+  }
+
+  const { enabled, disabled } = approvalLists(claudeJson, workspaceCwd)
+  const declared = (parsed as { mcpServers?: Record<string, unknown> })?.mcpServers
+  if (declared && typeof declared === 'object') {
+    for (const [name, entry] of Object.entries(declared)) {
+      out.push({
+        name,
+        origin: 'project',
+        transport: transportOf(entry),
+        // A disabled server is LISTED, not omitted. Omitting it would make the
+        // inventory agree with `claude mcp list`, which is a different question:
+        // what is running, rather than what is configured.
+        status: disabled.has(name) ? 'disabled' : enabled.has(name) ? 'active' : 'pending',
+        source: mcpJsonPath,
+        error: null
+      })
+    }
+  }
+
+  return out
+}
+
+/**
+ * GET /claude-config[?workspaceId=<id>]       -> { skills, commands, rules,
+ *                                                 mcpServers, mcpScope }
  * GET /claude-config/<rootId>/<relative path> -> text/plain
  *
  * Returns false when the request isn't ours, so the caller falls through to the
  * rest of the router (mirrors handleVaultRoute / handleWorkspaceDocsRoute).
  */
-export function handleClaudeConfigRoute(
+export async function handleClaudeConfigRoute(
   req: IncomingMessage,
   res: ServerResponse,
-  opts: { claudeHome?: string; bridgeToken: string }
-): boolean {
+  opts: { claudeHome?: string; bridgeToken: string; svc: WorkspaceOperations }
+): Promise<boolean> {
   // Match on the RAW url: `new URL()` collapses dot segments before a handler
   // sees them, which would turn a refusal into a silent 404.
   const rawPath = (req.url ?? '/').split('?')[0]
@@ -353,7 +529,21 @@ export function handleClaudeConfigRoute(
   }
 
   if (rawPath === LIST_ROUTE) {
-    sendJson(res, 200, readInventory(opts.claudeHome))
+    // workspaceId is OPTIONAL: without one the answer is the global half, which
+    // is a real and complete answer to "what is configured on this machine".
+    // Requiring it would make the route unusable from anywhere that is not
+    // already inside a workspace.
+    const workspaceId = new URL(req.url ?? '/', 'http://localhost').searchParams.get('workspaceId')
+    let cwd: string | undefined
+    if (workspaceId) {
+      const workspace = await opts.svc.getWorkspace(workspaceId)
+      if (!workspace) {
+        sendJson(res, 404, { error: `unknown workspace: ${workspaceId}` })
+        return true
+      }
+      cwd = workspace.cwd
+    }
+    sendJson(res, 200, readInventory(opts.claudeHome, cwd))
     return true
   }
 
