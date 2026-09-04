@@ -60,7 +60,20 @@ import { createHash, timingSafeEqual } from 'crypto'
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { WorkspaceOperations } from '../../core/domain/interfaces/workspace-repository.interface'
 
+import { parseSkillFrontmatter, runChecks } from './config-checks'
+
+// Re-exported: the reader moved to config-checks.ts so the import runs one way
+// only (claude-config -> config-checks). Callers that already had it here keep
+// working, and there is still exactly one implementation.
+export { parseSkillFrontmatter } from './config-checks'
+
 const LIST_ROUTE = '/claude-config'
+/**
+ * TASK-1842 — matched EXACTLY, and before the file split. `/claude-config/x/y`
+ * is a file read; `/claude-config/validate` is not. Exact matching is what keeps
+ * a future root literally named `validate` from being shadowed by this route.
+ */
+const VALIDATE_ROUTE = '/claude-config/validate'
 const FILE_ROUTE_PREFIX = '/claude-config/'
 
 /** How deep a commands tree is walked. Commands nest one level at most today. */
@@ -150,54 +163,6 @@ function realOrNull(p: string): string | null {
   } catch {
     return null
   }
-}
-
-/**
- * Frontmatter reader that understands FOLDED scalars.
- *
- * vault.ts already exports a parseFrontmatter, and reusing it was the first
- * plan. It reads flat `key: value` only — and 11 of the 13 skills on this
- * machine write `description: >` with the text on following indented lines, so
- * reuse would have left the majority of the inventory with a blank description
- * while every test on flat fixtures passed.
- *
- * Still not a YAML parser: keys at column 0, values either inline or a folded /
- * literal block. That is the whole of what a SKILL.md header uses.
- */
-export function parseSkillFrontmatter(text: string): Record<string, string> {
-  if (!text.startsWith('---')) return {}
-  const end = text.indexOf('\n---', 3)
-  if (end === -1) return {}
-
-  const lines = text.slice(3, end).split('\n')
-  const out: Record<string, string> = {}
-  let i = 0
-
-  while (i < lines.length) {
-    const line = lines[i]
-    // Indented lines belong to the value above; a line with no colon is not a key.
-    if (/^\s/.test(line) || line.indexOf(':') <= 0) {
-      i++
-      continue
-    }
-    const at = line.indexOf(':')
-    const key = line.slice(0, at).trim()
-    let value = line.slice(at + 1).trim()
-    i++
-
-    if (value === '>' || value === '|' || value === '>-' || value === '|-') {
-      const parts: string[] = []
-      while (i < lines.length && (/^\s+\S/.test(lines[i]) || lines[i].trim() === '')) {
-        const trimmed = lines[i].trim()
-        if (trimmed.length > 0) parts.push(trimmed)
-        i++
-      }
-      value = parts.join(' ')
-    }
-
-    if (key.length > 0) out[key] = value
-  }
-  return out
 }
 
 /**
@@ -599,6 +564,59 @@ function writeAtomic(target: string, bytes: Buffer): void {
 }
 
 /**
+ * One resolution, two callers.
+ *
+ * TASK-1842. The file route and the validate route must reach exactly the same
+ * files, and the only way to guarantee that is for them to share the judgement
+ * rather than each carry a copy. A second copy is how the two drift until one
+ * of them serves something the other refuses — the same reasoning that put the
+ * PUT path through the GET's allowlist in TASK-1841.
+ */
+type ResolveOutcome =
+  | { kind: 'ok'; resolved: string }
+  | { kind: 'err'; status: number; body: { error: string } }
+
+function resolveForRead(roots: AllowedRoot[], rootId: string, rel: string): ResolveOutcome {
+  const root = roots.find((r) => r.id === rootId)
+  // An id nobody publishes is a malformed request, not a refusal — it says
+  // nothing about what does or does not exist on disk.
+  if (!root) return { kind: 'err', status: 400, body: { error: 'invalid path' } }
+  if (root.real === null) {
+    return { kind: 'err', status: 404, body: { error: `not found: ${rootId}` } }
+  }
+
+  const target = root.kind === 'file' ? root.real : path.resolve(root.real, rel)
+
+  // Resolve the TARGET before judging it. A traversal and a planted symlink are
+  // the same defect seen from two angles — both are paths that resolve outside
+  // the allowlist — so both get the same answer, and neither gets to disclose
+  // whether the thing it reached for exists.
+  const resolved = realOrNull(target)
+  if (resolved === null) {
+    // Distinguish "outside, and also missing" from "inside, and missing": an
+    // unresolvable path that could not have been allowed anyway is a refusal.
+    return isWithinRoots(roots, path.resolve(target))
+      ? { kind: 'err', status: 404, body: { error: `not found: ${rel}` } }
+      : { kind: 'err', status: 403, body: { error: 'outside the allowed roots' } }
+  }
+  if (!isWithinRoots(roots, resolved)) {
+    return { kind: 'err', status: 403, body: { error: 'outside the allowed roots' } }
+  }
+
+  let stat: fs.Stats
+  try {
+    stat = fs.statSync(resolved)
+  } catch {
+    return { kind: 'err', status: 404, body: { error: `not found: ${rel}` } }
+  }
+  if (!stat.isFile()) {
+    return { kind: 'err', status: 404, body: { error: `not a file: ${rel}` } }
+  }
+
+  return { kind: 'ok', resolved }
+}
+
+/**
  * GET /claude-config[?workspaceId=<id>]       -> { skills, commands, rules,
  *                                                 mcpServers, mcpScope }
  * GET /claude-config/<rootId>/<relative path> -> text/plain
@@ -620,7 +638,11 @@ export async function handleClaudeConfigRoute(
   // and has nothing to write back to, so a PUT there is a client bug, not a
   // feature nobody built yet.
   const method = req.method ?? 'GET'
-  if (method !== 'GET' && !(method === 'PUT' && rawPath.startsWith(FILE_ROUTE_PREFIX))) {
+  const methodAllowed =
+    method === 'GET' ||
+    (method === 'PUT' && rawPath.startsWith(FILE_ROUTE_PREFIX) && rawPath !== VALIDATE_ROUTE) ||
+    (method === 'POST' && rawPath === VALIDATE_ROUTE)
+  if (!methodAllowed) {
     sendJson(res, 405, { error: 'method not allowed' })
     return true
   }
@@ -654,6 +676,52 @@ export async function handleClaudeConfigRoute(
     return true
   }
 
+  if (rawPath === VALIDATE_ROUTE) {
+    const raw = await readRawBody(req)
+    if (raw === null) {
+      sendJson(res, 413, { error: 'too large' })
+      return true
+    }
+    let parsed: { rootId?: unknown; rel?: unknown; text?: unknown }
+    try {
+      parsed = raw.length === 0 ? {} : (JSON.parse(raw.toString('utf8')) as typeof parsed)
+    } catch {
+      sendJson(res, 400, { error: 'body is not valid JSON' })
+      return true
+    }
+    if (typeof parsed.rootId !== 'string' || typeof parsed.rel !== 'string') {
+      sendJson(res, 400, { error: 'rootId and rel are required' })
+      return true
+    }
+
+    const found = resolveForRead(resolveRoots(opts.claudeHome), parsed.rootId, parsed.rel)
+    if (found.kind === 'err') {
+      sendJson(res, found.status, found.body)
+      return true
+    }
+
+    // `text` is validated when supplied, so an unsaved buffer can be checked
+    // before it is written. Absent, the file on disk is read as BYTES — the BOM
+    // check is a question about bytes, and a utf8 decode would have quietly
+    // answered it already.
+    const bytes =
+      typeof parsed.text === 'string' ? Buffer.from(parsed.text, 'utf8') : fs.readFileSync(found.resolved)
+
+    // No key is read and no provider is contacted anywhere on this path. That is
+    // the point of the separate /review route: validation has to work on a
+    // machine that never configured a model.
+    sendJson(res, 200, {
+      findings: runChecks({
+        rootId: parsed.rootId,
+        rel: parsed.rel,
+        path: found.resolved,
+        bytes,
+        text: bytes.toString('utf8')
+      })
+    })
+    return true
+  }
+
   const rest = rawPath.slice(FILE_ROUTE_PREFIX.length)
   const slash = rest.indexOf('/')
   let rootId: string
@@ -666,53 +734,12 @@ export async function handleClaudeConfigRoute(
     return true
   }
 
-  const roots = resolveRoots(opts.claudeHome)
-  const root = roots.find((r) => r.id === rootId)
-  // An id nobody publishes is a malformed request, not a refusal — it says
-  // nothing about what does or does not exist on disk.
-  if (!root) {
-    sendJson(res, 400, { error: 'invalid path' })
+  const found = resolveForRead(resolveRoots(opts.claudeHome), rootId, rel)
+  if (found.kind === 'err') {
+    sendJson(res, found.status, found.body)
     return true
   }
-  if (root.real === null) {
-    sendJson(res, 404, { error: `not found: ${rootId}` })
-    return true
-  }
-
-  const target = root.kind === 'file' ? root.real : path.resolve(root.real, rel)
-
-  // Resolve the TARGET before judging it. A traversal and a planted symlink are
-  // the same defect seen from two angles — both are paths that resolve outside
-  // the allowlist — so both get the same answer, and neither gets to disclose
-  // whether the thing it reached for exists.
-  const resolved = realOrNull(target)
-  if (resolved === null) {
-    // Distinguish "outside, and also missing" from "inside, and missing":
-    // an unresolvable path that could not have been allowed anyway is a refusal.
-    const wouldBeInside = isWithinRoots(roots, path.resolve(target))
-    sendJson(
-      res,
-      wouldBeInside ? 404 : 403,
-      wouldBeInside ? { error: `not found: ${rel}` } : { error: 'outside the allowed roots' }
-    )
-    return true
-  }
-  if (!isWithinRoots(roots, resolved)) {
-    sendJson(res, 403, { error: 'outside the allowed roots' })
-    return true
-  }
-
-  let stat: fs.Stats
-  try {
-    stat = fs.statSync(resolved)
-  } catch {
-    sendJson(res, 404, { error: `not found: ${rel}` })
-    return true
-  }
-  if (!stat.isFile()) {
-    sendJson(res, 404, { error: `not a file: ${rel}` })
-    return true
-  }
+  const resolved = found.resolved
 
   const current = fs.readFileSync(resolved)
 
