@@ -12,6 +12,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import * as net from 'net'
+import { createHash } from 'crypto'
 import { startCompanionServer, COMPANION_BIND, type CompanionServerHandle } from './http-server'
 import type { CompanionServices } from './service-factory'
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
@@ -143,6 +144,12 @@ beforeAll(async () => {
 
   // --- commands: a WORKING symlink pointing outside ~/.claude
   fs.writeFileSync(path.join(commandsTarget, 'deploy.md'), '# deploy\n', 'utf8')
+  // TASK-1841 — the byte-preservation fixture: a UTF-8 BOM and CRLF endings,
+  // written as raw bytes so nothing in the test normalises them first.
+  fs.writeFileSync(
+    path.join(commandsTarget, 'crlf-bom.md'),
+    Buffer.from('\uFEFF# title\r\n\r\nline one\r\nline two\r\n', 'utf8')
+  )
   fs.mkdirSync(path.join(commandsTarget, 'nested'), { recursive: true })
   fs.writeFileSync(path.join(commandsTarget, 'nested', 'rollback.md'), '# rollback\n', 'utf8')
   linkDir(commandsTarget, path.join(home, 'commands'))
@@ -431,5 +438,215 @@ describe('TASK-1831 — every row carries an addressable reference', () => {
       const url = ref.rel === '' ? `/claude-config/${ref.rootId}` : `/claude-config/${ref.rootId}/${ref.rel}`
       expect((await get(url)).status).toBe(200)
     }
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// TASK-1841 — PUT: save a config file
+// ---------------------------------------------------------------------------
+
+/** Read a file's bytes and their hash, for before/after comparison. */
+function onDisk(p: string): { bytes: Buffer; sha: string } {
+  const bytes = fs.readFileSync(p)
+  return { bytes, sha: createHash('sha256').update(bytes).digest('hex') }
+}
+
+function put(
+  urlPath: string,
+  body: string | Buffer,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; body: string; etag: string | null }> {
+  return fetch(`${base}${urlPath}`, {
+    method: 'PUT',
+    headers: { 'x-choda-bridge-token': TOKEN, ...headers },
+    body,
+  }).then(async (r) => ({
+    status: r.status,
+    body: await r.text(),
+    etag: r.headers.get('etag'),
+  }))
+}
+
+/**
+ * A PUT sent VERBATIM over a socket. `fetch` collapses `../` before the bytes
+ * leave the client, so a traversal sent through it arrives as an ordinary path
+ * and the guard is never exercised.
+ */
+function rawPut(rawPath: string, body: string, ifMatch: string): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const payload = Buffer.from(body, 'utf8')
+    const sock = net.connect(handle.address.port, COMPANION_BIND, () => {
+      sock.write(
+        `PUT ${rawPath} HTTP/1.1\r\nHost: ${COMPANION_BIND}\r\n` +
+          `x-choda-bridge-token: ${TOKEN}\r\nif-match: ${ifMatch}\r\n` +
+          `content-type: text/plain\r\ncontent-length: ${payload.length}\r\n` +
+          `Connection: close\r\n\r\n`,
+      )
+      sock.write(payload)
+    })
+    const chunks: Buffer[] = []
+    sock.on('data', (c: Buffer) => chunks.push(c))
+    sock.on('error', reject)
+    sock.on('end', () => {
+      const raw = Buffer.concat(chunks)
+      const status = Number.parseInt(raw.toString('latin1', 9, 12), 10)
+      sock.destroy()
+      resolve({ status, body: raw.toString('latin1') })
+    })
+  })
+}
+
+describe('AC-1 — a save cannot reach where a read cannot', () => {
+  it('refuses a traversal sent raw, and the target is untouched', async () => {
+    const before = onDisk(path.join(home, 'history.jsonl'))
+    const res = await rawPut('/claude-config/skills/../../history.jsonl', 'OWNED', before.sha)
+    expect(res.status).toBe(403)
+    expect(onDisk(path.join(home, 'history.jsonl')).sha).toBe(before.sha)
+  })
+
+  it('refuses a path reached through a planted symlink, and the target is untouched', async () => {
+    const secret = path.join(outsideDir, 'secret.md')
+    const before = onDisk(secret)
+    const res = await put('/claude-config/skills/escape/secret.md', 'OWNED', {
+      'if-match': before.sha,
+    })
+    expect(res.status).toBe(403)
+    expect(onDisk(secret).sha).toBe(before.sha)
+  })
+})
+
+describe('AC-2 — a save with no precondition is refused', () => {
+  it('400s without if-match and writes nothing', async () => {
+    const target = path.join(commandsTarget, 'deploy.md')
+    const before = onDisk(target)
+    const res = await put('/claude-config/commands/deploy.md', '# clobbered\n')
+    expect(res.status).toBe(400)
+    expect(JSON.parse(res.body).error).toContain('if-match')
+    expect(onDisk(target).sha).toBe(before.sha)
+  })
+})
+
+describe('AC-3 — the file moved under you', () => {
+  it('409s on a stale hash and keeps the other writer bytes', async () => {
+    const target = path.join(commandsTarget, 'deploy.md')
+    const stale = onDisk(target).sha
+
+    // Someone else writes between the read and the save.
+    fs.writeFileSync(target, '# written by someone else\n', 'utf8')
+    const theirs = onDisk(target)
+
+    const res = await put('/claude-config/commands/deploy.md', '# mine\n', { 'if-match': stale })
+    expect(res.status).toBe(409)
+    // Their bytes survive, and the response hands back the hash to retry with.
+    expect(onDisk(target).sha).toBe(theirs.sha)
+    expect(JSON.parse(res.body).sha256).toBe(theirs.sha)
+
+    // CONTROL: with the CURRENT hash the same save succeeds — otherwise this
+    // suite would pass against a route that refuses every write.
+    const ok = await put('/claude-config/commands/deploy.md', '# mine\n', {
+      'if-match': theirs.sha,
+    })
+    expect(ok.status).toBe(200)
+    expect(fs.readFileSync(target, 'utf8')).toBe('# mine\n')
+
+    fs.writeFileSync(target, '# deploy\n', 'utf8')
+  })
+})
+
+describe('AC-4 — saves never create', () => {
+  it('404s for a path that does not exist, and creates nothing', async () => {
+    const target = path.join(commandsTarget, 'invented.md')
+    const res = await put('/claude-config/commands/invented.md', '# new\n', {
+      'if-match': 'd'.repeat(64),
+    })
+    expect(res.status).toBe(404)
+    expect(fs.existsSync(target)).toBe(false)
+  })
+})
+
+describe('AC-5 — a save changes only what the human changed', () => {
+  it('round-trips a CRLF file with a BOM byte-identically', async () => {
+    const target = path.join(commandsTarget, 'crlf-bom.md')
+    const before = onDisk(target)
+
+    // Read as BYTES, not text. Response.text() performs a UTF-8 decode that
+    // STRIPS a leading BOM (WHATWG fetch), so a client that round-trips through
+    // .text() silently drops it — see the test below, which pins that hazard.
+    const raw = await fetch(`${base}/claude-config/commands/crlf-bom.md`, {
+      headers: { 'x-choda-bridge-token': TOKEN },
+    })
+    expect(raw.status).toBe(200)
+    const readBytes = Buffer.from(await raw.arrayBuffer())
+
+    // The etag is what the client sends back — a content hash, not an mtime.
+    const written = await put('/claude-config/commands/crlf-bom.md', readBytes, {
+      'if-match': before.sha,
+    })
+    expect(written.status).toBe(200)
+
+    // Buffer comparison, not string: a writer that normalised CRLF to LF or
+    // dropped the BOM produces an equal STRING in some readings and different
+    // bytes in every one.
+    const after = onDisk(target)
+    expect(Buffer.compare(after.bytes, before.bytes)).toBe(0)
+    expect(after.bytes[0]).toBe(0xef)
+    expect(after.bytes.includes(Buffer.from('\r\n'))).toBe(true)
+  })
+
+  it('Response.text() eats the BOM — a client must read bytes to save bytes', async () => {
+    // Not a server defect: the server hands back the exact bytes, and the test
+    // above proves the round trip is byte-identical when the client reads them
+    // as bytes. This pins the CLIENT hazard so nobody "simplifies" the web
+    // editor to res.text() and quietly rewrites every BOM-carrying file.
+    const asText = await get('/claude-config/commands/crlf-bom.md')
+    const asBytes = await fetch(`${base}/claude-config/commands/crlf-bom.md`, {
+      headers: { 'x-choda-bridge-token': TOKEN },
+    }).then(async (r) => Buffer.from(await r.arrayBuffer()))
+
+    expect(asBytes[0]).toBe(0xef)
+    expect(Buffer.from(asText.body, 'utf8')[0]).not.toBe(0xef)
+    expect(Buffer.compare(Buffer.from(asText.body, 'utf8'), asBytes)).not.toBe(0)
+  })
+
+  it('GET carries the etag the save needs', async () => {
+    const res = await put('/claude-config/commands/crlf-bom.md', 'x', { 'if-match': 'nope' })
+    expect(res.status).toBe(409)
+    const disk = onDisk(path.join(commandsTarget, 'crlf-bom.md'))
+    expect(JSON.parse(res.body).sha256).toBe(disk.sha)
+  })
+})
+
+describe('AC-6 — the size cap', () => {
+  it('413s over the cap and writes nothing', async () => {
+    const target = path.join(commandsTarget, 'deploy.md')
+    const before = onDisk(target)
+    const tooBig = Buffer.alloc(2 * 1024 * 1024 + 1, 0x61)
+    const res = await put('/claude-config/commands/deploy.md', tooBig, {
+      'if-match': before.sha,
+    })
+    expect(res.status).toBe(413)
+    expect(onDisk(target).sha).toBe(before.sha)
+  })
+
+  it('CONTROL — a body just under the cap is written', async () => {
+    // Without this, the cap could be zero and the rejection test would still pass.
+    const target = path.join(commandsTarget, 'deploy.md')
+    const before = onDisk(target)
+    const justUnder = Buffer.alloc(2 * 1024 * 1024 - 1, 0x62)
+    const res = await put('/claude-config/commands/deploy.md', justUnder, {
+      'if-match': before.sha,
+    })
+    expect(res.status).toBe(200)
+    expect(fs.statSync(target).size).toBe(justUnder.length)
+
+    fs.writeFileSync(target, '# deploy\n', 'utf8')
+  })
+})
+
+describe('the inventory route stays read-only', () => {
+  it('405s a PUT to /claude-config itself', async () => {
+    const res = await put('/claude-config', 'x', { 'if-match': 'a'.repeat(64) })
+    expect(res.status).toBe(405)
   })
 })
