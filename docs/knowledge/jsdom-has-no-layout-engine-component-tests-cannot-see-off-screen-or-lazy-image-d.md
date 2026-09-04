@@ -5,7 +5,7 @@ projectId: choda-deck
 scope: project
 refs: []
 createdAt: 2026-08-05
-lastVerifiedAt: 2026-08-05
+lastVerifiedAt: 2026-09-04
 affectedFeatureId: feature-companion-ui
 ---
 
@@ -54,14 +54,38 @@ Keep a jsdom guard for the *presence* of the fix (TASK-1574 asserts the bounded-
 classes) so a refactor cannot silently drop it — but be explicit in the test's own comment
 that it proves presence, not behaviour.
 
+## Second instance — and a third option better than a presence guard (TASK-1786, 2026-09-03)
+
+The same class recurred in the History tab: the commit detail pane was itself the
+scrolling element, so an open file's header — path, sibling-file chips, "Back to diff" —
+scrolled away with the code. Reported by a person, invisible to 431 green tests.
+
+A presence guard would have stayed green through the whole defect: every element it
+would have asserted on was present and correct the entire time.
+
+**When the visual claim is caused by structure, assert the structure — not the position,
+and not merely the presence.** The defect's cause was "a scrolling element sits between
+the back control and the pane." That is fully checkable in jsdom by walking
+`parentElement` from the control up to the pane and testing each ancestor's classes, and
+it is the cause rather than a proxy for it.
+
+The discipline that makes it a real check, not a reassuring one: **injection**. Restoring
+`overflow-y-auto` on the pane turned exactly the four new tests red and left the other 34
+green. A structural assertion that cannot be made to fail is the same empty guarantee as
+the presence guard it replaced.
+
+This does not retire headless verification — the human still had to look, and AC-1 was
+ticked on eyes, not on the suite. It narrows what has to wait for a browser.
+
 ## Honest limitation, worth stating
 
-The headless harness that caught this is not in the repo and nothing re-runs it. The
-committed test only guards the classes. A regression of this class would currently be
-caught by nobody — the repo also has no CI.
+The headless harness that caught the first instance is not in the repo and nothing
+re-runs it. A regression of the lazy-image / page-height class would still be caught by
+nobody — the repo also has no CI.
 
 ## Related
 
 - TASK-1573 — the headless verification that found it
 - TASK-1574 — the fix (bounded list + detail panes in ConversationsView and KnowledgeView)
+- TASK-1786 — the second instance; see the companion gotcha "A detail pane must not be the scrolling element"
 - `choda-deck-companion/docs/reports/task-1574-ac-verification.md`
