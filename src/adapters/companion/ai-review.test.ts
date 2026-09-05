@@ -14,7 +14,7 @@ import * as path from 'path'
 import { startCompanionServer, COMPANION_BIND, type CompanionServerHandle } from './http-server'
 import type { CompanionServices } from './service-factory'
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
-import { AiError, resolveAiKey, reviewFile } from './ai-review'
+import { resolveAiKeyFile } from './azure-review'
 
 const TOKEN = 'ai-review-token'
 /** If this ever appears in a response, an error body or a log, AC-4 has failed. */
@@ -78,18 +78,6 @@ function ok(payload: unknown): Response {
   )
 }
 
-/**
- * Anthropic's answer shape, for the handful of tests that drive reviewFile()
- * directly rather than through the route. TASK-1856 pointed the route at Azure
- * and left this path in the tree, uncalled; keeping its tests honest is what
- * makes deleting or reviving it later a decision rather than an excavation.
- */
-function okAnthropic(payload: unknown): Response {
-  return new Response(
-    JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(payload) }] }),
-    { status: 200, headers: { 'content-type': 'application/json' } }
-  )
-}
 
 beforeAll(async () => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'choda-ai-home-'))
@@ -320,7 +308,7 @@ describe('AC-7 — the key file is written 0o600', () => {
 
   it.skipIf(!canRepresentMode)('minting from the environment writes mode 0600', () => {
     process.env.CHODA_AI_KEY = FIXTURE_KEY
-    const key = resolveAiKey(dataDir)
+    const key = resolveAiKeyFile(dataDir)
     expect(key).toBe(FIXTURE_KEY)
     const mode = fs.statSync(path.join(dataDir, 'ai-key.txt')).mode & 0o777
     expect(mode).toBe(0o600)
@@ -332,43 +320,26 @@ describe('AC-7 — the key file is written 0o600', () => {
     // filesystem invented — but the WRITE still has to happen, and that is what
     // this asserts.
     process.env.CHODA_AI_KEY = FIXTURE_KEY
-    expect(resolveAiKey(dataDir)).toBe(FIXTURE_KEY)
+    expect(resolveAiKeyFile(dataDir)).toBe(FIXTURE_KEY)
     expect(fs.readFileSync(path.join(dataDir, 'ai-key.txt'), 'utf8')).toBe(FIXTURE_KEY)
 
     // And once persisted, the environment is no longer consulted — a child
     // process inheriting a stale env must not override the file.
     process.env.CHODA_AI_KEY = 'a-different-key'
-    expect(resolveAiKey(dataDir)).toBe(FIXTURE_KEY)
+    expect(resolveAiKeyFile(dataDir)).toBe(FIXTURE_KEY)
   })
 
   it('an empty key file is treated as absent, like a truncated bridge token', () => {
     fs.writeFileSync(path.join(dataDir, 'ai-key.txt'), '   ')
-    expect(resolveAiKey(dataDir, {})).toBeNull()
+    expect(resolveAiKeyFile(dataDir, {})).toBeNull()
   })
 })
 
-describe('the client itself', () => {
-  it('does not send the browser-only CORS header', async () => {
-    // anthropic-dangerous-direct-browser-access exists to opt a BROWSER past a
-    // CORS refusal. Sending it from Node would announce a risk this caller does
-    // not take.
-    await reviewFile({
-      key: FIXTURE_KEY,
-      rel: 'x/SKILL.md',
-      text: 'hello',
-      fetchImpl: async (url, init) => {
-        providerCalls.push({ url, init })
-        return okAnthropic({ notes: [] })
-      }
-    })
-    const headers = (providerCalls[0].init as { headers: Record<string, string> }).headers
-    expect(headers['anthropic-dangerous-direct-browser-access']).toBeUndefined()
-    expect(headers['anthropic-version']).toBe('2023-06-01')
-  })
+// The 'the client itself' block lived here: it drove reviewFile() directly and
+// pinned two Anthropic-specific properties — that the browser-only CORS header
+// is never sent, and that anthropic-version is. TASK-1856 deleted that client,
+// so both claims are now about code that does not exist. Removed rather than
+// rewritten against Azure: the equivalent assertions for the live provider are
+// in azure-review.test.ts AC-1, which already proves the Anthropic headers are
+// absent.
 
-  it('throws no_key rather than calling with an empty key', async () => {
-    await expect(
-      reviewFile({ key: null, rel: 'x', text: 'y', fetchImpl: async () => ok({ notes: [] }) })
-    ).rejects.toBeInstanceOf(AiError)
-  })
-})
