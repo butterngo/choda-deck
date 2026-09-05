@@ -95,15 +95,46 @@ export function resolveAzureConfig(dataDir: string): AzureConfig | null {
     throw new AiError('no_key', `${PROVIDER_FILE} is missing endpoint or deployment`)
   }
 
-  let key: string
-  try {
-    key = fs.readFileSync(path.join(dataDir, AI_KEY_FILE), 'utf8').trim()
-  } catch {
-    return null
-  }
-  if (key.length === 0) return null
+  const key = resolveAiKeyFile(dataDir)
+  if (key === null) return null
 
   return { endpoint: cfg.endpoint.replace(/\/+$/, ''), deployment: cfg.deployment, key }
+}
+
+/**
+ * The key, read from its file — or minted into that file from CHODA_AI_KEY when
+ * the file is absent. Moved here from ai-review.ts when the Anthropic
+ * implementation was deleted (TASK-1856); the behaviour and its reasoning are
+ * TASK-1843's and are unchanged.
+ *
+ * The environment is how a key ARRIVES, not where it LIVES. A process
+ * environment is inherited by every child the adapter spawns and is readable by
+ * anything that can list the process, so the value is persisted out of it at
+ * mode 0600, mirroring resolveBridgeToken in this same directory. A
+ * present-but-empty file is treated as absent, the same way a truncated bridge
+ * token is re-minted rather than returned.
+ *
+ * On Windows the 0600 is advisory — NTFS protection comes from the user's
+ * directory ACL, not the POSIX mode. Stated rather than assumed away.
+ */
+export function resolveAiKeyFile(
+  dataDir: string,
+  env: NodeJS.ProcessEnv = process.env
+): string | null {
+  const keyPath = path.join(dataDir, AI_KEY_FILE)
+  try {
+    const existing = fs.readFileSync(keyPath, 'utf8').trim()
+    if (existing.length > 0) return existing
+  } catch {
+    // missing file — fall through to the environment
+  }
+
+  const fromEnv = env.CHODA_AI_KEY?.trim()
+  if (!fromEnv) return null
+
+  fs.mkdirSync(dataDir, { recursive: true })
+  fs.writeFileSync(keyPath, fromEnv, { mode: 0o600 })
+  return fromEnv
 }
 
 /** The resource root, i.e. the endpoint with the /openai/v1 suffix removed. */
