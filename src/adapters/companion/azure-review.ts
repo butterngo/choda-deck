@@ -210,19 +210,25 @@ const REVIEW_SCHEMA = {
   }
 } as const
 
-export async function reviewFileAzure(opts: {
+/**
+ * One schema-constrained call to the configured deployment, returning the parsed
+ * object. Extracted for TASK-1860: grading acceptance criteria needs the same
+ * request, the same per-family budget rule and the same error mapping as a file
+ * review, and only a different prompt and schema. Copying those would have meant
+ * two places to get the reasoning-budget case wrong.
+ */
+export async function askAzureJson<T>(opts: {
   cfg: AzureConfig
-  rel: string
-  text: string
-  /** Overrides the configured default — this is what the pane's picker sends. */
+  system: string
+  user: string
+  schema: unknown
+  schemaName: string
   model?: string
-  checkId?: string
   fetchImpl?: typeof fetch
-}): Promise<ReviewNote[]> {
+}): Promise<T> {
   const doFetch = opts.fetchImpl ?? fetch
   const deployment = opts.model ?? opts.cfg.deployment
   const reasoning = isReasoningDeployment(deployment)
-  const focus = opts.checkId ? ` Focus on: ${opts.checkId}.` : ''
 
   // The field name is not a preference: a reasoning deployment REJECTS
   // max_tokens with a 400, and the others do not know max_completion_tokens.
@@ -242,12 +248,12 @@ export async function reviewFileAzure(opts: {
         model: deployment,
         ...budget,
         messages: [
-          { role: 'system', content: SYSTEM + focus },
-          { role: 'user', content: `File: ${opts.rel}\n\n${opts.text}` }
+          { role: 'system', content: opts.system },
+          { role: 'user', content: opts.user }
         ],
         response_format: {
           type: 'json_schema',
-          json_schema: { name: 'review', strict: true, schema: REVIEW_SCHEMA }
+          json_schema: { name: opts.schemaName, strict: true, schema: opts.schema }
         }
       })
     })
@@ -296,12 +302,36 @@ export async function reviewFileAzure(opts: {
     )
   }
 
-  let parsed: { notes?: unknown }
   try {
-    parsed = JSON.parse(text) as { notes?: unknown }
+    return JSON.parse(text) as T
   } catch {
     throw new AiError('parse', 'provider response did not match the requested schema')
   }
+}
+
+export async function reviewFileAzure(opts: {
+  cfg: AzureConfig
+  rel: string
+  text: string
+  /** Overrides the configured default — this is what the pane's picker sends. */
+  model?: string
+  checkId?: string
+  fetchImpl?: typeof fetch
+}): Promise<ReviewNote[]> {
+  const focus = opts.checkId ? ` Focus on: ${opts.checkId}.` : ''
+
+  const parsed = await askAzureJson<{ notes?: unknown }>({
+    cfg: opts.cfg,
+    system: SYSTEM + focus,
+    user: `File: ${opts.rel}
+
+${opts.text}`,
+    schema: REVIEW_SCHEMA,
+    schemaName: 'review',
+    model: opts.model,
+    fetchImpl: opts.fetchImpl
+  })
+
   if (!Array.isArray(parsed.notes)) {
     throw new AiError('parse', 'provider response did not match the requested schema')
   }

@@ -20,6 +20,7 @@ import { handleTaskDetailRoute } from './task-detail'
 import { handleArtifactsRoute } from './artifacts'
 import { handleVaultRoute } from './vault'
 import { handleClaudeConfigRoute } from './claude-config'
+import { handleAcReviewRoute } from './ac-review'
 import { handleWorkspaceDocsRoute } from './workspace-docs'
 import { handleWorkspaceSymbolsRoute } from './workspace-symbols'
 import { handleWorkspaceCommitsRoute } from './workspace-commits'
@@ -156,6 +157,20 @@ async function route(
       svc: services.svc,
       dataDir: services.dataDir,
       fetchImpl: services.fetchImpl
+    })
+  ) {
+    return
+  }
+
+  // TASK-1860 — grade a task's acceptance criteria. Its own route, reached only
+  // on an explicit request, so /tasks stays free: the cost boundary TASK-1843
+  // made structural is not weakened by adding a second thing a model can do.
+  if (
+    await handleAcReviewRoute(req, res, {
+      bridgeToken: services.bridgeToken,
+      svc: services.svc,
+      dataDir: services.dataDir,
+      fetchImpl: services.fetchImpl as typeof fetch | undefined
     })
   ) {
     return
