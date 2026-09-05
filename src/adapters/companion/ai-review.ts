@@ -49,7 +49,19 @@ const MAX_TOKENS = 2048
  * error in the usual sense — it is the normal state of a machine that never
  * configured a model, and the route turns it into a 501 rather than a 5xx.
  */
-export type AiErrorKind = 'no_key' | 'auth' | 'rate_limit' | 'network' | 'refusal' | 'parse' | 'api'
+export type AiErrorKind =
+  | 'no_key'
+  | 'auth'
+  | 'rate_limit'
+  | 'network'
+  | 'refusal'
+  // TASK-1856 — a reasoning deployment can answer HTTP 200 with an EMPTY body:
+  // it spends the whole token budget thinking and has nothing left to write
+  // with. That is not a parse failure, and calling it one sends the reader to
+  // debug a prompt when the fix is a number.
+  | 'budget'
+  | 'parse'
+  | 'api'
 
 export class AiError extends Error {
   constructor(

@@ -61,7 +61,8 @@ import type { IncomingMessage, ServerResponse } from 'http'
 import type { WorkspaceOperations } from '../../core/domain/interfaces/workspace-repository.interface'
 
 import { parseSkillFrontmatter, runChecks } from './config-checks'
-import { AiError, resolveAiKey, reviewFile, type FetchLike } from './ai-review'
+import { AiError, type FetchLike } from './ai-review'
+import { listAzureModels, resolveAzureConfig, reviewFileAzure } from './azure-review'
 
 // Re-exported: the reader moved to config-checks.ts so the import runs one way
 // only (claude-config -> config-checks). Callers that already had it here keep
@@ -84,6 +85,7 @@ const VALIDATE_ROUTE = '/claude-config/validate'
  * remember: the free answer is unreachable from the paid one by accident.
  */
 const REVIEW_ROUTE = '/claude-config/review'
+const MODELS_ROUTE = '/claude-config/models'
 const FILE_ROUTE_PREFIX = '/claude-config/'
 
 /** How deep a commands tree is walked. Commands nest one level at most today. */
@@ -662,7 +664,8 @@ export async function handleClaudeConfigRoute(
     (method === 'PUT' &&
       rawPath.startsWith(FILE_ROUTE_PREFIX) &&
       rawPath !== VALIDATE_ROUTE &&
-      rawPath !== REVIEW_ROUTE) ||
+      rawPath !== REVIEW_ROUTE &&
+      rawPath !== MODELS_ROUTE) ||
     (method === 'POST' && (rawPath === VALIDATE_ROUTE || rawPath === REVIEW_ROUTE))
   if (!methodAllowed) {
     sendJson(res, 405, { error: 'method not allowed' })
@@ -744,13 +747,35 @@ export async function handleClaudeConfigRoute(
     return true
   }
 
+  // TASK-1856 — what the pane's picker offers. A GET, because it spends
+  // nothing: it reads the resource's own deployment list, never a completion.
+  // Kept off /review for the same reason /validate is — the route that costs
+  // money should be the only route that costs money.
+  if (rawPath === MODELS_ROUTE) {
+    const cfg = opts.dataDir ? resolveAzureConfig(opts.dataDir) : null
+    if (cfg === null) {
+      sendJson(res, 501, { error: 'no model configured' })
+      return true
+    }
+    try {
+      const models = await listAzureModels(cfg, (opts.fetchImpl as typeof fetch | undefined) ?? fetch)
+      sendJson(res, 200, { models, selected: cfg.deployment })
+    } catch (err) {
+      if (!(err instanceof AiError)) throw err
+      // A listing outage must not read as "review is broken" — the picker is a
+      // convenience, and the configured default still works without it.
+      sendJson(res, 502, { error: 'model listing unavailable', kind: err.kind })
+    }
+    return true
+  }
+
   if (rawPath === REVIEW_ROUTE) {
     const raw = await readRawBody(req)
     if (raw === null) {
       sendJson(res, 413, { error: 'too large' })
       return true
     }
-    let parsed: { rootId?: unknown; rel?: unknown; text?: unknown; checkId?: unknown }
+    let parsed: { rootId?: unknown; rel?: unknown; text?: unknown; checkId?: unknown; model?: unknown }
     try {
       parsed = raw.length === 0 ? {} : (JSON.parse(raw.toString('utf8')) as typeof parsed)
     } catch {
@@ -774,14 +799,22 @@ export async function handleClaudeConfigRoute(
     const text =
       typeof parsed.text === 'string' ? parsed.text : fs.readFileSync(found.resolved, 'utf8')
 
-    const key = opts.dataDir ? resolveAiKey(opts.dataDir, opts.env) : null
+    // Azure only, by Butter's decision on 2026-09-05. A null config becomes the
+    // same 501 the Anthropic path produced, so the pane's "no model configured"
+    // note is unchanged and needed no edit.
+    const cfg = opts.dataDir ? resolveAzureConfig(opts.dataDir) : null
+    if (cfg === null) {
+      sendJson(res, 501, { error: 'no model configured' })
+      return true
+    }
     try {
-      const notes = await reviewFile({
-        key,
+      const notes = await reviewFileAzure({
+        cfg,
         rel: parsed.rel,
         text,
+        model: typeof parsed.model === 'string' ? parsed.model : undefined,
         checkId: typeof parsed.checkId === 'string' ? parsed.checkId : undefined,
-        fetchImpl: opts.fetchImpl
+        fetchImpl: opts.fetchImpl as typeof fetch | undefined
       })
       sendJson(res, 200, { notes })
     } catch (err) {

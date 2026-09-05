@@ -64,7 +64,27 @@ function review(body: unknown): Promise<{ status: number; raw: string; json: Rec
   })
 }
 
+// TASK-1856 — Azure's answer shape, not Anthropic's. The route these tests
+// drive now speaks to Azure, and a stub in the old shape would prove the route
+// parses something the provider never sends.
 function ok(payload: unknown): Response {
+  return new Response(
+    JSON.stringify({
+      choices: [
+        { finish_reason: 'stop', message: { content: JSON.stringify(payload), refusal: null } }
+      ]
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } }
+  )
+}
+
+/**
+ * Anthropic's answer shape, for the handful of tests that drive reviewFile()
+ * directly rather than through the route. TASK-1856 pointed the route at Azure
+ * and left this path in the tree, uncalled; keeping its tests honest is what
+ * makes deleting or reviving it later a decision rather than an excavation.
+ */
+function okAnthropic(payload: unknown): Response {
   return new Response(
     JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(payload) }] }),
     { status: 200, headers: { 'content-type': 'application/json' } }
@@ -113,13 +133,27 @@ beforeEach(() => {
       logLines.push(args.map(String).join(' '))
     })
   }
-  const keyPath = path.join(dataDir, 'ai-key.txt')
-  if (fs.existsSync(keyPath)) fs.rmSync(keyPath)
+  for (const f of ['ai-key.txt', 'ai-provider.json']) {
+    const fp = path.join(dataDir, f)
+    if (fs.existsSync(fp)) fs.rmSync(fp)
+  }
   delete process.env.CHODA_AI_KEY
 })
 
+// TASK-1856 — the route now calls Azure, so "configured" means a provider file
+// beside the key. The criteria these tests encode are about the ROUTE's error
+// mapping (which failure becomes which status), which is provider-agnostic and
+// still worth proving; only what counts as configured moved.
 function configureKey(): void {
   fs.writeFileSync(path.join(dataDir, 'ai-key.txt'), FIXTURE_KEY, { mode: 0o600 })
+  fs.writeFileSync(
+    path.join(dataDir, 'ai-provider.json'),
+    JSON.stringify({
+      provider: 'azure',
+      endpoint: 'https://fixture-resource.openai.azure.com/openai/v1',
+      deployment: 'gpt-4.1-mini'
+    })
+  )
 }
 
 describe('AC-1 — no key means no call, and no invented answer', () => {
@@ -226,7 +260,8 @@ describe('AC-4 — the key never appears in anything a reader can see', () => {
     configureKey()
     await review({ rootId: 'skills', rel: 'code-review/SKILL.md' })
     const sent = providerCalls[0]?.init as { headers?: Record<string, string> }
-    expect(sent.headers?.['x-api-key']).toBe(FIXTURE_KEY)
+    // Azure's header, not Anthropic's — the whole point of TASK-1856.
+    expect(sent.headers?.['api-key']).toBe(FIXTURE_KEY)
   })
 })
 
@@ -323,7 +358,7 @@ describe('the client itself', () => {
       text: 'hello',
       fetchImpl: async (url, init) => {
         providerCalls.push({ url, init })
-        return ok({ notes: [] })
+        return okAnthropic({ notes: [] })
       }
     })
     const headers = (providerCalls[0].init as { headers: Record<string, string> }).headers
