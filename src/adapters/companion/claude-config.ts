@@ -724,7 +724,10 @@ export async function handleClaudeConfigRoute(
   // entry reports the reason and the other forty still get their answer.
   if (rawPath === VALIDATE_ALL_ROUTE) {
     const roots = resolveRoots(opts.claudeHome)
-    const inv = readInventory(opts.claudeHome, opts.workspaceCwd)
+    // No workspace cwd: it only affects mcpServers, and the sweep checks files
+    // — skills, commands and rules. Passing one would mean a workspace lookup
+    // for data this route discards.
+    const inv = readInventory(opts.claudeHome)
     const targets = [...inv.skills, ...inv.commands, ...inv.rules]
 
     const results = targets.map((entry) => {
