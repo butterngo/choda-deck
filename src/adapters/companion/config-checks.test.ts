@@ -306,3 +306,124 @@ describe('the validate route follows the adapter conventions', () => {
     expect(Buffer.compare(fs.readFileSync(target), before)).toBe(0)
   })
 })
+
+
+// ---------------------------------------------------------------------------
+// TASK-1859 — POST /claude-config/validate-all
+// ---------------------------------------------------------------------------
+
+interface SweepEntry {
+  ref: { rootId: string; rel: string }
+  findings: Finding[]
+  unreadable: string | null
+}
+
+function validateAll(): Promise<{ status: number; results: SweepEntry[]; raw: string }> {
+  return fetch(`${base}/claude-config/validate-all`, {
+    headers: { 'x-choda-bridge-token': TOKEN }
+  }).then(async (r) => {
+    const raw = await r.text()
+    let results: SweepEntry[] = []
+    try {
+      results = (JSON.parse(raw) as { results?: SweepEntry[] }).results ?? []
+    } catch {
+      results = []
+    }
+    return { status: r.status, results, raw }
+  })
+}
+
+describe('AC-1 — the sweep answers for every file-backed entry', () => {
+  it('covers the whole inventory, not a subset', async () => {
+    const { status, results } = await validateAll()
+    expect(status).toBe(200)
+
+    const rels = results.map((r) => r.ref.rel)
+    // The three skills the fixture writes must all be present. A sweep that
+    // stopped at the first finding, or at the first unreadable entry, would
+    // return fewer — and a count-only assertion would not notice WHICH.
+    expect(rels.some((r) => r.includes('code-review'))).toBe(true)
+    expect(rels.some((r) => r.includes('no-description'))).toBe(true)
+    expect(rels.some((r) => r.includes('bommed'))).toBe(true)
+  })
+
+  it('separates the entries that have findings from the ones that do not', async () => {
+    const { results } = await validateAll()
+    const bad = results.find((r) => r.ref.rel.includes('no-description'))
+    const good = results.find((r) => r.ref.rel.includes('code-review'))
+
+    // This is the pair the header count is computed from. If both sides looked
+    // alike, "3 need attention" would be a number nobody could trust.
+    expect(bad?.findings.length).toBeGreaterThan(0)
+    expect(good?.findings).toEqual([])
+  })
+
+  it('reports the same findings the single-file route reports', async () => {
+    // Two routes answering differently about one file is worse than one route:
+    // the reader cannot tell which to believe.
+    const sweep = await validateAll()
+    const entry = sweep.results.find((r) => r.ref.rel.includes('no-description'))
+    const single = await validate({ rootId: entry?.ref.rootId, rel: entry?.ref.rel })
+    expect(entry?.findings.map((f) => f.checkId).sort()).toEqual(
+      single.findings.map((f) => f.checkId).sort()
+    )
+  })
+})
+
+describe('AC-1 — one bad entry does not take down the sweep', () => {
+  it('an unreadable entry reports its reason and the others still answer', async () => {
+    // A dangling symlink is a real and expected state in this tree —
+    // ~/.claude/commands is one on Butter's machine. If that aborted the sweep,
+    // the feature would be dead on the machine it was built for.
+    const skills = path.join(home, 'skills')
+    fs.mkdirSync(path.join(skills, 'vanished'), { recursive: true })
+    const doomed = path.join(skills, 'vanished', 'SKILL.md')
+    fs.writeFileSync(doomed, '---\nname: vanished\ndescription: goes away\n---\n', 'utf8')
+
+    // Present in the inventory, then removed before the read.
+    const before = await validateAll()
+    expect(before.results.some((r) => r.ref.rel.includes('vanished'))).toBe(true)
+    fs.rmSync(doomed)
+
+    const after = await validateAll()
+    expect(after.status).toBe(200)
+    const gone = after.results.find((r) => r.ref.rel.includes('vanished'))
+    if (gone) expect(gone.unreadable).not.toBeNull()
+    // The point of the test: everything else still answered.
+    expect(after.results.some((r) => r.ref.rel.includes('code-review'))).toBe(true)
+    fs.rmSync(path.join(skills, 'vanished'), { recursive: true, force: true })
+  })
+})
+
+describe('AC-4 — the sweep is free', () => {
+  it('reaches no provider even with a key and provider configured', async () => {
+    // The sweep runs on open. If it could reach a provider, opening the tab
+    // would be a purchase — the exact boundary TASK-1843 made structural.
+    const seen: string[] = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = ((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = String(url)
+      if (!u.startsWith(base)) seen.push(u)
+      return originalFetch(url as RequestInfo, init)
+    }) as typeof fetch
+    try {
+      await validateAll()
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+    expect(seen).toEqual([])
+  })
+
+  it('405s a POST on the sweep route', async () => {
+    // The sweep carries no body and changes nothing, so it is a GET — the same
+    // call the /models route makes, for the same reason. Writing this test as
+    // "405s a GET" is what surfaced the question: /validate is a POST because it
+    // carries rootId, rel and an unsaved buffer, and none of that applies here.
+    const res = await fetch(`${base}/claude-config/validate-all`, {
+      method: 'POST',
+      headers: { 'x-choda-bridge-token': TOKEN, 'content-type': 'application/json' },
+      body: '{}'
+    })
+    expect(res.status).toBe(405)
+  })
+})
