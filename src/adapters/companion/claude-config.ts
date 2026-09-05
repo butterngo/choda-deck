@@ -86,6 +86,7 @@ const VALIDATE_ROUTE = '/claude-config/validate'
  */
 const REVIEW_ROUTE = '/claude-config/review'
 const MODELS_ROUTE = '/claude-config/models'
+const VALIDATE_ALL_ROUTE = '/claude-config/validate-all'
 const FILE_ROUTE_PREFIX = '/claude-config/'
 
 /** How deep a commands tree is walked. Commands nest one level at most today. */
@@ -665,7 +666,8 @@ export async function handleClaudeConfigRoute(
       rawPath.startsWith(FILE_ROUTE_PREFIX) &&
       rawPath !== VALIDATE_ROUTE &&
       rawPath !== REVIEW_ROUTE &&
-      rawPath !== MODELS_ROUTE) ||
+      rawPath !== MODELS_ROUTE &&
+      rawPath !== VALIDATE_ALL_ROUTE) ||
     (method === 'POST' && (rawPath === VALIDATE_ROUTE || rawPath === REVIEW_ROUTE))
   if (!methodAllowed) {
     sendJson(res, 405, { error: 'method not allowed' })
@@ -698,6 +700,64 @@ export async function handleClaudeConfigRoute(
       cwd = workspace.cwd
     }
     sendJson(res, 200, readInventory(opts.claudeHome, cwd))
+    return true
+  }
+
+  // TASK-1859 — the whole inventory in one pass.
+  //
+  // The UI used to check one file at a time, on demand, which made a person
+  // click forty times to learn what the machine could have said on open. That
+  // was only ever defensible because nobody noticed the check is FREE: it reads
+  // bytes and applies declarations, and reaches no provider (TASK-1842 AC-1).
+  //
+  // One route rather than N parallel calls from the client: the files are
+  // already enumerated here by readInventory, so the client would otherwise
+  // rebuild that list and issue a request per entry — more sockets, and a list
+  // that can drift from the one the inventory returned.
+  //
+  // A GET, not a POST like its single-file sibling: /validate is a POST because
+  // it carries rootId, rel and an optional unsaved buffer, and the sweep carries
+  // nothing and changes nothing. Same reasoning as /claude-config/models.
+  //
+  // A file that cannot be read does not fail the sweep. A dangling symlink is a
+  // real and expected state in this tree (~/.claude/commands is one), so the
+  // entry reports the reason and the other forty still get their answer.
+  if (rawPath === VALIDATE_ALL_ROUTE) {
+    const roots = resolveRoots(opts.claudeHome)
+    // No workspace cwd: it only affects mcpServers, and the sweep checks files
+    // — skills, commands and rules. Passing one would mean a workspace lookup
+    // for data this route discards.
+    const inv = readInventory(opts.claudeHome)
+    const targets = [...inv.skills, ...inv.commands, ...inv.rules]
+
+    const results = targets.map((entry) => {
+      const found = resolveForRead(roots, entry.ref.rootId, entry.ref.rel)
+      if (found.kind === 'err') {
+        return { ref: entry.ref, findings: [], unreadable: found.body.error }
+      }
+      try {
+        const bytes = fs.readFileSync(found.resolved)
+        return {
+          ref: entry.ref,
+          findings: runChecks({
+            rootId: entry.ref.rootId,
+            rel: entry.ref.rel,
+            path: found.resolved,
+            bytes,
+            text: bytes.toString('utf8')
+          }),
+          unreadable: null
+        }
+      } catch (err) {
+        return {
+          ref: entry.ref,
+          findings: [],
+          unreadable: err instanceof Error ? err.message : 'unreadable'
+        }
+      }
+    })
+
+    sendJson(res, 200, { results })
     return true
   }
 
