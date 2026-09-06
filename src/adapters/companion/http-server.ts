@@ -21,6 +21,7 @@ import { handleArtifactsRoute } from './artifacts'
 import { handleVaultRoute } from './vault'
 import { handleClaudeConfigRoute } from './claude-config'
 import { handleAcReviewRoute } from './ac-review'
+import { handleDockerRoute } from './docker-containers'
 import { handleWorkspaceDocsRoute } from './workspace-docs'
 import { handleWorkspaceSymbolsRoute } from './workspace-symbols'
 import { handleWorkspaceCommitsRoute } from './workspace-commits'
@@ -171,6 +172,21 @@ async function route(
       svc: services.svc,
       dataDir: services.dataDir,
       fetchImpl: services.fetchImpl as typeof fetch | undefined
+    })
+  ) {
+    return
+  }
+
+  // TASK-1865 — containers, per workspace. Read-only, and it reuses the exact
+  // permission shape workspace-commits.ts already applies to git: fixed program,
+  // array args, no shell, no stdin, capped buffer, behind an injectable reader.
+  if (
+    await handleDockerRoute(req, res, {
+      bridgeToken: services.bridgeToken,
+      listWorkspaces: async () => (await listAllWorkspaces(services)).map((w) => ({
+        id: w.id,
+        cwd: w.cwd
+      }))
     })
   ) {
     return
