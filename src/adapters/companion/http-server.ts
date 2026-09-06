@@ -22,6 +22,7 @@ import { handleVaultRoute } from './vault'
 import { handleClaudeConfigRoute } from './claude-config'
 import { handleAcReviewRoute } from './ac-review'
 import { handleDockerRoute } from './docker-containers'
+import { handleDockerActionRoute } from './docker-actions'
 import { handleWorkspaceDocsRoute } from './workspace-docs'
 import { handleWorkspaceSymbolsRoute } from './workspace-symbols'
 import { handleWorkspaceCommitsRoute } from './workspace-commits'
@@ -187,6 +188,17 @@ async function route(
         id: w.id,
         cwd: w.cwd
       }))
+    })
+  ) {
+    return
+  }
+
+  // TASK-1866 — start, stop, restart. The adapter's first ASYNCHRONOUS child
+  // process: docker stop takes 1.4 s at -t 1 and 10.6 s at its default grace,
+  // and execFileSync would freeze the event loop for exactly that long.
+  if (
+    await handleDockerActionRoute(req, res, {
+      bridgeToken: services.bridgeToken
     })
   ) {
     return
