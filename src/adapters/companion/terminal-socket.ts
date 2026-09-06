@@ -39,8 +39,20 @@ function refuse(socket: Duplex, status: number, reason: string): void {
   socket.destroy()
 }
 
+/** What a socket does with the frames it receives. */
+export interface TerminalSession {
+  handle: (raw: string) => Promise<void> | void
+  dispose: () => void
+}
+
 export interface TerminalSocketOptions {
   bridgeToken: string
+  /**
+   * TASK-1878 — build the PTY session for one socket. Omitted, the socket
+   * echoes, which is what the transport tests drive: they must keep proving
+   * the socket without a shell in the way.
+   */
+  createSession?: (sink: { send: (frame: Record<string, unknown>) => void }) => TerminalSession
 }
 
 export interface TerminalSocketHandle {
@@ -80,16 +92,24 @@ export function attachTerminalSocket(
 
     wss.handleUpgrade(req, socket, head, (ws) => {
       open.add(ws)
+      // TASK-1878 — one PTY per socket. Without a session factory this is the
+      // echo server TASK-1877 shipped, which is still what the transport tests
+      // drive: they prove the socket, not the shell.
+      const session = opts.createSession
+        ? opts.createSession({ send: (frame) => ws.send(JSON.stringify(frame)) })
+        : null
       ws.on('message', (data: unknown, isBinary: boolean) => {
-        // Text only, and echoed with a prefix so a test can tell a real echo
-        // from a frame the client happened to receive back off its own loop.
         if (isBinary) return
-        ws.send(`echo:${String(data)}`)
+        if (session) void session.handle(String(data))
+        else ws.send(`echo:${String(data)}`)
       })
       // One removal path for every way a socket can end, so the set cannot
       // grow by one per terminal a reader opens and closes all day.
       const forget = (): void => {
         open.delete(ws)
+        // The shell dies with its socket. Without this a day of opening the
+        // terminal leaves a process per open.
+        session?.dispose()
       }
       ws.on('close', forget)
       ws.on('error', forget)

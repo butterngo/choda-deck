@@ -27,6 +27,7 @@ import { handleDockerImageRoute } from './docker-images'
 import { handleDockerRunRoute } from './docker-run'
 import { handleDockerExecRoute } from './docker-exec'
 import { attachTerminalSocket } from './terminal-socket'
+import { PtySession } from './pty-session'
 import { handleWorkspaceDocsRoute } from './workspace-docs'
 import { handleWorkspaceSymbolsRoute } from './workspace-symbols'
 import { handleWorkspaceCommitsRoute } from './workspace-commits'
@@ -448,7 +449,16 @@ export function startCompanionServer(
   })
   // TASK-1877 — the terminal socket rides the same http server. It uses
   // `noServer` and its own upgrade listener, so ordinary routes are untouched.
-  const terminal = attachTerminalSocket(server, { bridgeToken: services.bridgeToken })
+  const terminal = attachTerminalSocket(server, {
+    bridgeToken: services.bridgeToken,
+    // TASK-1878 — one PTY per socket, started only in a cwd the app already
+    // knows. The workspace list is read at start time, not captured here, so a
+    // workspace registered after boot is reachable without a restart.
+    createSession: (sink) =>
+      new PtySession(sink, {
+        allowedCwds: async () => (await listAllWorkspaces(services)).map((w) => w.cwd)
+      })
+  })
   return new Promise((resolve, reject) => {
     server.once('error', reject)
     server.listen(port, COMPANION_BIND, () => {
