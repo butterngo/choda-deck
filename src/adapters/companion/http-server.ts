@@ -23,6 +23,7 @@ import { handleClaudeConfigRoute } from './claude-config'
 import { handleAcReviewRoute } from './ac-review'
 import { handleDockerRoute } from './docker-containers'
 import { handleDockerActionRoute } from './docker-actions'
+import { handleDockerImageRoute } from './docker-images'
 import { handleWorkspaceDocsRoute } from './workspace-docs'
 import { handleWorkspaceSymbolsRoute } from './workspace-symbols'
 import { handleWorkspaceCommitsRoute } from './workspace-commits'
@@ -198,6 +199,16 @@ async function route(
   // and execFileSync would freeze the event loop for exactly that long.
   if (
     await handleDockerActionRoute(req, res, {
+      bridgeToken: services.bridgeToken
+    })
+  ) {
+    return
+  }
+
+  // TASK-1873 — images. The in-use refusal is ours rather than the daemon's, so
+  // that adding --force later has to be a deliberate act rather than a flag.
+  if (
+    await handleDockerImageRoute(req, res, {
       bridgeToken: services.bridgeToken
     })
   ) {

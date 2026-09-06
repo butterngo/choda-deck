@@ -53,6 +53,8 @@ const reader: DockerReader = {
     calls.push({ fn: 'ps', args: [] })
     return psImpl()
   },
+  // Present only to satisfy DockerReader; TASK-1873's own tests cover it.
+  images: () => '',
   logs: (id, tail) => {
     calls.push({ fn: 'logs', args: [id, tail] })
     return logsImpl(id, tail)
