@@ -25,6 +25,7 @@ import { handleDockerRoute } from './docker-containers'
 import { handleDockerActionRoute } from './docker-actions'
 import { handleDockerImageRoute } from './docker-images'
 import { handleDockerRunRoute } from './docker-run'
+import { handleDockerExecRoute } from './docker-exec'
 import { handleWorkspaceDocsRoute } from './workspace-docs'
 import { handleWorkspaceSymbolsRoute } from './workspace-symbols'
 import { handleWorkspaceCommitsRoute } from './workspace-commits'
@@ -222,6 +223,16 @@ async function route(
   // body field is a 400 rather than something quietly ignored.
   if (
     await handleDockerRunRoute(req, res, {
+      bridgeToken: services.bridgeToken
+    })
+  ) {
+    return
+  }
+
+  // TASK-1875 — look inside a running container. Never takes a COMMAND from the
+  // request: it takes a path and runs one of two fixed programs against it.
+  if (
+    await handleDockerExecRoute(req, res, {
       bridgeToken: services.bridgeToken
     })
   ) {
