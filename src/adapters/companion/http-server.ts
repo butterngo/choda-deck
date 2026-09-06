@@ -26,6 +26,7 @@ import { handleDockerActionRoute } from './docker-actions'
 import { handleDockerImageRoute } from './docker-images'
 import { handleDockerRunRoute } from './docker-run'
 import { handleDockerExecRoute } from './docker-exec'
+import { attachTerminalSocket } from './terminal-socket'
 import { handleWorkspaceDocsRoute } from './workspace-docs'
 import { handleWorkspaceSymbolsRoute } from './workspace-symbols'
 import { handleWorkspaceCommitsRoute } from './workspace-commits'
@@ -445,6 +446,9 @@ export function startCompanionServer(
       else res.end()
     })
   })
+  // TASK-1877 — the terminal socket rides the same http server. It uses
+  // `noServer` and its own upgrade listener, so ordinary routes are untouched.
+  const terminal = attachTerminalSocket(server, { bridgeToken: services.bridgeToken })
   return new Promise((resolve, reject) => {
     server.once('error', reject)
     server.listen(port, COMPANION_BIND, () => {
@@ -452,10 +456,14 @@ export function startCompanionServer(
       const boundPort = typeof addr === 'object' && addr ? addr.port : port
       resolve({
         address: { port: boundPort, bind: COMPANION_BIND },
-        close: () =>
-          new Promise<void>((res) => {
+        close: async () => {
+          // The socket first: an open WebSocket keeps the http server from
+          // ever firing its close callback.
+          await terminal.close()
+          await new Promise<void>((res) => {
             server.close(() => res())
           })
+        }
       })
     })
   })
