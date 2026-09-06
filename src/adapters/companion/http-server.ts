@@ -24,6 +24,7 @@ import { handleAcReviewRoute } from './ac-review'
 import { handleDockerRoute } from './docker-containers'
 import { handleDockerActionRoute } from './docker-actions'
 import { handleDockerImageRoute } from './docker-images'
+import { handleDockerRunRoute } from './docker-run'
 import { handleWorkspaceDocsRoute } from './workspace-docs'
 import { handleWorkspaceSymbolsRoute } from './workspace-symbols'
 import { handleWorkspaceCommitsRoute } from './workspace-commits'
@@ -209,6 +210,18 @@ async function route(
   // that adding --force later has to be a deliberate act rather than a flag.
   if (
     await handleDockerImageRoute(req, res, {
+      bridgeToken: services.bridgeToken
+    })
+  ) {
+    return
+  }
+
+  // TASK-1874 — create a container from an image. The largest permission in
+  // this app: `docker run`'s arguments select what the new process can reach, so
+  // the argv is built from an allowlist of three validated fields and an unknown
+  // body field is a 400 rather than something quietly ignored.
+  if (
+    await handleDockerRunRoute(req, res, {
       bridgeToken: services.bridgeToken
     })
   ) {
