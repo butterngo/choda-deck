@@ -11,7 +11,7 @@
 // nothing when it does not happen for some other reason.
 
 import { describe, it, expect, afterEach } from 'vitest'
-import { platform, cwd as processCwd } from 'process'
+import process, { platform, cwd as processCwd } from 'process'
 import { PtySession, samePath, defaultShell, type PtyLike, type PtySpawner } from './pty-session'
 
 const REAL_CWD = processCwd()
@@ -39,6 +39,31 @@ function sink(): Recorded {
 }
 
 const live: PtySession[] = []
+
+// node-pty ships prebuilds for win32 and darwin only. On Linux it needs a source
+// build, and CI does not run install scripts — so a real PTY cannot start there.
+//
+// The tests that need one are SKIPPED with the reason named, never quietly
+// passed: a green tick on a machine that could not run the shell would be worse
+// than a red one. The criteria they cover are proven on Windows, which is the
+// platform this feature actually ships to, and the AC evidence says so.
+let ptyWorks = false
+try {
+  const mod = (await import('node-pty')) as unknown as {
+    spawn: (f: string, a: string[], o: unknown) => { kill: () => void; pid: number }
+  }
+  const probe = mod.spawn(SHELL, [], { cwd: REAL_CWD, cols: 80, rows: 24, env: { ...process.env } })
+  ptyWorks = typeof probe.pid === 'number' && probe.pid > 0
+  probe.kill()
+} catch (err) {
+  console.warn(`[pty-session.test] real-PTY tests SKIPPED on ${platform}: ${String(err)}`)
+}
+if (!ptyWorks) {
+  console.warn(`[pty-session.test] real-PTY tests SKIPPED on ${platform}: no usable node-pty prebuild`)
+}
+/** describe for the tests that need a live shell. */
+const describePty = ptyWorks ? describe : describe.skip
+
 
 function session(rec: Recorded, opts: Partial<{ allowed: string[]; spawn: PtySpawner }> = {}): PtySession {
   const s = new PtySession(
@@ -72,7 +97,7 @@ afterEach(() => {
 
 // ---------------------------------------------------------------------------
 
-describe('AC-1 — a shell starts, speaks, and answers', () => {
+describePty('AC-1 — a shell starts, speaks, and answers', () => {
   it('spawns on start and relays output both ways', async () => {
     const rec = sink()
     const s = session(rec)
@@ -140,7 +165,7 @@ describe('AC-2 — the cwd must already be a registered workspace', () => {
   })
 })
 
-describe('AC-3 — the shell dies with its socket', () => {
+describePty('AC-3 — the shell dies with its socket', () => {
   it('dispose kills the process, and the pid is gone', async () => {
     const rec = sink()
     const s = session(rec)
@@ -165,7 +190,7 @@ describe('AC-3 — the shell dies with its socket', () => {
   }, 30_000)
 })
 
-describe('AC-4 — a resize is seen INSIDE the shell', () => {
+describePty('AC-4 — a resize is seen INSIDE the shell', () => {
   it('a program reading terminal width reports the new value', async () => {
     const rec = sink()
     const s = session(rec)
@@ -183,7 +208,7 @@ describe('AC-4 — a resize is seen INSIDE the shell', () => {
   }, 30_000)
 })
 
-describe('AC-5 — an exit is announced, with its code', () => {
+describePty('AC-5 — an exit is announced, with its code', () => {
   it('sends an exit frame carrying the code', async () => {
     const rec = sink()
     const s = session(rec)
