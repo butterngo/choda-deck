@@ -52,6 +52,12 @@ export interface SpawnResult {
   /** True when OUR timer fired, not the child's. */
   timedOut: boolean
   tookMs: number
+  /**
+   * TASK-1873 — what the child wrote. `image prune` reports how much it freed
+   * and there is no other way to learn it; a prune that says nothing is
+   * indistinguishable from a prune that did nothing.
+   */
+  stdout: string
 }
 
 /** The seam tests inject through, so no test in this file needs a daemon. */
@@ -60,8 +66,15 @@ export type DockerSpawner = (args: string[], deadlineMs: number) => Promise<Spaw
 export const realSpawner: DockerSpawner = (args, deadlineMs) =>
   new Promise<SpawnResult>((resolve) => {
     const started = Date.now()
-    const child = spawn('docker', args, { stdio: ['ignore', 'ignore', 'ignore'] })
+    // stdout is piped now, stderr still discarded: a docker error message can
+    // carry pipe paths and hostnames, and the adapter answers with its own.
+    const child = spawn('docker', args, { stdio: ['ignore', 'pipe', 'ignore'] })
     let settled = false
+    let out = ''
+    child.stdout?.on('data', (c: Buffer) => {
+      // Capped for the same reason maxBuffer exists on the sync reader.
+      if (out.length < 256 * 1024) out += c.toString('utf8')
+    })
 
     const timer = setTimeout(() => {
       if (settled) return
@@ -69,20 +82,20 @@ export const realSpawner: DockerSpawner = (args, deadlineMs) =>
       // SIGKILL, not SIGTERM: the child was already asked politely by `-t`, and
       // this timer only fires because that did not work.
       child.kill('SIGKILL')
-      resolve({ code: null, timedOut: true, tookMs: Date.now() - started })
+      resolve({ code: null, timedOut: true, tookMs: Date.now() - started, stdout: out })
     }, deadlineMs)
 
     child.on('error', () => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      resolve({ code: null, timedOut: false, tookMs: Date.now() - started })
+      resolve({ code: null, timedOut: false, tookMs: Date.now() - started, stdout: out })
     })
     child.on('close', (code) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      resolve({ code, timedOut: false, tookMs: Date.now() - started })
+      resolve({ code, timedOut: false, tookMs: Date.now() - started, stdout: out })
     })
   })
 

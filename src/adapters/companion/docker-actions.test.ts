@@ -25,7 +25,8 @@ let spawnImpl: (args: string[], deadlineMs: number) => Promise<SpawnResult>
 const reader: DockerReader = {
   available: () => available,
   ps: () => psOutput,
-  logs: () => ''
+  logs: () => '',
+  images: () => ''
 }
 
 const spawner: DockerSpawner = (args, deadlineMs) => {
@@ -33,8 +34,8 @@ const spawner: DockerSpawner = (args, deadlineMs) => {
   return spawnImpl(args, deadlineMs)
 }
 
-const exits = (code: number, tookMs = 50): Promise<SpawnResult> =>
-  Promise.resolve({ code, timedOut: false, tookMs })
+const exits = (code: number, tookMs = 50, stdout = ''): Promise<SpawnResult> =>
+  Promise.resolve({ code, timedOut: false, tookMs, stdout })
 
 let server: Server
 let base: string
@@ -113,7 +114,7 @@ describe('AC-2 — the ceiling is ours, not the child\'s', () => {
     // The child never exits. If the route waited on it, this test would hang
     // rather than fail — which is why the stub is written this way.
     spawnImpl = (_args, deadlineMs) =>
-      Promise.resolve({ code: null, timedOut: true, tookMs: deadlineMs })
+      Promise.resolve({ code: null, timedOut: true, tookMs: deadlineMs, stdout: '' })
     const { status, body } = await act('abc123', 'stop', { timeoutSeconds: 2 })
     expect(status).toBe(409)
     expect(body.error).toBe('still running')
@@ -138,7 +139,7 @@ describe('AC-3 — the route does not block the adapter', () => {
         setTimeout(
           () => {
             order.push(slow ? 'slow' : 'fast')
-            resolve({ code: 0, timedOut: false, tookMs: slow ? 60 : 1 })
+            resolve({ code: 0, timedOut: false, tookMs: slow ? 60 : 1, stdout: '' })
           },
           slow ? 60 : 1
         )
