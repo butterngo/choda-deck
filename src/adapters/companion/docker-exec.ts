@@ -22,7 +22,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'http'
 import { execDockerReader, parsePs, type DockerReader } from './docker-containers'
-import { realSpawner, type DockerSpawner } from './docker-actions'
+import { EngineUnreachable, engineExec, type ContainerExec } from './docker-engine'
 
 const LS_ROUTE = '/docker/exec/ls'
 const CAT_ROUTE = '/docker/exec/cat'
@@ -30,6 +30,13 @@ const CAT_ROUTE = '/docker/exec/cat'
 const EXEC_DEADLINE_MS = 15_000
 /** A file bigger than this is not something to read in a pane. */
 const MAX_FILE_BYTES = 512 * 1024
+
+/**
+ * The line every `ls -la` prints first, `total 0` included. Its ABSENCE is the
+ * signal that a listing did not happen, which is the one thing an empty stdout
+ * could never say on its own (TASK-1894).
+ */
+const TOTAL_LINE = /^total\s/im
 
 export interface LsEntry {
   /** The line exactly as the container's own `ls` printed it. */
@@ -78,7 +85,8 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 export interface DockerExecOptions {
   bridgeToken: string
   reader?: DockerReader
-  spawner?: DockerSpawner
+  /** TASK-1894 — the engine seam. Every test injects one; none reaches a daemon. */
+  exec?: ContainerExec
 }
 
 export async function handleDockerExecRoute(
@@ -140,24 +148,48 @@ export async function handleDockerExecRoute(
     return true
   }
 
-  const spawner = opts.spawner ?? realSpawner
-  const argv = isLs
-    ? ['exec', known.id, 'ls', '-la', target]
-    : ['exec', known.id, 'cat', target]
-  const r = await spawner(argv, EXEC_DEADLINE_MS)
+  const exec = opts.exec ?? engineExec()
+  // No `exec` verb and no container id in argv: the engine binds the command to
+  // the container, so the program and its arguments are all that travel.
+  const argv = isLs ? ['ls', '-la', target] : ['cat', target]
 
-  if (r.timedOut) {
-    sendJson(res, 409, { error: 'still running', tookMs: r.tookMs })
+  let r
+  try {
+    r = await exec(known.id, argv, {
+      deadlineMs: EXEC_DEADLINE_MS,
+      // The cap is on what is read off the socket — frame headers included —
+      // and the byte check below is on the decoded text.
+      maxBytes: MAX_FILE_BYTES + 64 * 1024
+    })
+  } catch (err) {
+    // Unreachable is its own answer. The CLI path could only report this as an
+    // empty listing, which is the defect this route was rewritten for.
+    sendJson(res, 502, {
+      error: 'docker engine unreachable',
+      why: err instanceof EngineUnreachable ? err.why : 'unknown'
+    })
     return true
   }
-  if (r.code !== 0) {
+
+  if (r.exitCode !== 0) {
     // The adapter's own message. docker's stderr can carry image and mount
-    // detail, and it is discarded by the spawner for that reason.
+    // detail, and it is not forwarded for that reason.
     sendJson(res, 422, { error: `no such path: ${target}` })
     return true
   }
 
   if (isLs) {
+    // `ls -la` ALWAYS prints a total line — an empty directory prints
+    // `total 0`. So a listing with no total line did not come from a successful
+    // ls; it came from an exec that returned nothing, and calling that an empty
+    // directory is exactly the lie this task exists to remove.
+    if (!TOTAL_LINE.test(r.stdout)) {
+      sendJson(res, 502, {
+        error: 'the container returned nothing for this listing',
+        why: r.stderr.trim() === '' ? 'no output' : 'stderr only'
+      })
+      return true
+    }
     const entries = r.stdout
       .split('\n')
       .map(parseLsLine)
