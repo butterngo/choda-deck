@@ -307,3 +307,40 @@ describe('AC-8 — provider failures are typed, and the key never leaks', () => 
     expect(JSON.parse(res.raw).kind).toBe('budget')
   })
 })
+
+// TASK-1913 — a criterion the model did not answer for is not an approved one.
+describe('AC-1 / AC-2 — an unanswered criterion says so', () => {
+  it('marks the omitted index unanswered, and leaves the answered one ok', async () => {
+    configureProvider()
+    // Two criteria sent, ONE answered. This is the shape that used to come back
+    // as two approvals.
+    providerReply = () => ok([{ index: 1, verdict: 'ok', concern: null, suggestion: null }])
+
+    const res = await grade({ taskId: 'TASK-WITH' })
+
+    expect(res.status).toBe(200)
+    expect(res.criteria[0].verdict).toBe('unanswered')
+    // The CONTROL, in the same test: an explicit ok must still read ok, or this
+    // would pass against an implementation that calls everything unanswered.
+    expect(res.criteria[1].verdict).toBe('ok')
+    expect(res.criteria[0].verdict).not.toBe(res.criteria[1].verdict)
+  })
+
+  it('an unanswered row carries the reason, and no suggestion', async () => {
+    configureProvider()
+    providerReply = () => ok([])
+    const res = await grade({ taskId: 'TASK-WITH' })
+    // A verdict with a null concern leaves a reader a word and no reason.
+    expect(res.criteria[0].concern).toContain('no verdict')
+    expect(res.criteria[0].suggestion).toBeNull()
+  })
+
+  it('CONTROL — a weak verdict is untouched by any of this', async () => {
+    configureProvider()
+    providerReply = () =>
+      ok([{ index: 0, verdict: 'weak', concern: 'names no surface', suggestion: 'rewrite' }])
+    const res = await grade({ taskId: 'TASK-WITH' })
+    expect(res.criteria[0].verdict).toBe('weak')
+    expect(res.criteria[0].suggestion).toBe('rewrite')
+  })
+})
