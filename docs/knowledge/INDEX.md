@@ -2,6 +2,7 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
+| [adr-when-this-project-may-call-a-model](./adr-when-this-project-may-call-a-model.md) | decision | ADR: When this project may call a model — one explicit request, one subject, no unattended sweep | 2026-09-08 |  |
 | [ls-la-always-prints-a-total-line-so-empty-stdout-can-never-mean-an-empty-directo](./ls-la-always-prints-a-total-line-so-empty-stdout-can-never-mean-an-empty-directo.md) | gotcha | ls -la always prints a total line, so empty stdout can never mean an empty directory | 2026-09-07 |  |
 | [a-docker-verb-that-streams-needs-the-connection-over-a-tcp-docker-host-it-return](./a-docker-verb-that-streams-needs-the-connection-over-a-tcp-docker-host-it-return.md) | gotcha | A docker verb that streams needs the connection — over a TCP DOCKER_HOST it returns nothing and exits 0 | 2026-09-07 |  |
 | [an-upgrade-has-no-response-object-and-no-framing-refusals-must-destroy-relays-mu](./an-upgrade-has-no-response-object-and-no-framing-refusals-must-destroy-relays-mu.md) | gotcha | An upgrade has no response object and no framing — refusals must destroy, relays must rebuild | 2026-09-07 |  |
