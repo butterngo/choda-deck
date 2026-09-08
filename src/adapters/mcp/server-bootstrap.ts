@@ -25,6 +25,7 @@ import * as sessionTools from './mcp-tools/session-tools'
 import * as inboxTools from './mcp-tools/inbox-tools'
 import * as investigationTools from './mcp-tools/investigation-tools'
 import * as backupTools from './mcp-tools/backup-tools'
+import * as acReviewTool from './mcp-tools/ac-review'
 import * as knowledgeTools from './mcp-tools/knowledge-tools'
 import * as codeRefTools from './mcp-tools/code-ref-tools'
 import * as graphTools from './mcp-tools/graph-tools'
@@ -96,6 +97,10 @@ function buildMcpServer(
   // ADR-035: stdio-only — deliberately absent from REMOTE_TOOL_ALLOWLIST above.
   investigationTools.register(instrumented, deps.svc)
   backupTools.register(instrumented, deps.svc, deps.dataDir, deps.dbPath)
+  // TASK-1914 — costs a model call, so stdio-only: deliberately absent from
+  // REMOTE_TOOL_ALLOWLIST above, which is what keeps a remote connector from
+  // spending money (ADR: when this project may call a model, §5).
+  acReviewTool.register(instrumented, deps.svc, deps.dataDir)
   knowledgeTools.register(instrumented, deps.svc)
   codeRefTools.register(instrumented, deps.svc)
   graphTools.register(instrumented, deps.svc)
