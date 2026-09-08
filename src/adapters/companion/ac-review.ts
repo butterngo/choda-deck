@@ -24,12 +24,22 @@ const MAX_BODY_BYTES = 64 * 1024
 export interface AcVerdict {
   index: number
   text: string
-  verdict: 'ok' | 'weak'
-  /** Which of the five tests it fails, or null when ok. */
+  /**
+   * TASK-1913 — three states, because two could not tell them apart.
+   *
+   * `unanswered` means the model returned no row for this index. It used to be
+   * reported as `ok`, i.e. approved: the grader was at its most confident about
+   * the one criterion it had said nothing about.
+   */
+  verdict: 'ok' | 'weak' | 'unanswered'
+  /** Which of the five tests it fails, why it is unanswered, or null when ok. */
   concern: string | null
   /** A rewritten criterion to READ. Never written back. */
   suggestion: string | null
 }
+
+/** What an `unanswered` row says, so a reader gets a reason and not just a word. */
+const UNANSWERED = 'The model returned no verdict for this criterion.'
 
 /**
  * The criteria, in the order `ac_check` indexes them — every `- [ ]` or `- [x]`
@@ -198,17 +208,23 @@ export async function handleAcReviewRoute(
       if (typeof v.index === 'number') byIndex.set(v.index, v)
     }
 
-    // Every criterion is answered for, whether or not the model mentioned it. A
-    // criterion silently missing from the response would render as approved,
-    // which is the one direction this feature must never fail in.
+    // Every criterion is answered for, whether or not the model mentioned it —
+    // and the two cases are DIFFERENT ANSWERS. This used to collapse them: a
+    // criterion missing from the response rendered as `ok`, which is approval,
+    // in the one direction this feature must never fail in. A human reading the
+    // pane might have noticed a row looking untouched; a caller gating READY on
+    // the answer cannot notice anything.
     const out: AcVerdict[] = criteria.map((text, i) => {
       const got = byIndex.get(i)
+      if (got === undefined) {
+        return { index: i, text, verdict: 'unanswered', concern: UNANSWERED, suggestion: null }
+      }
       return {
         index: i,
         text,
-        verdict: got?.verdict === 'weak' ? 'weak' : 'ok',
-        concern: typeof got?.concern === 'string' ? got.concern : null,
-        suggestion: typeof got?.suggestion === 'string' ? got.suggestion : null
+        verdict: got.verdict === 'weak' ? 'weak' : 'ok',
+        concern: typeof got.concern === 'string' ? got.concern : null,
+        suggestion: typeof got.suggestion === 'string' ? got.suggestion : null
       }
     })
 
