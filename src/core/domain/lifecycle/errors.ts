@@ -133,6 +133,32 @@ export class NoActiveSessionError extends LifecycleError {
   }
 }
 
+/**
+ * TASK-1577 — several sessions are active in one workspace and the caller did
+ * not say which. Refusing is the whole point: the old code took the newest and
+ * said nothing, so an AC tick landed on another agent's session and the echoed
+ * id then ended it. Naming the candidates makes the next call obvious.
+ */
+export class AmbiguousSessionError extends LifecycleError {
+  constructor(workspaceId: string | null, sessionIds: string[]) {
+    const scope = workspaceId ? `workspace ${workspaceId}` : 'this project'
+    super(
+      'AMBIGUOUS_SESSION',
+      `${sessionIds.length} sessions are active in ${scope} — pass sessionId to say which one. ` +
+        `Candidates: ${sessionIds.join(', ')}`
+    )
+    this.name = 'AmbiguousSessionError'
+  }
+}
+
+/** TASK-1577 — a sessionId was named, and it is not usable as named. */
+export class SessionMismatchError extends LifecycleError {
+  constructor(sessionId: string, detail: string) {
+    super('SESSION_MISMATCH', `Session ${sessionId} ${detail}`)
+    this.name = 'SessionMismatchError'
+  }
+}
+
 export class InvestigationNotFoundError extends LifecycleError {
   constructor(id: string) {
     super('INVESTIGATION_NOT_FOUND', `Investigation ${id} not found`)

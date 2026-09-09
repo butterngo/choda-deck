@@ -132,6 +132,23 @@ export class SessionRepository {
     return rows.map(rowToSession)
   }
 
+  /**
+   * Every active session in scope, newest first. TASK-1577 — `getActive` below
+   * answers "which one" with LIMIT 1, which is a decision the caller has to be
+   * able to decline: a workspace may legally hold several active sessions
+   * (session_start says so), and silently binding to the newest one attributed
+   * an AC tick to a stranger's session, whose id the response then echoed back
+   * as the session to end. This returns the candidates and decides nothing.
+   */
+  findActive(projectId: string, workspaceId?: string): Session[] {
+    const sql = workspaceId
+      ? "SELECT * FROM sessions WHERE project_id = ? AND workspace_id = ? AND status = 'active' ORDER BY started_at DESC, rowid DESC"
+      : "SELECT * FROM sessions WHERE project_id = ? AND status = 'active' ORDER BY started_at DESC, rowid DESC"
+    const params = workspaceId ? [projectId, workspaceId] : [projectId]
+    const rows = this.db.prepare(sql).all(...params) as Array<Record<string, unknown>>
+    return rows.map(rowToSession)
+  }
+
   getActive(projectId: string, workspaceId?: string): Session | null {
     const sql = workspaceId
       ? "SELECT * FROM sessions WHERE project_id = ? AND workspace_id = ? AND status = 'active' ORDER BY started_at DESC, rowid DESC LIMIT 1"

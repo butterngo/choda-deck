@@ -10,6 +10,12 @@ export interface CheckAcItemInput {
   acIndex: number
   evidence: string
   workspaceId?: string
+  /**
+   * TASK-1577 — the session this tick belongs to. Optional for the ordinary
+   * single-session case; REQUIRED once a workspace holds more than one, because
+   * the alternative is the server guessing on the caller's behalf.
+   */
+  sessionId?: string
 }
 
 export interface CheckAcItemResult {

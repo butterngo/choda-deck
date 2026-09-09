@@ -84,6 +84,19 @@ export interface CloseConversationOnEnd {
 export interface EndSessionInput {
   handoff: SessionHandoff
   /**
+   * TASK-1577 — the task the caller believes this session is bound to. When
+   * given and it disagrees, the call is refused.
+   *
+   * This is the second half of the 2026-08-05 incident. `ac_check` echoed a
+   * session id resolved from the workspace; passing that id straight to
+   * `session_end` ended a different agent's session and flipped THEIR task to
+   * IMPLEMENTED with an unrelated summary. Fixing the resolver stops the wrong
+   * id being produced; this stops a wrong id, however obtained, being acted on.
+   * Optional because a caller that genuinely does not know the task should not
+   * be forced to invent one.
+   */
+  expectTaskId?: string
+  /**
    * TASK-1621 — conversations to close, named one by one. Omitted or empty
    * leaves every linked conversation untouched.
    *

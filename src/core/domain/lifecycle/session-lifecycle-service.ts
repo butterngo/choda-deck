@@ -27,6 +27,7 @@ import { now } from '../repositories/shared'
 import {
   ConversationNotFoundError,
   SessionNotFoundError,
+  SessionMismatchError,
   SessionStatusError,
   TaskLockedBySessionError,
   TaskNotFoundError,
@@ -106,6 +107,14 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
       if (!session) throw new SessionNotFoundError(id)
       if (session.status !== 'active') {
         throw new SessionStatusError(id, session.status, 'only active sessions can end')
+      }
+      // TASK-1577 — the caller said which task this session should be on. If it
+      // is not, ending it would close work that belongs to someone else.
+      if (input.expectTaskId !== undefined && session.taskId !== input.expectTaskId) {
+        throw new SessionMismatchError(
+          id,
+          `is bound to ${session.taskId ?? 'no task'}, but the caller expected ${input.expectTaskId}`
+        )
       }
 
       const endedAt = now()

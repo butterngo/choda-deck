@@ -55,7 +55,12 @@ import type {
   StartInvestigationInput
 } from './investigation-types'
 import { flipAcCheckbox, type CheckAcItemInput, type CheckAcItemResult } from './lifecycle/ac-check'
-import { NoActiveSessionError, TaskNotFoundError } from './lifecycle/errors'
+import {
+  AmbiguousSessionError,
+  NoActiveSessionError,
+  SessionMismatchError,
+  TaskNotFoundError
+} from './lifecycle/errors'
 import { KnowledgeService } from './knowledge-service'
 import { KnowledgeRepository } from './repositories/knowledge-repository'
 import { CodeRefRepository } from './repositories/code-ref-repository'
@@ -679,14 +684,71 @@ export class SqliteTaskService
   // (ac-check.ts) resolves cwd → workspaceId before calling; this method takes
   // an already-resolved workspaceId (or undefined to match any active session
   // in the project).
+  /**
+   * TASK-1577 — pick the session an ac_check belongs to, or refuse.
+   *
+   * The old path was `getActive(...)`, i.e. `ORDER BY started_at DESC LIMIT 1`.
+   * A workspace may hold several active sessions — `session_start` says so in
+   * as many words — so that silently attributed a tick to whichever session
+   * started last. On 2026-08-05 it attributed one to a different agent's
+   * session, and because the resolved id is echoed in the response, passing it
+   * to `session_end` ended that agent's session and flipped their task to
+   * IMPLEMENTED. The tick landed on the right task; the attribution did not.
+   *
+   * Named explicitly -> used verbatim, after checking it is real, active and in
+   * the resolved workspace. A named session that fails any of those is an
+   * ERROR, never a quiet fall back to the guess — falling back would reintroduce
+   * exactly the substitution the caller was trying to prevent by naming it.
+   */
+  private resolveAcSession(
+    projectId: string,
+    input: CheckAcItemInput
+  ): import('./task-types').Session {
+    if (input.sessionId !== undefined) {
+      const named = this.sessions.get(input.sessionId)
+      if (!named) throw new SessionMismatchError(input.sessionId, 'does not exist')
+      if (named.status !== 'active') {
+        throw new SessionMismatchError(input.sessionId, `is ${named.status}, not active`)
+      }
+      if (named.projectId !== projectId) {
+        throw new SessionMismatchError(
+          input.sessionId,
+          `belongs to project ${named.projectId}, not ${projectId}`
+        )
+      }
+      if (input.workspaceId !== undefined && named.workspaceId !== input.workspaceId) {
+        throw new SessionMismatchError(
+          input.sessionId,
+          `is in workspace ${named.workspaceId ?? 'none'}, but cwd resolved to ${input.workspaceId}`
+        )
+      }
+      return named
+    }
+
+    const active = this.sessions.findActive(projectId, input.workspaceId)
+    if (active.length === 0) {
+      throw new NoActiveSessionError(projectId, input.workspaceId ?? null)
+    }
+    if (active.length > 1) {
+      throw new AmbiguousSessionError(
+        input.workspaceId ?? null,
+        active.map((s) => s.id)
+      )
+    }
+    // Exactly one: unchanged from before, which is the ordinary case and must
+    // stay silent.
+    return active[0] as import('./task-types').Session
+  }
+
   async checkAcItem(input: CheckAcItemInput): Promise<CheckAcItemResult> {
     const task = this.tasks.get(input.taskId)
     if (!task) throw new TaskNotFoundError(input.taskId)
 
     const { newBody, item } = flipAcCheckbox(task.body ?? '', task.id, input.acIndex)
 
-    const session = this.sessions.getActive(task.projectId, input.workspaceId)
-    if (!session) throw new NoActiveSessionError(task.projectId, input.workspaceId ?? null)
+    // TASK-1577 — resolving WHICH session is the part that caused damage, so it
+    // is spelled out rather than left to a LIMIT 1.
+    const session = this.resolveAcSession(task.projectId, input)
 
     const tx = this.db.transaction((): CheckAcItemResult => {
       this.tasks.update(task.id, { body: newBody })
