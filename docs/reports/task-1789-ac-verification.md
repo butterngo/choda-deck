@@ -77,7 +77,16 @@ commit message at the time; had it not been, it would be unrecoverable now.
 ## Findings
 
 This is the fourth of four Files/audit records closed today, and the run turned
-up a **fifth**: TASK-1792 shipped in companion #82 (`dab4735`) — the per-line
+up more: TASK-1792 shipped in companion #82 (`dab4735`) — the per-line
 highlighting this task's own test comments describe as already done — and is
-still sitting in TODO. TASK-1786 (#83) looks the same. Neither was in this run's
-scope, and neither has been verified.
+still sitting in TODO, as is TASK-1791 (choda-deck #259, `aa08ad9`), the adapter
+half it depends on. Neither was in this run's scope, and neither has been
+verified.
+
+**Correction, added 2026-09-09.** The original text of this paragraph also said
+"TASK-1786 (#83) looks the same." **That was wrong.** TASK-1786 is DONE, closed
+on 2026-09-03 with all four of its criteria ticked. The claim was inferred from a
+test comment that mentions the task, and the record itself was never read — the
+same wrong-citation failure this report's own findings section is about, made in
+the sentence describing it. TASK-1791 is what was actually missed; it is left in
+above so the count reads correctly.
