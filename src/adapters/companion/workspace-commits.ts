@@ -26,7 +26,7 @@ import { Buffer } from 'buffer'
 import { timingSafeEqual } from 'crypto'
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { WorkspaceOperations } from '../../core/domain/interfaces/workspace-repository.interface'
-import { parseUnifiedDiff, type Hunks } from './commit-diff'
+import { MAX_FILE_PATCH_BYTES, parseUnifiedDiff, type Hunks } from './commit-diff'
 
 const ROUTE_PREFIX = '/workspaces/'
 const COMMITS_SEGMENT = '/commits'
@@ -74,7 +74,12 @@ export interface CommitFileStat {
    */
   hunks?: Hunks
   /** Why hunks is null, when it is. */
-  omitted?: 'binary' | 'too-large'
+  omitted?: 'binary' | 'too-large' | 'no-patch'
+  /**
+   * The cap that was applied, in bytes. Present only with `omitted: 'too-large'`,
+   * so a reader can name the limit rather than restate it.
+   */
+  capBytes?: number
   /** Set only on a rename, so a reader can see where the file came from. */
   oldPath?: string
   /** null for a binary file — git reports `-`, and 0 would be a lie. */
@@ -188,7 +193,20 @@ export const execGitCommitReader: GitCommitReader = {
     return git(cwd, ['show', '-s', `--format=${SHOW_FORMAT}`, sha, '--'])
   },
   numstat(cwd, sha) {
-    return git(cwd, ['show', '--numstat', '--format=', sha, '--'])
+    // -z and -M for the same reason the patch below takes -M, and one more.
+    //
+    // Without -M the two readers spell a rename differently: the patch says
+    // `rename from`/`rename to` while numstat emits git's COMBINED display
+    // form, `dir/{old.ts => new.ts}`. withHunks joins them by path, so the
+    // join missed and a renamed file arrived with no `hunks` key at all —
+    // which the companion renders as "this adapter does not serve diffs",
+    // telling a reader to upgrade an adapter that is already current
+    // (TASK-1921).
+    //
+    // -z is what removes the guess rather than adding one. The combined form
+    // is genuinely ambiguous — a filename may contain ` => ` — while -z emits
+    // the old and new paths as separate NUL-terminated fields.
+    return git(cwd, ['show', '--numstat', '-z', '-M', '--format=', sha, '--'])
   },
   patch(cwd, sha) {
     // -M detects renames, so a moved file reports as a rename rather than as a
@@ -277,16 +295,50 @@ export function parseLogOutput(raw: string): CommitRow[] {
  * counts rather than 0/0: a binary file did change, and 0/0 would say it did not.
  */
 export function parseNumstat(raw: string): CommitFileStat[] {
+  // `--numstat -z` emits NUL-terminated records:
+  //
+  //   ordinary   `2\t2\tpackage.json\0`
+  //   rename     `41\t18\t\0<old path>\0<new path>\0`
+  //
+  // A rename is recognisable by the record ending right after the second tab:
+  // the two paths follow as their own fields. That is why -z is used instead of
+  // parsing `dir/{old => new}` — a path may legally contain ` => `, and the
+  // combined form cannot be split back apart without guessing.
   const files: CommitFileStat[] = []
-  for (const line of raw.split(/\r?\n/)) {
-    if (line.trim() === '') continue
-    const parts = line.split('\t')
+  const fields = raw.split('\0')
+
+  for (let i = 0; i < fields.length; i++) {
+    const field = fields[i]
+    if (field === undefined || field.trim() === '') continue
+
+    const parts = field.split('\t')
     if (parts.length < 3) continue
-    const [ins, del, ...pathParts] = parts
-    const filePath = pathParts.join('\t')
+    const [ins, del] = parts
+    if (ins === undefined || del === undefined) continue
     const binary = ins === '-' || del === '-'
+
+    // parts[2] is the path for an ordinary change, and EMPTY for a rename.
+    const inline = parts.slice(2).join('\t')
+    let filePath: string
+    let oldPath: string | undefined
+
+    if (inline === '') {
+      const from = fields[i + 1]
+      const to = fields[i + 2]
+      // A truncated record is dropped rather than half-read: half a rename
+      // would name a file that is not the one that changed. An EMPTY field is
+      // missing too — the trailing NUL leaves one behind.
+      if (from === undefined || to === undefined || from === '' || to === '') continue
+      oldPath = from
+      filePath = to
+      i += 2
+    } else {
+      filePath = inline
+    }
+
     files.push({
       path: filePath,
+      ...(oldPath === undefined ? {} : { oldPath }),
       insertions: binary ? null : Number.parseInt(ins, 10),
       deletions: binary ? null : Number.parseInt(del, 10),
       binary
@@ -358,11 +410,20 @@ function withHunks(
   const byPath = new Map(parseUnifiedDiff(reader.patch(cwd, sha)).map((d) => [d.path, d]))
   return files.map((f) => {
     const d = byPath.get(f.path)
-    if (!d) return f
+    if (!d) {
+      // Asked for a patch and could not produce one for this file. Saying so is
+      // not a nicety: an ABSENT `hunks` key is how the client detects an adapter
+      // that predates diffs, so leaving it absent here would tell a reader to
+      // upgrade an adapter that is already current (TASK-1921).
+      return { ...f, hunks: null, omitted: 'no-patch' as const }
+    }
     return {
       ...f,
       hunks: d.hunks,
       ...(d.omitted ? { omitted: d.omitted } : {}),
+      // The cap is stated where it applies. A client that wants to say "skipped,
+      // over 256 KB" should not have to hardcode the number and hope.
+      ...(d.omitted === 'too-large' ? { capBytes: MAX_FILE_PATCH_BYTES } : {}),
       ...(d.oldPath ? { oldPath: d.oldPath } : {})
     }
   })

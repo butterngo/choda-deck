@@ -24,6 +24,7 @@ import {
   parseNumstat,
   listCommits,
   getCommitDetail,
+  execGitCommitReader,
   NotAGitRepoError,
   UnknownShaError,
   type GitCommitReader
@@ -523,5 +524,137 @@ describe('patch=1 on the detail route', () => {
     const bin = body.files.find((f) => f.path === 'blob.bin')
     expect(bin?.hunks).toBeNull()
     expect(bin?.omitted).toBe('binary')
+  })
+})
+
+// TASK-1921 — a renamed file used to arrive under a path that names no file.
+//
+// `git show --numstat` spells a rename in git's COMBINED display form,
+// `dir/{old.ts => new.ts}`, while the patch reader (which takes -M) spells it
+// `rename from` / `rename to`. withHunks joins the two by path, so the join
+// missed: the file kept the combined string as its path and arrived with NO
+// `hunks` key at all — which the companion renders as "this adapter does not
+// serve diffs", telling a reader to upgrade an adapter that is already current.
+//
+// The fix is `-z`, which removes a guess rather than adding one: the combined
+// form cannot be split back apart safely, because a path may contain ` => `.
+
+describe('parseNumstat — the -z record forms (TASK-1921)', () => {
+  it('reads an ordinary NUL-terminated record', () => {
+    expect(parseNumstat('12\t3\tsrc/app.ts\x00')).toEqual([
+      { path: 'src/app.ts', insertions: 12, deletions: 3, binary: false }
+    ])
+  })
+
+  it('reads a rename as two separate paths, newest as `path`', () => {
+    // The record ends right after the second tab; the two paths follow.
+    const [file] = parseNumstat('41\t18\t\x00old/a.ts\x00new/b.ts\x00')
+    expect(file?.path).toBe('new/b.ts')
+    expect(file?.oldPath).toBe('old/a.ts')
+    expect(file?.insertions).toBe(41)
+  })
+
+  it('keeps a path containing ` => ` intact — the reason -z was chosen', () => {
+    // Under the combined form this path is indistinguishable from a rename.
+    const [file] = parseNumstat('1\t0\tdocs/a => b.md\x00')
+    expect(file?.path).toBe('docs/a => b.md')
+    expect(file?.oldPath).toBeUndefined();
+  })
+
+  it('drops a truncated rename rather than half-reading it', () => {
+    // Half a rename would name a file that is not the one that changed.
+    expect(parseNumstat('41\t18\t\x00old/a.ts\x00')).toEqual([])
+  })
+
+  it('CONTROL — a rename and an ordinary file in one stream both survive', () => {
+    const files = parseNumstat('41\t18\t\x00old/a.ts\x00new/b.ts\x00002\t2\tpackage.json\x00')
+    expect(files.map((f) => f.path)).toEqual(['new/b.ts', 'package.json'])
+    expect(files[1]?.oldPath).toBeUndefined()
+  })
+})
+
+describe('a renamed file, end to end against a real repo (TASK-1921)', () => {
+  let rrepo: string
+  let renameEditSha = ''
+  let pureRenameSha = ''
+
+  beforeAll(() => {
+    rrepo = fs.mkdtempSync(path.join(os.tmpdir(), 'ws-rename-repo-'))
+    run(rrepo, ['init', '-q', '-b', 'main'])
+    run(rrepo, ['config', 'user.email', 'test@example.com'])
+    run(rrepo, ['config', 'user.name', 'Test'])
+    run(rrepo, ['config', 'commit.gpgsign', 'false'])
+
+    fs.mkdirSync(path.join(rrepo, 'src'))
+    fs.writeFileSync(path.join(rrepo, 'src', 'old-name.ts'), 'one\ntwo\nthree\nfour\n')
+    fs.writeFileSync(path.join(rrepo, 'keep.txt'), 'untouched\n')
+    run(rrepo, ['add', '.'])
+    run(rrepo, ['commit', '-q', '-m', 'chore: seed'])
+
+    // A rename WITH edits — the case that lost its diff entirely.
+    run(rrepo, ['mv', 'src/old-name.ts', 'src/new-name.ts'])
+    fs.writeFileSync(path.join(rrepo, 'src', 'new-name.ts'), 'one\nTWO\nthree\nfour\nfive\n')
+    run(rrepo, ['add', '.'])
+    run(rrepo, ['commit', '-q', '-m', 'refactor: rename and edit'])
+    renameEditSha = run(rrepo, ['rev-parse', 'HEAD']).trim()
+
+    // A PURE rename — no content change at all.
+    run(rrepo, ['mv', 'keep.txt', 'kept.txt'])
+    run(rrepo, ['add', '.'])
+    run(rrepo, ['commit', '-q', '-m', 'chore: move a file, unchanged'])
+    pureRenameSha = run(rrepo, ['rev-parse', 'HEAD']).trim()
+  })
+
+  afterAll(() => {
+    fs.rmSync(rrepo, { recursive: true, force: true })
+  })
+
+  it('AC-1 — reports the NEW path, and it is a path that exists', () => {
+    const detail = getCommitDetail(rrepo, renameEditSha, execGitCommitReader, { patch: true })
+    const file = detail.files[0]
+    expect(file?.path).toBe('src/new-name.ts')
+    // The defect's signature, asserted directly rather than by its consequences.
+    expect(file?.path).not.toContain('=>')
+    expect(file?.path).not.toContain('{')
+    expect(fs.existsSync(path.join(rrepo, file?.path ?? ''))).toBe(true)
+    expect(file?.oldPath).toBe('src/old-name.ts')
+  })
+
+  it('AC-2 — carries its hunks, and the counts agree with the stat', () => {
+    const file = getCommitDetail(rrepo, renameEditSha, execGitCommitReader, { patch: true }).files[0]
+    expect(file?.hunks).not.toBeNull()
+    const add = (file?.hunks ?? []).flatMap((h) => h.lines).filter((l) => l.kind === 'add').length
+    const del = (file?.hunks ?? []).flatMap((h) => h.lines).filter((l) => l.kind === 'del').length
+    expect(add).toBe(file?.insertions)
+    expect(del).toBe(file?.deletions)
+  })
+
+  it('AC-3 — a PURE rename is an empty hunk list, not null', () => {
+    // [] means "changed nothing", null means "not produced". A pure rename
+    // genuinely changed nothing, and the two must not collapse.
+    const file = getCommitDetail(rrepo, pureRenameSha, execGitCommitReader, { patch: true }).files[0]
+    expect(file?.path).toBe('kept.txt')
+    expect(file?.oldPath).toBe('keep.txt')
+    expect(file?.hunks).toEqual([])
+    expect(file?.hunks).not.toBeNull()
+  })
+
+  it('AC-4 — no file in a patch response has hunks null without a reason', () => {
+    for (const sha of [renameEditSha, pureRenameSha]) {
+      for (const f of getCommitDetail(rrepo, sha, execGitCommitReader, { patch: true }).files) {
+        if (f.hunks === null) expect(f.omitted, f.path).toBeDefined()
+        // And the key is never absent: absent is how a client detects an
+        // adapter too old to serve diffs at all.
+        expect(f, f.path).toHaveProperty('hunks')
+      }
+    }
+  })
+
+  it('CONTROL — without patch, the response still carries no hunks key', () => {
+    // The default must not move; an absent key here is correct and is what an
+    // old adapter also produces.
+    for (const f of getCommitDetail(rrepo, renameEditSha).files) {
+      expect(f).not.toHaveProperty('hunks')
+    }
   })
 })
