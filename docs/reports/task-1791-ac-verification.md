@@ -83,3 +83,41 @@ This is the first of the retroactively-verified records where verification
 all sound. That is worth noting in both directions: the exercise is not a
 formality, and four clean results in a row are not evidence that the fifth will
 be.
+
+---
+
+## Re-verification — 2026-09-09 afternoon, after TASK-1921
+
+**AC-5 and AC-6 now hold. 7/7.**
+
+Both were re-checked against the live adapter on the post-fix build (`dist`
+rebuilt at `c3ffa7b`, served on port 7402), not against the test suite — the same
+surface that failed them this morning.
+
+**AC-6**, commit `d07ce1b`, the original reproduction:
+
+```
+src/adapters/mcp/rules/mcp-rules-loader.test.ts   oldPath=…/session-rules-loader.test.ts
+  hunks=6  stat 41/18  counted 41/18  exists on disk
+src/adapters/mcp/rules/mcp-rules-loader.ts        oldPath=…/session-rules-loader.ts
+  hunks=3  stat 14/10  counted 14/10  exists on disk
+src/adapters/mcp/rules/mcp-rules.md               oldPath=…/session-rules.md
+  hunks=2  stat 13/2   counted 13/2   exists on disk
+```
+
+No `=>`, no `{`, no absent `hunks`. The counts are taken off the hunks and
+compared to the stat, so the diff is the file's own, not a plausible-looking one.
+
+**AC-5**, commit `9d776c6`: `pnpm-lock.yaml` returns `omitted: 'too-large'` with
+`capBytes: 262144`. Control in the same response — the four binaries carry no
+`capBytes` (they are null for a different reason) and six ordinary files have the
+key absent. The number appears only where the cap actually fired.
+
+Fixed by TASK-1921 (`2d3e0c9`, `ff3ddbd`, `f2c6d0d`) —
+`docs/reports/task-1921-ac-verification.md`.
+
+**On the original verdict.** Both failures were real and worth the friction they
+caused. Ticking AC-6 this morning on "the parser did not crash" — which is what
+its stated fail conditions named — would have shipped a path that names no file,
+and the criterion would have read as satisfied forever. The fail-list is not the
+criterion.
