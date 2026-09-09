@@ -16,6 +16,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import type { IncomingMessage, ServerResponse } from 'http'
+import { MAX_FILE_PATCH_BYTES } from './commit-diff'
 import {
   handleWorkspaceCommitsRoute,
   resolveReachability,
@@ -577,6 +578,7 @@ describe('a renamed file, end to end against a real repo (TASK-1921)', () => {
   let rrepo: string
   let renameEditSha = ''
   let pureRenameSha = ''
+  let overCapSha = ''
 
   beforeAll(() => {
     rrepo = fs.mkdtempSync(path.join(os.tmpdir(), 'ws-rename-repo-'))
@@ -598,11 +600,21 @@ describe('a renamed file, end to end against a real repo (TASK-1921)', () => {
     run(rrepo, ['commit', '-q', '-m', 'refactor: rename and edit'])
     renameEditSha = run(rrepo, ['rev-parse', 'HEAD']).trim()
 
-    // A PURE rename — no content change at all.
+    // A PURE rename — no content change at all — carrying a BINARY file in the
+    // SAME commit. AC-3 asks for the control there and not in a neighbouring
+    // commit, because the point is that one response distinguishes the two:
+    // [] (changed nothing) beside null (not produced).
     run(rrepo, ['mv', 'keep.txt', 'kept.txt'])
+    fs.writeFileSync(path.join(rrepo, 'blob.bin'), Buffer.from([0, 1, 2, 3, 0, 255, 7]))
     run(rrepo, ['add', '.'])
-    run(rrepo, ['commit', '-q', '-m', 'chore: move a file, unchanged'])
+    run(rrepo, ['commit', '-q', '-m', 'chore: move a file, unchanged, beside a binary'])
     pureRenameSha = run(rrepo, ['rev-parse', 'HEAD']).trim()
+
+    // A file over MAX_FILE_PATCH_BYTES, so the cap actually fires.
+    fs.writeFileSync(path.join(rrepo, 'huge.txt'), 'x'.repeat(MAX_FILE_PATCH_BYTES + 4096) + '\n')
+    run(rrepo, ['add', '.'])
+    run(rrepo, ['commit', '-q', '-m', 'chore: add a file past the patch cap'])
+    overCapSha = run(rrepo, ['rev-parse', 'HEAD']).trim()
   })
 
   afterAll(() => {
@@ -632,15 +644,37 @@ describe('a renamed file, end to end against a real repo (TASK-1921)', () => {
   it('AC-3 — a PURE rename is an empty hunk list, not null', () => {
     // [] means "changed nothing", null means "not produced". A pure rename
     // genuinely changed nothing, and the two must not collapse.
-    const file = getCommitDetail(rrepo, pureRenameSha, execGitCommitReader, { patch: true }).files[0]
-    expect(file?.path).toBe('kept.txt')
+    const files = getCommitDetail(rrepo, pureRenameSha, execGitCommitReader, { patch: true }).files
+    const file = files.find((f) => f.path === 'kept.txt')
     expect(file?.oldPath).toBe('keep.txt')
     expect(file?.hunks).toEqual([])
     expect(file?.hunks).not.toBeNull()
+
+    // PAIRED CONTROL, same response: a binary file is still null. Without it the
+    // first assertion would also pass on a build that returns [] for everything.
+    const bin = files.find((f) => f.path === 'blob.bin')
+    expect(bin?.hunks).toBeNull()
+    expect(bin?.omitted).toBe('binary')
+  })
+
+  it('AC-5 — an over-cap file states the cap it applied, in bytes', () => {
+    const file = getCommitDetail(rrepo, overCapSha, execGitCommitReader, { patch: true }).files.find(
+      (f) => f.path === 'huge.txt'
+    )
+    expect(file?.omitted).toBe('too-large')
+    // The number, not just the reason: a client should not have to hardcode
+    // 262144 and hope it stays true.
+    expect(file?.capBytes).toBe(MAX_FILE_PATCH_BYTES)
+
+    // CONTROL — a file under the cap states no capBytes at all.
+    const under = getCommitDetail(rrepo, renameEditSha, execGitCommitReader, {
+      patch: true
+    }).files.find((f) => f.path === 'src/new-name.ts')
+    expect(under?.capBytes).toBeUndefined()
   })
 
   it('AC-4 — no file in a patch response has hunks null without a reason', () => {
-    for (const sha of [renameEditSha, pureRenameSha]) {
+    for (const sha of [renameEditSha, pureRenameSha, overCapSha]) {
       for (const f of getCommitDetail(rrepo, sha, execGitCommitReader, { patch: true }).files) {
         if (f.hunks === null) expect(f.omitted, f.path).toBeDefined()
         // And the key is never absent: absent is how a client detects an
