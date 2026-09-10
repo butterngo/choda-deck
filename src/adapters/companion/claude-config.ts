@@ -56,11 +56,12 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { Buffer } from 'buffer'
-import { createHash, timingSafeEqual } from 'crypto'
+import { timingSafeEqual } from 'crypto'
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { WorkspaceOperations } from '../../core/domain/interfaces/workspace-repository.interface'
 
 import { parseSkillFrontmatter, runChecks } from './config-checks'
+import { readRawBody, sha256, writeAtomic } from './atomic-file'
 import { AiError, type FetchLike } from './ai-review'
 import { listAzureModels, resolveAzureConfig, reviewFileAzure } from './azure-review'
 
@@ -512,69 +513,10 @@ export function readMcpServers(claudeHome: string, workspaceCwd?: string): McpSe
  * template-registry.json at 117 KB; 2 MB leaves room without letting a runaway
  * client stream forever into memory.
  */
-const MAX_WRITE_BYTES = 2 * 1024 * 1024
-
-function sha256(buf: Buffer): string {
-  return createHash('sha256').update(buf).digest('hex')
-}
-
-/**
- * The request body as RAW BYTES, or null once the cap is exceeded.
- *
- * Deliberately not `readBody` from workflow.ts, which decodes to utf8 and
- * JSON.parses. A config file's bytes are the payload here: decoding and
- * re-encoding is exactly the round trip that loses a BOM and rewrites line
- * endings, and this route's whole promise is that it does not transform what it
- * is given.
- *
- * The cap is enforced while reading, not after — a 500 MB body must not be
- * buffered first and rejected second.
- */
-function readRawBody(req: IncomingMessage): Promise<Buffer | null> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    let total = 0
-    let over = false
-    req.on('data', (c: Buffer) => {
-      if (over) return
-      total += c.length
-      if (total > MAX_WRITE_BYTES) {
-        over = true
-        chunks.length = 0
-        return
-      }
-      chunks.push(c)
-    })
-    req.on('end', () => resolve(over ? null : Buffer.concat(chunks)))
-    req.on('error', reject)
-  })
-}
-
-/**
- * Write via a temp file in the SAME directory, then rename.
- *
- * bridge-token.ts writes in place, and the stakes are what differ: truncating
- * settings.local.json halfway leaves an unusable config, and this feature keeps
- * no backup — the 409 is the only thing between two writers and a lost edit, and
- * it cannot help if the file is already half-written. Rename within a directory
- * is atomic on both platforms; across directories it is not, which is why the
- * temp file is a sibling rather than in os.tmpdir().
- */
-function writeAtomic(target: string, bytes: Buffer): void {
-  const tmp = path.join(path.dirname(target), `.${path.basename(target)}.${process.pid}.tmp`)
-  try {
-    fs.writeFileSync(tmp, bytes)
-    fs.renameSync(tmp, target)
-  } catch (err) {
-    try {
-      fs.unlinkSync(tmp)
-    } catch {
-      // The temp file may never have been created; failing to remove it must
-      // not mask the write error being thrown.
-    }
-    throw err
-  }
-}
+// MAX_WRITE_BYTES, sha256, readRawBody and writeAtomic moved to atomic-file.ts
+// when PUT /workspace-docs became the second route to write a user's own file
+// (TASK-1935). One implementation of "the bytes go to disk exactly as they
+// arrived" — two copies would agree today and drift later.
 
 /**
  * One resolution, two callers.

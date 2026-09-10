@@ -1,7 +1,10 @@
 // TASK-1749 — browse a workspace's own .md docs. A workspace already carries its
 // cwd, so picking one is the whole configuration; nothing else needs setting up.
 //
-// Read-only, always. Listing was .md-only until TASK-1787; it now serves the
+// Read-only until TASK-1935, which added exactly one write: PUT on the FILE
+// route, behind an if-match precondition. The listing stays read-only — it is a
+// projection with nothing to write back to. Listing was .md-only until TASK-1787;
+// it now serves the
 // whole tree when asked, because an audit view that can name the files a commit
 // touched and then not open them is only half a chain.
 //
@@ -29,6 +32,7 @@ import { Buffer } from 'buffer'
 import { timingSafeEqual } from 'crypto'
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { WorkspaceOperations } from '../../core/domain/interfaces/workspace-repository.interface'
+import { readRawBody, sha256, writeAtomic } from './atomic-file'
 
 const LIST_ROUTE = '/workspace-docs'
 const FILE_ROUTE_PREFIX = '/workspace-docs/'
@@ -171,7 +175,12 @@ export async function handleWorkspaceDocsRoute(
   const rawPath = (req.url ?? '/').split('?')[0]
   if (rawPath !== LIST_ROUTE && !rawPath.startsWith(FILE_ROUTE_PREFIX)) return false
 
-  if ((req.method ?? 'GET') !== 'GET') {
+  // GET everywhere; PUT only on the FILE route. The listing is a projection
+  // with nothing to write back to, so a PUT there is a client bug rather than a
+  // missing feature — and answering 405 says so.
+  const method = req.method ?? 'GET'
+  const isFileRoute = rawPath.startsWith(FILE_ROUTE_PREFIX)
+  if (method !== 'GET' && !(method === 'PUT' && isFileRoute)) {
     sendJson(res, 405, { error: 'method not allowed' })
     return true
   }
@@ -259,10 +268,53 @@ export async function handleWorkspaceDocsRoute(
     return true
   }
 
+  // Read as BYTES, not as a utf8 string. The hash has to describe what is on
+  // disk, and a decode/re-encode round trip is exactly what loses a BOM and
+  // rewrites line endings — the two ways a save silently changes lines nobody
+  // touched.
+  const current = fs.readFileSync(target)
+
+  if (method === 'PUT') {
+    // REQUIRED, not optional. A save with nothing to compare against can
+    // silently overwrite an edit made two seconds ago, and this route keeps no
+    // backup, so that edit is simply gone.
+    const ifMatch = req.headers['if-match']
+    if (typeof ifMatch !== 'string' || ifMatch.length === 0) {
+      sendJson(res, 400, { error: 'if-match required' })
+      return true
+    }
+
+    const body = await readRawBody(req)
+    if (body === null) {
+      sendJson(res, 413, { error: 'too large' })
+      return true
+    }
+
+    // Against the bytes on disk RIGHT NOW, read above — never a value cached
+    // when the route was entered.
+    const currentHash = sha256(current)
+    if (ifMatch.replace(/^"|"$/g, '') !== currentHash) {
+      sendJson(res, 409, { error: 'file changed on disk', sha256: currentHash })
+      return true
+    }
+
+    // Verbatim. No decode, no re-encode, no line-ending normalisation, no BOM
+    // stripping — every one of those changes bytes the human did not touch, and
+    // the diff then shows the whole file as modified with the real edit buried
+    // somewhere inside it.
+    writeAtomic(target, body)
+    sendJson(res, 200, { sha256: sha256(body), bytes: body.length })
+    return true
+  }
+
   const isMd = rel.toLowerCase().endsWith('.md')
   res.writeHead(200, {
-    'content-type': isMd ? 'text/markdown; charset=utf-8' : 'text/plain; charset=utf-8'
+    'content-type': isMd ? 'text/markdown; charset=utf-8' : 'text/plain; charset=utf-8',
+    // What a client sends back as if-match. A content hash rather than an
+    // mtime: mtimes have coarse resolution, move backwards across clock changes,
+    // and are altered by tools that changed no bytes.
+    etag: sha256(current)
   })
-  res.end(fs.readFileSync(target, 'utf8'))
+  res.end(current)
   return true
 }

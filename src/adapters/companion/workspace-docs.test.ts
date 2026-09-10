@@ -27,8 +27,12 @@ function fakeRes(cap: Captured): ServerResponse {
       cap.headers = headers
       return this
     },
-    end(payload?: string) {
-      cap.raw = payload
+    // TASK-1935 — the file route now ends with BYTES rather than a decoded
+    // string, deliberately: decoding on the server is the round trip that loses
+    // a BOM and rewrites line endings. Decoding HERE keeps every assertion below
+    // meaning what it meant, without asking the route to lie about the file.
+    end(payload?: string | Buffer) {
+      cap.raw = Buffer.isBuffer(payload) ? payload.toString('utf8') : payload
       try {
         cap.body = payload ? JSON.parse(payload) : undefined
       } catch {
