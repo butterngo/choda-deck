@@ -17,6 +17,7 @@ import { handleKnowledgeRoute } from './knowledge'
 import { handleGraphRoute } from './graph'
 import { handleSearchRoute } from './search'
 import { handleTaskDetailRoute } from './task-detail'
+import { parseTaskListQuery, listTasks } from './task-list'
 import { handleArtifactsRoute } from './artifacts'
 import { handleVaultRoute } from './vault'
 import { handleClaudeConfigRoute } from './claude-config'
@@ -281,8 +282,34 @@ async function route(
       return sendJson(res, 200, { projects: await services.svc.listProjects() })
     case '/workspaces':
       return sendJson(res, 200, { workspaces: await listAllWorkspaces(services) })
-    case '/tasks':
-      return sendJson(res, 200, { tasks: await services.svc.findTasks({}) })
+    // TASK-1773 — was `findTasks({})`: the whole table, 4 MB of bodies, every
+    // query parameter silently discarded. Now filters, drops `body`, and derives
+    // workspace scope via the §5.3 cascade. An unusable filter is a 400 — the
+    // one thing it must never do again is answer as though no filter was asked
+    // for, because that is indistinguishable from a working one.
+    case '/tasks': {
+      const parsed = parseTaskListQuery(url.searchParams)
+      if ('error' in parsed) return sendJson(res, 400, { error: parsed.error })
+
+      let workspaceProjectId: string | null = null
+      if (parsed.workspaceId !== null) {
+        const workspace = (await listAllWorkspaces(services)).find(
+          (w) => w.id === parsed.workspaceId
+        )
+        // An unregistered workspace is a 400, not an empty list. Empty would read
+        // as "this workspace has no tasks" — a factual claim about a workspace
+        // that does not exist, and the same ambiguity this route is being fixed
+        // to remove.
+        if (workspace === undefined) {
+          return sendJson(res, 400, { error: `unknown workspaceId "${parsed.workspaceId}"` })
+        }
+        workspaceProjectId = workspace.projectId
+      }
+
+      return sendJson(res, 200, {
+        tasks: await listTasks(services.svc, parsed, workspaceProjectId)
+      })
+    }
     case '/inbox':
       return sendJson(res, 200, { inbox: await services.svc.findInbox({}) })
     case '/conversations':
