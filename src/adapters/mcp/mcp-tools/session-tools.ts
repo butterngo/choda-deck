@@ -80,6 +80,13 @@ const sessionSummarySchema = z.object({
 
 const handoffInputSchema = {
   sessionId: z.string(),
+  expectTaskId: z
+    .string()
+    .optional()
+    .describe(
+      'The task you believe this session is bound to. When given and it disagrees, the call is refused with SESSION_MISMATCH rather than ending a session that belongs to other work (TASK-1577). ' +
+        'Worth passing whenever the session id came from somewhere other than your own session_start.'
+    ),
   commits: z
     .array(z.string())
     .optional()
@@ -329,6 +336,7 @@ export const register = (
         }
         const result = await svc.endSession(input.sessionId, {
           handoff,
+          expectTaskId: input.expectTaskId,
           summary: input.summary,
           closeConversations: input.closeConversations
         })
