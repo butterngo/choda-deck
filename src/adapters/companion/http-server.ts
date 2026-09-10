@@ -30,6 +30,7 @@ import { handleDockerExecRoute } from './docker-exec'
 import { attachTerminalSocket } from './terminal-socket'
 import { PtySession } from './pty-session'
 import { handleWorkspaceDocsRoute } from './workspace-docs'
+import { handleWorkspaceDiagramRoute } from './mermaid-check'
 import { handleWorkspaceSymbolsRoute } from './workspace-symbols'
 import { handleWorkspaceCommitsRoute } from './workspace-commits'
 import { handleConversationDetailRoute } from './conversation-detail'
@@ -125,6 +126,20 @@ async function route(
   if (
     await handleWorkspaceCommitsRoute(req, res, {
       svc: services.svc,
+      bridgeToken: services.bridgeToken
+    })
+  ) {
+    return
+  }
+
+  // TASK-1934 — is a mermaid fence valid? Registered BEFORE /workspace-docs and
+  // that order is load-bearing, not stylistic: `/workspace-docs/diagram/check`
+  // matches the docs route's FILE_ROUTE_PREFIX, which would read it as
+  // workspaceId="diagram", rel="check" and answer 404 for an unknown workspace.
+  // The failure would look like a missing workspace rather than a shadowed
+  // route, which is the kind of wrong answer nobody debugs quickly.
+  if (
+    await handleWorkspaceDiagramRoute(req, res, {
       bridgeToken: services.bridgeToken
     })
   ) {
