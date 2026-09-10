@@ -140,7 +140,10 @@ async function route(
   // route, which is the kind of wrong answer nobody debugs quickly.
   if (
     await handleWorkspaceDiagramRoute(req, res, {
-      bridgeToken: services.bridgeToken
+      bridgeToken: services.bridgeToken,
+      svc: services.svc,
+      dataDir: services.dataDir,
+      fetchImpl: services.fetchImpl as typeof fetch | undefined
     })
   ) {
     return

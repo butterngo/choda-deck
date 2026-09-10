@@ -25,12 +25,31 @@
 import type { IncomingMessage, ServerResponse } from 'http'
 import { Buffer } from 'buffer'
 import { timingSafeEqual } from 'crypto'
+import * as fs from 'fs'
+import { AiError } from './ai-review'
+import { askAzureJson, resolveAzureConfig } from './azure-review'
+import type { WorkspaceOperations } from '../../core/domain/interfaces/workspace-repository.interface'
+import { safeResolve } from './workspace-docs'
+// Same reader the write routes use. A second copy of "read the body as bytes,
+// capped while reading" is one more place for the cap to drift.
+import { readRawBody } from './atomic-file'
 
 /** Exact match, never a prefix — see the registration note in http-server.ts. */
 const CHECK_ROUTE = '/workspace-docs/diagram/check'
+/**
+ * TASK-1936 — the paid route, and its own path is the cost control.
+ *
+ * If this were `/diagram/check?ai=true`, adding a query parameter would spend
+ * money and a well-meaning refactor could default it on. A separate route makes
+ * "no model call without a click" structural rather than a convention someone
+ * has to remember — the same reasoning that split /claude-config/review from
+ * /validate in TASK-1843.
+ */
+const DIAGRAM_ROUTE = '/workspace-docs/diagram'
 
-/** Same 2 MB ceiling the other body-reading routes use. */
-const MAX_BODY_BYTES = 2 * 1024 * 1024
+/** One retry, and the budget is chosen rather than measured — see RETRY_NOTE. */
+const MAX_ATTEMPTS = 2
+
 
 /**
  * One ```mermaid fence, with the line span of its BODY.
@@ -176,22 +195,191 @@ function tokenMatches(header: string | undefined, expected: string): boolean {
   return timingSafeEqual(a, b)
 }
 
-async function readRawBody(req: IncomingMessage): Promise<Buffer | null> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    let total = 0
-    let over = false
-    req.on('data', (c: Buffer) => {
-      total += c.length
-      if (total > MAX_BODY_BYTES) {
-        over = true
-        chunks.length = 0
+
+
+/**
+ * What the model is asked to return. Schema-constrained so the answer is a
+ * diagram rather than a paragraph about a diagram.
+ */
+const DIAGRAM_SCHEMA = {
+  type: 'object',
+  properties: {
+    mermaid: {
+      type: 'string',
+      description: 'The complete replacement diagram, without the ``` fence markers.'
+    }
+  },
+  required: ['mermaid'],
+  additionalProperties: false
+} as const
+
+const SYSTEM = [
+  'You rewrite a single mermaid diagram to match an instruction.',
+  'Return the COMPLETE replacement diagram, never a patch and never a fragment.',
+  'Do not wrap it in ``` fences. Do not explain it.',
+  'Keep the diagram type unless the instruction asks for a different one.',
+  'Mermaid decodes HTML entities before parsing, so a literal < or > inside a',
+  'label must be written #lt; or #gt;, and a label containing {{ or }} must be',
+  'quoted. Both of those are real defects this project has shipped.'
+].join(' ')
+
+/**
+ * A retry budget of ONE, chosen rather than measured.
+ *
+ * The response carries `attempts` so the number can be revisited against real
+ * behaviour instead of re-argued from first principles: if the second attempt
+ * turns out to rescue almost nothing, it is buying a doubled bill for nothing.
+ */
+const RETRY_NOTE = MAX_ATTEMPTS
+
+/**
+ * POST /workspace-docs/diagram
+ *   { workspaceId, rel, fenceIndex, instruction }
+ *   -> 200 { mermaid, attempts } | 422 | 404 | 501 | 502 | 429
+ *
+ * THIS ROUTE NEVER WRITES. It returns a proposal; saving it is a separate PUT
+ * the human presses (TASK-1935). A caller that wants the diagram on disk has to
+ * ask a different route for it, which is what keeps the save a deliberate act.
+ *
+ * And it never returns a diagram it has not parsed. The parser is TASK-1934's,
+ * imported rather than reimplemented, and the gate lives here rather than in the
+ * browser because a client-side check is a convention while a server that
+ * refuses is a boundary.
+ */
+async function handleDiagramProposal(
+  req: IncomingMessage,
+  res: ServerResponse,
+  opts: {
+    svc: WorkspaceOperations
+    dataDir?: string
+    fetchImpl?: typeof fetch
+  }
+): Promise<void> {
+  const raw = await readRawBody(req)
+  if (raw === null) {
+    sendJson(res, 413, { error: 'too large' })
+    return
+  }
+  let parsed: { workspaceId?: unknown; rel?: unknown; fenceIndex?: unknown; instruction?: unknown }
+  try {
+    parsed = raw.length === 0 ? {} : (JSON.parse(raw.toString('utf8')) as typeof parsed)
+  } catch {
+    sendJson(res, 400, { error: 'body is not valid JSON' })
+    return
+  }
+  if (
+    typeof parsed.workspaceId !== 'string' ||
+    typeof parsed.rel !== 'string' ||
+    typeof parsed.fenceIndex !== 'number' ||
+    typeof parsed.instruction !== 'string' ||
+    parsed.instruction.trim() === ''
+  ) {
+    sendJson(res, 400, {
+      error: 'workspaceId, rel, fenceIndex and instruction are required'
+    })
+    return
+  }
+
+  const workspace = await opts.svc.getWorkspace(parsed.workspaceId)
+  if (!workspace) {
+    sendJson(res, 404, { error: `unknown workspace: ${parsed.workspaceId}` })
+    return
+  }
+  const target = safeResolve(workspace.cwd, parsed.rel)
+  if (target === null) {
+    sendJson(res, 400, { error: 'invalid path' })
+    return
+  }
+  if (!fs.existsSync(target)) {
+    sendJson(res, 404, { error: `not found: ${parsed.rel}` })
+    return
+  }
+
+  // The fence is located BEFORE the key is read and before anything is sent.
+  // A bad index is a client bug, and discovering it after paying for a call
+  // would be charging the user for our own 400.
+  const fences = listMermaidFences(fs.readFileSync(target, 'utf8'))
+  const fence = fences[parsed.fenceIndex]
+  if (!fence) {
+    sendJson(res, 404, {
+      error: `no fence ${parsed.fenceIndex}: ${parsed.rel} has ${fences.length}`
+    })
+    return
+  }
+
+  // 501 rather than a 5xx: a machine that never configured a model is in its
+  // normal state, not a broken one.
+  // resolveAzureConfig THROWS on a malformed provider file rather than
+  // returning null, deliberately: a bad config is not "no provider configured",
+  // and degrading it to a silent 501 sends the reader hunting for a key they
+  // already set. Caught here so it becomes a stated 501 instead of a 500.
+  let cfg
+  try {
+    cfg = opts.dataDir ? resolveAzureConfig(opts.dataDir) : null
+  } catch (err) {
+    sendJson(res, 501, {
+      error: err instanceof AiError ? err.message : 'no model configured'
+    })
+    return
+  }
+  if (!cfg) {
+    sendJson(res, 501, { error: 'no model configured' })
+    return
+  }
+
+  let lastParseError = ''
+  for (let attempt = 1; attempt <= RETRY_NOTE; attempt += 1) {
+    const user = [
+      `Instruction: ${parsed.instruction}`,
+      '',
+      'Current diagram:',
+      fence.code,
+      ...(attempt === 1
+        ? []
+        : [
+            '',
+            'Your previous answer did not parse. Fix it and return the whole diagram.',
+            `Parser error: ${lastParseError}`
+          ])
+    ].join('\n')
+
+    let answer: { mermaid: string }
+    try {
+      answer = await askAzureJson<{ mermaid: string }>({
+        cfg,
+        system: SYSTEM,
+        user,
+        schema: DIAGRAM_SCHEMA,
+        schemaName: 'mermaid_diagram',
+        fetchImpl: opts.fetchImpl
+      })
+    } catch (err) {
+      if (!(err instanceof AiError)) throw err
+      if (err.kind === 'rate_limit') {
+        const headers: Record<string, string> = { 'content-type': 'application/json; charset=utf-8' }
+        if (err.retryAfter) headers['retry-after'] = err.retryAfter
+        res.writeHead(429, headers)
+        res.end(JSON.stringify({ error: 'rate limited', kind: err.kind }))
         return
       }
-      chunks.push(c)
-    })
-    req.on('end', () => resolve(over ? null : Buffer.concat(chunks)))
-    req.on('error', reject)
+      sendJson(res, 502, { error: 'provider failed', kind: err.kind })
+      return
+    }
+
+    const verdict = await checkMermaid(answer.mermaid)
+    if (verdict.ok) {
+      sendJson(res, 200, { mermaid: answer.mermaid, attempts: attempt })
+      return
+    }
+    lastParseError = verdict.error
+  }
+
+  // Nothing is written, here or anywhere in this handler. An unparseable
+  // proposal is refused rather than handed on for someone else to save.
+  sendJson(res, 422, {
+    error: 'model output does not parse',
+    parseError: lastParseError,
+    attempts: RETRY_NOTE
   })
 }
 
@@ -208,10 +396,15 @@ async function readRawBody(req: IncomingMessage): Promise<Buffer | null> {
 export async function handleWorkspaceDiagramRoute(
   req: IncomingMessage,
   res: ServerResponse,
-  opts: { bridgeToken: string }
+  opts: {
+    bridgeToken: string
+    svc: WorkspaceOperations
+    dataDir?: string
+    fetchImpl?: typeof fetch
+  }
 ): Promise<boolean> {
   const rawPath = (req.url ?? '/').split('?')[0]
-  if (rawPath !== CHECK_ROUTE) return false
+  if (rawPath !== CHECK_ROUTE && rawPath !== DIAGRAM_ROUTE) return false
 
   if ((req.method ?? 'GET') !== 'POST') {
     sendJson(res, 405, { error: 'method not allowed' })
@@ -219,6 +412,14 @@ export async function handleWorkspaceDiagramRoute(
   }
   if (!tokenMatches(req.headers['x-choda-bridge-token'] as string | undefined, opts.bridgeToken)) {
     sendJson(res, 401, { error: 'invalid or missing x-choda-bridge-token' })
+    return true
+  }
+
+  // The paid route and the free one are separate PATHS, not one path with a
+  // flag. Nothing a caller can put in a query string or a header reaches the
+  // provider from /diagram/check — there is no branch here that could.
+  if (rawPath === DIAGRAM_ROUTE) {
+    await handleDiagramProposal(req, res, opts)
     return true
   }
 
