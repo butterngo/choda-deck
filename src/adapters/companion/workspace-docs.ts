@@ -101,8 +101,14 @@ function hasTraversal(relDecoded: string): boolean {
     .some((seg) => seg === '..' || seg === '.' || seg.trim() === '')
 }
 
-/** Resolve `rel` under `root`, or null if it would escape. */
-function safeResolve(root: string, rel: string): string | null {
+/**
+ * Resolve `rel` under `root`, or null if it would escape.
+ *
+ * Exported for the diagram routes (TASK-1936), which must not restate this
+ * judgement. A second copy of a path guard is how one of them gets a fix the
+ * other does not.
+ */
+export function safeResolve(root: string, rel: string): string | null {
   if (rel.length === 0 || hasTraversal(rel)) return null
   const resolvedRoot = path.resolve(root)
   const target = path.resolve(resolvedRoot, rel)
