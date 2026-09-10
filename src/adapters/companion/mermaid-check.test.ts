@@ -84,6 +84,13 @@ beforeAll(async () => {
 
   handle = await startCompanionServer(services, 0)
   base = `http://${COMPANION_BIND}:${handle.address.port}`
+
+  // Warm the parser HERE rather than inside the first request. mermaid and its
+  // DOM shim are imported lazily, and a cold import can take tens of seconds on
+  // a loaded machine — paid by whichever test happens to run first, which then
+  // fails on a timeout that has nothing to do with what it asserts. Making one
+  // test flaky at random is worse than making the setup slow on purpose.
+  await checkMermaid('sequenceDiagram\n  A->>B: warm')
 })
 
 afterAll(async () => {
@@ -179,13 +186,25 @@ describe('AC-3 — fences are located in the real document', () => {
 
 describe('AC-4 — CRLF is found, not silently skipped', () => {
   it('a CRLF document yields the same fence count as its LF twin', () => {
-    const lf = fs.readFileSync(FIXTURE, 'utf8')
+    // Normalised on the way IN, so the test states its own premise instead of
+    // inheriting it from the checkout: git hands this file over as CRLF on
+    // Windows and LF elsewhere, and `lf` has to mean LF either way. Without
+    // this the CRLF twin below is built by doubling carriage returns.
+    const lf = fs.readFileSync(FIXTURE, 'utf8').replace(/\r\n/g, '\n')
     // Built by explicit joining rather than by committing a CRLF file, which
     // git may normalise on checkout — the fixture would then quietly become an
     // LF file and this test would pass while proving nothing.
     const crlf = lf.split('\n').join('\r\n')
     expect(listMermaidFences(crlf)).toHaveLength(listMermaidFences(lf).length)
-    expect(listMermaidFences(crlf)[0]!.code).toBe(listMermaidFences(lf)[0]!.code)
+    // Same fence, same text — but each in its OWN line endings, which is the
+    // verbatim contract above. Comparing the two encodings byte-for-byte would
+    // assert the opposite of what the reader must do.
+    // Every carriage return stripped, not only the CRLF pairs: the final body
+    // line's CR is followed by the closing fence rather than by a newline, so a
+    // pair-only replace leaves one behind.
+    expect(listMermaidFences(crlf)[0]!.code.replace(/\r/g, '')).toBe(
+      listMermaidFences(lf)[0]!.code
+    )
   })
 
   it('a CRLF fence still parses — the \\r must not reach the grammar', async () => {

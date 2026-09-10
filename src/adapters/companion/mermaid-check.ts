@@ -61,14 +61,19 @@ export interface MermaidFence {
  * a clean pass.
  */
 export function listMermaidFences(markdown: string): MermaidFence[] {
-  const lines = markdown.split('\n').map((l) => (l.endsWith('\r') ? l.slice(0, -1) : l))
+  // Split only. The lines keep their trailing \r, because `code` has to be the
+  // VERBATIM slice of the document: a caller that replaces a fence with a
+  // normalised copy of itself silently converts that fence to LF, and `git diff`
+  // then reports every line of it as changed. That is the same defect TASK-1935
+  // exists to prevent, arriving through the reader instead of the writer.
+  const lines = markdown.split('\n')
   const fences: MermaidFence[] = []
   let i = 0
   while (i < lines.length) {
-    if (/^\s*```mermaid\s*$/.test(lines[i] ?? '')) {
+    if (/^\s*```mermaid\s*\r?$/.test(lines[i] ?? '')) {
       const bodyStart = i + 2 // 1-based, first line after the opening marker
       let j = i + 1
-      while (j < lines.length && !/^\s*```\s*$/.test(lines[j] ?? '')) j += 1
+      while (j < lines.length && !/^\s*```\s*\r?$/.test(lines[j] ?? '')) j += 1
       // An unterminated fence runs to EOF. Reporting it as a fence is the
       // honest reading — the document is malformed, and dropping it silently
       // would make the count disagree with what a reader sees.
@@ -145,7 +150,10 @@ export async function checkMermaid(source: string): Promise<MermaidCheck> {
     await ensureDom()
     const mermaid = (await import('mermaid')).default
     mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' })
-    await mermaid.parse(source)
+    // Normalised HERE and nowhere else. The grammar has no business seeing a
+    // \r, but the document keeps its own line endings — normalising at the
+    // reader would hand every caller a rewritten fence.
+    await mermaid.parse(source.replace(/\r\n/g, '\n'))
     return { ok: true }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
