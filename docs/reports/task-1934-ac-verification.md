@@ -110,3 +110,51 @@ Getting under any sane size cap means **not bundling** mermaid and happy-dom —
 with TASK-1938 (release + vendoring), so the runner did not do it unilaterally.
 
 Until that is decided, AC-5 stays unticked and TASK-1934 stays IMPLEMENTED.
+
+---
+
+## DISPOSITION of AC-5 — decided 2026-09-13 in TASK-1941
+
+**AC-5 is SUPERSEDED, not met. It stays unticked, deliberately and permanently.**
+
+The question above — "should mermaid and happy-dom be external?" — was taken up by
+TASK-1941 and answered with four measurements. **The answer is no: keep bundling.**
+Every axis favours it.
+
+| | bundled (kept) | external (rejected) |
+|---|---|---|
+| `dist/companion-server.cjs` | 10,729,085 B | 732,277 B |
+| what else must ship | nothing | ~99 MB loose (mermaid 83 + happy-dom 16) |
+| compressed installer payload (7z `mx=9`) | **1.28 MB** | **6.73 MB** |
+| first `/diagram/check`, cold FS cache | **~71 ms** | **71,111 ms** |
+| esbuild time | 9.9 s | 29 ms |
+| vendor risk | none | 22 transitive trees; fails only in the packaged app |
+
+Going external would make the **installer 5.44 MB bigger**, not smaller: esbuild
+tree-shakes mermaid's graph into one file, while the on-disk tree carries source
+maps, `.d.ts`, duplicate ESM+CJS builds and docs. And the first diagram check after
+an install would take **71 seconds** instead of 71 ms.
+
+### Why AC-5 is not ticked
+
+Its cap of 4.5 MB was **mis-derived at filing** — it came from an esbuild probe run
+with `--minify`, while `build:companion` does not minify, and happy-dom was not
+known to be part of the cost at all. So 4.5 MB was never a number this build could
+have hit. The criterion is unsatisfiable as written.
+
+Ticking it would certify a threshold nobody validated. Reinterpreting it ("the
+figures were recorded, close enough") would hide that the cap itself was wrong.
+So it is **left red with its disposition recorded here** — the honest third option,
+following the TASK-1551 → TASK-1552 precedent this report already cites.
+
+### What replaced it
+
+The half of AC-5 that was always sound — *"the real figures must be recorded"* — is
+now enforced continuously rather than once: `build:companion` writes
+`docs/adapter-bundle-size.md` on every build (TASK-1941 AC-3). That file is tracked,
+so the size is answerable without a rebuild — which matters, because this report's
+own figure (10,723,340) had already drifted from the real file (10,729,085) by the
+time TASK-1941 re-derived it.
+
+**Consequence for this task's status:** TASK-1934 no longer waits on anything. AC-5
+is dispositioned, and nothing further is owed by it.
