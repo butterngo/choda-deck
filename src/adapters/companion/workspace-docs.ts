@@ -313,14 +313,51 @@ export async function handleWorkspaceDocsRoute(
     return true
   }
 
-  const isMd = rel.toLowerCase().endsWith('.md')
-  res.writeHead(200, {
-    'content-type': isMd ? 'text/markdown; charset=utf-8' : 'text/plain; charset=utf-8',
+  const lower = rel.toLowerCase()
+  const isMd = lower.endsWith('.md')
+  // TASK-1956 — .htm as well as .html. A check written as endsWith('.html')
+  // passes every test about markdown and plain text while failing the one
+  // extension most likely to be legacy, and nothing would report it.
+  const isHtml = lower.endsWith('.html') || lower.endsWith('.htm')
+
+  const headers: Record<string, string> = {
+    'content-type': isHtml
+      ? 'text/html; charset=utf-8'
+      : isMd
+        ? 'text/markdown; charset=utf-8'
+        : 'text/plain; charset=utf-8',
     // What a client sends back as if-match. A content hash rather than an
     // mtime: mtimes have coarse resolution, move backwards across clock changes,
     // and are altered by tools that changed no bytes.
-    etag: sha256(current)
-  })
+    etag: sha256(current),
+    // No MIME guessing in either direction. Without this a browser may sniff a
+    // text/plain response as HTML anyway, which would hand a workspace file the
+    // execution this route is about to deny it deliberately.
+    'x-content-type-options': 'nosniff'
+  }
+
+  if (isHtml) {
+    // TASK-1956 — the header that makes serving HTML safe rather than reckless.
+    //
+    // A workspace .html is arbitrary content: it is whatever happens to be on
+    // disk. Answering text/html without this would let it execute on the
+    // ADAPTER'S OWN ORIGIN, next to the API — a file dropped in a repo would be
+    // running code inside the trust boundary of the thing serving it.
+    //
+    // `sandbox` with no allow-* token gives the document an opaque origin and
+    // refuses script outright. It therefore renders (which is the point — a
+    // report becomes readable instead of being spelled out as source) while
+    // being unable to reach the adapter or run anything.
+    //
+    // The cost, stated rather than discovered: an HTML file that NEEDS
+    // JavaScript renders without it. That is the right default for reading
+    // documents. Serving scriptable HTML is a separate decision and should stay
+    // one — it would mean allow-scripts, and allow-scripts without
+    // allow-same-origin is still safe, but it is not this task's call to make.
+    headers['content-security-policy'] = 'sandbox'
+  }
+
+  res.writeHead(200, headers)
   res.end(current)
   return true
 }
