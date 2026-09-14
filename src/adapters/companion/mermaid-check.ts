@@ -260,7 +260,14 @@ async function handleDiagramProposal(
     sendJson(res, 413, { error: 'too large' })
     return
   }
-  let parsed: { workspaceId?: unknown; rel?: unknown; fenceIndex?: unknown; instruction?: unknown }
+  let parsed: {
+    workspaceId?: unknown
+    rel?: unknown
+    fenceIndex?: unknown
+    instruction?: unknown
+    // TASK-1943 — the fence body the CLIENT believes it is editing.
+    fenceText?: unknown
+  }
   try {
     parsed = raw.length === 0 ? {} : (JSON.parse(raw.toString('utf8')) as typeof parsed)
   } catch {
@@ -303,6 +310,38 @@ async function handleDiagramProposal(
   if (!fence) {
     sendJson(res, 404, {
       error: `no fence ${parsed.fenceIndex}: ${parsed.rel} has ${fences.length}`
+    })
+    return
+  }
+
+  // TASK-1943 — does the client mean the same fence this adapter just resolved?
+  //
+  // listMermaidFences exists twice, in two repositories that cannot import each
+  // other, and `fenceIndex` means the ADAPTER's index. Should the two ever
+  // disagree about what counts as a fence, index 1 on screen and index 1 here
+  // are different diagrams — and without this check the model would be asked to
+  // rewrite a diagram the reader never selected. Nothing would error. The reader
+  // would see a plausible answer for the wrong picture, save it, and discover
+  // the damage later in a document nobody was watching.
+  //
+  // So the client sends the TEXT it is looking at, and a mismatch is refused
+  // rather than served. 409 rather than 400: this is the same shape as the
+  // if-match precondition on PUT (TASK-1935) — the request was well-formed, the
+  // world simply is not what the caller thought.
+  //
+  // OPTIONAL, and that is a deliberate compromise rather than an oversight. A
+  // client that predates this field still works; one that sends it cannot be
+  // silently mis-served. Making it required would break the shipped 0.12.6 app
+  // against a newer adapter, which is a worse failure than the one being fixed.
+  // The cost is stated plainly: an old client keeps the old exposure.
+  if (typeof parsed.fenceText === 'string' && parsed.fenceText !== fence.code) {
+    sendJson(res, 409, {
+      error: 'fence text does not match',
+      detail:
+        `the client and the adapter disagree about fence ${parsed.fenceIndex} of ${parsed.rel}. ` +
+        'Reload the document and try again — editing would have rewritten a different diagram.',
+      fenceIndex: parsed.fenceIndex,
+      fenceCount: fences.length
     })
     return
   }
