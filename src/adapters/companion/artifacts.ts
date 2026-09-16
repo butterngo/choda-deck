@@ -28,6 +28,12 @@ const MIME: Record<string, string> = {
   '.har': 'application/json',
   '.json': 'application/json',
   '.jsonl': 'application/x-ndjson',
+  // TASK-1965 — meeting recordings. Without these the browser gets
+  // application/octet-stream and an <audio> element refuses to play the file,
+  // which reads as "the recording is broken" rather than "the map is short two
+  // entries".
+  '.webm': 'audio/webm',
+  '.opus': 'audio/ogg',
   '.md': 'text/markdown; charset=utf-8',
   '.txt': 'text/plain; charset=utf-8',
   '.html': 'text/html; charset=utf-8',

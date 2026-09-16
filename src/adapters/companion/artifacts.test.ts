@@ -173,6 +173,22 @@ describe('GET /artifacts/*', () => {
     expect(r.body.toString('utf8')).not.toContain('SQLite format 3')
   })
 
+  // TASK-1965 AC-7 — the meetings prefix is served through this same route, so
+  // it inherits the guard. Asserted explicitly rather than assumed: `meetings/`
+  // is a deeper starting point than `captures/`, and a guard that happened to
+  // depend on depth would pass every test above and fail here.
+  it('AC-7: 403 on a traversal that starts inside the meetings prefix', async () => {
+    const r = await rawGet('/artifacts/meetings/../../database/choda-deck.db')
+    expect(r.status).toBe(403)
+    expect(r.body).not.toContain('SQLite format 3')
+  })
+
+  it('AC-7b: 403 on the percent-encoded form of the same meetings traversal', async () => {
+    const r = await get('/artifacts/meetings/..%2f..%2fdatabase/choda-deck.db')
+    expect(r.status).toBe(403)
+    expect(r.body.toString('utf8')).not.toContain('SQLite format 3')
+  })
+
   it('AC-5: 404 JSON for a missing file inside the root, not a 500', async () => {
     const r = await get('/artifacts/captures/nope.png')
     expect(r.status).toBe(404)
