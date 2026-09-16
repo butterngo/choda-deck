@@ -1,0 +1,22 @@
+# TASK-1973 — a fixture is a byte contract, so its bytes must not depend on who
+# checked it out.
+#
+# `src/adapters/companion/__fixtures__/fence-agreement.md` is checked in to BOTH
+# this repo and choda-deck-companion, and TASK-1943's cross-repo test asserts the
+# two implementations of `listMermaidFences` agree on every fence body derived
+# from it. With `core.autocrlf=true` — the Windows default — git rewrote those 73
+# line endings to CRLF on checkout. The parser then returned bodies carrying a
+# trailing \r (deliberately: mermaid-check.ts keeps the slice VERBATIM so a caller
+# rewriting a fence cannot silently convert the file to LF), and the pinned table,
+# written with \n, no longer matched. Green on ubuntu, red on windows, for four
+# commits.
+#
+# The parser is right and the test is right; the file was being mutated underneath
+# both. Pinning eol=lf makes the fixture literally the same bytes everywhere,
+# which is the only reading under which a "byte-for-byte identical in both
+# repositories" contract means anything.
+#
+# Scoped to fixtures on purpose. A blanket `*.md eol=lf` would renormalise every
+# document in docs/knowledge on the next checkout — a large diff, and none of
+# those files are compared byte-for-byte by anything.
+**/__fixtures__/*.md eol=lf
