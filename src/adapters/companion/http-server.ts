@@ -19,6 +19,7 @@ import { handleSearchRoute } from './search'
 import { handleTaskDetailRoute } from './task-detail'
 import { parseTaskListQuery, listTasks } from './task-list'
 import { handleArtifactsRoute } from './artifacts'
+import { handleMeetingsRoute } from './meetings'
 import { handleVaultRoute } from './vault'
 import { handleClaudeConfigRoute } from './claude-config'
 import { handleAcReviewRoute } from './ac-review'
@@ -113,6 +114,19 @@ async function route(
   // these files carry cookies, auth headers and screenshots.
   if (
     handleArtifactsRoute(req, res, {
+      artifactsDir: services.artifactsDir,
+      bridgeToken: services.bridgeToken
+    })
+  ) {
+    return
+  }
+
+  // TASK-1965 — meeting audio: chunked upload + finalize + list. Owns its own
+  // POST methods, so it is registered before the GET-only guard below. Reading
+  // the audio back is NOT here — that is GET /artifacts/meetings/<id>/<track>.webm
+  // through the route above, which already refuses traversal on the raw url.
+  if (
+    await handleMeetingsRoute(req, res, {
       artifactsDir: services.artifactsDir,
       bridgeToken: services.bridgeToken
     })
