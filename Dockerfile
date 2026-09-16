@@ -47,6 +47,20 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
 COPY tsconfig.json tsconfig.node.json ./
 COPY src ./src
 
+# TASK-1974 — the whole scripts/ dir, because `pnpm run build` shells out to it:
+# build:companion ends with `node scripts/record-bundle-size.mjs`, which was added
+# in d20e6d0 (TASK-1941) without extending the COPY above, and the docker job has
+# failed on "Cannot find module" ever since.
+#
+# The whole directory rather than that one file: a narrow copy is exactly what
+# broke, and it breaks again the next time a build step gains a helper. Placed
+# HERE, after the install, and not merged into the manifest COPY above — up there
+# it would invalidate the cached `pnpm install` layer whenever any unrelated
+# migration script changed. Down here it only shares a layer with src, which
+# changes every build anyway. prepare.mjs stays copied early because the install's
+# own `prepare` hook needs it before this point.
+COPY scripts ./scripts
+
 # Build esbuild bundles → dist/cli.cjs + dist/mcp-server.cjs + dist/mcp-rules.md
 RUN pnpm run build
 
