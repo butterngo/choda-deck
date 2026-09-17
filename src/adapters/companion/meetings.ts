@@ -28,6 +28,7 @@ import { Buffer } from 'buffer'
 import { timingSafeEqual } from 'crypto'
 import type { IncomingMessage, ServerResponse } from 'http'
 import { handleTranscribe, readTranscribedAt } from './meeting-transcribe'
+import { handleNoteDraft } from './meeting-note'
 
 const ROUTE_PREFIX = '/meetings'
 
@@ -194,6 +195,7 @@ function parseTrack(value: string | null): Track | null {
  * POST /meetings/:id/chunk?track=mic|loopback&seq=N
  * POST /meetings/:id/finalize
  * POST /meetings/:id/transcribe   (TASK-1991 — meeting-transcribe.ts)
+ * POST /meetings/:id/note/draft   (TASK-1992 — meeting-note.ts)
  * GET  /meetings
  *
  * Returns false when the request isn't ours, so the caller falls through to the
@@ -207,6 +209,10 @@ export async function handleMeetingsRoute(
     bridgeToken: string
     retentionCount?: number
     speechCredentialsFile?: string
+    /** TASK-1992 — where ai-provider.json and ai-key.txt live. */
+    dataDir?: string
+    /** TASK-1992 — injectable model transport for tests. */
+    fetchImpl?: typeof fetch
   }
 ): Promise<boolean> {
   const url = new URL(req.url ?? '/', 'http://localhost')
@@ -240,6 +246,23 @@ export async function handleMeetingsRoute(
 
   const rest = pathname.slice(ROUTE_PREFIX.length + 1).split('/')
   const [id, action] = rest
+
+  // TASK-1992 — the one three-segment route. Matched before the two-segment
+  // check below, which would otherwise answer it with a 400.
+  if (rest.length === 3 && action === 'note' && rest[2] === 'draft' && ID_RE.test(id ?? '')) {
+    if (method !== 'POST') {
+      sendJson(res, 405, { error: 'method not allowed' })
+      return true
+    }
+    await handleNoteDraft(req, res, {
+      artifactsDir,
+      id,
+      dataDir: opts.dataDir,
+      fetchImpl: opts.fetchImpl
+    })
+    return true
+  }
+
   if (rest.length !== 2 || !ID_RE.test(id ?? '')) {
     sendJson(res, 400, { error: 'expected /meetings/<id>/chunk or /meetings/<id>/finalize' })
     return true

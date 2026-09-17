@@ -129,7 +129,9 @@ async function route(
     await handleMeetingsRoute(req, res, {
       artifactsDir: services.artifactsDir,
       bridgeToken: services.bridgeToken,
-      speechCredentialsFile: services.speechCredentialsFile
+      speechCredentialsFile: services.speechCredentialsFile,
+      dataDir: services.dataDir,
+      fetchImpl: services.fetchImpl as typeof fetch | undefined
     })
   ) {
     return
