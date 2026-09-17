@@ -131,7 +131,9 @@ async function route(
       bridgeToken: services.bridgeToken,
       speechCredentialsFile: services.speechCredentialsFile,
       dataDir: services.dataDir,
-      fetchImpl: services.fetchImpl as typeof fetch | undefined
+      fetchImpl: services.fetchImpl as typeof fetch | undefined,
+      vaultDir: services.vaultDir,
+      findWorkspace: async (id) => (await listAllWorkspaces(services)).find((w) => w.id === id) ?? null
     })
   ) {
     return
