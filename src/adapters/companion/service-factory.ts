@@ -21,6 +21,7 @@ import {
 import { resolveBridgeToken } from './bridge-token'
 import type { CaptureDispatcher } from './capture-contract'
 import { CompanionCaptureDispatcher } from './capture-dispatcher'
+import { defaultSpeechCredentialsFile } from './meeting-transcribe'
 
 export interface CompanionServices {
   svc: BackendTaskService
@@ -54,6 +55,11 @@ export interface CompanionServices {
   // TASK-1843 — the profile directory the bridge token already lives in. The AI
   // key is a sibling of it, for the same reason and with the same 0o600.
   dataDir?: string
+  // TASK-1991 — Azure Speech credentials for POST /meetings/:id/transcribe, read at
+  // request time so a key fixed while the app runs takes effect. Absent or empty
+  // → that route 501s. CHODA_SPEECH_CREDENTIALS_FILE overrides the default of
+  // <dataDir>/../sensitive_information/azure-speech.txt.
+  speechCredentialsFile?: string
   // TASK-1843 — injectable so the review route is testable without a network.
   // Unset in production; the client falls back to globalThis.fetch.
   fetchImpl?: (url: string, init: Record<string, unknown>) => Promise<Response>
@@ -99,6 +105,7 @@ export async function createCompanionServices(): Promise<CompanionServices> {
     vaultDir: process.env.CHODA_VAULT_DIR?.trim() || undefined,
     claudeHome: process.env.CHODA_CLAUDE_HOME?.trim() || path.join(os.homedir(), '.claude'),
     dataDir: dataPaths.dataDir,
+    speechCredentialsFile: defaultSpeechCredentialsFile(dataPaths.dataDir),
     pull: () => runPull(dataPaths.dbPath, resolveRemoteConfig()),
     push: () => runPush(dataPaths.dbPath, resolveRemoteConfig()),
     close: () => {

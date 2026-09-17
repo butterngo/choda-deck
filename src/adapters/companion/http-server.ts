@@ -128,7 +128,8 @@ async function route(
   if (
     await handleMeetingsRoute(req, res, {
       artifactsDir: services.artifactsDir,
-      bridgeToken: services.bridgeToken
+      bridgeToken: services.bridgeToken,
+      speechCredentialsFile: services.speechCredentialsFile
     })
   ) {
     return

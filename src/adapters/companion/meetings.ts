@@ -27,6 +27,7 @@ import * as path from 'path'
 import { Buffer } from 'buffer'
 import { timingSafeEqual } from 'crypto'
 import type { IncomingMessage, ServerResponse } from 'http'
+import { handleTranscribe, readTranscribedAt } from './meeting-transcribe'
 
 const ROUTE_PREFIX = '/meetings'
 
@@ -63,6 +64,8 @@ export interface MeetingMeta {
   endedAt: string
   tracks: Track[]
   bytes: number
+  /** TASK-1991 — when transcript.json was last written; null until transcribed. */
+  transcribedAt?: string | null
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -166,6 +169,7 @@ export function listMeetings(artifactsDir: string): MeetingMeta[] {
     .filter((e) => e.isDirectory())
     .map((e) => readMeta(artifactsDir, e.name))
     .filter((m): m is MeetingMeta => m !== null)
+    .map((m) => ({ ...m, transcribedAt: readTranscribedAt(artifactsDir, m.id) }))
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
 }
 
@@ -189,6 +193,7 @@ function parseTrack(value: string | null): Track | null {
 /**
  * POST /meetings/:id/chunk?track=mic|loopback&seq=N
  * POST /meetings/:id/finalize
+ * POST /meetings/:id/transcribe   (TASK-1991 — meeting-transcribe.ts)
  * GET  /meetings
  *
  * Returns false when the request isn't ours, so the caller falls through to the
@@ -197,7 +202,12 @@ function parseTrack(value: string | null): Track | null {
 export async function handleMeetingsRoute(
   req: IncomingMessage,
   res: ServerResponse,
-  opts: { artifactsDir?: string; bridgeToken: string; retentionCount?: number }
+  opts: {
+    artifactsDir?: string
+    bridgeToken: string
+    retentionCount?: number
+    speechCredentialsFile?: string
+  }
 ): Promise<boolean> {
   const url = new URL(req.url ?? '/', 'http://localhost')
   const pathname = url.pathname
@@ -279,6 +289,15 @@ export async function handleMeetingsRoute(
     fs.writeFileSync(seqFile(artifactsDir, id, track), String(seq), 'utf8')
 
     sendJson(res, 200, { bytes: body.length, seq })
+    return true
+  }
+
+  if (action === 'transcribe') {
+    await handleTranscribe(res, {
+      artifactsDir,
+      id,
+      speechCredentialsFile: opts.speechCredentialsFile
+    })
     return true
   }
 
