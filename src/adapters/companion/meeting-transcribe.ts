@@ -165,6 +165,16 @@ export function mergeSegments(byTrack: Partial<Record<Track, TranscriptSegment[]
   )
 }
 
+/** Azure's "this audio holds no speech I can identify" — and nothing else. */
+function isNoSpeech(body: string): boolean {
+  try {
+    const parsed = JSON.parse(body) as { code?: string; innerError?: { code?: string } }
+    return parsed.innerError?.code === 'NoLanguageIdentified'
+  } catch {
+    return false
+  }
+}
+
 async function transcribeTrack(
   audio: Buffer,
   track: Track,
@@ -184,6 +194,12 @@ async function transcribeTrack(
     throw new TranscriptionError(`${track}: ${(err as Error).message}`)
   }
   const text = await res.text()
+  // TASK-1999 — silence is an answer, not a failure. A track where nobody spoke
+  // (a muted mic, a client who joined late) comes back as 422 NoLanguageIdentified.
+  // Treating that as fatal threw away the OTHER track's speech with it, so a
+  // meeting with one quiet side could not be transcribed at all. Only this one
+  // code is downgraded: any other 422 is a real problem with the audio.
+  if (res.status === 422 && isNoSpeech(text)) return []
   if (!res.ok) {
     // Azure's own error body can be long; keep it short and never echo the key.
     throw new TranscriptionError(`${track}: HTTP ${res.status} ${text.slice(0, 200).replaceAll(creds.key, '')}`)

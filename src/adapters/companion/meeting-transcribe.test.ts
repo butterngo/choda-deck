@@ -37,8 +37,17 @@ interface StubPhrase {
 let azure: http.Server
 let azureUrl: string
 let azureCalls: Array<{ track: string; key: string | undefined }> = []
-/** What the stub answers, per track. A number is an HTTP error status. */
-let azureReply: Record<string, StubPhrase[] | number> = {}
+/** What the stub answers, per track. A number is an HTTP error status; an object is a status + body. */
+let azureReply: Record<string, StubPhrase[] | number | { status: number; body: unknown }> = {}
+
+const NO_SPEECH = {
+  status: 422,
+  body: {
+    code: 'UnprocessableEntity',
+    message: 'No language was identified.',
+    innerError: { code: 'NoLanguageIdentified', message: 'No language was identified.' }
+  }
+}
 
 function phrase(offset: number, text: string, duration = 1000): StubPhrase {
   return { offsetMilliseconds: offset, durationMilliseconds: duration, text, locale: 'vi-VN' }
@@ -53,6 +62,11 @@ beforeAll(async () => {
       const track = /filename="(mic|loopback)\.webm"/.exec(body)?.[1] ?? '?'
       azureCalls.push({ track, key: req.headers['ocp-apim-subscription-key'] as string | undefined })
       const reply = azureReply[track]
+      if (reply !== undefined && typeof reply === 'object' && !Array.isArray(reply)) {
+        res.writeHead(reply.status, { 'content-type': 'application/json' })
+        res.end(JSON.stringify(reply.body))
+        return
+      }
       if (typeof reply === 'number' || reply === undefined) {
         res.writeHead(typeof reply === 'number' ? reply : 500, { 'content-type': 'application/json' })
         res.end(JSON.stringify({ code: 'StubFailure' }))
@@ -301,5 +315,56 @@ describe('AC-7 — re-running replaces the transcript', () => {
     const row = list.find((m) => m.id === 'm7')
     expect(row?.transcribedAt).toBeTruthy()
     expect(Date.parse(row!.transcribedAt!)).toBeGreaterThan(Date.parse(first))
+  })
+})
+
+// ---- TASK-1999 — a silent track yields zero segments --------------------------
+
+describe('TASK-1999 AC-1 — one silent track does not sink the other', () => {
+  it('mic speech + loopback NoLanguageIdentified → 200 with only the mic segment', async () => {
+    seedMeeting('s1')
+    azureReply = { mic: [phrase(1000, 'Chỉ có mình nói.')], loopback: NO_SPEECH }
+    const r = await transcribe('s1')
+    expect(r.status).toBe(200)
+    const segs = transcriptOnDisk('s1').segments
+    expect(segs.map((s) => [s.track, s.text])).toEqual([['mic', 'Chỉ có mình nói.']])
+  })
+})
+
+describe('TASK-1999 AC-2 — both tracks silent is a transcript with no speech', () => {
+  it('writes transcript.json with segments [] and answers 200', async () => {
+    seedMeeting('s2')
+    azureReply = { mic: NO_SPEECH, loopback: NO_SPEECH }
+    const r = await transcribe('s2')
+    expect(r.status).toBe(200)
+    expect(transcriptOnDisk('s2').segments).toEqual([])
+  })
+})
+
+describe('TASK-1999 AC-3 — any other 422 is still a failure', () => {
+  it('InvalidAudioFormat → 502, previous transcript untouched', async () => {
+    seedMeeting('s3')
+    azureReply = { mic: [phrase(1000, 'Bản cũ.')], loopback: [] }
+    expect((await transcribe('s3')).status).toBe(200)
+    const file = path.join(meetingDir('s3'), 'transcript.json')
+    const before = sha(file)
+
+    azureReply = {
+      mic: [phrase(1000, 'Bản mới.')],
+      loopback: { status: 422, body: { code: 'UnprocessableEntity', innerError: { code: 'InvalidAudioFormat' } } }
+    }
+    const r = await transcribe('s3')
+    expect(r.status).toBe(502)
+    expect(sha(file)).toBe(before)
+  })
+})
+
+describe('TASK-1999 AC-4 — a 500 on one track still fails the meeting', () => {
+  it('mic 200 + loopback 500 → 502', async () => {
+    seedMeeting('s4')
+    azureReply = { mic: [phrase(1000, 'Nói.')], loopback: 500 }
+    const r = await transcribe('s4')
+    expect(r.status).toBe(502)
+    expect(r.json.error).toBe('transcription failed')
   })
 })
