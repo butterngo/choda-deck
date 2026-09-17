@@ -29,6 +29,7 @@ import { timingSafeEqual } from 'crypto'
 import type { IncomingMessage, ServerResponse } from 'http'
 import { handleTranscribe, readTranscribedAt } from './meeting-transcribe'
 import { handleNoteDraft } from './meeting-note'
+import { handleMeetingFiles, type RegisteredWorkspace } from './meeting-files'
 
 const ROUTE_PREFIX = '/meetings'
 
@@ -196,6 +197,7 @@ function parseTrack(value: string | null): Track | null {
  * POST /meetings/:id/finalize
  * POST /meetings/:id/transcribe   (TASK-1991 — meeting-transcribe.ts)
  * POST /meetings/:id/note/draft   (TASK-1992 — meeting-note.ts)
+ * PUT  /meetings/:id/files        (TASK-1994 — meeting-files.ts)
  * GET  /meetings
  *
  * Returns false when the request isn't ours, so the caller falls through to the
@@ -213,6 +215,10 @@ export async function handleMeetingsRoute(
     dataDir?: string
     /** TASK-1992 — injectable model transport for tests. */
     fetchImpl?: typeof fetch
+    /** TASK-1994 — vault root for saved transcripts and notes; absent → 501. */
+    vaultDir?: string
+    /** TASK-1994 — registry lookup; the repo copy's folder comes only from here. */
+    findWorkspace?: (id: string) => Promise<RegisteredWorkspace | null>
   }
 ): Promise<boolean> {
   const url = new URL(req.url ?? '/', 'http://localhost')
@@ -259,6 +265,20 @@ export async function handleMeetingsRoute(
       id,
       dataDir: opts.dataDir,
       fetchImpl: opts.fetchImpl
+    })
+    return true
+  }
+
+  // TASK-1994 — the one PUT on this prefix. Matched before the POST-only guard
+  // below, which would otherwise answer it with a 405.
+  if (rest.length === 2 && action === 'files' && ID_RE.test(id ?? '')) {
+    if (method !== 'PUT') {
+      sendJson(res, 405, { error: 'method not allowed' })
+      return true
+    }
+    await handleMeetingFiles(req, res, {
+      vaultDir: opts.vaultDir,
+      findWorkspace: opts.findWorkspace ?? (async () => null)
     })
     return true
   }
