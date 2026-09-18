@@ -6,6 +6,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
+import { createHash } from 'crypto'
 import { startCompanionServer, COMPANION_BIND, type CompanionServerHandle } from './http-server'
 import type { CompanionServices } from './service-factory'
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
@@ -216,11 +217,19 @@ describe('retention', () => {
     for (let i = 0; i < 20; i++) {
       seedFinalized(`old-${String(i).padStart(2, '0')}`, `2026-09-${String(i + 1).padStart(2, '0')}T00:00:00.000Z`)
     }
+    const transcriptPath = path.join(meetingsRoot(), 'old-00', 'transcript.json')
+    fs.writeFileSync(transcriptPath, JSON.stringify({ segments: [{ track: 'loopback', speaker: 'Them', startMs: 0, endMs: 1000, text: 'doan mot' }] }))
+    const transcriptSha = createHash('sha256').update(fs.readFileSync(transcriptPath)).digest('hex')
+
     await chunk('/meetings/newest/chunk?track=loopback&seq=0', Buffer.alloc(8))
     const res = await post('/meetings/newest/finalize', { startedAt: '2026-10-01T00:00:00.000Z' })
 
     expect(res.status).toBe(200)
     expect(res.json.audioDropped).toEqual(['old-00'])
+    // The ADR this project ratified on 2026-09-18: a criterion about preserved
+    // bytes is verified BY BYTES. Checking transcript.json still exists is what
+    // the wrong implementation — removing the directory — would also satisfy.
+    expect(createHash('sha256').update(fs.readFileSync(transcriptPath)).digest('hex')).toBe(transcriptSha)
     // The meeting survives; only its audio is gone.
     expect(fs.existsSync(path.join(meetingsRoot(), 'old-00'))).toBe(true)
     expect(fs.existsSync(path.join(meetingsRoot(), 'old-00', 'loopback.webm'))).toBe(false)
