@@ -32,7 +32,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import type { IncomingMessage, ServerResponse } from 'http'
 import { AiError } from './ai-review'
-import { askAzureJson, resolveAzureConfig } from './azure-review'
+import { askAzureJson, listAzureModels, resolveAzureConfig } from './azure-review'
 import type { TranscriptSegment } from './meeting-transcribe'
 
 const MEETINGS_DIR = 'meetings'
@@ -121,6 +121,13 @@ export interface DraftRequest {
   parts?: Part[]
   includeInternal: boolean
   glossary?: GlossaryEntry[]
+  /**
+   * TASK-2004 — which deployment answers this draft. Absent means the configured
+   * one, exactly as before. It is validated against the resource's own chat-capable
+   * catalog rather than trusted: a free-typed deployment reaching the provider is
+   * a 404 the caller cannot read, spent after the transcript was already uploaded.
+   */
+  model?: string
 }
 
 // ---- what the model is asked to return -------------------------------------------
@@ -453,7 +460,8 @@ export function parseDraftRequest(raw: unknown): DraftRequest | string {
     language,
     parts,
     includeInternal: b.includeInternal === true,
-    glossary
+    glossary,
+    model: typeof b.model === 'string' && b.model.trim() ? b.model.trim() : undefined
   }
 }
 
@@ -541,6 +549,25 @@ export async function handleNoteDraft(
     return
   }
 
+  // A picked deployment is checked against the resource's own chat-capable
+  // catalog BEFORE the transcript is sent. Letting a bad name through spends the
+  // upload and returns a provider 404 the caller cannot act on.
+  if (draft.model !== undefined) {
+    let available: string[]
+    try {
+      available = (await listAzureModels(cfg, opts.fetchImpl ?? fetch)).map((m) => m.id)
+    } catch (err) {
+      if (!(err instanceof AiError)) throw err
+      sendJson(res, 502, { error: 'could not list deployments', kind: err.kind })
+      return
+    }
+    if (!available.includes(draft.model)) {
+      sendJson(res, 400, { error: 'unknown model', model: draft.model })
+      return
+    }
+  }
+  const usedModel = draft.model ?? cfg.deployment
+
   const { system, user } = buildPrompt(segments, draft)
   let model: ModelNote | null = null
   // One retry on a parse failure only. Anything else — auth, rate limit, network —
@@ -549,6 +576,7 @@ export async function handleNoteDraft(
     try {
       model = await askAzureJson<ModelNote>({
         cfg,
+        model: draft.model,
         system,
         user,
         schema: NOTE_SCHEMA,
@@ -569,5 +597,5 @@ export async function handleNoteDraft(
   }
 
   const { note, dropped } = enforce(model, segments, draft)
-  sendJson(res, 200, { note, markdown: renderMarkdown(note, segments, draft, opts.id), dropped })
+  sendJson(res, 200, { note, markdown: renderMarkdown(note, segments, draft, opts.id), dropped, usedModel })
 }
