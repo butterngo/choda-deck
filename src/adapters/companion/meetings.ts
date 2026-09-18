@@ -68,6 +68,13 @@ export interface MeetingMeta {
   bytes: number
   /** TASK-1991 — when transcript.json was last written; null until transcribed. */
   transcribedAt?: string | null
+  /**
+   * TASK-2003 — when the audio was deliberately deleted to reclaim disk, null
+   * while it is still there. The meeting itself survives: the transcript is the
+   * durable part, the audio is the expensive part, and a row that vanished with
+   * its bytes would be indistinguishable from deleting the meeting.
+   */
+  audioDeletedAt?: string | null
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -176,6 +183,52 @@ export function listMeetings(artifactsDir: string): MeetingMeta[] {
 }
 
 /**
+ * DELETE /meetings/:id/audio — reclaim the expensive half of a meeting.
+ *
+ * Deliberately NOT `evictOldest` with one id. That function removes the whole
+ * directory, transcript included; this one removes only the `.webm` files and
+ * leaves meta.json and transcript.json in place, so the meeting stays listed and
+ * readable. The two are opposites and must not share an implementation.
+ *
+ * Idempotent: a meeting whose audio is already gone answers 200 with
+ * `freedBytes: 0`, because "make the audio not exist" is already true.
+ */
+function deleteMeetingAudio(res: ServerResponse, artifactsDir: string, id: string): void {
+  const dir = meetingDir(artifactsDir, id)
+  if (!fs.existsSync(dir)) {
+    sendJson(res, 404, { error: 'meeting not found' })
+    return
+  }
+  const meta = readMeta(artifactsDir, id)
+  // No meta.json means a recording still being written to (listMeetings skips
+  // these for the same reason). Deleting its tracks mid-flight would leave the
+  // recorder appending to a file nothing will ever finalize.
+  if (!meta || !meta.endedAt) {
+    sendJson(res, 409, { error: 'not finalized' })
+    return
+  }
+
+  let freedBytes = 0
+  for (const track of TRACKS) {
+    const file = trackFile(artifactsDir, id, track)
+    try {
+      freedBytes += fs.statSync(file).size
+      fs.rmSync(file)
+    } catch {
+      /* already gone — the idempotent case, and it contributes no bytes */
+    }
+  }
+
+  // Written after the unlinks: a crash between them re-runs as the idempotent
+  // case, whereas stamping first would claim a deletion that did not happen.
+  if (freedBytes > 0 || !meta.audioDeletedAt) {
+    const next: MeetingMeta = { ...meta, bytes: 0, audioDeletedAt: new Date().toISOString() }
+    fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(next))
+  }
+  sendJson(res, 200, { id, freedBytes })
+}
+
+/**
  * Drop the oldest finalized recordings until at most `keep` remain. Returns the
  * ids removed. In-progress recordings are invisible to this (see listMeetings).
  */
@@ -266,6 +319,17 @@ export async function handleMeetingsRoute(
       dataDir: opts.dataDir,
       fetchImpl: opts.fetchImpl
     })
+    return true
+  }
+
+  // TASK-2003 — the one DELETE on this prefix. Matched before the POST-only
+  // guard below, which would otherwise answer it with a 405.
+  if (rest.length === 2 && action === 'audio' && ID_RE.test(id ?? '')) {
+    if (method !== 'DELETE') {
+      sendJson(res, 405, { error: 'method not allowed' })
+      return true
+    }
+    deleteMeetingAudio(res, artifactsDir, id)
     return true
   }
 
