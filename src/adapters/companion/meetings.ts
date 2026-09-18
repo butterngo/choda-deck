@@ -183,15 +183,40 @@ export function listMeetings(artifactsDir: string): MeetingMeta[] {
 }
 
 /**
- * DELETE /meetings/:id/audio — reclaim the expensive half of a meeting.
+ * Remove a meeting's audio, keep everything else. Returns the bytes reclaimed.
  *
- * Deliberately NOT `evictOldest` with one id. That function removes the whole
- * directory, transcript included; this one removes only the `.webm` files and
- * leaves meta.json and transcript.json in place, so the meeting stays listed and
- * readable. The two are opposites and must not share an implementation.
+ * Shared by the explicit DELETE route and by the retention cap. TASK-2003 wrote
+ * that these two "must not share an implementation", and that was right while
+ * the cap removed whole directories — they were opposites then. TASK-2009 chose
+ * option A and made them the SAME operation, so sharing is now the point: one
+ * definition of what dropping audio means, and one place for it to be wrong.
  *
- * Idempotent: a meeting whose audio is already gone answers 200 with
- * `freedBytes: 0`, because "make the audio not exist" is already true.
+ * Idempotent: a meeting whose audio is already gone yields 0, because "make the
+ * audio not exist" is already true.
+ */
+function dropAudio(artifactsDir: string, id: string, meta: MeetingMeta): number {
+  let freedBytes = 0
+  for (const track of TRACKS) {
+    const file = trackFile(artifactsDir, id, track)
+    try {
+      freedBytes += fs.statSync(file).size
+      fs.rmSync(file)
+    } catch {
+      /* already gone — the idempotent case, and it contributes no bytes */
+    }
+  }
+  // Written after the unlinks: a crash between them re-runs as the idempotent
+  // case, whereas stamping first would claim a deletion that did not happen.
+  if (freedBytes > 0 || !meta.audioDeletedAt) {
+    const next: MeetingMeta = { ...meta, bytes: 0, audioDeletedAt: new Date().toISOString() }
+    fs.writeFileSync(path.join(meetingDir(artifactsDir, id), 'meta.json'), JSON.stringify(next))
+  }
+  return freedBytes
+}
+
+/**
+ * DELETE /meetings/:id/audio — reclaim the expensive half of a meeting on
+ * request. The cap does the same thing on its own schedule (dropAudioPastCap).
  */
 function deleteMeetingAudio(res: ServerResponse, artifactsDir: string, id: string): void {
   const dir = meetingDir(artifactsDir, id)
@@ -208,37 +233,34 @@ function deleteMeetingAudio(res: ServerResponse, artifactsDir: string, id: strin
     return
   }
 
-  let freedBytes = 0
-  for (const track of TRACKS) {
-    const file = trackFile(artifactsDir, id, track)
-    try {
-      freedBytes += fs.statSync(file).size
-      fs.rmSync(file)
-    } catch {
-      /* already gone — the idempotent case, and it contributes no bytes */
-    }
-  }
-
-  // Written after the unlinks: a crash between them re-runs as the idempotent
-  // case, whereas stamping first would claim a deletion that did not happen.
-  if (freedBytes > 0 || !meta.audioDeletedAt) {
-    const next: MeetingMeta = { ...meta, bytes: 0, audioDeletedAt: new Date().toISOString() }
-    fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(next))
-  }
-  sendJson(res, 200, { id, freedBytes })
+  sendJson(res, 200, { id, freedBytes: dropAudio(artifactsDir, id, meta) })
 }
 
 /**
- * Drop the oldest finalized recordings until at most `keep` remain. Returns the
- * ids removed. In-progress recordings are invisible to this (see listMeetings).
+ * Drop the AUDIO of finalized recordings past the `keep` most recent, and keep
+ * their transcripts. Returns the ids whose audio was dropped. In-progress
+ * recordings are invisible to this (see listMeetings).
+ *
+ * TASK-2009, option A: the cap exists to bound DISK, and on this data disk is
+ * almost entirely audio — 55 MB an hour against a transcript measured in
+ * kilobytes. Removing the whole meeting bounded disk by destroying the cheap
+ * half along with the expensive one, and it did so silently, on the 21st
+ * recording, to a transcript the user had no reason to expect to lose.
+ *
+ * The cost accepted with this choice, stated rather than buried: the meeting
+ * LIST now grows without limit, and no automatic path removes a meeting
+ * outright any more. Meetings past the cap stay listed, searchable, and
+ * playable-in-text, weighing kilobytes each.
+ *
+ * Supersedes TASK-1965 AC-5 ("evicts the oldest so exactly 20 remain"), which
+ * described option B. That criterion is not failed here; it is withdrawn by a
+ * later decision, the way TASK-1934 AC-5 was by TASK-1941.
  */
-export function evictOldest(artifactsDir: string, keep: number = RETENTION_COUNT): string[] {
+export function dropAudioPastCap(artifactsDir: string, keep: number = RETENTION_COUNT): string[] {
   const all = listMeetings(artifactsDir) // newest first
-  const doomed = all.slice(keep)
-  for (const m of doomed) {
-    fs.rmSync(meetingDir(artifactsDir, m.id), { recursive: true, force: true })
-  }
-  return doomed.map((m) => m.id)
+  const past = all.slice(keep).filter((m) => !m.audioDeletedAt)
+  for (const m of past) dropAudio(artifactsDir, m.id, m)
+  return past.map((m) => m.id)
 }
 
 function parseTrack(value: string | null): Track | null {
@@ -456,8 +478,8 @@ export async function handleMeetingsRoute(
     }
     fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2), 'utf8')
 
-    const evicted = evictOldest(artifactsDir, keep)
-    sendJson(res, 200, evicted.length ? { ...meta, evicted } : meta)
+    const audioDropped = dropAudioPastCap(artifactsDir, keep)
+    sendJson(res, 200, audioDropped.length ? { ...meta, audioDropped } : meta)
     return true
   }
 

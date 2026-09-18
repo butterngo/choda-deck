@@ -9,7 +9,7 @@ import * as path from 'path'
 import { startCompanionServer, COMPANION_BIND, type CompanionServerHandle } from './http-server'
 import type { CompanionServices } from './service-factory'
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
-import { evictOldest, listMeetings, MEETINGS_DIR } from './meetings'
+import { dropAudioPastCap, listMeetings, MEETINGS_DIR } from './meetings'
 
 const TOKEN = 'meetings-test-token'
 
@@ -47,7 +47,7 @@ type MeetingBody = Record<string, unknown> & {
   id?: string
   tracks?: string[]
   bytes?: number
-  evicted?: string[]
+  audioDropped?: string[]
 }
 
 function post(urlPath: string, body?: unknown): Promise<{ status: number; json: MeetingBody }> {
@@ -208,8 +208,11 @@ describe('POST /meetings/:id/finalize', () => {
 })
 
 describe('retention', () => {
-  // AC-5
-  it('evicts the oldest so exactly 20 remain when a 21st is finalized', async () => {
+  // TASK-1965 AC-5 as rewritten by TASK-2009's option A. The cap now bounds
+  // AUDIO, not meetings: the 21st recording costs the oldest meeting its .webm
+  // files and nothing else. The old version of this test asserted the directory
+  // was gone and that exactly 20 remained — both are now the wrong behaviour.
+  it('drops audio from the oldest recording when a 21st is finalized, and keeps the meeting', async () => {
     for (let i = 0; i < 20; i++) {
       seedFinalized(`old-${String(i).padStart(2, '0')}`, `2026-09-${String(i + 1).padStart(2, '0')}T00:00:00.000Z`)
     }
@@ -217,9 +220,17 @@ describe('retention', () => {
     const res = await post('/meetings/newest/finalize', { startedAt: '2026-10-01T00:00:00.000Z' })
 
     expect(res.status).toBe(200)
-    expect(res.json.evicted).toEqual(['old-00'])
-    expect(fs.existsSync(path.join(meetingsRoot(), 'old-00'))).toBe(false)
-    expect(fs.readdirSync(meetingsRoot()).length).toBe(20)
+    expect(res.json.audioDropped).toEqual(['old-00'])
+    // The meeting survives; only its audio is gone.
+    expect(fs.existsSync(path.join(meetingsRoot(), 'old-00'))).toBe(true)
+    expect(fs.existsSync(path.join(meetingsRoot(), 'old-00', 'loopback.webm'))).toBe(false)
+    expect(fs.readdirSync(meetingsRoot()).length).toBe(21)
+    // And it is still listed, flagged, and weighs nothing.
+    const row = listMeetings(artifactsDir).find((m) => m.id === 'old-00')
+    expect(row?.bytes).toBe(0)
+    expect(typeof row?.audioDeletedAt).toBe('string')
+    // The control: the 20 kept meetings still have their audio.
+    expect(fs.existsSync(path.join(meetingsRoot(), 'old-01', 'loopback.webm'))).toBe(true)
   })
 
   it('never evicts an in-progress recording — it has no meta.json and is invisible', async () => {
@@ -228,9 +239,11 @@ describe('retention', () => {
     }
     await chunk('/meetings/live/chunk?track=mic&seq=0', Buffer.alloc(4))
 
-    evictOldest(artifactsDir)
+    dropAudioPastCap(artifactsDir)
     expect(fs.existsSync(path.join(meetingsRoot(), 'live'))).toBe(true)
-    expect(listMeetings(artifactsDir).length).toBe(20)
+    expect(fs.existsSync(path.join(meetingsRoot(), 'live', 'mic.webm'))).toBe(true)
+    // Every finalized meeting is still listed — the cap bounds audio, not rows.
+    expect(listMeetings(artifactsDir).length).toBe(25)
   })
 })
 
