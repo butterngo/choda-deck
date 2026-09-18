@@ -12,7 +12,9 @@ createdAt: 2026-09-12
 lastVerifiedAt: 2026-09-12
 ---
 
-> **Status: proposed.** Drafted from a memory during TASK-1931's harvest, awaiting Butter's ratification. It is not yet a ruling.
+> **Status: accepted.** Ratified by Butter on 2026-09-18. Drafted from a memory during TASK-1931's harvest; it stood as `proposed` for six days and is now a ruling.
+>
+> Applied the same day it was ratified: TASK-2003 AC-1 checks that a meeting's `transcript.json` survives an audio deletion by comparing its sha256 before and after, deliberately NOT by checking the file still exists — existence is what the wrong implementation (removing the whole directory) would also satisfy. The injection that implements the route as `rmSync(dir)` reddens it.
 
 ## Context
 
