@@ -1,0 +1,60 @@
+{
+  "name": "k3s-azure",
+  "displayName": "k3s on Azure — starter",
+  "version": "0.1.0",
+  "description": "Operate a small-team k3s cluster on Azure: investigate an incident from symptom to the commit that caused it, run Terraform safely against a cost ceiling, reach the cluster without a tunnel, and keep observability inside a daily ingestion cap. Distilled from a real Phase 1 delivery.",
+  "author": {
+    "name": "Vu Ngo"
+  },
+  "license": "UNLICENSED",
+  "userConfig": {
+    "AZURE_CONFIG_DIR": {
+      "title": "Azure CLI config directory",
+      "type": "string",
+      "description": "Config directory for THIS client's subscription. Leave blank for the default ~/.azure. Set it when the machine holds more than one Azure account — a bare `az` silently targets whichever was logged in last.",
+      "required": false
+    },
+    "RESOURCE_GROUP": {
+      "title": "Resource group",
+      "type": "string",
+      "description": "Resource group holding the cluster, e.g. rg-acme-prod.",
+      "required": true
+    },
+    "ARC_CLUSTER": {
+      "title": "Arc connected-cluster name",
+      "type": "string",
+      "description": "Used to reach kubectl without opening the Kubernetes API port. Blank if the cluster is not Arc-connected.",
+      "required": false
+    },
+    "KUBE_CONTEXT": {
+      "title": "kubectl context",
+      "type": "string",
+      "description": "Context name for this cluster.",
+      "required": true
+    },
+    "APP_NAMESPACE": {
+      "title": "Application namespace",
+      "type": "string",
+      "description": "Kubernetes namespace the application runs in.",
+      "required": true
+    },
+    "LOG_WORKSPACE": {
+      "title": "Log Analytics workspace",
+      "type": "string",
+      "description": "Workspace that receives cluster telemetry. Without it an investigation can only read logs from pods that are still alive.",
+      "required": false
+    },
+    "IMAGE_REPOS": {
+      "title": "Deployment to git repository map",
+      "type": "string",
+      "description": "Comma-separated deployment=repo-path pairs, e.g. api=/c/dev/acme-api,web=/c/dev/acme-web. This is what lets an investigation walk from a running image tag to the commit that produced it.",
+      "required": false
+    },
+    "MONTHLY_CEILING_USD": {
+      "title": "Monthly cost ceiling (USD)",
+      "type": "string",
+      "description": "Hard ceiling for this subscription. Used to refuse changes that would breach it.",
+      "required": false
+    }
+  }
+}

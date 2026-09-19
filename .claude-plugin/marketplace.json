@@ -1,0 +1,19 @@
+{
+  "name": "choda",
+  "owner": {
+    "name": "Vu Ngo"
+  },
+  "metadata": {
+    "description": "Tooling distilled from real delivery work — each plugin here was extracted from a project that already paid for the mistakes it prevents."
+  },
+  "plugins": [
+    {
+      "name": "k3s-azure",
+      "source": "./plugins/k3s-azure",
+      "version": "0.1.0",
+      "description": "Operate a small-team k3s cluster on Azure: investigate an incident from symptom to the commit that caused it, run Terraform against a hard cost ceiling, reach the cluster without a tunnel, and keep observability inside a daily ingestion cap.",
+      "category": "infrastructure",
+      "keywords": ["kubernetes", "k3s", "azure", "terraform", "observability", "incident-response"]
+    }
+  ]
+}
