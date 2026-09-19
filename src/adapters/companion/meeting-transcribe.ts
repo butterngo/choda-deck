@@ -30,6 +30,23 @@ const MEETINGS_DIR = 'meetings'
 export const TRANSCRIPT_FILE = 'transcript.json'
 export const FAST_API_VERSION = '2024-11-15'
 
+/**
+ * The fastest human speech runs about 25 characters a second. A segment claiming
+ * more than four times that is not fast talking, it is a broken timing — and the
+ * ▶ link built from it will send the reader minutes away from what was said.
+ *
+ * TASK-2011: on 2026-09-17 a real transcription of m-mu57vo0m-imo2oh produced 13
+ * mic segments holding up to 299 characters inside 10 ms, all sharing one start
+ * offset. Azure's own response was well formed when the same audio was sent again,
+ * so the corruption was transient — which is exactly why it has to be caught at
+ * write time rather than reasoned about afterwards. Nothing noticed, the segments
+ * were saved, a note was written from them, and its ▶ stamps were 2m12s wrong.
+ *
+ * The loopback track of that same meeting was clean: 0 implausible segments
+ * against mic's 13. A check that flagged both would be useless.
+ */
+export const MAX_CHARS_PER_SECOND = 100
+
 /** A segment grows until a sentence ends or it reaches this length. */
 export const SEGMENT_MAX_MS = 12_000
 
@@ -158,6 +175,23 @@ export function splitPhrase(phrase: AzurePhrase, track: Track): TranscriptSegmen
   return out
 }
 
+/**
+ * Segments whose text cannot fit in the time they claim. Returns the offenders so
+ * the caller can name them rather than failing with "something went wrong".
+ *
+ * A zero-length or negative span with any text at all counts: it cannot be spoken
+ * in no time either.
+ */
+export function findImplausibleSegments(segments: TranscriptSegment[]): TranscriptSegment[] {
+  return segments.filter((s) => {
+    const text = s.text.trim()
+    if (text.length === 0) return false
+    const spanMs = s.endMs - s.startMs
+    if (spanMs <= 0) return true
+    return text.length / (spanMs / 1000) > MAX_CHARS_PER_SECOND
+  })
+}
+
 /** Merge both tracks by time. Ties put mic first so the order is stable. */
 export function mergeSegments(byTrack: Partial<Record<Track, TranscriptSegment[]>>): TranscriptSegment[] {
   return TRACK_ORDER.flatMap((t) => byTrack[t] ?? []).sort(
@@ -277,12 +311,35 @@ export async function handleTranscribe(
     throw err
   }
 
+  const segments = mergeSegments(byTrack)
+
+  // Refuse to write a transcript that cannot be true. Writing it is worse than
+  // failing: the segments feed ▶ links in a saved note, where a wrong timestamp
+  // invites the reader to check a decision and then sends them to the wrong
+  // minute. A 502 is visible and retryable; a bad transcript is neither.
+  const implausible = findImplausibleSegments(segments)
+  if (implausible.length > 0) {
+    const worst = implausible[0]
+    sendJson(res, 502, {
+      error: 'transcription returned implausible timings',
+      kind: 'implausible-timings',
+      segments: implausible.length,
+      example: {
+        track: worst.track,
+        startMs: worst.startMs,
+        endMs: worst.endMs,
+        chars: worst.text.trim().length
+      }
+    })
+    return
+  }
+
   const transcript: Transcript = {
     meetingId: id,
     engine: 'azure-speech',
     api: 'fast-transcription',
     createdAt: new Date().toISOString(),
-    segments: mergeSegments(byTrack)
+    segments
   }
   // Temp + rename: a crash mid-write must not leave half a JSON file where the
   // previous good transcript used to be.
