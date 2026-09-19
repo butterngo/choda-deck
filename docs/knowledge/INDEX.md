@@ -2,6 +2,7 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
+| [before-an-irreversible-delete-diff-the-replacement-against-the-thing-you-are-del](./before-an-irreversible-delete-diff-the-replacement-against-the-thing-you-are-del.md) | learning | Before an irreversible delete, diff the replacement against the thing you are deleting | 2026-09-19 |  |
 | [a-criterion-that-can-only-fail-is-as-useless-as-one-that-cannot-fail](./a-criterion-that-can-only-fail-is-as-useless-as-one-that-cannot-fail.md) | learning | A criterion that can only FAIL is as useless as one that cannot fail | 2026-09-19 |  |
 | [check-derived-timings-against-physics-before-persisting-them](./check-derived-timings-against-physics-before-persisting-them.md) | learning | Check derived timings against physics before persisting them | 2026-09-19 |  |
 | [azure-fast-transcription-phrases-are-28-s-rebuild-seekable-segments-from-word-of](./azure-fast-transcription-phrases-are-28-s-rebuild-seekable-segments-from-word-of.md) | learning | Azure fast-transcription phrases are ~28 s — rebuild seekable segments from word offsets | 2026-09-18 |  |
