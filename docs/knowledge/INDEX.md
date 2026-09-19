@@ -2,6 +2,8 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
+| [a-criterion-that-can-only-fail-is-as-useless-as-one-that-cannot-fail](./a-criterion-that-can-only-fail-is-as-useless-as-one-that-cannot-fail.md) | learning | A criterion that can only FAIL is as useless as one that cannot fail | 2026-09-19 |  |
+| [check-derived-timings-against-physics-before-persisting-them](./check-derived-timings-against-physics-before-persisting-them.md) | learning | Check derived timings against physics before persisting them | 2026-09-19 |  |
 | [azure-fast-transcription-phrases-are-28-s-rebuild-seekable-segments-from-word-of](./azure-fast-transcription-phrases-are-28-s-rebuild-seekable-segments-from-word-of.md) | learning | Azure fast-transcription phrases are ~28 s — rebuild seekable segments from word offsets | 2026-09-18 |  |
 | [a-provider-s-no-content-answer-must-not-fail-the-whole-batch](./a-provider-s-no-content-answer-must-not-fail-the-whole-batch.md) | learning | A provider's "no content" answer must not fail the whole batch | 2026-09-18 |  |
 | [a-packaged-install-s-datadir-is-not-your-choda-data-dir-anything-resolved-relati](./a-packaged-install-s-datadir-is-not-your-choda-data-dir-anything-resolved-relati.md) | learning | A packaged install's dataDir is not your CHODA_DATA_DIR — anything resolved relative to it breaks only after install | 2026-09-18 |  |
