@@ -1,0 +1,2032 @@
+{
+  "meetingId": "m-mu57vo0m-imo2oh",
+  "engine": "azure-speech",
+  "api": "fast-transcription",
+  "createdAt": "2026-09-17T10:21:27.580Z",
+  "segments": [
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 80,
+      "endMs": 12160,
+      "text": "Và cái bên bên cái phía này nè thì cho em hỏi là ví dụ như chị đi file ra cái file đây ha thì tiếp theo nữa thì cái file này làm sao máp được với cái"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 12160,
+      "endMs": 20400,
+      "text": "bên cái hiện đại ta nói cách chị làm hả ờ?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 17880,
+      "endMs": 19320,
+      "text": "Cái file này á hả?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 20440,
+      "endMs": 30760,
+      "text": "Thôi chị làm cái file này để mà cho tụi em hiểu thôi, có nghĩa là còn lúc mà mình cho cây nó nó chạy có nghĩa là nó sẽ hiểu được là cái câu này là đánh giá."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 30760,
+      "endMs": 31800,
+      "text": "Điểm sao đúng không?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 30960,
+      "endMs": 44670,
+      "text": "Thì đúng rồi dạ"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 33240,
+      "endMs": 44200,
+      "text": "Ừ thì cái này em phải phải đưa nó vào cái cái cái platform hiện tại chị không biết còn của thằng hoàng, chị không biết nó làm sao ha có nghĩa là ở đây có 2 cái nè cái của thằng hoàng thì chị sẽ làm việc với nó đúng không?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 44160,
+      "endMs": 49280,
+      "text": "Còn cái này là em chỉ quan tâm đến gì mà liên quan đến ai ai thôi đúng không?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 45870,
+      "endMs": 54510,
+      "text": "tại vì bây giờ em hiểu rồi, em hiểu rồi, có nghĩa là bây giờ này hiện tại á cái pure ric retaria đúng không?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 54510,
+      "endMs": 57310,
+      "text": "Là mình đã có 5 cái rồi."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 57950,
+      "endMs": 69950,
+      "text": "Tiếp theo nữa là comparency mình cũng sẽ có 5 cái là cái đó là cái 8 cái là chị với tùng bữa là đi file làm cái logic đó ok hết rồi rồi rồi bây giờ tiếp theo nữa là."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 61520,
+      "endMs": 74700,
+      "text": "8 8 có nghĩa"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 69840,
+      "endMs": 76480,
+      "text": "Em đang có cái gởi giống vầy ở trên cái màn hình dạ."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 74700,
+      "endMs": 86460,
+      "text": "là nè có nghĩa là hồi tùng cái mà Business managerment mà bên chị đang test nè thì mỗi câu hỏi nó sẽ đánh giá cái criterial nào và."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 86460,
+      "endMs": 87180,
+      "text": "Điểm như thế nào?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 87180,
+      "endMs": 91180,
+      "text": "Á thì em đã dựa vô đâu mà em làm cái đó đi em không có file này của chị."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 91840,
+      "endMs": 98800,
+      "text": "Hôm bữa là em hỏi chị những câu hỏi bên cái file kia, giờ em không cái file kia như chị đặt tên nó là specification đúng không?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 99920,
+      "endMs": 103840,
+      "text": "Nhưng mà có là làm cho sample kia thôi mà nó có 2 nó có 2 3 cái file."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 104080,
+      "endMs": 111520,
+      "text": "Cái sample hôm bữa trước là nó không phải là cái benisment này cho mình này có nghĩa là mình hình dung là mỗi cái trade SP, nó phải có một cái maps bên này."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 111760,
+      "endMs": 116720,
+      "text": "Nó phân loại ra câu hỏi này đang được đánh giá competency nào."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 116720,
+      "endMs": 117600,
+      "text": "Điểm như thế nào?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 117680,
+      "endMs": 121040,
+      "text": "Rubric gì này nọ thì một cái tracing đó sẽ có một cái này nè."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 121280,
+      "endMs": 124800,
+      "text": "Hiện tại em đang làm và."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 124800,
+      "endMs": 129840,
+      "text": "Điểu kiểu gì luôn thì hôm bữa em hỏi chị những câu hỏi xong chị đâu có trả lời được đâu?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 131280,
+      "endMs": 134560,
+      "text": "Tại vì chị chị nói là em đọc cái kỹ tới cỡ này luôn á hả?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 135040,
+      "endMs": 140400,
+      "text": "Xong rồi cái em biết cái đó nó đâu có liên quan đâu."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 137360,
+      "endMs": 149440,
+      "text": "Không bây giờ chị hôm bữa là có một cái cái lúc mà mình vô mình nít kết cái đó là trong cái file á thì file đó rồi đúng không thì sau đó là mình chưa biết"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 149440,
+      "endMs": 162160,
+      "text": "cách nào để mình map vin vô cái project, cho nên là hiện tại tùng với em mới nói với chị á là ok, bây giờ mình sẽ làm cho một cái common là tất cả những câu hỏi của trả lời mình đều dựa trên 5 cái competency"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 162160,
+      "endMs": 164160,
+      "text": "và 5 cái rubric."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 164080,
+      "endMs": 174320,
+      "text": "Xem YA và tán CI mình đánh giá hết rồi thì bây giờ khi mà mình có cái bảng up bên này á câu chuyện là bây giờ làm sao để cho mình má được cái câu hỏi với câu trả lời."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 171360,
+      "endMs": 177840,
+      "text": "Ừ hay là mình làm sao mà mình mình set được không?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 174320,
+      "endMs": 189840,
+      "text": "Thôi thì bây giờ đây dạ đó đó đúng, đúng, đúng đúng cái đó là cái mà mình thích nhất chị nghĩa là dạ"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 177840,
+      "endMs": 190320,
+      "text": "Mình set thẳng cái trên platform luôn là câu này đánh giá tiêu chí gì luôn hỏi quay ra nó khỏi phải đi tiền mất công quá thì nó cứ giữ nó đánh giá luôn chứ nó khỏi phải chạy đi tiền file này nọ rồi."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 190240,
+      "endMs": 194080,
+      "text": "cho nên là chỗ này thì em nghĩ là sẽ trên cái UI trên một cái spring."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 194000,
+      "endMs": 202960,
+      "text": "Đặc biệt ở đây là ứng với cái một cái string á, nó sẽ tương đương một câu hỏi thì lúc này là tùng sẽ load lên là 5 cái vetavia và 8 cái competency xong."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 198400,
+      "endMs": 211760,
+      "text": "Là bên này sẽ chọn dạ"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 202960,
+      "endMs": 207280,
+      "text": "Chị chọn chị chọn vô đúng đúng đúng đó là đơn giản nhất."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 209040,
+      "endMs": 223120,
+      "text": "Ok, không tùng ok vậy thì em em làm thêm cái phần đó, em làm thêm cái phần đó nữa nhé rồi vậy chốt cái phần chốt cái phần đó rồi."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 211760,
+      "endMs": 226210,
+      "text": "ok chị chị chị cái là chị confirm"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 226210,
+      "endMs": 231890,
+      "text": "là chị hiểu đúng ý anh vũ nói chứ đúng không bây giờ?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 231920,
+      "endMs": 243920,
+      "text": "Bây giờ, trên cái cái màn hình hôm bữa là em đã cho chị anh chi chọn danh sách những cái file liên quan rồi đó bây giờ phải chọn thêm những cột này"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 243920,
+      "endMs": 244160,
+      "text": "nữa."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 245840,
+      "endMs": 258030,
+      "text": "Dạ ok, vậy là chị hiểu đúng rồi, đúng ý rồi ok, qua"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 248800,
+      "endMs": 254880,
+      "text": "Rồi ok xong cái phần này bây giờ tiếp với phần assetment đi để anh note lại lại."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 258030,
+      "endMs": 268270,
+      "text": "cái cái phần accept mà em có đọc qua thì bây giờ em em chi hay hỏi chị sơ sơ thôi rồi để em làm cho chị có một cái bảng trên cái trang minh á chị coi qua trước."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 268880,
+      "endMs": 278800,
+      "text": "Xong rồi dựa trên đó rồi chị mới biết là chị muốn cái gì rồi, chị nói em chỉnh sửa chê, còn bây giờ em nghỉ là chị cũng chưa tưởng tượng được cái report này thì ở đây á."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 279120,
+      "endMs": 281360,
+      "text": "Nó có một cái chỗ, cái ví dụ cái từ này đi."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 282080,
+      "endMs": 286480,
+      "text": "Chị đang nói là ơn credit nè thì cái credit ở đây là chị đang hàm ý cái cái gì ở đây ạ?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 294400,
+      "endMs": 306560,
+      "text": "Cái này em cấp đi từ cái file word trùng tên em của chị này nhưng mà em em chỉ qua là cái report là cái cuối cùng là"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 306560,
+      "endMs": 318720,
+      "text": "cái report cuối cùng mà học sinh sẽ được nhận đó thì cái cái loại knowledge summary này thì nó là fix user đó"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 318720,
+      "endMs": 323600,
+      "text": "thì ở trong cái phần fix answer này ở trong cái chỗ mà knowledge summary này."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 323520,
+      "endMs": 330960,
+      "text": "Boring only đó thì chị đang nói là sim of own credit thì ở đây là chị đang muốn nói cái gì cái là điểm thôi."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 333280,
+      "endMs": 345440,
+      "text": "Some of tức nghĩa điểm mà nó thu được nó đạt được earn credit thôi và những question mà flat contributor knowledge summary nếu như mà knowledge summary thì nó nghĩa, nếu như mà mình đánh là mình đang đánh giá nó về knowledge"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 343840,
+      "endMs": 347440,
+      "text": "Chúng tôi xin được."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 345920,
+      "endMs": 352400,
+      "text": "thì mình sẽ comhine tất cả những câu hỏi mà nó đánh dấu."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 352560,
+      "endMs": 360880,
+      "text": "Là có refer tới knowledge thôi, vậy thì cái mapping hồi nãy hồi nãy qua lại hồi nãy đó cái mapping hồi nãy á là mới cho được cho mình cái phần."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 360880,
+      "endMs": 361440,
+      "text": "Điểm thôi."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 361440,
+      "endMs": 373440,
+      "text": "Ha chị sẽ phải bổ sung là những cái câu hỏi nào nó sẽ chạy vào ví dụ như là knowledge knowledge nè, những cái nào chạy vào nói làm sao ta gọi nó còn một số cái"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 373440,
+      "endMs": 381200,
+      "text": "câu chuyện nhưng mà nó thuộc về cái assesment report, cho nên chị ra chị tách ra tại em dễ nhìn quay lại cái report đi."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 381920,
+      "endMs": 391280,
+      "text": "Quay lại report đây nè có nghĩa là mình sẽ hiểu được là những cái mình sẽ hiểu được tất cả những cái câu hỏi mà sinh đó làm để làm gì đúng không?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 392480,
+      "endMs": 393040,
+      "text": "Để."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 393040,
+      "endMs": 398480,
+      "text": "Điểm nè để chạy vào back để chạy vào skill nè để chạy vào competency nè chạy chạy vào knowledge summary."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 398480,
+      "endMs": 409680,
+      "text": "Chẳng hạn như vậy, cho nên là mỗi cái câu hỏi đó nó sẽ được phân vân ra như thế nào thì chị sẽ làm thêm cái phần 2 map pin đó phục vụ cho phần resort này của tụi em thêm 1 cái map pin nữa hả?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 409840,
+      "endMs": 410800,
+      "text": "Ừm."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 410800,
+      "endMs": 417760,
+      "text": "Nhưng mà chung quy lại là là ra cái phần assetiment resort này, em có hiểu quy trình không?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 412000,
+      "endMs": 416570,
+      "text": "Thấy thấy đum đum đum."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 418400,
+      "endMs": 420720,
+      "text": "Là đầu tiên là scoring được không?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 421520,
+      "endMs": 433520,
+      "text": "Scoring xong đó thì nó xảy ra ai à common ha, chị có gửi cái file đó có nghĩa là sẽ đọc và nó hiểu là mày được 5 điểm, có nghĩa là mày có 4 duy hay là mày không"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 433520,
+      "endMs": 435520,
+      "text": "có 4 duy mà yêu chỗ nào mà không có chỗ nào có nghĩa là ra."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 435520,
+      "endMs": 439600,
+      "text": "Cái phần explanatory là chị."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 440080,
+      "endMs": 449920,
+      "text": "Đúng cái feedback cho mọi câu hỏi đúng và nhớ làm cái đó kiểm tra lại rồi sau khi có feedback xong có gì nữa?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 450880,
+      "endMs": 451200,
+      "text": "3."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 451200,
+      "endMs": 462720,
+      "text": "Điểm xong nè rồi ra feedback nè rồi đó có thêm 1 cái flow chạy competency nữa trong cái competency với rubrick là là thuộc vào scoring rồi đó."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 463200,
+      "endMs": 469680,
+      "text": "Scoring ra feedback xong rồi ra segment thôi, mình phải coi lại coi."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 469680,
+      "endMs": 474560,
+      "text": "Xong rồi ra assessment thôi thì cái assesment này là cái cuối cùng luôn á."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 474560,
+      "endMs": 486560,
+      "text": "Lúc mà làm hết một cái chết bi rồi thì nó sẽ ra cái này mà cái này chỉ là assessment cho một cái chết bi thôi rồi mình sẽ có một cái cái dạ dạ"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 486560,
+      "endMs": 498880,
+      "text": "thì cái cái này mình đang phong cực= một cái chết bi trước cái này thì em biết cái này em"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 498880,
+      "endMs": 498960,
+      "text": "hiểu."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 500160,
+      "endMs": 502880,
+      "text": "Nói chung đó chúc các chị a."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 502880,
+      "endMs": 516350,
+      "text": "Sẽ mình nốt vào đây không nhớ nổi giờ"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 516350,
+      "endMs": 520750,
+      "text": "chị coi lại ừ xong rồi 3 assetment report thôi chứ có gì đâu."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 519680,
+      "endMs": 531840,
+      "text": "Ủa chị nhưng mà em em có thắc mắc giống như là tại vì thường thường cái mấy cái report này á là nó sẽ đi em hiểu nhá là trong cái facebook"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 531840,
+      "endMs": 544080,
+      "text": "của chị á, nó sẽ có những cái tiêu chí trong đó đánh giá là cái bạn đó có knowledge hay là cái bạn đó có về cái thinking hay là whatever thì nó dựa trên những câu hỏi, câu trả lời"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 544240,
+      "endMs": 556260,
+      "text": "Ừm ừm thì nó có những tiêu chí confessency basic hay là gì đó từ"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 544640,
+      "endMs": 546160,
+      "text": "theo consession của chị đúng không?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 546320,
+      "endMs": 547600,
+      "text": "Sau đó chị."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 547600,
+      "endMs": 559760,
+      "text": "Everit lại à này 4 điểm thì nó có cái này mà 5 điểm thì nó có kỹ năng này đó thầy đúng, đúng đúng, chính xác, chính xác, chính xác thì có nghĩa là thực"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 556260,
+      "endMs": 568660,
+      "text": "không đến 4 á đúng mình đã coi cái thông minh"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 559760,
+      "endMs": 566080,
+      "text": "chất cái cuối cùng report này á là tổ hợp data máy trên lại xong rồi nó up pin ra đưa ra những tiêu chí đó xong rồi nó đánh giá thôi hết rồi."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 566960,
+      "endMs": 579080,
+      "text": "Em không hiểu vậy đó thầy thầy đúng rồi thì em hiểu là bây giờ nè em hiểu"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 569140,
+      "endMs": 577370,
+      "text": "đúng rồi đó đúng rồi đó."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 579080,
+      "endMs": 581960,
+      "text": "là như vậy nhá là ở bên cái asset mình."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 581840,
+      "endMs": 587760,
+      "text": "Cái classes mình mắp mình của chị á thì nó sẽ có cái phần là liên quan tới em."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 587760,
+      "endMs": 591440,
+      "text": "Ví dụ nhá session một là tượng trưng cho cái communication."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 591840,
+      "endMs": 604240,
+      "text": "Session 2 là tượng trưng cho cái thinking session 3 là tượng chân cho cái cái gì đó tui biết thì sau qua buổi sinh 5 semp rồi cuối cùng à bây giờ session một mày được 3 điểm thì cái kỹ năng về"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 604240,
+      "endMs": 611200,
+      "text": "non lịch của mày nó là 3 điểm rồi session 2 mày mày chắc là tốt quá 5 điểm thì cái thinking của mày nó là 5 điểm."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 611200,
+      "endMs": 612560,
+      "text": "Rồi cái cuối cùng là cái gì đó."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 612560,
+      "endMs": 624640,
+      "text": "Sau đó, chị cầm 3 kết quả đó, chị với sôi chị đưa ra cho con con ai ai là nó có 3 kết quả cho trí nè đưa trí nè đưa lên report nhá thì lúc này á thì cho em hỏi là lúc này con ai ai á?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 614560,
+      "endMs": 628970,
+      "text": "Nó bay với nhau, nó"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 624640,
+      "endMs": 632880,
+      "text": "Nó sẽ giúp làm cái gì chi cái report đó chị ờ."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 628970,
+      "endMs": 630170,
+      "text": "sẽ giúp làm gì?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 630170,
+      "endMs": 642250,
+      "text": "Trên cái report đó hả thì nó sẽ tổng hợp lại nó, tổng hợp lại, ví dụ như có những thứ mà có coflip với nhau hay không, hoặc là ví dụ như là để cách đệ"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 633004,
+      "endMs": 633014,
+      "text": "Ủa chứ?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 633004,
+      "endMs": 633014,
+      "text": "Lúc này em nghĩ là dựa trên những công thức của chị, tính toán ra là nhìn vào đã biết là bạn nó có tiềm năng hay không rồi chứ còn con con AA nó chỉ đưa ra một cái mục đích cuối cùng là nó phán xét thôi, nhưng mà thực chất thì đúng, đúng, đúng, đúng, đúng, đúng đúng phán xét cho nên là em mới thấy là cái phần phía trước, á là cái phần quan trọng sau khi mà chị corin để đổi hết rồi đúng không?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 633004,
+      "endMs": 633014,
+      "text": "Là đến cuối cùng chị tổ hợp ra, chị có ra ra được cái thang điểm?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 642330,
+      "endMs": 647930,
+      "text": "cuối cùng á là cho học sinh biết được kết quả, thứ nhất là nó làm tốt hay không?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 648490,
+      "endMs": 654570,
+      "text": "Nó có a nó có những cái ability, nó có những cái potential với cái nghề này hay không?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 654560,
+      "endMs": 662160,
+      "text": "Ví dụ như nó có những cái như gì đó là luật sư đi, ví dụ như là cái khả năng viết của nó rất là tốt như vậy, hoặc là reasoning của nó rất là tốt, nhưng mà coi như là."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 662160,
+      "endMs": 674160,
+      "text": "Điểm thì nó nó không có nó không có trình bày đủ đầy đủ, bởi vì ta ta thì cái cuối cùng là đưa ra là nó đánh giá là"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 674480,
+      "endMs": 678560,
+      "text": "bạn này có tiềm năng hay không, có tiềm năng hay không."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 678560,
+      "endMs": 683200,
+      "text": "Với cái nghề này thích cái nghề này hay không, rồi bạn đã đạt được bao nhiêu điểm thì cái điểm đó nó phải ánh cái gì?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 695120,
+      "endMs": 701360,
+      "text": "Nhưng mà cái score riêng từng phần từng phần á thì nó nó chỉ là những cái những cái điểm độc lập thôi."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 701360,
+      "endMs": 713430,
+      "text": "Cho nên là ở cái bước này thì em sẽ phải cầm file lại với nhau, ha ờ rồi"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 716560,
+      "endMs": 719600,
+      "text": "Là lúc đó chị biết được là cái bàn này có tinh ăn hay không rồi đó."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 719600,
+      "endMs": 722720,
+      "text": "Thế nên cái phần mà cái phần report này chỉ cần đưa tụi em công thức."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 723200,
+      "endMs": 726320,
+      "text": "Thứ nhất là công thức mà để tính toán ra đúng chính xác."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 724630,
+      "endMs": 733830,
+      "text": "phải cầm bai vậy thôi chứ nào ừm."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 727040,
+      "endMs": 733280,
+      "text": "Cái quan trọng nhất là cái mapping assetment rabbin mapping của chị á thì chị biết được là à?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 733280,
+      "endMs": 736240,
+      "text": "Đối với câu hỏi này thì nó thuộc về gì, ví dụ như là nowing."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 736800,
+      "endMs": 743120,
+      "text": "Đối với câu hỏi này, nó thuộc về cái thinking hay gì đó thì đó là những cái tiêu chí để đánh giá ra cái report của chị á."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 745120,
+      "endMs": 758880,
+      "text": "Đúng rồi thì em nguyên tắc vậy đó nhưng mà chị không chị nhưng mà mình đọc lại coi coi là nó còn cái gì nữa hay không trong cái cái công thức của nó chết rồi đó hừ"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 746080,
+      "endMs": 759750,
+      "text": "Còn đúng rồi, tại vì thường thường mà em làm cái report thì em ít khi em thấy đụng tới a ai lắm chị đúng"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 758880,
+      "endMs": 763760,
+      "text": "hừ à."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 759750,
+      "endMs": 760070,
+      "text": "rồi."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 760070,
+      "endMs": 766390,
+      "text": "Report là thường thường là một công thức tổ hợp ra để đánh giá cho một cái gì đó."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 763760,
+      "endMs": 767440,
+      "text": "Với lại nó cũng phải viết nó cũng phải nghĩa là nó cũng phải."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 767500,
+      "endMs": 767510,
+      "text": "Bây giờ có 2 cái nhá cái đầu tiên á là tùng sẽ làm thêm cái chức năng trên cái màn hình platform để cho chị chọn cái applicable rubric và access và cái currency cho từng cái câu hỏi rồi chị cho em thêm 1 cái chỗ nữa là cái phần mà để sau này hỗ trợ cho cái cái assetment report á là mắt bình thường."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 767500,
+      "endMs": 767510,
+      "text": "Tiêu chí em nghĩ tiêu chí đó, mỗi ngành nghề khác nhau đúng không?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 767500,
+      "endMs": 767510,
+      "text": "Chị?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 767500,
+      "endMs": 767510,
+      "text": "Đúng rồi."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 767500,
+      "endMs": 767510,
+      "text": "Thì thì bây giờ cứ làm xong mắt pin vậy em mắt pin xong rồi xong cái phân ở đây rồi đúng không anh kia?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 767500,
+      "endMs": 767510,
+      "text": "Bà vô bà xài trong thời em làm cái cái accessment report anh muốn bà phải xài như hôm qua."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 767500,
+      "endMs": 767510,
+      "text": "Anh tưởng là con anh chị nó biết về cái competency, nó biết về cái rutaria rubrick nhưng mà tức là anh chị cũng biết cái đó luôn, cho nên là chỉ có bà chị với là cái người vô test được cái resort cái lúc ấy xong thôi đó và anh nghĩ test là sẽ test trên cái mà hình đọc pin là để nó nó hiển thiệt được à."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 767500,
+      "endMs": 767510,
+      "text": "Con số competency rồi con số competency rồi con số lubrick."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 767500,
+      "endMs": 767510,
+      "text": "Ờ cho nên cái phần này anh đã nói bã lâu rồi thường thường cái tiêu chí này nó phải nó phải nó phải trên từng câu hỏi ấy á, nhưng mà ngay cả luôn cách mà mình mô tả giá tiêu chí á phải trên từng trên từng cái cái cái cái này luôn mà hiện tại các accurency đúng không?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 767500,
+      "endMs": 767510,
+      "text": "Nó sẽ có cái tiêu chí phía sau đúng không?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 767500,
+      "endMs": 767510,
+      "text": "Làm sao là là accurency đúng không?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 767500,
+      "endMs": 767510,
+      "text": "Là cái ví dụ như cái phần mà mà lubic đi, nó có cái communication kìa thì nó phải có cái tiêu chí phía sau để đánh giá tại sao communication đúng không?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 767500,
+      "endMs": 767510,
+      "text": "Đánh giá qua từng cái tiêu chí một, mỗi tiêu chí nó khác nhau á?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 767500,
+      "endMs": 767510,
+      "text": "Nó có những người khác nhau á mà mà thành thử á à trước vậy hả?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 767500,
+      "endMs": 767510,
+      "text": "Tùng cho nó xong rồi đã ờ."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 767500,
+      "endMs": 773420,
+      "text": "Cho cái feedback có nghĩa là hồi nãy là nó feedback từng cái scoring thì bây giờ nó tổng hợp lại thì nó còn phải đưa ra một cái feedback nữa."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 767580,
+      "endMs": 776060,
+      "text": "Thì ok, chị cái đó thì đơn giản rồi."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 773420,
+      "endMs": 785830,
+      "text": "Em cho vậy"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 776060,
+      "endMs": 788060,
+      "text": "Nhưng mà câu chuyện là đầu tiên giờ có 2 cái rebox có 2 cái trong trọng nhất á là cái đầu tiên á là chị phải defa được cái công thức cho từng cái tiêu chí đó đó, ví dụ như là đúng cái mapping,"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 785830,
+      "endMs": 790710,
+      "text": "là cái map bên đang hết rồi đó."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 788060,
+      "endMs": 795660,
+      "text": "chị á, cái mapping chị là bây giờ nè cái mapping, cái phần nào là cái phần ví dụ như em nói ví dụ nha cái phần lo đúng không thì chỉ có là."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 796300,
+      "endMs": 799820,
+      "text": "3 cái tiêu chí đánh giá thứ nhất là về kỹ năng viết của mày tốt."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 800380,
+      "endMs": 803580,
+      "text": "Thứ 2 là kỹ năng tranh luận của mày tốt là reader thiên kinh đúng không?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 803580,
+      "endMs": 816860,
+      "text": "Thứ 3 là kỹ năng về gì đó thì trong cái file mac này nè, nó phải thể hiện được là cái câu hỏi nào nó thể hiện được cái tiêu chí real thiên kinh cái câu hỏi nào thì tiêu chí đó đó thì đến chứ"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 810060,
+      "endMs": 814940,
+      "text": "Đúng đâu, đúng rồi đúng rồi."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 814940,
+      "endMs": 819740,
+      "text": "Thế bây giờ cái map in mà em đang giữ đó là map in cho scoring thôi rồi sẽ có thêm 1 cái map in nữa."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 819740,
+      "endMs": 827660,
+      "text": "Nó sẽ relate tới những cái tiêu chí trên cái assessment report nữa à?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 824880,
+      "endMs": 828880,
+      "text": "sao mà em đi fail với luôn vậy cho thêm 1 cô nữa."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 827660,
+      "endMs": 835820,
+      "text": "Tại vì nó nhiều quá, chị thấy chị sợ tại em bị rối thì chị sẽ thì chị sẽ gửi cho em thêm 1 cái mab in nữa nè hiểu không?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 833500,
+      "endMs": 845580,
+      "text": "Ờ tại vì tại vì cái chỗ này chỉ sao không thì đường nào nó bắt bên này, á là sau khi mà ở trên cái cái UI đúng không chị phải chọn chị chị đi file ra rồi cho tùng làm cái UI cho em chì cái chị vô chọn trên câu hỏi"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 841100,
+      "endMs": 853260,
+      "text": "Ờ này rồi rồi bây giờ em làm trước cái này trước đi rồi chị gửi cái kia, chị"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 847820,
+      "endMs": 853900,
+      "text": "đó, nó đơn giản hơn, ok, chị ok chị."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 853260,
+      "endMs": 854940,
+      "text": "cũng làm xong là chị chị bỏ nó vào lại thôi."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 855100,
+      "endMs": 856220,
+      "text": "Chị kiểm tra lại một cái nữa."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 856540,
+      "endMs": 860540,
+      "text": "Ừ rồi xong là nó cũng ra thì nó cũng tổng hợp lại và nó cũng ra ý kiến thôi."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 860940,
+      "endMs": 866620,
+      "text": "Nhưng mà quan trọng là cái phần ý kiến đó thì nó viết làm sao cho nó cho nó hay ho và nó đúng."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 863980,
+      "endMs": 868220,
+      "text": "Cái phần cái phần ý kiến cái phần cái phần ý kiến nó á là nó sẽ chị."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 868220,
+      "endMs": 878220,
+      "text": "Nghĩa là sau khi ra cái report rồi đúng không thì em sẽ cho chị chỉnh điêu chỉnh cái prom cho cái dòng điệu á nó ok nhất."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 878540,
+      "endMs": 879900,
+      "text": "Tại vì mỗi ngành nghề đúng không?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 879900,
+      "endMs": 891260,
+      "text": "Nó sẽ có cái dòng điệu nhận xét riêng thì cái người chuyên ngành ở ngành nghề đó thì hỏi cái cách tổ chức cái prom như thế nào để cho nó nó nó nó nhận xét ok nhất đó thì."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 900780,
+      "endMs": 914610,
+      "text": "Ừm đúng"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 914610,
+      "endMs": 931790,
+      "text": "rồi đúng rồi, nhưng nó nó khác nhau nhưng mà cái cuối cùng nó vẫn phải quy về một cái tại vì nó sớm nó sẽ có cái sự nó có cái report cho tất cả các JSP nó đã làm nữa thì thực ra nó cũng là tổng hợp hết thôi ờ"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 922220,
+      "endMs": 929260,
+      "text": "Em em em hiểu rồi em hiểu rồi có nghĩa là là về tiêu chí giá là sẽ khác nhau đúng không?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 929260,
+      "endMs": 936620,
+      "text": "Về công thức thì giống nhau nhưng mà nó chỉ khác là cái ngành luật nó có real thinking, còn cái ngành kia thì nó sẽ là một cái khác nữa."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 938060,
+      "endMs": 950210,
+      "text": "Cái tên thôi đúng không chỉ labor thôi đúng không ờ ok, vậy thì bây giờ chốt lại là để chốt lại cái này"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 939050,
+      "endMs": 945850,
+      "text": "không, không thì nói chung là cái là về từ chuyên môn về bên chị rồi em khỏi lo giải khác là trên nguyên tắc nhiều nãy em vừa nói đó."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 950210,
+      "endMs": 954930,
+      "text": "rồi nhá xong rồi ủa mà cái rap pin nó nó nó."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 955020,
+      "endMs": 958620,
+      "text": "Cái mắp pin mà về cái cái, cái cái đó chị đưa lên luôn đi được không?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 958620,
+      "endMs": 965420,
+      "text": "Để cho tùng nó làm UI luôn cái mắp pin cái mắp pin về cái cái gì."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 960620,
+      "endMs": 967020,
+      "text": "Sao em không nghe rõ chị đang ngồi trên xe ồn xếp mình report hả?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 965660,
+      "endMs": 978940,
+      "text": "Asuman report ờ ờ ờ chị chị cho thêm thôi, chị cho thêm 1 dòng ở đây, chị cho thêm 1 dòng trên này ở đây nói dễ thêm 1 cô lâm cái"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 967500,
+      "endMs": 972140,
+      "text": "Ừ rồi chị sẽ đưa cho em chị tách ra làm ifi thôi cho nó dễ nhìn hả?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 974140,
+      "endMs": 983660,
+      "text": "Ê nó nhiều lắm á, nó có đến nó có đến cả trục cột rồi đó, chị thấy nó nhiều lắm rồi, người tách đây để nhìn nè."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 979500,
+      "endMs": 982220,
+      "text": "gì tùng cột nữa hả chị?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 983660,
+      "endMs": 989020,
+      "text": "Ừ, nó có nhiều lắm đấy, ít nhất kẻ ra cũng 5 6 cột đó."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 986540,
+      "endMs": 999520,
+      "text": "Không khoan bây giờ này bây giờ này đầu tiên á là"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 989020,
+      "endMs": 994140,
+      "text": "Tại vì nó có nhiều tiêu chí như assetment mà ví dụ như đánh giá là mày thích hợp hay không thích hợp rồi."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 994540,
+      "endMs": 1009850,
+      "text": "Nói chung có đo lường nhiều yếu tố mà tất"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1000000,
+      "endMs": 1003680,
+      "text": "cho em hiểu này, ví dụ như cái câu s một t một q một ở đi đúng không?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1004000,
+      "endMs": 1014320,
+      "text": "Ở ngành lo của chị á, nó có khoảng giọng là 5 tiêu chí đánh giá đúng không rồi?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1009850,
+      "endMs": 1024620,
+      "text": "cả đều là nhẹ hết á đều là 5 5 cái rubric và 8 cái competency trong"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1014320,
+      "endMs": 1021600,
+      "text": "Còn accent report lại lúc này là nó sẽ thể hiện là nó có cái cái thinking hay là cái gì đó đúng không thì chị phải có."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1024620,
+      "endMs": 1037820,
+      "text": "cái assetment report á là nó sẽ có thêm những cái yếu tố khác ngoài có để chị làm chị gửi cho em rồi nói cho nó dễ thôi, chị bỏ đi lại"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1032460,
+      "endMs": 1038540,
+      "text": "Ờ chị cho em coi cái đi rồi nói cho ờ thì làm cho em coi cái sơ sơ, cái đó đi trong nhìn nó dễ rồi."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1038540,
+      "endMs": 1050540,
+      "text": "Vậy thì bây giờ để tùng ngành trước cái này cái này đi rồi chị làm nhanh nhanh nhanh nhanh như vậy để coi thử cái report đó như thế nào á chị chứ không có là không kịp ngày 2 6 lâu á rồi"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1038700,
+      "endMs": 1038780,
+      "text": "đi."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1047980,
+      "endMs": 1082710,
+      "text": "Rồi rồi rồi thôi giờ em có hiểu"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1050540,
+      "endMs": 1061340,
+      "text": "ok rồi á chị thì xong rồi á chị em coi anh tùng xíu ờ cảm ơn chị rồi."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1062540,
+      "endMs": 1074940,
+      "text": "Thì cái phần đó thêm cái cái cái ở trên cái tồn như em sáng em nói gì á rồi còn cái report thì anh nghĩ là chắc chắn là sau này sẽ có cách để cho bà chọn cái cái tiêu chí đó luôn á ha"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1075020,
+      "endMs": 1087430,
+      "text": "và chọn trong cái platform của mình á để nó đi qua luôn á nó mắp pin qua luôn á nói chung là"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1082710,
+      "endMs": 1094870,
+      "text": "gì đâu mà kệ anh đi, nhưng mà em em thề với anh luôn để đi bọt ra xấu chán chết được cho cho coi"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1087670,
+      "endMs": 1090870,
+      "text": "là sâu lắm hà."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1094870,
+      "endMs": 1095270,
+      "text": "nè."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1095180,
+      "endMs": 1096300,
+      "text": "Đâu?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1101340,
+      "endMs": 1117240,
+      "text": "Cái này là theo đúng cái basic assessment report mà bà chị mới đưa á nhìn thì anh, nếu anh là một thằng học sinh, anh làm xong là ra, anh thấy như vậy nè rồi"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1105480,
+      "endMs": 1122880,
+      "text": "Ừ, đúng rồi xong rồi"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1117240,
+      "endMs": 1130700,
+      "text": "nè thấy chưa đọc máy này vô nghĩa á tôi đọc máy này làm cái gì, cái"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1123120,
+      "endMs": 1135360,
+      "text": "không có nghĩ ra đi đâu mà nó đi theo quá quá đi theo nó quá đi theo luôn ờ quá đi theo luôn á nó"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1130700,
+      "endMs": 1139580,
+      "text": "cái này nó cái này nó đúng nghĩa là summari luôn á rồi nó cũng có cục là next step nè làm cho vui gì tụi."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1135360,
+      "endMs": 1135680,
+      "text": "đúng."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1138460,
+      "endMs": 1150780,
+      "text": "Cho nên là cái cái cái cái này anh thấy nó không đúng cái report chút nào hết là nói chung là bà chị bà cũng chưa chưa hình dung cái report lâu nên là bây giờ cứ làm trước cái vấn đề kia đi rồi"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1150780,
+      "endMs": 1154700,
+      "text": "mình sẽ cho bà chị ra cho bà chị cách mà để cái đó làm cái report."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1155100,
+      "endMs": 1161740,
+      "text": "Tại vì anh anh nghe cái report nó nó phải có tiêu chí giá, ví dụ như là mày có kỹ năng gì, năng gì, cái năng gì xong rồi."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1161740,
+      "endMs": 1165020,
+      "text": "Cuối cùng là mà tóm lại là mày có hợp với cái năng gì không thôi hết rồi."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1165500,
+      "endMs": 1178620,
+      "text": "Chứ không có nhiều gì đâu gì, phải ai coi đúng đúng, đúng, đúng, đúng"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1166940,
+      "endMs": 1178060,
+      "text": "Nó là cái cái report này này và chị phải có sẵn rất là nhiều cái tem lake rồi và mình chỉ thay có trọng số vô thì nó thay đổi cái hiện ở trên này nè đúng không giống giống như cái bài mà trắc nghiệm tính cách vậy đó."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1178620,
+      "endMs": 1193850,
+      "text": "đúng chính xác, chính xác đó đó đó đó đó, sách này đó đúng, đúng, đúng, đúng đúng, chính xác, chính xác,"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1181420,
+      "endMs": 1193580,
+      "text": "Ừ thì cái lúc mà làm report á mình chỉ ra con số thôi là mình gắn lên đây là nó tự động đổ như ai nó ra ra ra ra ra mấy cái mà nhìn nhìn rất là đẹp, nhìn rất là hấp dẫn học sinh nó muốn đọc này kia nó nằm trên này chứ nó không phải còn cái ai trên nữa."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1193850,
+      "endMs": 1195050,
+      "text": "chính xác, chính xác."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1195050,
+      "endMs": 1204090,
+      "text": "Đó là cái report là cái mà không không có được gián thấy ai ai hết á, cho nên anh mới nói rồi cái report đó không có thấy ai đâu, phải chỉ muốn có thể là do cái."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1204090,
+      "endMs": 1208570,
+      "text": "Cái phần mà cái phần nhận xét cuối cùng á là em cần coi cho ai thôi."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1208620,
+      "endMs": 1220620,
+      "text": "Con số không nghĩa là gì ai nữa là mình tổn hợp thôi mà ok, để có cái cái cái cái đói đã rồi rồi để coi sơ qua vậy anh nghĩ là cái này bà chị cũng coi lên hả con quay ra thôi chứ"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1220620,
+      "endMs": 1235620,
+      "text": "chưa có cái report nào đâu đâu đâu cho anh coi được thôi thì à?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1221660,
+      "endMs": 1233660,
+      "text": "Ừ ấy, hình như có rồi, hệ thống hiện tại có rồi mà mà nó không giống cái này không hồi nãy em hỏi nghe ai thì công nghệ ai nó kêu là có rồi thôi chứ nhưng mà nó nó kêu là có một số"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1233660,
+      "endMs": 1243580,
+      "text": "mâu thuẫn với cái này chứ chứ không phải là chưa chưa có mà chắc là cũng xấu, nghi nghi là cũng đi theo hướng con số thôi."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1235620,
+      "endMs": 1241060,
+      "text": "Ừ, tại vì cái."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1242620,
+      "endMs": 1254780,
+      "text": "Anh nghĩ là cái report của hiện tại, á là anh nghĩ chắc tụi nó cầm nguyên cái điểm nó đó quăng lên trên cho con AI nó nó nó nó gen ra là cái gì đó còn thường thường cái report trước giờ ảnh chưa bao giờ làm report"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1254780,
+      "endMs": 1256860,
+      "text": "mà anh nghe liên quan tới AI của mẹ hết á."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1257980,
+      "endMs": 1273680,
+      "text": "Ừm nghe không"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1258380,
+      "endMs": 1259660,
+      "text": "Thống kê ước điểm không à?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1261180,
+      "endMs": 1265500,
+      "text": "Thế là hôm bữa giờ anh anh mới nói bà chị là cái report sai cần AI á?"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1266940,
+      "endMs": 1282950,
+      "text": "Thôi nói chung lại có ai kia chứ đã rồi để anh cái bả bả bị rối mạng rồi rồi"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1273920,
+      "endMs": 1277520,
+      "text": "hồi nãy con hỏi bữa giờ chị chưa đưa cái file này, chị em sao?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1277520,
+      "endMs": 1277760,
+      "text": "Em."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1277760,
+      "endMs": 1281360,
+      "text": "Điểm được em sợ chị luôn bữa em hỏi, chị có giải thích được đâu?"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1282480,
+      "endMs": 1293920,
+      "text": "Xong xong em nói chị là thôi giờ để em làm theo 2 cái file generic prureic với lại competency ngoài kia kìa, chị coi thế nào đã rồi chị cũng ừ xong giờ hôm nay chị cũng không nhớ gì hết."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1294470,
+      "endMs": 1306550,
+      "text": "thì bả cũng chưa vô có form xài như thế nào mà nói chung là để anh làm xong đó đi rồi để anh anh sẽ bắt bả vô trong cái cái platform này xài xài để cho cho"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1297660,
+      "endMs": 1313360,
+      "text": "Ừ chắc là chưa vô rồi mà"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1306550,
+      "endMs": 1309670,
+      "text": "nó nó xài ra để cho nó."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1309670,
+      "endMs": 1310310,
+      "text": "Ok đã."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1313360,
+      "endMs": 1320480,
+      "text": "em nghĩ là má hồi nãy em em tính kêu bà chị vô xài thử đi đã coi thử sao đã chứ giờ làm theo giữ vậy en chi trời."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1342460,
+      "endMs": 1370860,
+      "text": "Ừ ừ"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1349660,
+      "endMs": 1357820,
+      "text": "Tại vì ở ngoài cái phần ở ngoài á có student á, nó chỉ thi thể đúng một cái nét fitback với cái SP hết mẻ rồi nó không thấy tiêu chí gì hết á."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1358380,
+      "endMs": 1365900,
+      "text": "Cho nên là bà chị sẽ vô trong cái cái màn hình admin để test test thì nó ok nhất bây giờ chỉ còn thêm cái này nữa được rồi."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1365900,
+      "endMs": 1372570,
+      "text": "Tục cho thêm cái group down để chọn cái này nữa là được là được ờ, ừ."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1370860,
+      "endMs": 1381100,
+      "text": "thì chọn chọn rồi này kia xong rồi phải viết lại cái cái đám scoring bên mình nữa mà mà viết lại cũng hợp lý thôi."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1381260,
+      "endMs": 1388140,
+      "text": "Em nghĩ chắc gom lại hết giờ chắc còn một en poy scoring thôi chứ hồi trước tách ra thành cốt nữa cũng không, không hợp lý."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1407580,
+      "endMs": 1420450,
+      "text": "Đâu cái nào thì nó"
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1420450,
+      "endMs": 1426850,
+      "text": "có một cái bộ ro generic đó chứ chứ giờ mà define đi theo từng câu hỏi nữa em lú nữa."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1421740,
+      "endMs": 1431340,
+      "text": "Ờ đó đó đó cho nên là anh nghĩ là sau chắc chắn là sau này bà chị sẽ cân cái đó thôi."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1432220,
+      "endMs": 1443420,
+      "text": "Tại vì nó không thể nào mà một cái câu hỏi này mà nó dùng cái bộ chung chủ tâu cho nên là bây giờ mình có làm trích ra đây đã rồi xong rồi mình chắc chắn nó sẽ define cái đó ra hà đây chắc chắn cái đó luôn á."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1441620,
+      "endMs": 1442580,
+      "text": "3."
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1445740,
+      "endMs": 1449100,
+      "text": "Tại vì tại vì hồi xưa anh đã từng làm cái này một gần rồi, cho nên là người ta phải."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1462780,
+      "endMs": 1472700,
+      "text": "Mà giờ bà chị ngồi đi five đi theo ví dụ như cái này đi có 5 cái bà chị chọn 1 2, 3, 4 thì thay vì vậy bây giờ cứ để xài trên maric á thì nó."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1472700,
+      "endMs": 1486270,
+      "text": "Luôn cả 5 dư thì thôi nó mắc bị gì đâu làm bà này anh thấy không có ý nghĩa gì thêm việc cho anh chi nó làm biếng thêm thôi rồi"
+    },
+    {
+      "track": "mic",
+      "speaker": "Me",
+      "locale": "vi-VN",
+      "startMs": 1479820,
+      "endMs": 1489580,
+      "text": "Thì kẹo đi mình làm lấy tiền thôi, kẹo qua đi ờ rồi ok ok."
+    },
+    {
+      "track": "loopback",
+      "speaker": "Them",
+      "locale": "vi-VN",
+      "startMs": 1486270,
+      "endMs": 1492430,
+      "text": "chưa phải rồi dạ ok anh."
+    }
+  ]
+}
