@@ -268,7 +268,18 @@ export function readTranscribedAt(artifactsDir: string, id: string): string | nu
  */
 export async function handleTranscribe(
   res: ServerResponse,
-  opts: { artifactsDir: string; id: string; speechCredentialsFile?: string }
+  opts: {
+    artifactsDir: string
+    id: string
+    speechCredentialsFile?: string
+    /**
+     * TASK-2043 — run after the transcript is on disk and BEFORE the 200 is
+     * sent, so the client's list refetch cannot race a title that is still
+     * being written. It is awaited but never allowed to fail the request:
+     * naming is a convenience, the transcript is the artefact.
+     */
+    onTranscript?: (segments: TranscriptSegment[]) => Promise<void>
+  }
 ): Promise<void> {
   const { artifactsDir, id } = opts
   const dir = path.join(artifactsDir, MEETINGS_DIR, id)
@@ -347,6 +358,15 @@ export async function handleTranscribe(
   const tmp = `${target}.${process.pid}.tmp`
   fs.writeFileSync(tmp, JSON.stringify(transcript, null, 2), 'utf8')
   fs.renameSync(tmp, target)
+
+  if (opts.onTranscript) {
+    try {
+      await opts.onTranscript(segments)
+    } catch {
+      /* the transcript is written and valid; a failed hook does not undo that */
+    }
+  }
+
   sendJson(res, 200, transcript)
 }
 

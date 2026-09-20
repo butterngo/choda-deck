@@ -19,12 +19,15 @@ import * as path from 'path'
 import { Buffer } from 'buffer'
 import { timingSafeEqual } from 'crypto'
 import type { IncomingMessage, ServerResponse } from 'http'
+import { PROJECTS_DIR, handleProjectVault } from './vault-projects'
 
 const ROUTE_PREFIX = '/vault/'
 const NOTES_DIR = '30-Knowledge'
 const NOTES_ROUTE = '/vault/notes'
 const LINKS_ROUTE = '/vault/links'
 const ASSETS_ROUTE = '/vault/assets/'
+// TASK-2048 — the one route on this prefix with a DIFFERENT sandbox root.
+const PROJECTS_ROUTE = '/vault/projects/'
 
 // TASK-1601 — `[[target]]`, `[[target|alias]]`, `[[target#heading]]`. The
 // capture stops at `|` and `#` so an aliased or anchored link resolves to the
@@ -174,6 +177,18 @@ export function handleVaultRoute(
   if (!opts.vaultDir) {
     sendJson(res, 501, { error: 'vault serving not configured' })
     return true
+  }
+
+  // TASK-2048 — matched BEFORE the notes root is computed, and given its own.
+  // The two roots are resolved at their own call sites rather than sharing a
+  // `root` variable, so a later edit cannot reach 10-Projects through the
+  // notes root or the reverse.
+  if (rawPath.startsWith(PROJECTS_ROUTE)) {
+    return handleProjectVault(
+      res,
+      path.resolve(opts.vaultDir, PROJECTS_DIR),
+      rawPath.slice(PROJECTS_ROUTE.length)
+    )
   }
 
   // The sandbox root is 30-Knowledge, never the vault itself — this is what

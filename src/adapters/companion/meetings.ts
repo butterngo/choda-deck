@@ -30,6 +30,7 @@ import type { IncomingMessage, ServerResponse } from 'http'
 import { handleTranscribe, readTranscribedAt } from './meeting-transcribe'
 import { handleNoteDraft } from './meeting-note'
 import { handleMeetingFiles, type RegisteredWorkspace } from './meeting-files'
+import { TITLE_MAX_CHARS, generateTitle, normalizeTitle, writeTitle } from './meeting-title'
 
 const ROUTE_PREFIX = '/meetings'
 
@@ -49,6 +50,13 @@ export const CHUNK_MAX_BYTES = 5 * 1024 * 1024
  */
 export const RETENTION_COUNT = 20
 
+/**
+ * A rename carries one short string. The cap is three orders of magnitude over
+ * TITLE_MAX_CHARS so an over-long title is refused by the validator with a clear
+ * message rather than by the transport with a 413.
+ */
+export const RENAME_MAX_BYTES = 64 * 1024
+
 /** The two streams a meeting records. They are stored separately, never mixed. */
 const TRACKS = ['mic', 'loopback'] as const
 export type Track = (typeof TRACKS)[number]
@@ -66,6 +74,15 @@ export interface MeetingMeta {
   endedAt: string
   tracks: Track[]
   bytes: number
+  /**
+   * TASK-2043 — a human-readable subject line. Generated from the transcript
+   * after transcription and editable by hand (PATCH /meetings/:id).
+   *
+   * Optional, and absent on every meeting recorded before this field existed.
+   * Null is a first-class value, not a failure: the model may be unconfigured or
+   * may decline, and the row falls back to the start timestamp as it always did.
+   */
+  title?: string | null
   /** TASK-1991 — when transcript.json was last written; null until transcribed. */
   transcribedAt?: string | null
   /**
@@ -237,6 +254,120 @@ function deleteMeetingAudio(res: ServerResponse, artifactsDir: string, id: strin
 }
 
 /**
+ * DELETE /meetings/:id — remove the meeting entirely: audio, transcript, note,
+ * directory and all.
+ *
+ * Deliberately NOT what dropAudio does, and deliberately not built on it. The
+ * retention cap (TASK-2009, option A) keeps every row forever and only reclaims
+ * the expensive half, which is right for a cap running on its own schedule — it
+ * must never silently destroy a meeting nobody chose to lose. This route is the
+ * opposite case: an explicit, irreversible request for the row to be gone. The
+ * two are near-neighbours in behaviour and opposite in intent, so they stay
+ * separate functions; a shared helper would invite one caller's semantics to
+ * drift onto the other's, which is exactly the mistake TASK-2003 recorded and
+ * TASK-2009 had to correct.
+ *
+ * `id` is checked against ID_RE by the router before this is reached, so the
+ * traversal case cannot get here — but the check is repeated anyway, because a
+ * recursive rm is the one call in this file where being wrong is unrecoverable.
+ */
+function deleteMeeting(res: ServerResponse, artifactsDir: string, id: string): void {
+  if (!ID_RE.test(id)) {
+    sendJson(res, 400, { error: 'invalid meeting id' })
+    return
+  }
+  const dir = meetingDir(artifactsDir, id)
+  if (!fs.existsSync(dir)) {
+    sendJson(res, 404, { error: 'meeting not found' })
+    return
+  }
+  const meta = readMeta(artifactsDir, id)
+  // No meta.json means a recording still being written to. Deleting it would
+  // pull the directory out from under a recorder still appending chunks — the
+  // same reason deleteMeetingAudio refuses, and the same reason listMeetings
+  // skips these.
+  if (!meta || !meta.endedAt) {
+    sendJson(res, 409, { error: 'not finalized' })
+    return
+  }
+
+  fs.rmSync(dir, { recursive: true, force: true })
+  sendJson(res, 200, { id, deleted: true })
+}
+
+/**
+ * PATCH /meetings/:id — rename a meeting.
+ *
+ * The generated title (meeting-title.ts) is a guess made from the opening of a
+ * transcript; the person who sat in the meeting knows better. This is the only
+ * field the route will write, and `writeTitle` re-reads meta from disk so a
+ * rename cannot revert a `transcribedAt` or `audioDeletedAt` written meanwhile.
+ *
+ * A title of null clears it and the row falls back to the timestamp — that is a
+ * deliberate state, distinct from an empty string, which is refused.
+ */
+async function renameMeeting(
+  req: IncomingMessage,
+  res: ServerResponse,
+  artifactsDir: string,
+  id: string
+): Promise<void> {
+  if (!fs.existsSync(meetingDir(artifactsDir, id))) {
+    sendJson(res, 404, { error: 'meeting not found' })
+    return
+  }
+
+  let raw: Buffer
+  try {
+    raw = await readCappedBody(req, RENAME_MAX_BYTES)
+  } catch (err) {
+    if (err instanceof BodyTooLargeError) {
+      sendJson(res, 413, { error: `body exceeds ${RENAME_MAX_BYTES} bytes` })
+      return
+    }
+    throw err
+  }
+  let body: { title?: unknown }
+  try {
+    body = raw.length === 0 ? {} : (JSON.parse(raw.toString('utf8')) as { title?: unknown })
+  } catch {
+    sendJson(res, 400, { error: 'body is not valid JSON' })
+    return
+  }
+
+  if (!('title' in body)) {
+    sendJson(res, 400, { error: 'title is required' })
+    return
+  }
+  // Rejected BEFORE normalizeTitle, which would otherwise map both to null and
+  // silently turn a typo into a clear. Clearing has to be asked for explicitly.
+  if (body.title !== null && typeof body.title !== 'string') {
+    sendJson(res, 400, { error: 'title must be a string or null' })
+    return
+  }
+  // Length is judged on what was TYPED, before normalizeTitle truncates. The
+  // truncation exists for the model — a clipped guess beats no title — but
+  // silently shortening a person's own words would hide the edit from them.
+  if (typeof body.title === 'string' && body.title.trim().length > TITLE_MAX_CHARS) {
+    sendJson(res, 400, { error: `title must be at most ${TITLE_MAX_CHARS} characters` })
+    return
+  }
+  const title = body.title === null ? null : normalizeTitle(body.title)
+  if (body.title !== null && title === null) {
+    sendJson(res, 400, { error: 'title must not be empty' })
+    return
+  }
+
+  const next = writeTitle(artifactsDir, id, title)
+  if (!next) {
+    // A directory with no readable meta.json is a recording still in progress.
+    sendJson(res, 409, { error: 'not finalized' })
+    return
+  }
+  sendJson(res, 200, { id, title: next.title ?? null })
+}
+
+/**
  * Drop the AUDIO of finalized recordings past the `keep` most recent, and keep
  * their transcripts. Returns the ids whose audio was dropped. In-progress
  * recordings are invisible to this (see listMeetings).
@@ -327,6 +458,24 @@ export async function handleMeetingsRoute(
 
   const rest = pathname.slice(ROUTE_PREFIX.length + 1).split('/')
   const [id, action] = rest
+
+  // TASK-2043 — the one ONE-segment route, and the one PATCH. Matched before the
+  // two-segment check below, which would otherwise answer it with a 400.
+  if (rest.length === 1 && ID_RE.test(id ?? '')) {
+    if (method === 'DELETE') {
+      // TASK-2044. Checked here rather than folded into the /audio branch: the
+      // trailing segment is what separates "drop the audio" from "delete the
+      // meeting", and rest.length already distinguishes them structurally.
+      deleteMeeting(res, artifactsDir, id)
+      return true
+    }
+    if (method !== 'PATCH') {
+      sendJson(res, 405, { error: 'method not allowed' })
+      return true
+    }
+    await renameMeeting(req, res, artifactsDir, id)
+    return true
+  }
 
   // TASK-1992 — the one three-segment route. Matched before the two-segment
   // check below, which would otherwise answer it with a 400.
@@ -425,7 +574,17 @@ export async function handleMeetingsRoute(
     await handleTranscribe(res, {
       artifactsDir,
       id,
-      speechCredentialsFile: opts.speechCredentialsFile
+      speechCredentialsFile: opts.speechCredentialsFile,
+      // TASK-2043 — name the meeting from what was just transcribed. Only when
+      // it has no title: a generated guess must never overwrite a typed one.
+      onTranscript: async (segments) => {
+        if (readMeta(artifactsDir, id)?.title) return
+        const title = await generateTitle(segments, {
+          dataDir: opts.dataDir,
+          fetchImpl: opts.fetchImpl
+        })
+        if (title) writeTitle(artifactsDir, id, title)
+      }
     })
     return true
   }
