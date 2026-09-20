@@ -18,13 +18,15 @@ import * as net from 'net'
 import { startCompanionServer, COMPANION_BIND, type CompanionServerHandle } from './http-server'
 import type { CompanionServices } from './service-factory'
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
-import { readProjectVault, type ProjectVault } from './vault-projects'
+import { readProjectVault, VAULT_FILE_MAX_BYTES, type ProjectVault } from './vault-projects'
 
 const TOKEN = 'vault-projects-test-token'
 
 /** Planted in 20-Areas. Its presence in any body means the scoping failed. */
 const PRIVATE_MARKER = 'BUTTER_PRIVATE_PREFERENCES_DO_NOT_SERVE'
 
+/** Real note shape, so the contents test proves bytes rather than a placeholder. */
+const NOTE_MD = ['# Chi Kate', '', '## Quyet dinh', '', '| # | Noi dung |', '| --- | --- |', '| D1 | Chot UI |', ''].join('\n')
 let vaultDir: string
 let handle: CompanionServerHandle
 let base: string
@@ -96,7 +98,7 @@ beforeAll(async () => {
   // 1. meetings, no context.md — juvenis-maxime
   const jm = path.join(projectsRoot(), 'juvenis-maxime', 'meetings')
   fs.mkdirSync(path.join(jm, '2026-09-17-chi-kate-v3'), { recursive: true })
-  fs.writeFileSync(path.join(jm, '2026-09-17-chi-kate-v3', 'note.md'), 'a'.repeat(120), 'utf8')
+  fs.writeFileSync(path.join(jm, '2026-09-17-chi-kate-v3', 'note.md'), NOTE_MD, 'utf8')
   fs.writeFileSync(path.join(jm, '2026-09-17-chi-kate-v3', 'transcript.md'), 'b'.repeat(240), 'utf8')
   fs.mkdirSync(path.join(jm, '2026-09-20-kate'), { recursive: true })
   fs.writeFileSync(path.join(jm, '2026-09-20-kate', 'note.md'), 'c'.repeat(60), 'utf8')
@@ -110,6 +112,16 @@ beforeAll(async () => {
   // 3. a folder with context.md and no meetings at all — choda-deck
   fs.mkdirSync(path.join(projectsRoot(), 'choda-deck'), { recursive: true })
   fs.writeFileSync(path.join(projectsRoot(), 'choda-deck', 'context.md'), '# ctx\n', 'utf8')
+
+  // A file sitting BESIDE the two allowlisted ones. Reading it must be refused
+  // on the name, not merely fail to be found.
+  fs.writeFileSync(path.join(jm, '2026-09-17-chi-kate-v3', 'secrets.md'), 'NOT_ALLOWLISTED', 'utf8')
+
+  // Over and just under the ceiling, so the boundary is tested from both sides.
+  const big = path.join(projectsRoot(), 'bulky', 'meetings', '2026-01-01-huge')
+  fs.mkdirSync(big, { recursive: true })
+  fs.writeFileSync(path.join(big, 'transcript.md'), 'z'.repeat(VAULT_FILE_MAX_BYTES + 1), 'utf8')
+  fs.writeFileSync(path.join(big, 'note.md'), 'y'.repeat(VAULT_FILE_MAX_BYTES - 1), 'utf8')
 
   // 4. a hand-made folder whose name carries no date
   fs.mkdirSync(path.join(projectsRoot(), 'mantu', 'meetings', 'notes-from-tuesday'), {
@@ -171,7 +183,7 @@ describe('GET /vault/projects/:id', () => {
     expect(v3?.date).toBe('2026-09-17')
     expect(v3?.slug).toBe('chi-kate-v3')
     expect(v3?.files).toEqual([
-      { name: 'note.md', present: true, bytes: 120 },
+      { name: 'note.md', present: true, bytes: Buffer.byteLength(NOTE_MD) },
       { name: 'transcript.md', present: true, bytes: 240 }
     ])
   })
@@ -344,5 +356,123 @@ describe('readProjectVault', () => {
     const m = readProjectVault(projectsRoot(), 'zero-byte').meetings[0]
     expect(m.files[0]).toEqual({ name: 'note.md', present: true, bytes: 0 })
     expect(m.files[1]).toEqual({ name: 'transcript.md', present: false, bytes: null })
+  })
+})
+
+describe('GET /vault/projects/:id/meetings/:folder/:file', () => {
+  const NOTE = '/vault/projects/juvenis-maxime/meetings/2026-09-17-chi-kate-v3/note.md'
+
+  // AC-1
+  it('returns the file exactly as it is on disk', async () => {
+    const r = await get(NOTE)
+    expect(r.status).toBe(200)
+    const body = r.json as unknown as { markdown?: string; bytes?: number; file?: string }
+    expect(body.markdown).toBe(NOTE_MD)
+    expect(body.bytes).toBe(Buffer.byteLength(NOTE_MD))
+    expect(body.file).toBe('note.md')
+  })
+
+  it('serves transcript.md as well as note.md', async () => {
+    const r = await get('/vault/projects/juvenis-maxime/meetings/2026-09-17-chi-kate-v3/transcript.md')
+    expect(r.status).toBe(200)
+    expect((r.json as unknown as { markdown?: string }).markdown).toBe('b'.repeat(240))
+  })
+
+  // AC-1 — the allowlist, proven against a file that really is there
+  it('refuses a filename outside the allowlist even though it exists', async () => {
+    const onDisk = path.join(projectsRoot(), 'juvenis-maxime', 'meetings', '2026-09-17-chi-kate-v3', 'secrets.md')
+    expect(fs.existsSync(onDisk)).toBe(true)
+
+    const r = await get('/vault/projects/juvenis-maxime/meetings/2026-09-17-chi-kate-v3/secrets.md')
+    expect(r.status).toBe(400)
+    expect(r.text).not.toContain('NOT_ALLOWLISTED')
+  })
+
+  // AC-2 — raw socket, because fetch normalises the traversal away
+  it.each([
+    ['..', 'dot-dot folder'],
+    ['.', 'dot folder'],
+    ['%2e%2e', 'encoded dot-dot'],
+    ['..%2F..%2F..%2F20-Areas', 'encoded separators'],
+    ['a%5Cb', 'backslash'],
+    ['C:', 'drive letter']
+  ])('refuses the meeting folder %s (%s) and reads nothing', async (folder) => {
+    const r = await rawGet(`/vault/projects/juvenis-maxime/meetings/${folder}/note.md`)
+    expect(r.status).toBeGreaterThanOrEqual(400)
+    expect(r.status).toBeLessThan(500)
+    expect(r.body).not.toContain(PRIVATE_MARKER)
+  })
+
+  // AC-3
+  it('cannot read 20-Areas through the file route by any input here', async () => {
+    const attempts = [
+      '/vault/projects/20-Areas/meetings/x/note.md',
+      '/vault/projects/juvenis-maxime/meetings/..%2F..%2F..%2F20-Areas/note.md',
+      '/vault/projects/..%2F20-Areas/meetings/x/note.md',
+      '/vault/projects/juvenis-maxime/meetings/2026-09-17-chi-kate-v3/..%2F..%2F..%2F..%2F20-Areas%2Fpreferences.md'
+    ]
+    for (const a of attempts) {
+      expect((await rawGet(a)).body).not.toContain(PRIVATE_MARKER)
+    }
+  })
+
+  // AC-4 — three different absences
+  it('tells an absent project, an absent folder and an absent file apart', async () => {
+    const noProject = await get('/vault/projects/english-companion/meetings/2026-01-01-x/note.md')
+    const noFolder = await get('/vault/projects/juvenis-maxime/meetings/2099-01-01-nope/note.md')
+    const noFile = await get('/vault/projects/headless-cms/meetings/2026-09-19-lex/note.md')
+
+    for (const r of [noProject, noFolder, noFile]) expect(r.status).toBe(404)
+    const reasons = [noProject.text, noFolder.text, noFile.text]
+    expect(new Set(reasons).size).toBe(3)
+  })
+
+  // AC-6 — both sides of the ceiling
+  it('refuses a file over the ceiling rather than truncating it', async () => {
+    const r = await get('/vault/projects/bulky/meetings/2026-01-01-huge/transcript.md')
+    expect(r.status).toBe(413)
+    const body = r.json as unknown as { bytes?: number; maxBytes?: number; markdown?: string }
+    expect(body.maxBytes).toBe(VAULT_FILE_MAX_BYTES)
+    expect(body.bytes).toBe(VAULT_FILE_MAX_BYTES + 1)
+    // Nothing of the file came back — refused, not clipped.
+    expect(body.markdown).toBeUndefined()
+    expect(r.text).not.toContain('zzzzzzzzzz')
+  })
+
+  it('still serves a file one byte under the ceiling', async () => {
+    const r = await get('/vault/projects/bulky/meetings/2026-01-01-huge/note.md')
+    expect(r.status).toBe(200)
+    expect((r.json as unknown as { bytes?: number }).bytes).toBe(VAULT_FILE_MAX_BYTES - 1)
+  })
+
+  // AC-5
+  it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('refuses %s on the file route', async (m) => {
+    const r = await send(m, NOTE)
+    expect(r.status).toBeGreaterThanOrEqual(400)
+    expect(r.status).toBeLessThan(500)
+  })
+
+  it('requires the bridge token', async () => {
+    const r = await get(NOTE, {})
+    expect(r.status).toBe(401)
+    expect(r.text).not.toContain('Chi Kate')
+  })
+
+  it('does not answer a path with the wrong shape', async () => {
+    for (const p of [
+      '/vault/projects/juvenis-maxime/note.md',
+      '/vault/projects/juvenis-maxime/notmeetings/2026-09-17-chi-kate-v3/note.md',
+      '/vault/projects/juvenis-maxime/meetings/2026-09-17-chi-kate-v3/note.md/extra'
+    ]) {
+      const r = await rawGet(p)
+      expect(r.status).toBeGreaterThanOrEqual(400)
+      expect(r.body).not.toContain('Chi Kate')
+    }
+  })
+
+  it('still lists, so the reading route did not replace the listing one', async () => {
+    const r = await get('/vault/projects/juvenis-maxime')
+    expect(r.status).toBe(200)
+    expect(r.json.exists).toBe(true)
   })
 })
