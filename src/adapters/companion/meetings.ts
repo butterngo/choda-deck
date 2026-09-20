@@ -254,6 +254,48 @@ function deleteMeetingAudio(res: ServerResponse, artifactsDir: string, id: strin
 }
 
 /**
+ * DELETE /meetings/:id — remove the meeting entirely: audio, transcript, note,
+ * directory and all.
+ *
+ * Deliberately NOT what dropAudio does, and deliberately not built on it. The
+ * retention cap (TASK-2009, option A) keeps every row forever and only reclaims
+ * the expensive half, which is right for a cap running on its own schedule — it
+ * must never silently destroy a meeting nobody chose to lose. This route is the
+ * opposite case: an explicit, irreversible request for the row to be gone. The
+ * two are near-neighbours in behaviour and opposite in intent, so they stay
+ * separate functions; a shared helper would invite one caller's semantics to
+ * drift onto the other's, which is exactly the mistake TASK-2003 recorded and
+ * TASK-2009 had to correct.
+ *
+ * `id` is checked against ID_RE by the router before this is reached, so the
+ * traversal case cannot get here — but the check is repeated anyway, because a
+ * recursive rm is the one call in this file where being wrong is unrecoverable.
+ */
+function deleteMeeting(res: ServerResponse, artifactsDir: string, id: string): void {
+  if (!ID_RE.test(id)) {
+    sendJson(res, 400, { error: 'invalid meeting id' })
+    return
+  }
+  const dir = meetingDir(artifactsDir, id)
+  if (!fs.existsSync(dir)) {
+    sendJson(res, 404, { error: 'meeting not found' })
+    return
+  }
+  const meta = readMeta(artifactsDir, id)
+  // No meta.json means a recording still being written to. Deleting it would
+  // pull the directory out from under a recorder still appending chunks — the
+  // same reason deleteMeetingAudio refuses, and the same reason listMeetings
+  // skips these.
+  if (!meta || !meta.endedAt) {
+    sendJson(res, 409, { error: 'not finalized' })
+    return
+  }
+
+  fs.rmSync(dir, { recursive: true, force: true })
+  sendJson(res, 200, { id, deleted: true })
+}
+
+/**
  * PATCH /meetings/:id — rename a meeting.
  *
  * The generated title (meeting-title.ts) is a guess made from the opening of a
@@ -420,6 +462,13 @@ export async function handleMeetingsRoute(
   // TASK-2043 — the one ONE-segment route, and the one PATCH. Matched before the
   // two-segment check below, which would otherwise answer it with a 400.
   if (rest.length === 1 && ID_RE.test(id ?? '')) {
+    if (method === 'DELETE') {
+      // TASK-2044. Checked here rather than folded into the /audio branch: the
+      // trailing segment is what separates "drop the audio" from "delete the
+      // meeting", and rest.length already distinguishes them structurally.
+      deleteMeeting(res, artifactsDir, id)
+      return true
+    }
     if (method !== 'PATCH') {
       sendJson(res, 405, { error: 'method not allowed' })
       return true
