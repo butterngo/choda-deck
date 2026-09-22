@@ -50,6 +50,15 @@ export const MAX_CHARS_PER_SECOND = 100
 /** A segment grows until a sentence ends or it reaches this length. */
 export const SEGMENT_MAX_MS = 12_000
 
+/**
+ * How many times one track is sent to Azure before its broken timings are accepted
+ * as the answer. The corruption above is transient: on 2026-09-22 meeting
+ * m-muc1vdsp-npyokc failed the guard in the app and came back clean (0 of 104
+ * segments flagged) when the same audio was sent again. Failing on the first bad
+ * response turned a retryable glitch into a dead end the user had to diagnose.
+ */
+export const TRANSCRIBE_ATTEMPTS = 3
+
 const SPEAKER: Record<Track, 'Me' | 'Them'> = { mic: 'Me', loopback: 'Them' }
 const TRACK_ORDER: Track[] = ['mic', 'loopback']
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/
@@ -209,18 +218,21 @@ function isNoSpeech(body: string): boolean {
   }
 }
 
+type FetchFn = (url: string, init: RequestInit) => Promise<Response>
+
 async function transcribeTrack(
   audio: Buffer,
   track: Track,
-  creds: SpeechCredentials
-): Promise<TranscriptSegment[]> {
+  creds: SpeechCredentials,
+  fetchFn: FetchFn
+): Promise<{ segments: TranscriptSegment[]; raw: string }> {
   const form = new FormData()
   form.append('audio', new Blob([new Uint8Array(audio)], { type: 'audio/webm' }), `${track}.webm`)
   form.append('definition', JSON.stringify({ locales: creds.locales }))
 
   let res: Response
   try {
-    res = await fetch(
+    res = await fetchFn(
       `${creds.endpoint}/speechtotext/transcriptions:transcribe?api-version=${FAST_API_VERSION}`,
       { method: 'POST', headers: { 'Ocp-Apim-Subscription-Key': creds.key }, body: form }
     )
@@ -233,7 +245,7 @@ async function transcribeTrack(
   // Treating that as fatal threw away the OTHER track's speech with it, so a
   // meeting with one quiet side could not be transcribed at all. Only this one
   // code is downgraded: any other 422 is a real problem with the audio.
-  if (res.status === 422 && isNoSpeech(text)) return []
+  if (res.status === 422 && isNoSpeech(text)) return { segments: [], raw: text }
   if (!res.ok) {
     // Azure's own error body can be long; keep it short and never echo the key.
     throw new TranscriptionError(`${track}: HTTP ${res.status} ${text.slice(0, 200).replaceAll(creds.key, '')}`)
@@ -245,7 +257,38 @@ async function transcribeTrack(
     throw new TranscriptionError(`${track}: response is not JSON`)
   }
   if (!Array.isArray(body.phrases)) throw new TranscriptionError(`${track}: response has no phrases[]`)
-  return body.phrases.flatMap((p) => splitPhrase(p, track))
+  return { segments: body.phrases.flatMap((p) => splitPhrase(p, track)), raw: text }
+}
+
+/**
+ * Transcribe one track, re-sending it while Azure's answer fails the plausibility
+ * guard. Each rejected response is kept beside the meeting as
+ * `rejected-<track>-<n>.json` — Azure will not reproduce it on request, and without
+ * the body nobody can tell how often this happens or what shape it takes.
+ *
+ * After the last attempt the (still implausible) segments are returned, and the
+ * caller's guard refuses them exactly as before.
+ */
+export async function transcribeTrackWithRetry(
+  audio: Buffer,
+  track: Track,
+  creds: SpeechCredentials,
+  opts: { dir: string; attempts?: number; fetchFn?: FetchFn }
+): Promise<TranscriptSegment[]> {
+  const attempts = opts.attempts ?? TRANSCRIBE_ATTEMPTS
+  const fetchFn = opts.fetchFn ?? ((url, init) => fetch(url, init))
+  let segments: TranscriptSegment[] = []
+  for (let n = 1; n <= attempts; n++) {
+    const result = await transcribeTrack(audio, track, creds, fetchFn)
+    segments = result.segments
+    if (findImplausibleSegments(segments).length === 0) return segments
+    try {
+      fs.writeFileSync(path.join(opts.dir, `rejected-${track}-${n}.json`), result.raw, 'utf8')
+    } catch {
+      // Keeping evidence must never be the reason a transcription fails.
+    }
+  }
+  return segments
 }
 
 /** When transcript.json was last written, or null. Read by GET /meetings. */
@@ -300,7 +343,7 @@ export async function handleTranscribe(
     // The two tracks are independent requests; a 25-minute meeting takes ~45 s
     // per track, so running them in parallel halves the wait.
     const results = await Promise.all(
-      tracks.map(async (t) => [t, await transcribeTrack(fs.readFileSync(path.join(dir, `${t}.webm`)), t, creds)] as const)
+      tracks.map(async (t) => [t, await transcribeTrackWithRetry(fs.readFileSync(path.join(dir, `${t}.webm`)), t, creds, { dir })] as const)
     )
     byTrack = Object.fromEntries(results)
   } catch (err) {
