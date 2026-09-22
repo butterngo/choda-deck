@@ -50,6 +50,9 @@ export const MAX_CHARS_PER_SECOND = 100
 /** A segment grows until a sentence ends or it reaches this length. */
 export const SEGMENT_MAX_MS = 12_000
 
+/** One try plus one retry for a response that fails the physics check. */
+export const MAX_TRACK_ATTEMPTS = 2
+
 const SPEAKER: Record<Track, 'Me' | 'Them'> = { mic: 'Me', loopback: 'Them' }
 const TRACK_ORDER: Track[] = ['mic', 'loopback']
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/
@@ -209,11 +212,13 @@ function isNoSpeech(body: string): boolean {
   }
 }
 
-async function transcribeTrack(
-  audio: Buffer,
-  track: Track,
-  creds: SpeechCredentials
-): Promise<TranscriptSegment[]> {
+interface TrackResult {
+  segments: TranscriptSegment[]
+  /** Azure's response body exactly as received, kept so a rejected one can be saved. */
+  raw: string
+}
+
+async function transcribeTrack(audio: Buffer, track: Track, creds: SpeechCredentials): Promise<TrackResult> {
   const form = new FormData()
   form.append('audio', new Blob([new Uint8Array(audio)], { type: 'audio/webm' }), `${track}.webm`)
   form.append('definition', JSON.stringify({ locales: creds.locales }))
@@ -233,7 +238,7 @@ async function transcribeTrack(
   // Treating that as fatal threw away the OTHER track's speech with it, so a
   // meeting with one quiet side could not be transcribed at all. Only this one
   // code is downgraded: any other 422 is a real problem with the audio.
-  if (res.status === 422 && isNoSpeech(text)) return []
+  if (res.status === 422 && isNoSpeech(text)) return { segments: [], raw: text }
   if (!res.ok) {
     // Azure's own error body can be long; keep it short and never echo the key.
     throw new TranscriptionError(`${track}: HTTP ${res.status} ${text.slice(0, 200).replaceAll(creds.key, '')}`)
@@ -245,7 +250,34 @@ async function transcribeTrack(
     throw new TranscriptionError(`${track}: response is not JSON`)
   }
   if (!Array.isArray(body.phrases)) throw new TranscriptionError(`${track}: response has no phrases[]`)
-  return body.phrases.flatMap((p) => splitPhrase(p, track))
+  return { segments: body.phrases.flatMap((p) => splitPhrase(p, track)), raw: text }
+}
+
+/**
+ * TASK-2011 follow-up — the corrupt response is transient. It happened on
+ * 2026-09-17 and again on 2026-09-22 (m-muc1vdsp-npyokc), and both times the same
+ * audio sent again came back clean. So a track whose segments fail the physics
+ * check is asked for once more before the meeting is failed.
+ *
+ * Every rejected body is written beside the audio first: Azure will not produce it
+ * again on request, and on 2026-09-22 it was lost because nothing kept it.
+ */
+async function transcribeTrackChecked(
+  dir: string,
+  audio: Buffer,
+  track: Track,
+  creds: SpeechCredentials
+): Promise<{ segments: TranscriptSegment[]; implausible: TranscriptSegment[]; rejected: string[] }> {
+  const rejected: string[] = []
+  for (let attempt = 1; ; attempt++) {
+    const { segments, raw } = await transcribeTrack(audio, track, creds)
+    const implausible = findImplausibleSegments(segments)
+    if (implausible.length === 0) return { segments, implausible, rejected }
+    const file = `rejected-${track}-${new Date().toISOString().replace(/[:.]/g, '-')}-${attempt}.json`
+    fs.writeFileSync(path.join(dir, file), raw, 'utf8')
+    rejected.push(file)
+    if (attempt === MAX_TRACK_ATTEMPTS) return { segments, implausible, rejected }
+  }
 }
 
 /** When transcript.json was last written, or null. Read by GET /meetings. */
@@ -306,14 +338,16 @@ export async function handleTranscribe(
   }
 
   const tracks = meta.tracks.filter((t) => fs.existsSync(path.join(dir, `${t}.webm`)))
-  let byTrack: Partial<Record<Track, TranscriptSegment[]>>
+  let checked: Array<{ track: Track; segments: TranscriptSegment[]; implausible: TranscriptSegment[]; rejected: string[] }>
   try {
     // The two tracks are independent requests; a 25-minute meeting takes ~45 s
     // per track, so running them in parallel halves the wait.
-    const results = await Promise.all(
-      tracks.map(async (t) => [t, await transcribeTrack(fs.readFileSync(path.join(dir, `${t}.webm`)), t, creds)] as const)
+    checked = await Promise.all(
+      tracks.map(async (t) => ({
+        track: t,
+        ...(await transcribeTrackChecked(dir, fs.readFileSync(path.join(dir, `${t}.webm`)), t, creds))
+      }))
     )
-    byTrack = Object.fromEntries(results)
   } catch (err) {
     if (err instanceof TranscriptionError) {
       sendJson(res, 502, { error: 'transcription failed', detail: err.message })
@@ -322,19 +356,19 @@ export async function handleTranscribe(
     throw err
   }
 
-  const segments = mergeSegments(byTrack)
-
   // Refuse to write a transcript that cannot be true. Writing it is worse than
   // failing: the segments feed ▶ links in a saved note, where a wrong timestamp
   // invites the reader to check a decision and then sends them to the wrong
   // minute. A 502 is visible and retryable; a bad transcript is neither.
-  const implausible = findImplausibleSegments(segments)
+  const implausible = checked.flatMap((c) => c.implausible)
   if (implausible.length > 0) {
     const worst = implausible[0]
     sendJson(res, 502, {
       error: 'transcription returned implausible timings',
       kind: 'implausible-timings',
       segments: implausible.length,
+      attempts: MAX_TRACK_ATTEMPTS,
+      rejectedFiles: checked.flatMap((c) => c.rejected),
       example: {
         track: worst.track,
         startMs: worst.startMs,
@@ -344,6 +378,8 @@ export async function handleTranscribe(
     })
     return
   }
+
+  const segments = mergeSegments(Object.fromEntries(checked.map((c) => [c.track, c.segments])))
 
   const transcript: Transcript = {
     meetingId: id,

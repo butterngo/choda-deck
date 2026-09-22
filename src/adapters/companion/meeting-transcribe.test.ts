@@ -39,6 +39,8 @@ let azureUrl: string
 let azureCalls: Array<{ track: string; key: string | undefined }> = []
 /** What the stub answers, per track. A number is an HTTP error status; an object is a status + body. */
 let azureReply: Record<string, StubPhrase[] | number | { status: number; body: unknown }> = {}
+/** Replies served in order before falling back to azureReply — for retry tests. */
+let azureQueue: Record<string, StubPhrase[][]> = {}
 
 const NO_SPEECH = {
   status: 422,
@@ -61,7 +63,7 @@ beforeAll(async () => {
       const body = Buffer.concat(chunks).toString('latin1')
       const track = /filename="(mic|loopback)\.webm"/.exec(body)?.[1] ?? '?'
       azureCalls.push({ track, key: req.headers['ocp-apim-subscription-key'] as string | undefined })
-      const reply = azureReply[track]
+      const reply = azureQueue[track]?.shift() ?? azureReply[track]
       if (reply !== undefined && typeof reply === 'object' && !Array.isArray(reply)) {
         res.writeHead(reply.status, { 'content-type': 'application/json' })
         res.end(JSON.stringify(reply.body))
@@ -121,6 +123,7 @@ beforeEach(() => {
   fs.rmSync(path.join(artifactsDir, MEETINGS_DIR), { recursive: true, force: true })
   azureCalls = []
   azureReply = {}
+  azureQueue = {}
   writeCreds(KEY)
 })
 
@@ -366,5 +369,38 @@ describe('TASK-1999 AC-4 — a 500 on one track still fails the meeting', () => 
     const r = await transcribe('s4')
     expect(r.status).toBe(502)
     expect(r.json.error).toBe('transcription failed')
+  })
+})
+
+// The corrupt shape seen on 2026-09-17: a whole sentence claiming 10 ms.
+const CORRUPT = [phrase(767500, 'x'.repeat(299), 10)]
+
+describe('TASK-2011 follow-up AC-1 — one transient corrupt response is retried', () => {
+  it('mic corrupt then clean → 200, clean text on disk, rejected body kept', async () => {
+    seedMeeting('r1')
+    azureQueue = { mic: [CORRUPT] }
+    azureReply = { mic: [phrase(1000, 'Sạch.')], loopback: [phrase(3000, 'Hai.')] }
+    const r = await transcribe('r1')
+    expect(r.status).toBe(200)
+    expect(transcriptOnDisk('r1').segments.map((s) => s.text)).toEqual(['Sạch.', 'Hai.'])
+    // mic twice, loopback once: only the bad track is asked again.
+    expect(azureCalls.map((c) => c.track).sort()).toEqual(['loopback', 'mic', 'mic'])
+    const kept = fs.readdirSync(meetingDir('r1')).filter((f) => f.startsWith('rejected-mic-'))
+    expect(kept).toHaveLength(1)
+    expect(fs.readFileSync(path.join(meetingDir('r1'), kept[0]), 'utf8')).toContain('767500')
+  })
+})
+
+describe('TASK-2011 follow-up AC-2 — corrupt twice still refuses to write', () => {
+  it('502 implausible-timings, no transcript, both attempts named', async () => {
+    seedMeeting('r2')
+    azureReply = { mic: CORRUPT, loopback: [] }
+    const r = await transcribe('r2')
+    expect(r.status).toBe(502)
+    expect(r.json.kind).toBe('implausible-timings')
+    expect(r.json.attempts).toBe(2)
+    expect(r.json.rejectedFiles).toHaveLength(2)
+    expect(fs.existsSync(path.join(meetingDir('r2'), 'transcript.json'))).toBe(false)
+    expect(azureCalls.filter((c) => c.track === 'mic')).toHaveLength(2)
   })
 })
