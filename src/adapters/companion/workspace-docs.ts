@@ -63,6 +63,40 @@ export function isBinaryPath(relPath: string): boolean {
   return BINARY_EXT.has(relPath.slice(dot).toLowerCase())
 }
 
+/**
+ * TASK-2142 — the one binary family served as BYTES: raster images, so an HTML
+ * report's `<img src="screenshots/…">` can be shown by the Docs pane, which
+ * fetches each one and inlines it (a sandboxed srcdoc frame cannot resolve a
+ * relative path, nor send the bridge token).
+ *
+ * Raster only. SVG is deliberately absent: it is text that can carry script, and
+ * it already takes the text path like any other source file.
+ */
+const IMAGE_TYPES: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon'
+}
+
+/** The image content-type for this path, or null when it is not a served image. */
+export function imageTypeOf(relPath: string): string | null {
+  const dot = relPath.lastIndexOf('.')
+  if (dot < 0) return null
+  return IMAGE_TYPES[relPath.slice(dot).toLowerCase()] ?? null
+}
+
+/**
+ * Screenshots in a report are tens to hundreds of KB. The cap exists so a stray
+ * multi-hundred-MB bitmap cannot be read whole into the adapter's memory because
+ * a document happened to reference it.
+ */
+const MAX_IMAGE_BYTES = 25 * 1024 * 1024
+
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'out', 'coverage', '.next', 'release'])
 
 export interface WorkspaceDoc {
@@ -253,7 +287,12 @@ export async function handleWorkspaceDocsRoute(
   // Reading a .png as utf8 produces a string; it is just not the file, and a
   // viewer showing replacement characters would look like a rendering bug rather
   // than a category error.
-  if (isBinaryPath(rel)) {
+  //
+  // TASK-2142 — except a raster image on GET, which is served as bytes further
+  // down, AFTER the workspace and traversal guards. A PUT to one is still refused
+  // here: images are readable, not writable.
+  const imageType = imageTypeOf(rel)
+  if (isBinaryPath(rel) && !(imageType !== null && method === 'GET')) {
     sendJson(res, 415, { error: 'binary files are listed but not served as text', path: rel })
     return true
   }
@@ -271,6 +310,22 @@ export async function handleWorkspaceDocsRoute(
   }
   if (!fs.existsSync(target)) {
     sendJson(res, 404, { error: `not found: ${rel}` })
+    return true
+  }
+
+  if (imageType !== null) {
+    if (fs.statSync(target).size > MAX_IMAGE_BYTES) {
+      sendJson(res, 413, { error: 'image too large', path: rel })
+      return true
+    }
+    // Same posture as the HTML branch below: labelled honestly, never sniffed
+    // into something else, and sandboxed for any consumer that opens the URL.
+    res.writeHead(200, {
+      'content-type': imageType,
+      'x-content-type-options': 'nosniff',
+      'content-security-policy': 'sandbox'
+    })
+    res.end(fs.readFileSync(target))
     return true
   }
 
