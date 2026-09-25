@@ -80,6 +80,7 @@ beforeAll(() => {
   // Not html, but ends in letters that a sloppy `includes` would match.
   fs.writeFileSync(path.join(root, 'docs', 'nothtml.ts'), 'export const y = 2')
   fs.writeFileSync(path.join(root, 'docs', 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+  fs.writeFileSync(path.join(root, 'docs', 'bundle.zip'), Buffer.from([0x50, 0x4b, 3, 4]))
   fs.writeFileSync(path.join(path.dirname(root), 'secret-outside.html'), '<h1>SECRET</h1>')
   svc = {
     getWorkspace: async (asked: string) =>
@@ -155,7 +156,8 @@ describe('TASK-1956 — .html served as HTML', () => {
     expect(escaped.bytes.toString('utf8')).not.toContain('SECRET')
 
     // A binary extension is still refused as a category error, not served.
-    const png = await get('docs/logo.png')
-    expect(png.status).toBe(415)
+    // (TASK-2142 made raster images the one exception, so this uses a .zip.)
+    const zip = await get('docs/bundle.zip')
+    expect(zip.status).toBe(415)
   })
 })

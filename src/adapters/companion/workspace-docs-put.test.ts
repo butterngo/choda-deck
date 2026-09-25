@@ -220,10 +220,13 @@ describe('AC-6 — the size cap is a limit, not a wall', () => {
 })
 
 describe('AC-7 — the writer and the reader agree about binary', () => {
-  it('a PUT to a binary path is 415 and writes nothing, matching the GET', async () => {
+  // TASK-2142 — a raster image is now READABLE (GET 200, served as bytes) but
+  // still not writable. The writer must refuse it all the same: an image the
+  // Docs pane can show is not an image the text editor may overwrite.
+  it('a PUT to a binary path is 415 and writes nothing, even though an image GET now serves it', async () => {
     const before = onDisk('docs/logo.png')
     const read = await get('docs/logo.png')
-    expect(read.status).toBe(415)
+    expect(read.status).toBe(200)
 
     const { status } = await put('docs/logo.png', 'text now', hash(before))
     expect(status).toBe(415)

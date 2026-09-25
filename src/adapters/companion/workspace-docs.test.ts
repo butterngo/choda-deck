@@ -17,6 +17,8 @@ interface Captured {
   status: number
   body: unknown
   raw?: string
+  /** TASK-2142 — the payload as sent, for byte-exact image assertions. */
+  bytes?: Buffer
   headers?: Record<string, string>
 }
 
@@ -32,6 +34,7 @@ function fakeRes(cap: Captured): ServerResponse {
     // a BOM and rewrites line endings. Decoding HERE keeps every assertion below
     // meaning what it meant, without asking the route to lie about the file.
     end(payload?: string | Buffer) {
+      cap.bytes = Buffer.isBuffer(payload) ? payload : undefined
       cap.raw = Buffer.isBuffer(payload) ? payload.toString('utf8') : payload
       try {
         cap.body = payload ? JSON.parse(payload) : undefined
@@ -82,6 +85,11 @@ beforeAll(() => {
   fs.writeFileSync(path.join(root, 'src', 'app.ts'), 'export const x = 1')
   fs.writeFileSync(path.join(root, 'src', 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2]))
   fs.writeFileSync(path.join(root, 'node_modules', 'some-pkg', 'index.js'), 'module.exports = 1')
+  // TASK-2142 — a report's screenshots, plus a binary that must stay refused.
+  fs.mkdirSync(path.join(root, 'docs', 'shots'), { recursive: true })
+  fs.writeFileSync(path.join(root, 'docs', 'shots', 'a.jpg'), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x0d, 0x0a, 0, 0x80]))
+  fs.writeFileSync(path.join(root, 'src', 'bundle.zip'), Buffer.from([0x50, 0x4b, 3, 4]))
+  fs.writeFileSync(path.join(path.dirname(root), 'secret-outside.png'), 'SECRET')
 })
 
 afterAll(() => {
@@ -303,12 +311,58 @@ describe('serving a non-markdown file', () => {
 
   it('REFUSES a binary file with 415 rather than decoding it', async () => {
     const cap = {} as Captured
-    await handleWorkspaceDocsRoute(req('/workspace-docs/main/src/logo.png'), fakeRes(cap), {
+    // TASK-2142 moved this off .png: images are now served as bytes, so the
+    // refusal is proven on a binary that is still refused.
+    await handleWorkspaceDocsRoute(req('/workspace-docs/main/src/bundle.zip'), fakeRes(cap), {
       svc: svcFor(root),
       bridgeToken: TOKEN
     })
-    // Decoding png bytes as utf8 yields a string. It is just not the file.
+    // Decoding zip bytes as utf8 yields a string. It is just not the file.
     expect(cap.status).toBe(415)
+  })
+
+  describe('TASK-2142 — raster images served as bytes', () => {
+    const get = async (url: string, method = 'GET', token: string | null = TOKEN) => {
+      const cap = {} as Captured
+      await handleWorkspaceDocsRoute(req(url, method, token), fakeRes(cap), {
+        svc: svcFor(root),
+        bridgeToken: TOKEN
+      })
+      return cap
+    }
+
+    it('serves a .png and a .jpg byte-identical, with an image content-type', async () => {
+      const png = await get('/workspace-docs/main/src/logo.png')
+      expect(png.status).toBe(200)
+      expect(png.headers?.['content-type']).toBe('image/png')
+      expect(Buffer.compare(png.bytes as Buffer, fs.readFileSync(path.join(root, 'src', 'logo.png')))).toBe(0)
+
+      // CRLF and a high byte in the fixture: a utf8 round trip would change both.
+      const jpg = await get('/workspace-docs/main/docs/shots/a.jpg')
+      expect(jpg.status).toBe(200)
+      expect(jpg.headers?.['content-type']).toBe('image/jpeg')
+      expect(Buffer.compare(jpg.bytes as Buffer, fs.readFileSync(path.join(root, 'docs', 'shots', 'a.jpg')))).toBe(0)
+    })
+
+    it('sends nosniff and a sandbox CSP with the image', async () => {
+      const cap = await get('/workspace-docs/main/src/logo.png')
+      expect(cap.headers?.['x-content-type-options']).toBe('nosniff')
+      expect(cap.headers?.['content-security-policy']).toBe('sandbox')
+    })
+
+    it('refuses PUT to an image with 415 and leaves the file alone', async () => {
+      const before = fs.readFileSync(path.join(root, 'src', 'logo.png'))
+      const cap = await get('/workspace-docs/main/src/logo.png', 'PUT')
+      expect(cap.status).toBe(415)
+      expect(Buffer.compare(fs.readFileSync(path.join(root, 'src', 'logo.png')), before)).toBe(0)
+    })
+
+    it('still 401s without the token and 400s a traversal to an image', async () => {
+      expect((await get('/workspace-docs/main/src/logo.png', 'GET', null)).status).toBe(401)
+      const out = await get('/workspace-docs/main/../secret-outside.png')
+      expect(out.status).toBe(400)
+      expect(out.raw).not.toContain('SECRET')
+    })
   })
 
   it('rejects a traversal attempt in ALL mode too', async () => {
