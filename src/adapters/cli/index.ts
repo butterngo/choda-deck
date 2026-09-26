@@ -26,6 +26,7 @@ Usage: choda-deck <command> [options]
 Commands:
   mcp serve     Start MCP server (set MCP_TRANSPORT=http for Streamable HTTP)
   sync pull     Pull remote changes into the local SQLite DB (ADR-030 Phase 2)
+  activity digest  Write the daily Claude activity digest (TASK-2151)
 
 Meta:
   --help        Show this help
@@ -56,6 +57,10 @@ async function main(): Promise<number> {
       return dispatchMcp(sub)
     case 'sync':
       return dispatchSync(sub)
+    case 'activity': {
+      const { dispatchActivity } = await import('./activity-command')
+      return dispatchActivity(sub, argv.slice(2))
+    }
     default:
       process.stderr.write(`error: unknown command "${group}"\n\n${ROOT_HELP}`)
       return 2
