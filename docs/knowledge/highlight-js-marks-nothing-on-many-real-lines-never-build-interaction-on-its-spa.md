@@ -5,9 +5,9 @@ projectId: choda-deck
 scope: project
 refs:
   - path: docs/knowledge/ADR-033-deprecate-graphify.md
-    commitSha: f8dad2a57f08e23a4a33b7413432f75ece6d00bc
+    commitSha: d20e6d01973bbb485e1718d527877d5d1f256097
 createdAt: 2026-09-03
-lastVerifiedAt: 2026-09-03
+lastVerifiedAt: 2026-09-14
 affectedFeatureId: feature-companion-ui
 ---
 

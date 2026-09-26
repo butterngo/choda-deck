@@ -5,9 +5,9 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/adapters/companion/docker-exec.ts
-    commitSha: 1af24ace7b30b8c1e20dc8990840f59c9fce41dd
+    commitSha: fff687f39ed211e660c9ff07bae0f72bca67aa3f
 createdAt: 2026-09-07
-lastVerifiedAt: 2026-09-07
+lastVerifiedAt: 2026-09-21
 affectedFeatureId: feature-companion-cockpit
 ---
 

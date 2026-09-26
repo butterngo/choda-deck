@@ -5,17 +5,17 @@ projectId: choda-deck
 scope: project
 refs:
   - path: vitest.config.ts
-    commitSha: d69ac90d1948a597a8e0205859a3b567585d7bbb
+    commitSha: d20e6d01973bbb485e1718d527877d5d1f256097
   - path: scripts/test.mjs
-    commitSha: d69ac90d1948a597a8e0205859a3b567585d7bbb
+    commitSha: d20e6d01973bbb485e1718d527877d5d1f256097
   - path: scripts/lib/test-files.mjs
-    commitSha: d69ac90d1948a597a8e0205859a3b567585d7bbb
+    commitSha: d20e6d01973bbb485e1718d527877d5d1f256097
   - path: extension/lib/snapshot.test.js
-    commitSha: d69ac90d1948a597a8e0205859a3b567585d7bbb
+    commitSha: d20e6d01973bbb485e1718d527877d5d1f256097
   - path: extension/lib/selector.test.js
-    commitSha: d69ac90d1948a597a8e0205859a3b567585d7bbb
+    commitSha: d20e6d01973bbb485e1718d527877d5d1f256097
 createdAt: 2026-07-30
-lastVerifiedAt: 2026-08-24
+lastVerifiedAt: 2026-09-14
 ---
 
 ## Trigger

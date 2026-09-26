@@ -5,11 +5,11 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/adapters/companion/artifacts.ts
-    commitSha: d69ac90d1948a597a8e0205859a3b567585d7bbb
+    commitSha: d20e6d01973bbb485e1718d527877d5d1f256097
   - path: src/adapters/companion/artifacts.test.ts
-    commitSha: d69ac90d1948a597a8e0205859a3b567585d7bbb
+    commitSha: d20e6d01973bbb485e1718d527877d5d1f256097
 createdAt: 2026-08-05
-lastVerifiedAt: 2026-08-24
+lastVerifiedAt: 2026-09-14
 affectedFeatureId: feature-companion-cockpit
 ---
 

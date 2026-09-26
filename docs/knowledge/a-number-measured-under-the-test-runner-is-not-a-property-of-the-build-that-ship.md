@@ -5,11 +5,11 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/adapters/companion/mermaid-check.ts
-    commitSha: af9fc63f231d056cad94c53a1579d3693836b078
+    commitSha: fff687f39ed211e660c9ff07bae0f72bca67aa3f
   - path: package.json
-    commitSha: af9fc63f231d056cad94c53a1579d3693836b078
+    commitSha: fff687f39ed211e660c9ff07bae0f72bca67aa3f
 createdAt: 2026-09-14
-lastVerifiedAt: 2026-09-14
+lastVerifiedAt: 2026-09-21
 ---
 
 **Trigger:** you are about to write a measured figure — a latency, a size, a memory number — into a report, a task body, or a decision that turns on it, and you took that figure under vitest, jest, or a dev server.
