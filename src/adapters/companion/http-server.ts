@@ -20,6 +20,7 @@ import { handleTaskDetailRoute } from './task-detail'
 import { parseTaskListQuery, listTasks } from './task-list'
 import { handleArtifactsRoute } from './artifacts'
 import { handleMeetingsRoute } from './meetings'
+import { handleActivityRoute } from './activity'
 import { handleVaultRoute } from './vault'
 import { handleClaudeConfigRoute } from './claude-config'
 import { handleAcReviewRoute } from './ac-review'
@@ -121,6 +122,11 @@ async function route(
     return
   }
 
+  // TASK-2152 — daily activity digests (read-only JSON from <artifactsDir>/activity).
+  if (handleActivityRoute(req, res, { artifactsDir: services.artifactsDir })) {
+    return
+  }
+
   // TASK-1965 — meeting audio: chunked upload + finalize + list. Owns its own
   // POST methods, so it is registered before the GET-only guard below. Reading
   // the audio back is NOT here — that is GET /artifacts/meetings/<id>/<track>.webm
@@ -133,7 +139,8 @@ async function route(
       dataDir: services.dataDir,
       fetchImpl: services.fetchImpl as typeof fetch | undefined,
       vaultDir: services.vaultDir,
-      findWorkspace: async (id) => (await listAllWorkspaces(services)).find((w) => w.id === id) ?? null
+      findWorkspace: async (id) =>
+        (await listAllWorkspaces(services)).find((w) => w.id === id) ?? null
     })
   ) {
     return
@@ -227,10 +234,11 @@ async function route(
   if (
     await handleDockerRoute(req, res, {
       bridgeToken: services.bridgeToken,
-      listWorkspaces: async () => (await listAllWorkspaces(services)).map((w) => ({
-        id: w.id,
-        cwd: w.cwd
-      }))
+      listWorkspaces: async () =>
+        (await listAllWorkspaces(services)).map((w) => ({
+          id: w.id,
+          cwd: w.cwd
+        }))
     })
   ) {
     return
@@ -445,7 +453,9 @@ async function handleCapture(
   res: ServerResponse,
   services: CompanionServices
 ): Promise<void> {
-  if (!tokenMatches(req.headers['x-choda-bridge-token'] as string | undefined, services.bridgeToken)) {
+  if (
+    !tokenMatches(req.headers['x-choda-bridge-token'] as string | undefined, services.bridgeToken)
+  ) {
     return sendJson(res, 401, { error: 'invalid or missing x-choda-bridge-token' })
   }
   const contentType = (req.headers['content-type'] ?? '').toLowerCase()
