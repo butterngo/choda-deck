@@ -2,6 +2,7 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
+| [feature-daily-activity-digest](./feature-daily-activity-digest.md) | feature | Daily activity digest: Claude activity to daily numbers, diagnosis and proposals | 2026-09-27 |  |
 | [workspace-docs-serves-raster-images-as-bytes-and-nothing-else-binary](./workspace-docs-serves-raster-images-as-bytes-and-nothing-else-binary.md) | gotcha | /workspace-docs serves raster images as bytes, and nothing else binary | 2026-09-26 |  |
 | [a-display-ceiling-refuses-it-does-not-truncate](./a-display-ceiling-refuses-it-does-not-truncate.md) | gotcha | A display ceiling refuses; it does not truncate | 2026-09-20 |  |
 | [widen-a-sandboxed-read-surface-with-an-allowlist-never-with-a-path-segment](./widen-a-sandboxed-read-surface-with-an-allowlist-never-with-a-path-segment.md) | gotcha | Widen a sandboxed read surface with an allowlist, never with a path segment | 2026-09-20 |  |
