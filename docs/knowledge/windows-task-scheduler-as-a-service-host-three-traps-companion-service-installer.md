@@ -5,9 +5,9 @@ projectId: choda-deck
 scope: project
 refs:
   - path: scripts/install-companion-service.mjs
-    commitSha: d20e6d01973bbb485e1718d527877d5d1f256097
+    commitSha: 056c0450088c9cebbb894a2f5e28cfd8fa5fe8fe
 createdAt: 2026-07-13
-lastVerifiedAt: 2026-09-14
+lastVerifiedAt: 2026-09-28
 affectedFeatureId: feature-companion-cockpit
 ---
 

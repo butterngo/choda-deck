@@ -5,13 +5,13 @@ projectId: choda-deck
 scope: project
 refs:
   - path: extension/lib/noise-filter.js
-    commitSha: 056c07db70913b3f8d51f76142ef6c4c4d778ea1
+    commitSha: 056c0450088c9cebbb894a2f5e28cfd8fa5fe8fe
   - path: extension/lib/recorder.js
-    commitSha: 056c07db70913b3f8d51f76142ef6c4c4d778ea1
+    commitSha: 056c0450088c9cebbb894a2f5e28cfd8fa5fe8fe
   - path: src/adapters/companion/discovery-artifacts.ts
-    commitSha: 056c07db70913b3f8d51f76142ef6c4c4d778ea1
+    commitSha: 056c0450088c9cebbb894a2f5e28cfd8fa5fe8fe
 createdAt: 2026-07-30
-lastVerifiedAt: 2026-09-14
+lastVerifiedAt: 2026-09-28
 ---
 
 ## Trigger

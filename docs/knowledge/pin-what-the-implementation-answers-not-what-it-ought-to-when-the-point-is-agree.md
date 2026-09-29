@@ -5,11 +5,11 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/adapters/companion/fence-agreement.test.ts
-    commitSha: fff687f39ed211e660c9ff07bae0f72bca67aa3f
+    commitSha: 056c0450088c9cebbb894a2f5e28cfd8fa5fe8fe
   - path: src/adapters/companion/__fixtures__/fence-agreement.md
-    commitSha: fff687f39ed211e660c9ff07bae0f72bca67aa3f
+    commitSha: 056c0450088c9cebbb894a2f5e28cfd8fa5fe8fe
 createdAt: 2026-09-14
-lastVerifiedAt: 2026-09-21
+lastVerifiedAt: 2026-09-28
 ---
 
 **Trigger:** you are writing a pinned expectation table that two independent copies of an algorithm must both satisfy — typically because they live in different repositories or runtimes and cannot import each other. One of the values the implementation produces looks wrong.
