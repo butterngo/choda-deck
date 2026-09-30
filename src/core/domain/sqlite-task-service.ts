@@ -122,7 +122,7 @@ import type {
 
 import { initSchema } from './repositories/schema'
 import { ProjectRepository } from './repositories/project-repository'
-import type { ProjectRow } from './repositories/project-repository'
+import type { ProjectRow, RemoveProjectResult } from './repositories/project-repository'
 import { WorkspaceRepository } from './repositories/workspace-repository'
 import type { WorkspaceRow } from './repositories/workspace-repository'
 import { TaskRepository } from './repositories/task-repository'
@@ -294,16 +294,20 @@ export class SqliteTaskService
     return this.toolInvocations.queryToolInvocations(window)
   }
 
-  async ensureProject(id: string, name: string, cwd: string): Promise<void> {
-    this.projects.ensure(id, name, cwd)
+  async ensureProject(id: string, name: string, cwd: string, org?: string | null): Promise<void> {
+    this.projects.ensure(id, name, cwd, org)
   }
 
   async getProject(id: string): Promise<ProjectRow | null> {
     return this.projects.get(id)
   }
 
-  async listProjects(): Promise<ProjectRow[]> {
-    return this.projects.list()
+  async listProjects(org?: string): Promise<ProjectRow[]> {
+    return this.projects.list(org)
+  }
+
+  async removeProject(id: string): Promise<RemoveProjectResult> {
+    return this.projects.remove(id)
   }
   async addWorkspace(projectId: string, id: string, label: string, cwd: string): Promise<WorkspaceRow> {
     return this.workspaces.add(projectId, id, label, cwd)

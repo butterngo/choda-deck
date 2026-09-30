@@ -6,9 +6,9 @@ require a rebuild — see TASK-1941 AC-3.
 
 | Field | Value |
 |-------|-------|
-| `dist/companion-server.cjs` | **10,783,424 bytes** (10.28 MB) |
-| Recorded | 2026-09-26 |
-| Commit | `5964bf2` |
+| `dist/companion-server.cjs` | **10,786,829 bytes** (10.29 MB) |
+| Recorded | 2026-09-30 |
+| Commit | `c8a795b` |
 
 ## What drives this number
 

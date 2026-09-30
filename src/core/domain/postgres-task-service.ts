@@ -88,8 +88,8 @@ export class PostgresTaskService implements RemoteOperations {
     return this.projects.get(id)
   }
 
-  async listProjects(): Promise<ProjectRow[]> {
-    return this.projects.list()
+  async listProjects(org?: string): Promise<ProjectRow[]> {
+    return this.projects.list(org)
   }
 
   async findWorkspaces(projectId: string, includeArchived = false): Promise<WorkspaceRow[]> {

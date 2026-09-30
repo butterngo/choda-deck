@@ -145,6 +145,45 @@ describe('wrapWithSyncWriteThrough', () => {
     expect(countPendingOps(svc.syncDatabase)).toBe(2) // conversations + initial message
   })
 
+  // TASK-2200 — org rides along on the project upsert; removal tombstones children first.
+  it('ensureProject with org pushes the project row carrying org', async () => {
+    const wrapped = wrapWithSyncWriteThrough(svc, sink)
+    await wrapped.ensureProject('p', 'P', '/p', 'ichiba')
+    const delta = sink.calls[0].deltas[0]
+    expect(delta.table).toBe('projects')
+    expect(delta.rows[0]).toMatchObject({ id: 'p', org: 'ichiba', sync_origin: 'laptop' })
+  })
+
+  it('removeProject tombstones each workspace, then the project', async () => {
+    await svc.ensureProject('gone', 'Gone', '/gone')
+    await svc.addWorkspace('gone', 'gone-ws', 'WS', '/gone/ws')
+    const wrapped = wrapWithSyncWriteThrough(svc, sink)
+
+    const result = await wrapped.removeProject('gone')
+
+    expect(result).toEqual({ removed: true, workspacesRemoved: 1 })
+    expect(sink.calls.map((c) => c.deltas[0].table)).toEqual(['workspaces', 'projects'])
+    for (const call of sink.calls) {
+      const row = call.deltas[0].rows[0]
+      expect(row.sync_deleted_at).toBeGreaterThan(0)
+      expect(row.sync_deleted_at).toBe(row.sync_updated_at)
+    }
+    expect(sink.calls[1].deltas[0].rows[0]).toMatchObject({ id: 'gone' })
+  })
+
+  it('a refused removeProject pushes nothing', async () => {
+    const wrapped = wrapWithSyncWriteThrough(svc, sink)
+    await svc.ensureProject('busy', 'Busy', '/busy')
+    await svc.createTask({ projectId: 'busy', title: 'keeps it alive' })
+    sink.calls = []
+
+    const result = await wrapped.removeProject('busy')
+
+    expect(result).toMatchObject({ removed: false, reason: 'in-use' })
+    expect(sink.calls).toHaveLength(0)
+    expect(countPendingOps(svc.syncDatabase)).toBe(0)
+  })
+
   it('exposes syncDatabase through the proxy (bootstrap reads the loop db from it)', () => {
     const wrapped = wrapWithSyncWriteThrough(svc, sink)
     const db = (wrapped as unknown as { syncDatabase: typeof svc.syncDatabase }).syncDatabase

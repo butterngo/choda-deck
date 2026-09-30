@@ -259,6 +259,13 @@ function runLegacyMigrations(db: Database.Database): void {
     'CREATE INDEX IF NOT EXISTS idx_workspaces_active ON workspaces(project_id, archived_at)'
   )
 
+  // TASK-2200: the organisation a project belongs to (nullable, additive)
+  try {
+    db.exec('ALTER TABLE projects ADD COLUMN org TEXT')
+  } catch {
+    /* exists */
+  }
+
 
   // Global counter table — replaces per-project counters.
   // IDs (TASK-NNN, INBOX-NNN) must be globally unique because PKs are single column.

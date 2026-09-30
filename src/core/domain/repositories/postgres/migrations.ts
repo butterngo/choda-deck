@@ -336,6 +336,15 @@ export const MIGRATIONS: readonly Migration[] = [
       ALTER TABLE conversation_messages ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'message';
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS participants_json TEXT NOT NULL DEFAULT '[]';
     `
+  },
+  {
+    // TASK-2200 — the organisation a project belongs to. Nullable and additive;
+    // sync-sink intersects pushed columns with the real ones, so a node still on
+    // the previous schema drops `org` from a pushed row instead of failing.
+    name: '015_project_org',
+    sql: `
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS org TEXT;
+    `
   }
 ]
 
