@@ -63,7 +63,7 @@ describeIfDocker('PostgresTaskService — RemoteOperations smoke', () => {
 
   it('getProject + listProjects', async () => {
     const p1 = await svc.getProject('p1')
-    expect(p1).toEqual({ id: 'p1', name: 'P One', cwd: '/abs/p1' })
+    expect(p1).toEqual({ id: 'p1', name: 'P One', cwd: '/abs/p1', org: null })
     expect(await svc.getProject('nope')).toBeNull()
 
     const all = await svc.listProjects()

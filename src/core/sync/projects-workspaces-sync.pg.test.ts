@@ -97,6 +97,13 @@ describeIfDocker('TASK-1146 — project + workspace sync laptop → PG → lapto
     expect((await lap2.getProject('hc'))?.org).toBe('ichiba')
     expect((await lap2.getProject('mk'))?.org).toBeNull()
 
+    // A real laptop pulls before it writes, which merges the remote clock into its
+    // own; without it this fresh in-memory node would stamp the update below the
+    // cursor lap2 already holds from the earlier test's rows, and it would never
+    // be fetched. Model the running loop, not a node that has never synced.
+    const loop1 = startSyncLoop({ db: lap1.syncDatabase, remoteUrl, token: TOKEN, intervalMs: 10_000_000 })
+    await loop1.runOnce()
+    loop1.stop()
     await wrapped.ensureProject('mk', 'Infrastructure', 'C:/dev/micro_k8s', 'personal')
     await loop2.runOnce()
     loop2.stop()
