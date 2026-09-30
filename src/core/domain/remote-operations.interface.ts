@@ -42,7 +42,7 @@ export interface RemoteOperations {
   // parity + the PG service test; no remote-allowlisted tool hits it since
   // ADR-033 removed task_context's graphify block (candidate to re-narrow).
   getProject(id: string): Promise<ProjectRow | null>
-  listProjects(): Promise<ProjectRow[]>
+  listProjects(org?: string): Promise<ProjectRow[]>
 
   // Workspace (read-only) — project_list (project-tools.ts attaches workspaces[])
   findWorkspaces(projectId: string, includeArchived?: boolean): Promise<WorkspaceRow[]>

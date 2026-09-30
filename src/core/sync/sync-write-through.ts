@@ -32,7 +32,8 @@ interface MutatorSpec {
 // ensureProject/addWorkspace (TASK-1146) push the project + workspace rows so a
 // task pushed for a new project finds its FK parents on the remote. The generic
 // upsert handler resolves the row id from result.id (workspace) or args[0]
-// (ensureProject returns void, so its id arg is used).
+// (ensureProject returns void, so its id arg is used). removeProject (TASK-2200)
+// is handled separately in the proxy: it tombstones several rows, and only on success.
 const MUTATORS: Record<string, MutatorSpec> = {
   createTask: { table: 'tasks', op: 'upsert' },
   updateTask: { table: 'tasks', op: 'upsert' },
@@ -76,6 +77,20 @@ export function wrapWithSyncWriteThrough(
       if (typeof orig !== 'function') return orig
       const spec = MUTATORS[prop as string]
       const convResolver = CONVERSATION_METHODS[prop as string]
+      if (prop === 'removeProject') {
+        return async (...args: unknown[]): Promise<unknown> => {
+          const id = args[0] as string
+          const before = readRow(db, 'projects', id)
+          const workspaces = db
+            .prepare('SELECT * FROM workspaces WHERE project_id = ?')
+            .all(id) as PulledRow[]
+          const result = await (orig as (...a: unknown[]) => Promise<unknown>).apply(target, args)
+          if (before && (result as { removed?: boolean } | null)?.removed) {
+            await pushProjectRemoval(db, sink, origin, before, workspaces)
+          }
+          return result
+        }
+      }
       if (!spec && !convResolver) return (orig as (...a: unknown[]) => unknown).bind(target)
 
       return async (...args: unknown[]): Promise<unknown> => {
@@ -137,6 +152,29 @@ async function push(
   } catch {
     enqueueOp(db, { tableName: table, rowId, op, row, lamport, enqueuedAt: Date.now() })
   }
+}
+
+// TASK-2200 — removeProject deletes the project AND its workspaces locally, so the
+// remote needs a tombstone for each. Unlike the single-row delete path this runs
+// only when removal succeeded: a refused removal ("in use") must push nothing.
+// Workspaces go first so the child tombstones land before their parent's.
+async function pushProjectRemoval(
+  db: Database.Database,
+  sink: ApplySink,
+  origin: string,
+  project: PulledRow,
+  workspaces: PulledRow[]
+): Promise<void> {
+  const stamp = (row: PulledRow): PulledRow => {
+    const lamport = tick(db)
+    return { ...row, sync_updated_at: lamport, sync_deleted_at: lamport, sync_origin: origin }
+  }
+  for (const ws of workspaces) {
+    const t = stamp(ws)
+    await push(db, sink, origin, 'workspaces', t.id, 'delete', t, t.sync_updated_at)
+  }
+  const p = stamp(project)
+  await push(db, sink, origin, 'projects', p.id, 'delete', p, p.sync_updated_at)
 }
 
 function readRow(db: Database.Database, table: string, id: string): PulledRow | undefined {
