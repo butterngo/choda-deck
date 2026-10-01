@@ -80,6 +80,9 @@ export interface Task {
   filePath: string | null
   body: string | null
   blockedBy: string[]
+  // TASK-2246 — the team member the task is assigned to (Keycloak
+  // preferred_username); set by the converter on the laptop, synced to the remote.
+  assignee: string | null
   createdAt: string
   updatedAt: string
 }
@@ -101,6 +104,7 @@ export interface CreateTaskInput {
   filePath?: string
   body?: string
   blockedBy?: string[]
+  assignee?: string | null
 }
 
 export interface UpdateTaskInput {
@@ -114,6 +118,7 @@ export interface UpdateTaskInput {
   filePath?: string | null
   body?: string | null
   blockedBy?: string[]
+  assignee?: string | null
 }
 
 export interface TaskBlocker {
@@ -144,6 +149,7 @@ export interface TaskFilter {
   dueBefore?: string
   query?: string
   labels?: string[]
+  assignee?: string
   limit?: number
 }
 

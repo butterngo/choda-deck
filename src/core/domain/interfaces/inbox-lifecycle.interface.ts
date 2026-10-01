@@ -11,6 +11,8 @@ export interface InboxConvertInput {
   priority?: 'critical' | 'high' | 'medium' | 'low'
   labels?: string[]
   body?: string
+  // TASK-2246 — the team member the converted task is assigned to.
+  assignee?: string
 }
 
 export interface InboxConvertResult {

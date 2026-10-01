@@ -218,6 +218,13 @@ function runLegacyMigrations(db: Database.Database): void {
     /* exists */
   }
 
+  // TASK-2246 — the team member a task is assigned to; synced to the remote.
+  try {
+    db.exec('ALTER TABLE tasks ADD COLUMN assignee TEXT')
+  } catch {
+    /* exists */
+  }
+
   // Conversation attribution — ownerType marks human-driven interactive convs.
   try {
     db.exec('ALTER TABLE conversations ADD COLUMN owner_session_id TEXT')
