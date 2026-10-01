@@ -5,6 +5,11 @@ import { SqliteTaskService } from '../sqlite-task-service'
 import { InboxConflictError, InboxNotFoundError, InboxStatusError } from './errors'
 
 const TEST_DB = path.join(__dirname, '__test-inbox-lifecycle__.db')
+
+// TASK-2247 — conversion now requires a template-conforming body.
+const BODY =
+  '## Context\n\nwhy\n\n## Acceptance\n\n- [ ] it works\n\n## Test Plan\n\n- unit\n\n## Related\n\n- none\n'
+
 let svc: SqliteTaskService
 
 beforeEach(async () => {
@@ -66,12 +71,12 @@ describe('convertInboxToTask', () => {
       title: 'Build feature',
       priority: 'high',
       labels: ['feat'],
-      body: 'detailed body'
+      body: BODY
     })
 
     expect(r.taskId).toMatch(/^TASK-/)
     expect(r.task.title).toBe('Build feature')
-    expect(r.task.body).toBe('detailed body')
+    expect(r.task.body).toBe(BODY)
 
     const inbox = await svc.getInbox(item.id)
     expect(inbox?.status).toBe('converted')
@@ -84,8 +89,8 @@ describe('convertInboxToTask', () => {
 
   it('throws InboxStatusError when already converted', async () => {
     const item = await svc.createInbox({ projectId: 'proj-l', content: 'x' })
-    await svc.convertInboxToTask(item.id, { title: 'task A' })
-    await expect(svc.convertInboxToTask(item.id, { title: 'task B' })).rejects.toThrow(
+    await svc.convertInboxToTask(item.id, { title: 'task A', body: BODY })
+    await expect(svc.convertInboxToTask(item.id, { title: 'task B', body: BODY })).rejects.toThrow(
       InboxStatusError
     )
   })
@@ -98,7 +103,7 @@ describe('convertInboxToTask', () => {
   // P6 (ADR-032 Pillar 6, TASK-993): progressive localization is a soft-warn, never a gate.
   it('soft-warns (does not throw) when workspaceId is null at convert', async () => {
     const item = await svc.createInbox({ projectId: 'proj-l', content: 'unlocalized idea' })
-    const r = await svc.convertInboxToTask(item.id, { title: 'unlocalized task' })
+    const r = await svc.convertInboxToTask(item.id, { title: 'unlocalized task', body: BODY })
     expect(r.taskId).toMatch(/^TASK-/)
     expect(r.localizationWarning).toContain('no workspaceId')
     expect((await svc.getInbox(item.id))?.status).toBe('converted')
@@ -110,7 +115,7 @@ describe('convertInboxToTask', () => {
       content: 'localized idea',
       workspaceId: 'ws-l'
     })
-    const r = await svc.convertInboxToTask(item.id, { title: 'localized task' })
+    const r = await svc.convertInboxToTask(item.id, { title: 'localized task', body: BODY })
     expect(r.localizationWarning).toBeUndefined()
   })
 })
@@ -130,7 +135,7 @@ describe('archiveInbox', () => {
 
   it('throws InboxStatusError when already converted', async () => {
     const item = await svc.createInbox({ projectId: 'proj-l', content: 'x' })
-    await svc.convertInboxToTask(item.id, { title: 'task' })
+    await svc.convertInboxToTask(item.id, { title: 'task', body: BODY })
     await expect(svc.archiveInbox(item.id)).rejects.toThrow(InboxStatusError)
   })
 })
@@ -165,7 +170,7 @@ describe('transaction rollback (atomicity)', () => {
       throw new Error('simulated failure')
     }
 
-    await expect(svc.convertInboxToTask(item.id, { title: 'should rollback' })).rejects.toThrow(
+    await expect(svc.convertInboxToTask(item.id, { title: 'should rollback', body: BODY })).rejects.toThrow(
       'simulated failure'
     )
 

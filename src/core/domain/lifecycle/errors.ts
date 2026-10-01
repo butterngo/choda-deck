@@ -29,6 +29,18 @@ export class InboxConflictError extends LifecycleError {
   }
 }
 
+// TASK-2247 — inbox_convert refuses a body that does not follow the task template.
+export class InboxTemplateError extends LifecycleError {
+  constructor(id: string, violations: string[]) {
+    super(
+      'INBOX_TEMPLATE',
+      `Inbox ${id}: body does not follow the task template — ${violations.join('; ')}. ` +
+        'Expected ## Context / ## Acceptance (with at least one "- [ ] ..." item) / ## Test Plan / ## Related.'
+    )
+    this.name = 'InboxTemplateError'
+  }
+}
+
 export class ConversationNotFoundError extends LifecycleError {
   constructor(id: string) {
     super('CONVERSATION_NOT_FOUND', `Conversation ${id} not found`)

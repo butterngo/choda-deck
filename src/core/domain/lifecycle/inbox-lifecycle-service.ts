@@ -9,7 +9,13 @@ import type {
   InboxConvertResult
 } from '../interfaces/inbox-lifecycle.interface'
 import type { InboxItem } from '../task-types'
-import { InboxNotFoundError, InboxStatusError, InboxConflictError } from './errors'
+import {
+  InboxNotFoundError,
+  InboxStatusError,
+  InboxConflictError,
+  InboxTemplateError
+} from './errors'
+import { templateViolations } from './task-template'
 
 export class InboxLifecycleService implements InboxLifecycleOperations {
   constructor(
@@ -55,6 +61,9 @@ export class InboxLifecycleService implements InboxLifecycleOperations {
       if (!item.projectId) {
         throw new InboxConflictError(id, 'no projectId — assign one before converting')
       }
+      // TASK-2247 — refuse before anything is written: no task, no status change.
+      const violations = templateViolations(input.body)
+      if (violations.length > 0) throw new InboxTemplateError(id, violations)
       const task = this.tasks.create({
         projectId: item.projectId,
         title: input.title,
