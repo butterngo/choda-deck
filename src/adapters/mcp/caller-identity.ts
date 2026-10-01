@@ -48,3 +48,16 @@ export function runAsCaller<T>(caller: CallerIdentity, fn: () => T): T {
 export function currentCaller(): CallerIdentity | undefined {
   return callerStore.getStore()
 }
+
+// TASK-2245 — the name a write is attributed to. A team member is always
+// recorded as themselves, whatever name the client sent; a converter (and
+// stdio, where there is no caller) keeps the client-supplied name.
+export function attributedName(clientName: string): string {
+  const caller = currentCaller()
+  return caller && !caller.isConverter ? caller.member : clientName
+}
+
+// TASK-2245 — the member who made this remote request, or null outside one.
+export function callerMemberOrNull(): string | null {
+  return currentCaller()?.member ?? null
+}

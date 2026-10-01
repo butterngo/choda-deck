@@ -382,6 +382,9 @@ export interface InboxItem {
   content: string
   status: InboxStatus
   linkedTaskId: string | null
+  // TASK-2245 — the team member who captured it on choda-remote (their
+  // Keycloak preferred_username). null for local captures and older rows.
+  createdBy: string | null
   createdAt: string
   updatedAt: string
 }
@@ -391,6 +394,7 @@ export interface CreateInboxInput {
   content: string
   workspaceId?: string | null
   linkedTaskId?: string
+  createdBy?: string | null
 }
 
 export interface UpdateInboxInput {

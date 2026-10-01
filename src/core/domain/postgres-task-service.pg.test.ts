@@ -123,18 +123,18 @@ describeIfDocker('PostgresTaskService — RemoteOperations smoke', () => {
     expect(rels.map((r) => r.type).sort()).toEqual(['DECIDED_BY', 'IMPLEMENTS'])
   })
 
-  it('createInbox mints INBOX-NNN ids; findInbox + getInbox round-trip', async () => {
+  it('createInbox mints INBOX-R-NNN ids (TASK-2245); findInbox + getInbox round-trip', async () => {
     const a = await svc.createInbox({ projectId: 'p1', content: 'first capture' })
     const b = await svc.createInbox({ projectId: 'p1', content: 'second capture' })
-    expect(a.id).toBe('INBOX-001')
-    expect(b.id).toBe('INBOX-002')
+    expect(a.id).toBe('INBOX-R-001')
+    expect(b.id).toBe('INBOX-R-002')
     expect(a.status).toBe('raw')
 
-    const got = await svc.getInbox('INBOX-001')
+    const got = await svc.getInbox('INBOX-R-001')
     expect(got?.content).toBe('first capture')
 
     const list = await svc.findInbox({ projectId: 'p1', status: 'raw' })
-    expect(list.map((i) => i.id).sort()).toEqual(['INBOX-001', 'INBOX-002'])
+    expect(list.map((i) => i.id).sort()).toEqual(['INBOX-R-001', 'INBOX-R-002'])
   })
 
   it('findConversationsByLink + getConversationMessages + getConversationActions', async () => {
@@ -144,7 +144,7 @@ describeIfDocker('PostgresTaskService — RemoteOperations smoke', () => {
     )
     await env.conn.query(
       `INSERT INTO conversation_links (conversation_id, linked_type, linked_id)
-       VALUES ('CONV-1', 'inbox', 'INBOX-001')`
+       VALUES ('CONV-1', 'inbox', 'INBOX-R-001')`
     )
     await env.conn.query(
       `INSERT INTO conversation_messages (id, conversation_id, author_name, content)
@@ -155,7 +155,7 @@ describeIfDocker('PostgresTaskService — RemoteOperations smoke', () => {
        VALUES ('ACT-1', 'CONV-1', 'butter', 'follow up', 'pending', NULL)`
     )
 
-    const linked = await svc.findConversationsByLink('inbox', 'INBOX-001')
+    const linked = await svc.findConversationsByLink('inbox', 'INBOX-R-001')
     expect(linked.map((c) => c.id)).toEqual(['CONV-1'])
 
     const msgs = await svc.getConversationMessages('CONV-1')
