@@ -345,6 +345,22 @@ export const MIGRATIONS: readonly Migration[] = [
     sql: `
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS org TEXT;
     `
+  },
+  {
+    // TASK-2243 — which projects each team member (Keycloak preferred_username)
+    // may see on the remote. Remote-only by design: NOT in SYNCABLE_TABLES and
+    // absent from the SQLite schema, so it never reaches the converter's laptop.
+    name: '016_project_members',
+    sql: `
+      CREATE TABLE IF NOT EXISTS project_members (
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        member TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (project_id, member)
+      );
+
+      CREATE INDEX IF NOT EXISTS project_members_member_idx ON project_members (member);
+    `
   }
 ]
 
