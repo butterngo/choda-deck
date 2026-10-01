@@ -370,6 +370,15 @@ export const MIGRATIONS: readonly Migration[] = [
     sql: `
       ALTER TABLE inbox_items ADD COLUMN IF NOT EXISTS created_by TEXT;
     `
+  },
+  {
+    // TASK-2246 — the team member a task is assigned to. Set on the converter's
+    // laptop and pushed; the SQLite schema gains the same nullable column.
+    name: '018_task_assignee',
+    sql: `
+      ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee TEXT;
+      CREATE INDEX IF NOT EXISTS tasks_assignee_idx ON tasks (project_id, assignee);
+    `
   }
 ]
 

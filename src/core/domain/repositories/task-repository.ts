@@ -27,6 +27,7 @@ function rowToTask(row: Record<string, unknown>, blockedBy: string[] = []): Task
     filePath: (row.file_path as string) || null,
     body: (row.body as string) || null,
     blockedBy,
+    assignee: (row.assignee as string) || null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string
   }
@@ -59,8 +60,8 @@ export class TaskRepository {
 
     this.db
       .prepare(
-        `INSERT INTO tasks (id, project_id, parent_task_id, title, status, priority, labels, due_date, file_path, body, pinned, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+        `INSERT INTO tasks (id, project_id, parent_task_id, title, status, priority, labels, due_date, file_path, body, assignee, pinned, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
       )
       .run(
         id,
@@ -73,6 +74,7 @@ export class TaskRepository {
         input.dueDate || null,
         input.filePath || null,
         input.body || null,
+        input.assignee ?? null,
         ts,
         ts
       )
@@ -138,6 +140,10 @@ export class TaskRepository {
     if (input.body !== undefined) {
       sets.push('body = ?')
       params.push(input.body)
+    }
+    if (input.assignee !== undefined) {
+      sets.push('assignee = ?')
+      params.push(input.assignee)
     }
 
     params.push(id)
@@ -321,6 +327,10 @@ function buildTaskQuery(filter: TaskFilter): { sql: string; params: Param[] } {
   if (filter.dueBefore) {
     wheres.push('due_date <= ?')
     params.push(filter.dueBefore)
+  }
+  if (filter.assignee) {
+    wheres.push('assignee = ?')
+    params.push(filter.assignee)
   }
   if (filter.query) {
     wheres.push('title LIKE ?')

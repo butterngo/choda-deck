@@ -97,6 +97,10 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
           .array(z.string())
           .optional()
           .describe('Filter by labels — OR semantics (match any). Empty/omitted = no label filter'),
+        assignee: z
+          .string()
+          .optional()
+          .describe('Only tasks assigned to this team member (Keycloak username)'),
         limit: z.number().optional().describe('Max results'),
         verbose: z
           .boolean()
@@ -136,6 +140,10 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
         labels: z.array(z.string()).optional(),
         dueDate: z.string().optional(),
         body: z.string().optional().describe('Markdown body content (default template if omitted)'),
+        assignee: z
+          .string()
+          .optional()
+          .describe('Team member (Keycloak username) the task is assigned to'),
         blockedBy: z
           .array(z.string())
           .optional()
@@ -171,6 +179,11 @@ export const register = (server: InstrumentedServer, svc: TaskToolsDeps): void =
         dueDate: z.string().nullable().optional(),
         pinned: z.boolean().optional(),
         body: z.string().nullable().optional(),
+        assignee: z
+          .string()
+          .nullable()
+          .optional()
+          .describe('Team member (Keycloak username) to assign; null clears it'),
         blockedBy: z
           .array(z.string())
           .optional()

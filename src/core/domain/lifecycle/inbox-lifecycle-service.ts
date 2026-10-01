@@ -60,6 +60,7 @@ export class InboxLifecycleService implements InboxLifecycleOperations {
         title: input.title,
         priority: input.priority,
         labels: input.labels,
+        assignee: input.assignee,
         status: 'TODO'
       })
       if (input.body) this.tasks.update(task.id, { body: input.body })

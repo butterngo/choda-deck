@@ -31,6 +31,7 @@ interface TaskDbRow {
   pinned: boolean
   file_path: string | null
   body: string | null
+  assignee: string | null
   created_at: Date
   updated_at: Date
 }
@@ -49,13 +50,14 @@ function mapRow(row: TaskDbRow, blockedBy: string[]): Task {
     filePath: row.file_path,
     body: row.body,
     blockedBy,
+    assignee: row.assignee,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString()
   }
 }
 
 const SELECT_COLS =
-  'id, project_id, parent_task_id, title, status, priority, labels, due_date, pinned, file_path, body, created_at, updated_at'
+  'id, project_id, parent_task_id, title, status, priority, labels, due_date, pinned, file_path, body, assignee, created_at, updated_at'
 
 export class PostgresTaskRepository {
   constructor(private readonly conn: Queryable) {}
@@ -185,6 +187,10 @@ function buildTaskQuery(filter: TaskFilter): { sql: string; params: SqlValue[] }
   if (filter.dueBefore) {
     wheres.push(`due_date <= $${n++}`)
     params.push(filter.dueBefore)
+  }
+  if (filter.assignee) {
+    wheres.push(`assignee = $${n++}`)
+    params.push(filter.assignee)
   }
   if (filter.query) {
     wheres.push(`title LIKE $${n++}`)

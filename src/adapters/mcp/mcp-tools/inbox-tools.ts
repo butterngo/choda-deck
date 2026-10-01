@@ -172,11 +172,15 @@ export const register = (server: InstrumentedServer, svc: InboxToolsDeps): void 
         title: z.string().describe('Task title'),
         priority: z.enum(['critical', 'high', 'medium', 'low']).optional(),
         labels: z.array(z.string()).optional(),
-        body: z.string().optional().describe('Task body (omit for default template)')
+        body: z.string().optional().describe('Task body (omit for default template)'),
+        assignee: z
+          .string()
+          .optional()
+          .describe('Team member (Keycloak username) the new task is assigned to')
       }
     },
-    async ({ id, title, priority, labels, body }) =>
-      tryLifecycle(() => svc.convertInboxToTask(id, { title, priority, labels, body }))
+    async ({ id, title, priority, labels, body, assignee }) =>
+      tryLifecycle(() => svc.convertInboxToTask(id, { title, priority, labels, body, assignee }))
   )
 
   server.registerTool(
