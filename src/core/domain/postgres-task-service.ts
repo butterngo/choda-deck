@@ -47,6 +47,7 @@ import type {
   CreateConversationMessageInput
 } from './task-types'
 import type { OpenConversationInput } from './interfaces/conversation-lifecycle.interface'
+import { PostgresProjectMemberRepository } from './repositories/postgres/project-member-repository.pg'
 
 export class PostgresTaskService implements RemoteOperations {
   private readonly conn: PgConnection
@@ -90,6 +91,12 @@ export class PostgresTaskService implements RemoteOperations {
 
   async listProjects(org?: string): Promise<ProjectRow[]> {
     return this.projects.list(org)
+  }
+
+  // TASK-2244 — the project ids a team member may see on the remote
+  // (project_members, TASK-2243). Feeds the HTTP transport's scoping wrapper.
+  async listProjectsForMember(member: string): Promise<string[]> {
+    return new PostgresProjectMemberRepository(this.conn).listProjectsFor(member)
   }
 
   async findWorkspaces(projectId: string, includeArchived = false): Promise<WorkspaceRow[]> {
