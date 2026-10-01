@@ -214,7 +214,10 @@ describeIfDocker('TASK-2244 — remote tools scoped to the caller’s projects (
     const before = await msgs()
     const foreign = await call(MEMBER, 'conversation_add', { conversationId: ids.convP2, author: 'an', content: 'x' })
     const unknown = await call(MEMBER, 'conversation_add', { conversationId: 'CONV-NOPE', author: 'an', content: 'x' })
-    expect(foreign.isError).toBe(true)
+    // conversation_add reports an unknown id as a LifecycleError text reply
+    // (tryLifecycle), not an isError result — the contract is "same as unknown".
+    expect(foreign.text).toMatch(/not found/i)
+    expect(foreign.isError).toBe(unknown.isError)
     expect(foreign.text.replace(ids.convP2, '<id>')).toBe(unknown.text.replace('CONV-NOPE', '<id>'))
     expect(await msgs()).toBe(before)
   })
