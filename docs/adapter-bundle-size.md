@@ -7,8 +7,8 @@ require a rebuild — see TASK-1941 AC-3.
 | Field | Value |
 |-------|-------|
 | `dist/companion-server.cjs` | **10,786,829 bytes** (10.29 MB) |
-| Recorded | 2026-09-30 |
-| Commit | `c8a795b` |
+| Recorded | 2026-10-01 |
+| Commit | `9a64a68` |
 
 ## What drives this number
 
