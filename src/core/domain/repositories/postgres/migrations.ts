@@ -361,6 +361,15 @@ export const MIGRATIONS: readonly Migration[] = [
 
       CREATE INDEX IF NOT EXISTS project_members_member_idx ON project_members (member);
     `
+  },
+  {
+    // TASK-2245 — the team member who captured an inbox item on the remote
+    // (Keycloak preferred_username). Nullable and additive; the SQLite schema
+    // gains the same column so it syncs to the converter's laptop.
+    name: '017_inbox_created_by',
+    sql: `
+      ALTER TABLE inbox_items ADD COLUMN IF NOT EXISTS created_by TEXT;
+    `
   }
 ]
 

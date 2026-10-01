@@ -22,6 +22,7 @@ interface InboxDbRow {
   content: string
   status: string
   linked_task_id: string | null
+  created_by: string | null
   created_at: string
   updated_at: string
 }
@@ -34,13 +35,14 @@ function mapRow(row: InboxDbRow): InboxItem {
     content: row.content,
     status: row.status as InboxStatus,
     linkedTaskId: row.linked_task_id,
+    createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   }
 }
 
 const SELECT_COLS =
-  'id, project_id, workspace_id, content, status, linked_task_id, created_at, updated_at'
+  'id, project_id, workspace_id, content, status, linked_task_id, created_by, created_at, updated_at'
 
 export class PostgresInboxRepository {
   constructor(
@@ -48,9 +50,13 @@ export class PostgresInboxRepository {
     private readonly counters: PostgresCounterRepository
   ) {}
 
+  // TASK-2245 — remote captures get their own prefix and counter. The laptop
+  // mints INBOX-NNN from its SQLite counter, so sharing the plain prefix let
+  // the two collide; the laptop's counter advance skips non-numeric suffixes,
+  // so INBOX-R-NNN never moves it.
   private async nextInboxId(): Promise<string> {
-    const n = await this.counters.nextNumber('inbox')
-    return `INBOX-${String(n).padStart(3, '0')}`
+    const n = await this.counters.nextNumber('inbox-remote')
+    return `INBOX-R-${String(n).padStart(3, '0')}`
   }
 
   async create(input: CreateInboxInput): Promise<InboxItem> {
@@ -65,14 +71,15 @@ export class PostgresInboxRepository {
       )
       const lamport = Number(clk.rows[0].counter)
       await tx.query(
-        `INSERT INTO inbox_items (id, project_id, workspace_id, content, status, linked_task_id, created_at, updated_at, sync_updated_at, sync_origin)
-         VALUES ($1, $2, $3, $4, 'raw', $5, $6, $6, $7, 'remote')`,
+        `INSERT INTO inbox_items (id, project_id, workspace_id, content, status, linked_task_id, created_by, created_at, updated_at, sync_updated_at, sync_origin)
+         VALUES ($1, $2, $3, $4, 'raw', $5, $6, $7, $7, $8, 'remote')`,
         [
           id,
           input.projectId ?? null,
           input.workspaceId ?? null,
           input.content,
           input.linkedTaskId ?? null,
+          input.createdBy ?? null,
           ts,
           lamport
         ]

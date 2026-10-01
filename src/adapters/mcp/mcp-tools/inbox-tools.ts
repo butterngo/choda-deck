@@ -5,6 +5,7 @@ import { LifecycleError } from '../../../core/domain/lifecycle/errors'
 import type { InboxOperations } from '../../../core/domain/interfaces/inbox-repository.interface'
 import type { ConversationOperations } from '../../../core/domain/interfaces/conversation-repository.interface'
 import type { InboxLifecycleOperations } from '../../../core/domain/interfaces/inbox-lifecycle.interface'
+import { callerMemberOrNull } from '../caller-identity'
 
 export type InboxToolsDeps = InboxOperations & ConversationOperations & InboxLifecycleOperations
 
@@ -36,7 +37,9 @@ export const register = (server: InstrumentedServer, svc: InboxToolsDeps): void 
       }
     },
     async ({ projectId, content, workspaceId }) =>
-      textResponse(await svc.createInbox({ projectId, content, workspaceId }))
+      textResponse(
+        await svc.createInbox({ projectId, content, workspaceId, createdBy: callerMemberOrNull() })
+      )
   )
 
   server.registerTool(

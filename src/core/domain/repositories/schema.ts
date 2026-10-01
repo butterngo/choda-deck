@@ -684,6 +684,12 @@ function createM1Tables(db: Database.Database): void {
   } catch {
     /* exists */
   }
+  // TASK-2245 — who captured the item on choda-remote; synced from Postgres.
+  try {
+    db.exec('ALTER TABLE inbox_items ADD COLUMN created_by TEXT')
+  } catch {
+    /* exists */
+  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS knowledge_index (
       slug TEXT PRIMARY KEY,

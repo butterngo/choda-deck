@@ -9,6 +9,7 @@ import {
 import type { ConversationOperations } from '../../../core/domain/interfaces/conversation-repository.interface'
 import type { ConversationLifecycleOperations } from '../../../core/domain/interfaces/conversation-lifecycle.interface'
 import { loadMcpRules } from '../rules/mcp-rules-loader'
+import { attributedName } from '../caller-identity'
 import type {
   Conversation,
   ConversationParticipant,
@@ -133,7 +134,10 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
     },
     async (input) =>
       tryLifecycle(async () => {
-        const conv = await svc.openConversation(input)
+        const conv = await svc.openConversation({
+          ...input,
+          createdBy: attributedName(input.createdBy)
+        })
         return {
           conversationId: conv.id,
           title: conv.title,
@@ -160,7 +164,7 @@ export const register = (server: InstrumentedServer, svc: ConversationToolsDeps)
         if (!conv) throw new ConversationNotFoundError(conversationId)
         return svc.addConversationMessage({
           conversationId,
-          authorName: author,
+          authorName: attributedName(author),
           content
         })
       })

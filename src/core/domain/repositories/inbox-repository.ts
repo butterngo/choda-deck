@@ -18,6 +18,7 @@ function rowToInbox(row: Record<string, unknown>): InboxItem {
     content: row.content as string,
     status: row.status as InboxStatus,
     linkedTaskId: (row.linked_task_id as string) || null,
+    createdBy: (row.created_by as string) || null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string
   }
@@ -47,8 +48,8 @@ export class InboxRepository {
     const lamport = tick(this.db)
     this.db
       .prepare(
-        `INSERT INTO inbox_items (id, project_id, workspace_id, content, status, linked_task_id, created_at, updated_at, sync_updated_at, sync_origin)
-         VALUES (?, ?, ?, ?, 'raw', ?, ?, ?, ?, 'remote')`
+        `INSERT INTO inbox_items (id, project_id, workspace_id, content, status, linked_task_id, created_by, created_at, updated_at, sync_updated_at, sync_origin)
+         VALUES (?, ?, ?, ?, 'raw', ?, ?, ?, ?, ?, 'remote')`
       )
       .run(
         id,
@@ -56,6 +57,7 @@ export class InboxRepository {
         input.workspaceId ?? null,
         input.content,
         input.linkedTaskId ?? null,
+        input.createdBy ?? null,
         ts,
         ts,
         lamport
