@@ -13,6 +13,12 @@ import {
   type ToolInvocationSink
 } from './instrumented-server'
 import { startHttpTransport, type OAuthConfig } from './http-transport'
+import {
+  assertAllowlistScoped,
+  NO_MEMBERSHIP,
+  scopeServiceToCaller,
+  type MembershipSource
+} from './remote-scope'
 import { createKeycloakVerifier } from './oauth/jwt-verifier'
 import { startSyncLoop } from '../../core/sync/sync-loop'
 import { KeycloakTokenProvider } from '../../core/sync/keycloak-token-provider'
@@ -118,6 +124,16 @@ function buildMcpServer(
   return { server, toolCount: instrumented.registeredToolNames.length }
 }
 
+// The Postgres backend carries project_members (TASK-2243); any other backend
+// served over HTTP has no membership table, so members are granted nothing.
+function membershipOf(svc: object): MembershipSource {
+  const lookup = (svc as { listProjectsForMember?: (member: string) => Promise<string[]> })
+    .listProjectsForMember
+  return typeof lookup === 'function'
+    ? { listProjectsFor: (member) => lookup.call(svc, member) }
+    : NO_MEMBERSHIP
+}
+
 export async function startMcpServer(): Promise<void> {
   const dataPaths = resolveDataPaths()
   // TASK-1510 — say so BEFORE opening a database in an empty dir. stderr only: stdout
@@ -161,8 +177,15 @@ export async function startMcpServer(): Promise<void> {
       `[choda-deck] registered ${allowedToolCount} MCP tools ` +
         `(remote allowlist: ${REMOTE_TOOL_ALLOWLIST.size} of ${totalToolCount})`
     )
+    // TASK-2244 — a member only ever sees their own projects. Refuse to boot
+    // if an allowlisted tool has no scoping rule.
+    assertAllowlistScoped(REMOTE_TOOL_ALLOWLIST)
+    const remoteDeps: BuildDeps = {
+      ...deps,
+      svc: scopeServiceToCaller(svc, membershipOf(svc))
+    }
     await startHttpTransport(
-      () => buildMcpServer(deps, REMOTE_TOOL_ALLOWLIST, noopSink).server,
+      () => buildMcpServer(remoteDeps, REMOTE_TOOL_ALLOWLIST, noopSink).server,
       {
         port,
         bind,
