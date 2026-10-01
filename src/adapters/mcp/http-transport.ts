@@ -11,6 +11,12 @@ import {
   type KeycloakProxyConfig
 } from './oauth/keycloak-proxy'
 import type { JwtVerifier } from './oauth/jwt-verifier'
+import {
+  identityFromClaims,
+  runAsCaller,
+  STATIC_BEARER_IDENTITY,
+  type CallerIdentity
+} from './caller-identity'
 import type { PullSource, TableDelta } from '../../core/sync/sync-pull'
 import type { ApplySink } from '../../core/sync/sync-apply'
 
@@ -138,7 +144,8 @@ async function handle(
   res.end()
 }
 
-// ADR-030 Phase 2 — read-only pull endpoint. Auth-gated exactly like /mcp.
+// ADR-030 Phase 2 — read-only pull endpoint. Same gate as /mcp, and converter
+// only (TASK-2242).
 // `since` is the caller's Lamport cursor (default 0). Returns the canonical
 // row deltas the local reconcile core applies.
 async function handleSyncSince(
@@ -154,10 +161,7 @@ async function handleSyncSince(
     res.end()
     return
   }
-  if (!(await isAuthorized(req.headers.authorization ?? '', tokenBuf, oauth))) {
-    sendUnauthorized(res, oauth)
-    return
-  }
+  if (!(await authorizeConverter(req, res, tokenBuf, oauth))) return
   const sinceRaw = parsedUrl.searchParams.get('since')
   const since = Number.parseInt(sinceRaw ?? '0', 10)
   if (!Number.isFinite(since) || since < 0) {
@@ -169,8 +173,8 @@ async function handleSyncSince(
   sendJson(res, 200, { since, deltas })
 }
 
-// ADR-030 Phase 3 (979a) — write-apply endpoint. Auth-gated exactly like
-// /sync/since and /mcp. Body = { origin: string, deltas: TableDelta[] }. The
+// ADR-030 Phase 3 (979a) — write-apply endpoint. Gated like /sync/since:
+// converter only (TASK-2242). Body = { origin: string, deltas: TableDelta[] }. The
 // canonical store applies under server-side LWW and returns per-row verdicts so
 // the pusher can log conflicts. Tables outside APPLY_TABLES are rejected 400 by
 // applyDelta before any DB write.
@@ -186,10 +190,7 @@ async function handleSyncApply(
     res.end()
     return
   }
-  if (!(await isAuthorized(req.headers.authorization ?? '', tokenBuf, oauth))) {
-    sendUnauthorized(res, oauth)
-    return
-  }
+  if (!(await authorizeConverter(req, res, tokenBuf, oauth))) return
   const contentType = (req.headers['content-type'] ?? '').toLowerCase()
   if (!contentType.includes('application/json')) {
     res.writeHead(415)
@@ -279,7 +280,8 @@ async function handleMcp(
   tokenBuf: Buffer,
   oauth: OAuthConfig | undefined
 ): Promise<void> {
-  if (!(await isAuthorized(req.headers.authorization ?? '', tokenBuf, oauth))) {
+  const caller = await authenticate(req.headers.authorization ?? '', tokenBuf, oauth)
+  if (!caller) {
     sendUnauthorized(res, oauth)
     return
   }
@@ -315,7 +317,9 @@ async function handleMcp(
   })
   try {
     await server.connect(transport)
-    await transport.handleRequest(req, res, parsed)
+    // TASK-2242 — tool handlers run inside this context and read the caller
+    // with currentCaller().
+    await runAsCaller(caller, () => transport.handleRequest(req, res, parsed))
   } finally {
     try {
       await transport.close()
@@ -330,14 +334,37 @@ async function handleMcp(
   }
 }
 
-// Shared gate for /mcp and /sync/since: OAuth JWT when configured, else the
-// legacy static bearer.
-async function isAuthorized(
+// Shared gate for /mcp and /sync/*: OAuth JWT when configured, else the legacy
+// static bearer. Returns who is calling, or null → 401.
+async function authenticate(
   authHeader: string,
   tokenBuf: Buffer,
   oauth: OAuthConfig | undefined
+): Promise<CallerIdentity | null> {
+  if (oauth) return verifyOAuthBearer(authHeader, oauth.verifier)
+  return verifyBearer(authHeader, tokenBuf) ? STATIC_BEARER_IDENTITY : null
+}
+
+// TASK-2242 — /sync/since and /sync/apply read and write every row of every
+// project, so only the converter may call them; a member token gets 403.
+// Writes the 401/403 itself and returns false when the request must stop.
+async function authorizeConverter(
+  req: IncomingMessage,
+  res: ServerResponse,
+  tokenBuf: Buffer,
+  oauth: OAuthConfig | undefined
 ): Promise<boolean> {
-  return oauth ? verifyOAuthBearer(authHeader, oauth.verifier) : verifyBearer(authHeader, tokenBuf)
+  const caller = await authenticate(req.headers.authorization ?? '', tokenBuf, oauth)
+  if (!caller) {
+    sendUnauthorized(res, oauth)
+    return false
+  }
+  if (!caller.isConverter) {
+    res.writeHead(403)
+    res.end()
+    return false
+  }
+  return true
 }
 
 function sendUnauthorized(res: ServerResponse, oauth: OAuthConfig | undefined): void {
@@ -357,14 +384,15 @@ function verifyBearer(authHeader: string, tokenBuf: Buffer): boolean {
   return timingSafeEqual(provided, tokenBuf)
 }
 
-async function verifyOAuthBearer(authHeader: string, verifier: JwtVerifier): Promise<boolean> {
+async function verifyOAuthBearer(
+  authHeader: string,
+  verifier: JwtVerifier
+): Promise<CallerIdentity | null> {
   const prefix = 'Bearer '
-  if (!authHeader.startsWith(prefix)) return false
+  if (!authHeader.startsWith(prefix)) return null
   const token = authHeader.slice(prefix.length)
   const claims = await verifier.verify(token)
-  // v1: any valid Keycloak token grants the full REMOTE_TOOL_ALLOWLIST surface.
-  // TODO(ADR-034): map claims.realm_access.roles / scope → per-tool scoping here.
-  return claims !== null
+  return claims ? identityFromClaims(claims) : null
 }
 
 function sendJson(res: ServerResponse, status: number, body: object): void {
