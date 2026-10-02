@@ -18,11 +18,21 @@ import type { BackendConfig } from '../backend-config'
 import { HttpWriteClient } from '../sync/http-write-client'
 import { wrapWithSyncWriteThrough } from '../sync/sync-write-through'
 
-export function createTaskService(config: BackendConfig): BackendTaskService {
+export interface TaskServiceOptions {
+  // TASK-2253 — true when the service backs the HTTP remote (MCP_TRANSPORT=http):
+  // the SQLite backend then mints INBOX-R-NNN. Ignored by the other backends
+  // (Postgres always mints INBOX-R-NNN; a sync laptop never does).
+  remoteInboxIds?: boolean
+}
+
+export function createTaskService(
+  config: BackendConfig,
+  options: TaskServiceOptions = {}
+): BackendTaskService {
   switch (config.kind) {
     case 'sqlite':
       fs.mkdirSync(path.dirname(config.dbPath), { recursive: true })
-      return new SqliteTaskService(config.dbPath)
+      return new SqliteTaskService(config.dbPath, { remoteInboxIds: options.remoteInboxIds === true })
     case 'sync': {
       // Local SQLite + write-through to the remote. The drain/pull loop is
       // started separately by server-bootstrap (a timer doesn't belong in the

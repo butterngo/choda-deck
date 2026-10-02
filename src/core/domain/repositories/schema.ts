@@ -672,6 +672,17 @@ function createM1Tables(db: Database.Database): void {
       FOREIGN KEY (conversation_id) REFERENCES conversations(id)
     )
   `)
+  // TASK-2253 — remote-only membership for the SQLite-backed remote (the live
+  // mcp.choda.dev runs SQLite). Deliberately NOT in SYNCABLE_TABLES: it never
+  // syncs, so a laptop simply carries an empty table.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_members (
+      project_id TEXT NOT NULL REFERENCES projects(id),
+      member TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (project_id, member)
+    )
+  `)
   db.exec(`
     CREATE TABLE IF NOT EXISTS inbox_items (
       id TEXT PRIMARY KEY,

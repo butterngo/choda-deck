@@ -133,6 +133,7 @@ import { SessionRepository } from './repositories/session-repository'
 import { ContextSourceRepository } from './repositories/context-source-repository'
 import { ConversationRepository } from './repositories/conversation-repository'
 import { InboxRepository } from './repositories/inbox-repository'
+import { ProjectMemberRepository } from './repositories/project-member-repository'
 import { CounterRepository } from './repositories/counter-repository'
 import { ToolInvocationsRepository } from './repositories/tool-invocations-repository'
 import { SessionEventRepository } from './repositories/session-event-repository'
@@ -144,6 +145,12 @@ import type {
 } from './interfaces/tool-invocations-repository.interface'
 import type { SessionEventOperations } from './interfaces/session-event-operations.interface'
 import type { AgentMemoryOperations, MemoryWriteInput, MemoryRecallInput } from './interfaces/agent-memory-operations.interface'
+
+export interface SqliteTaskServiceOptions {
+  // TASK-2253 — set when this service backs the HTTP remote: inbox ids become
+  // INBOX-R-NNN so they cannot collide with a laptop's INBOX-NNN.
+  remoteInboxIds?: boolean
+}
 
 export class SqliteTaskService
   implements
@@ -173,6 +180,7 @@ export class SqliteTaskService
   private readonly contextSources: ContextSourceRepository
   private readonly conversations: ConversationRepository
   private readonly inbox: InboxRepository
+  private readonly projectMembers: ProjectMemberRepository
   private readonly counters: CounterRepository
   private readonly toolInvocations: ToolInvocationsRepository
   private readonly sessionEvents: SessionEventRepository
@@ -189,7 +197,7 @@ export class SqliteTaskService
   private readonly embeddingProviderPromise: Promise<EmbeddingProvider>
   private embeddingReadyPromise: Promise<void> | null = null
 
-  constructor(dbPath: string) {
+  constructor(dbPath: string, options: SqliteTaskServiceOptions = {}) {
     this.db = new Database(dbPath)
     this.db.pragma('journal_mode = WAL')
     this.db.pragma('foreign_keys = ON')
@@ -214,7 +222,10 @@ export class SqliteTaskService
     this.sessions = new SessionRepository(this.db)
     this.contextSources = new ContextSourceRepository(this.db)
     this.conversations = new ConversationRepository(this.db)
-    this.inbox = new InboxRepository(this.db, this.counters)
+    this.inbox = new InboxRepository(this.db, this.counters, {
+      remoteIds: options.remoteInboxIds === true
+    })
+    this.projectMembers = new ProjectMemberRepository(this.db)
     this.investigations = new InvestigationRepository(this.db, this.counters)
     this.investigationLifecycle = new InvestigationLifecycleService(this.db, this.investigations)
     this.inboxLifecycle = new InboxLifecycleService(
@@ -304,6 +315,17 @@ export class SqliteTaskService
 
   async listProjects(org?: string): Promise<ProjectRow[]> {
     return this.projects.list(org)
+  }
+
+  // TASK-2253 — remote membership on the SQLite backend; picked up by the HTTP
+  // transport's scoping wrapper (server-bootstrap membershipOf) by name.
+  async listProjectsForMember(member: string): Promise<string[]> {
+    return this.projectMembers.listProjectsFor(member)
+  }
+
+  // TASK-2253 — the member CLI's repository on the SQLite backend.
+  get memberRepository(): ProjectMemberRepository {
+    return this.projectMembers
   }
 
   async removeProject(id: string): Promise<RemoveProjectResult> {

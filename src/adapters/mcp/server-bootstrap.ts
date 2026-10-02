@@ -124,8 +124,14 @@ function buildMcpServer(
   return { server, toolCount: instrumented.registeredToolNames.length }
 }
 
-// The Postgres backend carries project_members (TASK-2243); any other backend
-// served over HTTP has no membership table, so members are granted nothing.
+// TASK-2253 — the HTTP transport is the remote, so its inbox captures get
+// INBOX-R-NNN ids; stdio (a laptop) keeps INBOX-NNN.
+export function serviceOptionsForTransport(mode: string): { remoteInboxIds: boolean } {
+  return { remoteInboxIds: mode === 'http' }
+}
+
+// Both the Postgres (TASK-2243) and the SQLite (TASK-2253) backends expose
+// listProjectsForMember; a backend without it grants members nothing.
 function membershipOf(svc: object): MembershipSource {
   const lookup = (svc as { listProjectsForMember?: (member: string) => Promise<string[]> })
     .listProjectsForMember
@@ -149,7 +155,7 @@ export async function startMcpServer(): Promise<void> {
 
   requireBackendForTransport(backend, mode)
 
-  const svc = createTaskService(backend)
+  const svc = createTaskService(backend, serviceOptionsForTransport(mode))
   await svc.initializeAsync()
   const deps: BuildDeps = {
     svc,

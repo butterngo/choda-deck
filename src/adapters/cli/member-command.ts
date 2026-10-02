@@ -1,15 +1,16 @@
 // TASK-2243 — `choda-deck member add|remove|list`: manage which projects a
 // team member (their Keycloak preferred_username) may see on choda-remote.
-// Talks to the remote Postgres named by CHODA_PG_URL, the same connection
-// setting CHODA_BACKEND=postgres uses. Exit 2 on usage errors, like the
-// other command groups.
+// Talks to the remote Postgres named by CHODA_PG_URL when set, otherwise to the
+// SQLite database under CHODA_DATA_DIR (TASK-2253: the live remote is SQLite).
+// Exit 2 on usage errors, like the other command groups.
 
 import type { PostgresProjectMemberRepository } from '../../core/domain/repositories/postgres/project-member-repository.pg'
 
 export const MEMBER_HELP = `member add <member> <projectId>     Let <member> see <projectId> on the remote
 member remove <member> <projectId>  Stop serving <projectId> to <member>
 member list <member>                Print the project ids <member> belongs to
-  <member> is the Keycloak preferred_username. Needs CHODA_PG_URL.
+  <member> is the Keycloak preferred_username. Uses CHODA_PG_URL when set,
+  otherwise the SQLite database under CHODA_DATA_DIR (the live remote).
 `
 
 export interface MemberIo {
@@ -67,10 +68,27 @@ function usage(io: MemberIo, message: string): number {
 }
 
 export async function dispatchMember(sub: string | undefined, args: string[]): Promise<number> {
+  const io: MemberIo = {
+    out: (t) => process.stdout.write(t),
+    err: (t) => process.stderr.write(t)
+  }
   const connectionString = process.env.CHODA_PG_URL ?? ''
   if (connectionString.length === 0) {
-    process.stderr.write('error: member commands require CHODA_PG_URL (the remote Postgres)\n')
-    return 2
+    // TASK-2253 — the live remote runs SQLite: use the database at the resolved
+    // data path (CHODA_DATA_DIR), e.g. via kubectl exec inside choda-deck-0.
+    const { resolveDataPaths } = await import('../../core/paths')
+    const { default: Database } = await import('better-sqlite3')
+    const { initSchema } = await import('../../core/domain/repositories/schema')
+    const { ProjectMemberRepository } = await import(
+      '../../core/domain/repositories/project-member-repository'
+    )
+    const db = new Database(resolveDataPaths().dbPath)
+    try {
+      initSchema(db) // idempotent — guarantees project_members exists
+      return await runMemberCommand(sub, args, new ProjectMemberRepository(db), io)
+    } finally {
+      db.close()
+    }
   }
   const { PgConnection } = await import('../../core/domain/repositories/postgres/connection')
   const { migrate } = await import('../../core/domain/repositories/postgres/migrations')
@@ -80,10 +98,7 @@ export async function dispatchMember(sub: string | undefined, args: string[]): P
   const conn = new PgConnection(connectionString)
   try {
     await migrate(conn) // idempotent — guarantees project_members exists
-    return await runMemberCommand(sub, args, new PostgresProjectMemberRepository(conn), {
-      out: (t) => process.stdout.write(t),
-      err: (t) => process.stderr.write(t)
-    })
+    return await runMemberCommand(sub, args, new PostgresProjectMemberRepository(conn), io)
   } finally {
     await conn.close()
   }
