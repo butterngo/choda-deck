@@ -24,13 +24,24 @@ function rowToInbox(row: Record<string, unknown>): InboxItem {
   }
 }
 
+export interface InboxRepositoryOptions {
+  // TASK-2253 — the SQLite-backed remote mints INBOX-R-NNN from its own counter
+  // so its captures cannot collide with the laptop's INBOX-NNN (the laptop's
+  // counter advance skips non-numeric suffixes). Laptops leave this off.
+  remoteIds?: boolean
+}
+
 export class InboxRepository {
   constructor(
     private readonly db: Database.Database,
-    private readonly counters: CounterRepository
+    private readonly counters: CounterRepository,
+    private readonly options: InboxRepositoryOptions = {}
   ) {}
 
   private nextInboxId(): string {
+    if (this.options.remoteIds) {
+      return `INBOX-R-${String(this.counters.nextNumber('inbox-remote')).padStart(3, '0')}`
+    }
     return `INBOX-${String(this.counters.nextNumber('inbox')).padStart(3, '0')}`
   }
 
