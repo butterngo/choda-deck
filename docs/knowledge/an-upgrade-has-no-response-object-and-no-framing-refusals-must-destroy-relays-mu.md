@@ -5,9 +5,9 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/adapters/companion/terminal-socket.ts
-    commitSha: 056c0450088c9cebbb894a2f5e28cfd8fa5fe8fe
+    commitSha: 3f1de6130d7a67b9d7d31df63bf37a4c6346d010
 createdAt: 2026-09-07
-lastVerifiedAt: 2026-09-28
+lastVerifiedAt: 2026-10-05
 affectedFeatureId: feature-companion-cockpit
 ---
 

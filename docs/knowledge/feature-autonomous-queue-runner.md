@@ -5,15 +5,15 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/executor/coder.ts
-    commitSha: 056c0450088c9cebbb894a2f5e28cfd8fa5fe8fe
+    commitSha: 3f1de6130d7a67b9d7d31df63bf37a4c6346d010
   - path: src/core/executor/tester.ts
-    commitSha: 056c0450088c9cebbb894a2f5e28cfd8fa5fe8fe
+    commitSha: 3f1de6130d7a67b9d7d31df63bf37a4c6346d010
   - path: src/core/executor/ac-report.ts
-    commitSha: 056c0450088c9cebbb894a2f5e28cfd8fa5fe8fe
+    commitSha: 3f1de6130d7a67b9d7d31df63bf37a4c6346d010
   - path: src/core/executor/prewarm-compose.ts
-    commitSha: 056c0450088c9cebbb894a2f5e28cfd8fa5fe8fe
+    commitSha: 3f1de6130d7a67b9d7d31df63bf37a4c6346d010
 createdAt: 2026-06-04
-lastVerifiedAt: 2026-09-28
+lastVerifiedAt: 2026-10-05
 anchorTaskId: TASK-826
 realizesTasks: ["TASK-698","TASK-699","TASK-728","TASK-826","TASK-982"]
 inWorkspaces: ["main"]
