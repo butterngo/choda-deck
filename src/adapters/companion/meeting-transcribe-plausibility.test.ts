@@ -12,7 +12,7 @@
 // would fire on every meeting and get switched off within a week.
 
 import { describe, it, expect } from 'vitest'
-import { findImplausibleSegments, MAX_CHARS_PER_SECOND } from './meeting-transcribe'
+import { findImplausibleSegments, splitPhrase, MAX_CHARS_PER_SECOND } from './meeting-transcribe'
 import type { TranscriptSegment } from './meeting-transcribe'
 
 function seg(over: Partial<TranscriptSegment>): TranscriptSegment {
@@ -43,6 +43,15 @@ describe('AC — a segment that cannot be spoken in the time it claims is reject
 
   it('flags a negative span', () => {
     expect(findImplausibleSegments([seg({ startMs: 2000, endMs: 1000 })])).toHaveLength(1)
+  })
+
+  it('flags the 2026-10-05 shape: every word of a phrase stamped at one offset for 10 ms', () => {
+    // Copied from m-muurjxss-rsc2j9's rejected loopback response: the phrase and
+    // all 14 of its words claim offset 186001, duration 10.
+    const text = 'Hôm nay chắc Hà Nội gió mùa nên là nó lạnh đấy anh ạ.'
+    const words = text.split(' ').map((w) => ({ text: w, offsetMilliseconds: 186001, durationMilliseconds: 10 }))
+    const segs = splitPhrase({ offsetMilliseconds: 186001, durationMilliseconds: 10, text, locale: 'vi-VN', words }, 'loopback')
+    expect(findImplausibleSegments(segs)).toHaveLength(1)
   })
 })
 

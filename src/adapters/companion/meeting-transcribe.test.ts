@@ -14,6 +14,7 @@ import { startCompanionServer, COMPANION_BIND, type CompanionServerHandle } from
 import type { CompanionServices } from './service-factory'
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
 import { MEETINGS_DIR } from './meetings'
+import { MAX_TRACK_ATTEMPTS } from './meeting-transcribe'
 
 const TOKEN = 'transcribe-test-token'
 const KEY = 'stub-speech-key-0123456789abcdef'
@@ -391,16 +392,63 @@ describe('TASK-2011 follow-up AC-1 — one transient corrupt response is retried
   })
 })
 
-describe('TASK-2011 follow-up AC-2 — corrupt twice still refuses to write', () => {
-  it('502 implausible-timings, no transcript, both attempts named', async () => {
+describe('TASK-2011 follow-up AC-2 — corrupt on every attempt still refuses to write', () => {
+  it('502 implausible-timings, no transcript, every attempt named', async () => {
     seedMeeting('r2')
     azureReply = { mic: CORRUPT, loopback: [] }
     const r = await transcribe('r2')
     expect(r.status).toBe(502)
     expect(r.json.kind).toBe('implausible-timings')
-    expect(r.json.attempts).toBe(2)
-    expect(r.json.rejectedFiles).toHaveLength(2)
+    expect(r.json.attempts).toBe(MAX_TRACK_ATTEMPTS)
+    expect(r.json.rejectedFiles).toHaveLength(MAX_TRACK_ATTEMPTS)
     expect(fs.existsSync(path.join(meetingDir('r2'), 'transcript.json'))).toBe(false)
-    expect(azureCalls.filter((c) => c.track === 'mic')).toHaveLength(2)
+    expect(azureCalls.filter((c) => c.track === 'mic')).toHaveLength(MAX_TRACK_ATTEMPTS)
+  })
+})
+
+// ---- 2026-10-05 — a clean track survives a failed press ---------------------------
+//
+// m-muurjxss-rsc2j9 failed three presses in a row: mic was clean on the first,
+// loopback on the third, and each press threw its clean half away.
+
+describe('a clean track is kept across presses', () => {
+  it('press 1 fails on loopback but keeps mic; press 2 only asks for loopback', async () => {
+    seedMeeting('k1')
+    azureReply = { mic: [phrase(1000, 'Mic sạch.')], loopback: CORRUPT }
+    const first = await transcribe('k1')
+    expect(first.status).toBe(502)
+    expect(first.json.cleanTracks).toEqual(['mic'])
+    expect(fs.existsSync(path.join(meetingDir('k1'), 'clean-mic.json'))).toBe(true)
+
+    azureCalls = []
+    azureReply = { mic: [phrase(1000, 'Mic lần hai — không được gọi.')], loopback: [phrase(3000, 'Loopback sạch.')] }
+    const second = await transcribe('k1')
+    expect(second.status).toBe(200)
+    expect(azureCalls.map((c) => c.track)).toEqual(['loopback'])
+    expect(transcriptOnDisk('k1').segments.map((s) => s.text)).toEqual(['Mic sạch.', 'Loopback sạch.'])
+  })
+
+  it('the caches are dropped once the transcript is written, so a re-run calls Azure again', async () => {
+    seedMeeting('k2')
+    azureReply = { mic: [phrase(1000, 'Một.')], loopback: [phrase(3000, 'Hai.')] }
+    expect((await transcribe('k2')).status).toBe(200)
+    expect(fs.readdirSync(meetingDir('k2')).filter((f) => f.startsWith('clean-'))).toEqual([])
+
+    azureCalls = []
+    expect((await transcribe('k2')).status).toBe(200)
+    expect(azureCalls.map((c) => c.track).sort()).toEqual(['loopback', 'mic'])
+  })
+
+  it('a cache for different audio is ignored', async () => {
+    seedMeeting('k3')
+    azureReply = { mic: [phrase(1000, 'Audio cũ.')], loopback: CORRUPT }
+    expect((await transcribe('k3')).status).toBe(502)
+
+    fs.writeFileSync(path.join(meetingDir('k3'), 'mic.webm'), Buffer.from('different-mic-audio'))
+    azureCalls = []
+    azureReply = { mic: [phrase(1000, 'Audio mới.')], loopback: [phrase(3000, 'Hai.')] }
+    expect((await transcribe('k3')).status).toBe(200)
+    expect(azureCalls.map((c) => c.track).sort()).toEqual(['loopback', 'mic'])
+    expect(transcriptOnDisk('k3').segments[0].text).toBe('Audio mới.')
   })
 })

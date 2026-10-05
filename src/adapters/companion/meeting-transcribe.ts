@@ -21,6 +21,7 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
+import { createHash } from 'crypto'
 import type { ServerResponse } from 'http'
 // Type-only: meetings.ts imports this module, so a value import back would be a cycle.
 import type { MeetingMeta, Track } from './meetings'
@@ -50,8 +51,15 @@ export const MAX_CHARS_PER_SECOND = 100
 /** A segment grows until a sentence ends or it reaches this length. */
 export const SEGMENT_MAX_MS = 12_000
 
-/** One try plus one retry for a response that fails the physics check. */
-export const MAX_TRACK_ATTEMPTS = 2
+/**
+ * Tries per track for a response that fails the physics check.
+ *
+ * Two was enough while the corruption was rare. On 2026-10-05 (m-muurjxss-rsc2j9)
+ * 9 of 14 responses carried at least one collapsed phrase, so a two-try budget
+ * failed three button presses in a row while each track had come back clean at
+ * least once.
+ */
+export const MAX_TRACK_ATTEMPTS = 5
 
 const SPEAKER: Record<Track, 'Me' | 'Them'> = { mic: 'Me', loopback: 'Them' }
 const TRACK_ORDER: Track[] = ['mic', 'loopback']
@@ -254,10 +262,52 @@ async function transcribeTrack(audio: Buffer, track: Track, creds: SpeechCredent
 }
 
 /**
+ * A track that came back clean, kept until the meeting's transcript is written.
+ *
+ * Without it, a press that got a clean mic and a corrupt loopback threw the mic
+ * away, and the next press had to win both tracks again in one go — on
+ * 2026-10-05 mic was clean on press one and loopback on press three, and neither
+ * press could use the other's half. Keyed by the audio's hash and the locales so
+ * a cache can only ever stand in for the exact request it answered.
+ */
+interface CleanTrack {
+  audioSha256: string
+  locales: string[]
+  segments: TranscriptSegment[]
+}
+
+function cleanTrackFile(dir: string, track: Track): string {
+  return path.join(dir, `clean-${track}.json`)
+}
+
+function readCleanTrack(dir: string, track: Track, audioSha256: string, locales: string[]): TranscriptSegment[] | null {
+  let c: Partial<CleanTrack>
+  try {
+    c = JSON.parse(fs.readFileSync(cleanTrackFile(dir, track), 'utf8')) as Partial<CleanTrack>
+  } catch {
+    return null
+  }
+  if (c.audioSha256 !== audioSha256) return null
+  if (JSON.stringify(c.locales) !== JSON.stringify(locales)) return null
+  if (!Array.isArray(c.segments)) return null
+  // Re-checked rather than trusted: the file is on disk and could have been edited.
+  return findImplausibleSegments(c.segments).length === 0 ? c.segments : null
+}
+
+function writeCleanTrack(dir: string, track: Track, clean: CleanTrack): void {
+  const target = cleanTrackFile(dir, track)
+  const tmp = `${target}.${process.pid}.tmp`
+  fs.writeFileSync(tmp, JSON.stringify(clean), 'utf8')
+  fs.renameSync(tmp, target)
+}
+
+/**
  * TASK-2011 follow-up — the corrupt response is transient. It happened on
  * 2026-09-17 and again on 2026-09-22 (m-muc1vdsp-npyokc), and both times the same
  * audio sent again came back clean. So a track whose segments fail the physics
- * check is asked for once more before the meeting is failed.
+ * check is asked for again, up to MAX_TRACK_ATTEMPTS, before the meeting is
+ * failed — and a track that is already clean from an earlier press is not asked
+ * for at all.
  *
  * Every rejected body is written beside the audio first: Azure will not produce it
  * again on request, and on 2026-09-22 it was lost because nothing kept it.
@@ -268,11 +318,18 @@ async function transcribeTrackChecked(
   track: Track,
   creds: SpeechCredentials
 ): Promise<{ segments: TranscriptSegment[]; implausible: TranscriptSegment[]; rejected: string[] }> {
+  const audioSha256 = createHash('sha256').update(audio).digest('hex')
+  const cached = readCleanTrack(dir, track, audioSha256, creds.locales)
+  if (cached) return { segments: cached, implausible: [], rejected: [] }
+
   const rejected: string[] = []
   for (let attempt = 1; ; attempt++) {
     const { segments, raw } = await transcribeTrack(audio, track, creds)
     const implausible = findImplausibleSegments(segments)
-    if (implausible.length === 0) return { segments, implausible, rejected }
+    if (implausible.length === 0) {
+      writeCleanTrack(dir, track, { audioSha256, locales: creds.locales, segments })
+      return { segments, implausible, rejected }
+    }
     const file = `rejected-${track}-${new Date().toISOString().replace(/[:.]/g, '-')}-${attempt}.json`
     fs.writeFileSync(path.join(dir, file), raw, 'utf8')
     rejected.push(file)
@@ -369,6 +426,8 @@ export async function handleTranscribe(
       segments: implausible.length,
       attempts: MAX_TRACK_ATTEMPTS,
       rejectedFiles: checked.flatMap((c) => c.rejected),
+      // Kept on disk; the next press only asks Azure for the others.
+      cleanTracks: checked.filter((c) => c.implausible.length === 0).map((c) => c.track),
       example: {
         track: worst.track,
         startMs: worst.startMs,
@@ -394,6 +453,9 @@ export async function handleTranscribe(
   const tmp = `${target}.${process.pid}.tmp`
   fs.writeFileSync(tmp, JSON.stringify(transcript, null, 2), 'utf8')
   fs.renameSync(tmp, target)
+  // The transcript now holds what the caches held. Dropping them keeps a later
+  // deliberate re-run a real re-run, not a replay of this one.
+  for (const t of tracks) fs.rmSync(cleanTrackFile(dir, t), { force: true })
 
   if (opts.onTranscript) {
     try {
