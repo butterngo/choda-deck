@@ -18,7 +18,8 @@ const EDGE_TYPE_ENUM = [
   'ABOUT',
   'PINS',
   'IN',
-  'INTEGRATES_WITH'
+  'INTEGRATES_WITH',
+  'GUARDS'
 ] as const
 
 // TASK-992 (ADR-NNN unified knowledge graph) — directional edge query over the

@@ -23,6 +23,8 @@ export type RelationType =
   | 'PINS'
   | 'IN'
   | 'INTEGRATES_WITH'
+  // TASK-2341: gotcha slug → code_ref slug it guards; session_start surfaces it.
+  | 'GUARDS'
 export type DocumentType = 'adr' | 'guide' | 'spec' | 'note' | 'research'
 
 export const TASK_STATUSES: TaskStatus[] = [

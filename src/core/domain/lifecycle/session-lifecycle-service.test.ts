@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
+import Database from 'better-sqlite3'
 import { SqliteTaskService } from '../sqlite-task-service'
 import { draftGotchaFromDecision, fileRefSlug } from './session-lifecycle-service'
 import {
@@ -1128,3 +1129,75 @@ describe('endSession — TASK-1751 marks an underivable modifies set', () => {
     expect(findUnderivable(events)).toBeUndefined()
   })
 })
+
+describe('startSession relevantGotchas (TASK-2341)', () => {
+  // knowledge_index rows are written straight to the DB: createKnowledge would
+  // write markdown into the project cwd, and only the index row matters here.
+  function indexGotcha(slug: string, verifiedAt = '2026-10-01'): void {
+    const raw = new Database(TEST_DB)
+    raw
+      .prepare(
+        `INSERT INTO knowledge_index (slug, project_id, scope, type, title, file_path, created_at, last_verified_at)
+         VALUES (?, 'proj-s', 'project', 'gotcha', ?, ?, ?, ?)`
+      )
+      .run(slug, `Title ${slug}`, `/tmp/${slug}.md`, verifiedAt, verifiedAt)
+    raw.close()
+  }
+
+  async function codeRef(slug: string, p: string): Promise<void> {
+    await svc.upsertCodeRef({ slug, projectId: 'proj-s', path: p })
+  }
+
+  it('a task touching src/Foo.ts gets the gotcha guarding src/Foo, not the one guarding src/Bar', async () => {
+    await codeRef('ref-foo-file', 'src/Foo.ts')
+    await codeRef('ref-foo-guard', 'src/Foo')
+    await codeRef('ref-bar-guard', 'src/Bar')
+    indexGotcha('gotcha-foo')
+    indexGotcha('gotcha-bar')
+    await svc.addRelationship('gotcha-foo', 'ref-foo-guard', 'GUARDS')
+    await svc.addRelationship('gotcha-bar', 'ref-bar-guard', 'GUARDS')
+    const task = await svc.createTask({ projectId: 'proj-s', title: 'edit foo' })
+    await svc.addTouches(task.id, 'ref-foo-file', 'modifies')
+
+    const r = await svc.startSession({ projectId: 'proj-s', taskId: task.id })
+    expect(r.relevantGotchas).toEqual([
+      { slug: 'gotcha-foo', title: 'Title gotcha-foo', guardPath: 'src/Foo', touchedPath: 'src/Foo.ts' }
+    ])
+    const events = await svc.listSessionEvents(r.session.id)
+    const injected = events.map((e) => JSON.parse(e.payloadJson ?? '{}'))
+    expect(injected).toContainEqual({ kind: 'gotcha_injected', slugs: ['gotcha-foo'] })
+  })
+
+  it('caps at 5, newest verified first', async () => {
+    await codeRef('ref-file', 'src/Foo.ts')
+    for (let i = 1; i <= 7; i++) {
+      await codeRef(`ref-g${i}`, 'src/Foo.ts'.slice(0, 2 + i))
+      indexGotcha(`gotcha-${i}`, `2026-10-0${i}`)
+      await svc.addRelationship(`gotcha-${i}`, `ref-g${i}`, 'GUARDS')
+    }
+    const task = await svc.createTask({ projectId: 'proj-s', title: 't' })
+    await svc.addTouches(task.id, 'ref-file', 'reference')
+    const r = await svc.startSession({ projectId: 'proj-s', taskId: task.id })
+    expect(r.relevantGotchas.map((g) => g.slug)).toEqual([
+      'gotcha-7',
+      'gotcha-6',
+      'gotcha-5',
+      'gotcha-4',
+      'gotcha-3'
+    ])
+  })
+
+  it('no matching gotcha → empty array, no injection event, no error', async () => {
+    await codeRef('ref-baz', 'src/Baz.ts')
+    const task = await svc.createTask({ projectId: 'proj-s', title: 't' })
+    await svc.addTouches(task.id, 'ref-baz', 'modifies')
+    const r = await svc.startSession({ projectId: 'proj-s', taskId: task.id })
+    expect(r.relevantGotchas).toEqual([])
+    const events = await svc.listSessionEvents(r.session.id)
+    expect(events.some((e) => (e.payloadJson ?? '').includes('gotcha_injected'))).toBe(false)
+
+    const bare = await svc.startSession({ projectId: 'proj-s' })
+    expect(bare.relevantGotchas).toEqual([])
+  })
+})
+

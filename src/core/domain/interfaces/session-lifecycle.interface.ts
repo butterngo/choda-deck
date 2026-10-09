@@ -7,6 +7,7 @@ import type {
   SessionEvent,
   SessionHandoff
 } from '../task-types'
+import type { RelevantGotcha } from '../code-ref-types'
 
 export interface StartSessionInput {
   projectId: string
@@ -28,6 +29,8 @@ export interface StartSessionResult {
    * intentionally omitted — StartSessionInput has no `userId`.
    */
   recalledMemories: AgentMemory[]
+  /** TASK-2341 — gotchas GUARDing code the task touches (top 5); [] when none. */
+  relevantGotchas: RelevantGotcha[]
 }
 
 /**

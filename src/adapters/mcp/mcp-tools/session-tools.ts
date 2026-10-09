@@ -154,7 +154,8 @@ export const register = (
     {
       description:
         'Start a new work session bound to a specific task. Sets the task to IN-PROGRESS and returns last handoff + active context. Call task_list or roadmap first to pick a taskId. Pass cwd to auto-detect workspaceId from registered workspaces. Multiple active sessions per workspace are allowed, but a task can only be linked to one active session at a time. ' +
-        'Response also includes `recalledMemories`: prior episodic/procedural memories matching the session scopes (task → workspace → project), ranked by importance. Empty array when nothing matches. When non-empty, echo a 1-line summary to the user so resumed context shows continuity from prior sessions — do NOT silently consume them.',
+        'Response also includes `recalledMemories`: prior episodic/procedural memories matching the session scopes (task → workspace → project), ranked by importance. Empty array when nothing matches. When non-empty, echo a 1-line summary to the user so resumed context shows continuity from prior sessions — do NOT silently consume them. ' +
+        '`relevantGotchas`: gotchas whose GUARDS code_ref covers code this task touches — read each before editing that code.',
       inputSchema: {
         projectId: z.string().describe('Project ID'),
         taskId: z
@@ -187,7 +188,13 @@ export const register = (
             workspaces: await svc.findWorkspaces(projectId)
           }) ?? undefined
 
-        const { session, contextSources, existingActiveSessions, recalledMemories } =
+        const {
+          session,
+          contextSources,
+          existingActiveSessions,
+          recalledMemories,
+          relevantGotchas
+        } =
           await svc.startSession({
             projectId,
             taskId,
@@ -209,6 +216,7 @@ export const register = (
           activeTasks: bundle?.currentState.activeTasks ?? [],
           openConversations: bundle?.currentState.openConversations ?? [],
           recalledMemories,
+          relevantGotchas,
           suggestion: buildSuggestion(lastSession, bundle?.currentState.activeTasks ?? []),
           rules: {
             onSessionStart: rules.sessionStart,

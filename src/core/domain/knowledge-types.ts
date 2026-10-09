@@ -81,6 +81,8 @@ export interface KnowledgeStructured {
   effortBand?: EffortBand
   status?: KnowledgeStatus
   affectedFeatureId?: string
+  /** TASK-2341 — gotcha: code_ref slugs it guards (→ GUARDS edges). */
+  guardsCodeRefs?: string[]
 }
 
 export interface KnowledgeFrontmatter {

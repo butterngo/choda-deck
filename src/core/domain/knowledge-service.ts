@@ -246,8 +246,13 @@ export class KnowledgeService implements KnowledgeOperations {
       for (const ws of structured.inWorkspaces ?? []) {
         await this.edges.add(slug, ws, 'IN')
       }
-    } else if (type === 'gotcha' && structured.affectedFeatureId) {
-      await this.edges.add(slug, structured.affectedFeatureId, 'ABOUT')
+    } else if (type === 'gotcha') {
+      if (structured.affectedFeatureId) {
+        await this.edges.add(slug, structured.affectedFeatureId, 'ABOUT')
+      }
+      for (const codeRef of structured.guardsCodeRefs ?? []) {
+        await this.edges.add(slug, codeRef, 'GUARDS')
+      }
     }
   }
 

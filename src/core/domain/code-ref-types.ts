@@ -30,6 +30,14 @@ export interface CodeRefPrefixFilter {
   path?: string
 }
 
+/** TASK-2341 — a gotcha whose GUARDS code_ref path prefixes a path the task touches. */
+export interface RelevantGotcha {
+  slug: string
+  title: string
+  guardPath: string
+  touchedPath: string
+}
+
 export interface TouchesEdge {
   taskId: string
   codeRefSlug: string
