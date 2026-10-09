@@ -68,7 +68,13 @@ export const register = (server: InstrumentedServer, svc: KnowledgeOperations): 
             affectedFeatureId: z
               .string()
               .optional()
-              .describe('gotcha: slug of the feature this concern is about (must exist)')
+              .describe('gotcha: slug of the feature this concern is about (must exist)'),
+            guardsCodeRefs: z
+              .array(z.string())
+              .optional()
+              .describe(
+                'gotcha: code_ref slugs it guards — session_start surfaces it (TASK-2341)'
+              )
           })
           .optional()
           .describe('Structured fields for feature / gotcha first-class types (TASK-988).')

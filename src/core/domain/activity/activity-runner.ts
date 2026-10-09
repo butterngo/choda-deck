@@ -7,7 +7,9 @@ import {
   computeTranscriptDigest,
   localDate,
   DEFAULT_TZ,
-  type ActivityDigest
+  type ActivityDigest,
+  type SessionActivity,
+  type TaskActivity
 } from './activity-digest'
 
 // TASK-2151 — the I/O half of the daily activity digest. Gathers the inputs the
@@ -100,17 +102,54 @@ function countHistoryRows(homeDir: string, date: string, tz: string): number {
 interface DbInputs {
   cwds: string[]
   sessionEndings: string[]
+  /** Claude Code session id → choda task id. */
+  ccTasks: Map<string, string | null>
 }
 
 function readDb(db: Database.Database | null): DbInputs {
-  if (!db) return { cwds: [], sessionEndings: [] }
+  if (!db) return { cwds: [], sessionEndings: [], ccTasks: new Map() }
   const cwds = db.prepare('SELECT cwd FROM workspaces UNION SELECT cwd FROM projects').all() as {
     cwd: string
   }[]
   const ended = db
     .prepare("SELECT ended_at FROM sessions WHERE status = 'completed' AND ended_at IS NOT NULL")
     .all() as { ended_at: string }[]
-  return { cwds: cwds.map((r) => r.cwd), sessionEndings: ended.map((r) => r.ended_at) }
+  const cc = db
+    .prepare('SELECT cc_session_id, task_id FROM sessions WHERE cc_session_id IS NOT NULL')
+    .all() as { cc_session_id: string; task_id: string | null }[]
+  return {
+    cwds: cwds.map((r) => r.cwd),
+    sessionEndings: ended.map((r) => r.ended_at),
+    ccTasks: new Map(cc.map((r) => [r.cc_session_id, r.task_id]))
+  }
+}
+
+/**
+ * TASK-2339 — roll the engine's per-cc-session counts up to choda tasks. A cc
+ * session no choda session points at lands in the `taskId: null` bucket.
+ */
+export function rollUpByTask(
+  bySession: Record<string, SessionActivity>,
+  ccTasks: Map<string, string | null>
+): TaskActivity[] {
+  const out = new Map<string | null, TaskActivity>()
+  for (const [cc, a] of Object.entries(bySession)) {
+    const taskId = ccTasks.get(cc) ?? null
+    let t = out.get(taskId)
+    if (!t)
+      out.set(taskId, (t = { taskId, sessions: 0, prompts: 0, interruptions: 0, corrections: 0 }))
+    t.sessions++
+    t.prompts += a.prompts
+    t.interruptions += a.interruptions
+    t.corrections += a.corrections
+  }
+  // Tasks by prompts desc; the unattributed null bucket always last.
+  return [...out.values()].sort(
+    (a, b) =>
+      Number(a.taskId === null) - Number(b.taskId === null) ||
+      b.prompts - a.prompts ||
+      (a.taskId ?? '').localeCompare(b.taskId ?? '')
+  )
 }
 
 function git(cwd: string, args: string[]): string {
@@ -176,7 +215,7 @@ export function buildDigest(date: string, opts: ActivityRunnerOptions): Activity
   const tz = opts.tz ?? DEFAULT_TZ
   const files: string[] = []
   walkJsonl(path.join(opts.homeDir, '.claude', 'projects'), localMidnightUtc(date, tz), files)
-  const { cwds, sessionEndings } = readDb(opts.db)
+  const { cwds, sessionEndings, ccTasks } = readDb(opts.db)
   const transcript = computeTranscriptDigest({
     date,
     tz,
@@ -199,7 +238,12 @@ export function buildDigest(date: string, opts: ActivityRunnerOptions): Activity
       historyRows: countHistoryRows(opts.homeDir, date, tz),
       skippedRepos: skipped
     },
-    metrics: { ...transcript.metrics, sessionsCompleted, mergesToDefault: merges }
+    metrics: {
+      ...transcript.metrics,
+      sessionsCompleted,
+      mergesToDefault: merges,
+      byTask: rollUpByTask(transcript.bySession, ccTasks)
+    }
   }
 }
 

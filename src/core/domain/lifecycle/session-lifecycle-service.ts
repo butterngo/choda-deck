@@ -23,6 +23,7 @@ import type {
 import { findAcItems } from './ac-check'
 
 export type RecallMemoriesFn = (input: MemoryRecallInput) => AgentMemory[]
+const RELEVANT_GOTCHAS_LIMIT = 5
 import { now } from '../repositories/shared'
 import {
   ConversationNotFoundError,
@@ -86,7 +87,29 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
         projectId: input.projectId
       })
 
-      return { session, contextSources, existingActiveSessions, recalledMemories }
+      const relevantGotchas = input.taskId
+        ? this.codeRefs.findGotchasGuardingTask(input.taskId, RELEVANT_GOTCHAS_LIMIT)
+        : []
+      // Logged so a later digest can tell "gotcha shown, mistake repeated anyway".
+      if (relevantGotchas.length > 0) {
+        this.sessionEvents.create({
+          sessionId: session.id,
+          eventType: 'observation',
+          payloadJson: JSON.stringify({
+            kind: 'gotcha_injected',
+            slugs: relevantGotchas.map((g) => g.slug)
+          }),
+          memoryCandidate: false
+        })
+      }
+
+      return {
+        session,
+        contextSources,
+        existingActiveSessions,
+        recalledMemories,
+        relevantGotchas
+      }
     })
     return tx()
   }

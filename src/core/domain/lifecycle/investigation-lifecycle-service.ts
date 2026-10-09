@@ -1,5 +1,7 @@
 import type Database from 'better-sqlite3'
 import type { InvestigationRepository } from '../repositories/investigation-repository'
+import type { SessionRepository } from '../repositories/session-repository'
+import type { SessionEventRepository } from '../repositories/session-event-repository'
 import type { InvestigationOperations } from '../interfaces/investigation.interface'
 import type {
   AddEvidenceInput,
@@ -25,7 +27,9 @@ import {
 export class InvestigationLifecycleService implements InvestigationOperations {
   constructor(
     private readonly db: Database.Database,
-    private readonly investigations: InvestigationRepository
+    private readonly investigations: InvestigationRepository,
+    private readonly sessions: SessionRepository,
+    private readonly sessionEvents: SessionEventRepository
   ) {}
 
   async startInvestigation(input: StartInvestigationInput): Promise<Investigation> {
@@ -100,9 +104,41 @@ export class InvestigationLifecycleService implements InvestigationOperations {
       // Human-gated knowledge draft — returned, NOT written to the knowledge layer
       // inside this transaction (ADR-035 / harvest-knowledge memoryCandidate rail).
       const knowledgeDraft = buildKnowledgeDraft(investigation)
+      this.emitGotchaDraft(investigation)
       return { investigation, knowledgeDraft }
     })
     return tx()
+  }
+
+  // TASK-2342 — feed the root cause into the TASK-998 gotcha_draft rail so it
+  // surfaces in session_end's memoryCandidates. Lands on the investigation's own
+  // session while active, else the task's active session; none → no draft.
+  private emitGotchaDraft(inv: Investigation): void {
+    if (!inv.rootCause?.trim()) return
+    const own = inv.sessionId ? this.sessions.get(inv.sessionId) : null
+    const session =
+      own?.status === 'active'
+        ? own
+        : inv.taskId
+          ? (this.sessions.findActiveByTask(inv.taskId)[0] ?? null)
+          : null
+    if (!session) return
+    this.sessionEvents.create({
+      sessionId: session.id,
+      eventType: 'observation',
+      payloadJson: JSON.stringify({
+        kind: 'gotcha_draft',
+        trigger: inv.symptom,
+        context: inv.symptom,
+        businessRule: inv.rootCause.trim(),
+        resolution: inv.fixSummary ?? '',
+        patternTag: inv.patternTag,
+        affectedFeatureId: null,
+        needsFeature: true,
+        sourceInvestigationId: inv.id
+      }),
+      memoryCandidate: true
+    })
   }
 }
 

@@ -256,3 +256,55 @@ describe('transaction rollback (AC-6 — no partial write)', () => {
     expect((await svc.getInvestigation(inv.id))?.evidence).toHaveLength(0)
   })
 })
+
+describe('resolve → gotcha_draft memory candidate (TASK-2342)', () => {
+  it('a resolve with a root cause lands one gotcha_draft in the session memoryCandidates', async () => {
+    const started = await svc.startSession({ projectId: 'proj-i' })
+    const inv = await svc.startInvestigation({
+      symptom: 'digest double-counts prompts',
+      sessionId: started.session.id
+    })
+    await svc.resolveInvestigation(inv.id, {
+      rootCause: 'interruption rows parsed as prompts',
+      fixSummary: 'skip [Request interrupted by user rows',
+      patternTag: 'transcript-synthetic-rows'
+    })
+
+    const r = await svc.endSession(started.session.id, { handoff: { resumePoint: 'r' } })
+    expect(r.memoryCandidates).toHaveLength(1)
+    const payload = JSON.parse(r.memoryCandidates[0].payloadJson ?? '{}')
+    expect(payload).toMatchObject({
+      kind: 'gotcha_draft',
+      businessRule: 'interruption rows parsed as prompts',
+      resolution: 'skip [Request interrupted by user rows',
+      patternTag: 'transcript-synthetic-rows',
+      sourceInvestigationId: inv.id
+    })
+    expect(r.selfEditPrompt).toContain("knowledge_create(type='gotcha')")
+    // Still a draft — nothing written to the knowledge layer.
+    expect(await svc.listKnowledge({ projectId: 'proj-i' })).toHaveLength(0)
+  })
+
+  it('falls back to the task active session when the investigation has none', async () => {
+    const task = await svc.createTask({ projectId: 'proj-i', title: 't' })
+    const started = await svc.startSession({ projectId: 'proj-i', taskId: task.id })
+    const inv = await svc.startInvestigation({ symptom: 's', taskId: task.id })
+    await svc.resolveInvestigation(inv.id, { rootCause: 'rc', fixSummary: 'fix' })
+    const r = await svc.endSession(started.session.id, { handoff: { resumePoint: 'r' } })
+    expect(r.memoryCandidates).toHaveLength(1)
+  })
+
+  it('an empty root cause drafts nothing', async () => {
+    const started = await svc.startSession({ projectId: 'proj-i' })
+    const inv = await svc.startInvestigation({ symptom: 's', sessionId: started.session.id })
+    await svc.resolveInvestigation(inv.id, { rootCause: '   ', fixSummary: 'fix' })
+    const r = await svc.endSession(started.session.id, { handoff: { resumePoint: 'r' } })
+    expect(r.memoryCandidates).toEqual([])
+  })
+
+  it('no session anywhere → resolve still succeeds, no draft', async () => {
+    const inv = await svc.startInvestigation({ symptom: 's' })
+    const r = await svc.resolveInvestigation(inv.id, { rootCause: 'rc', fixSummary: 'fix' })
+    expect(r.investigation.status).toBe('resolved')
+  })
+})

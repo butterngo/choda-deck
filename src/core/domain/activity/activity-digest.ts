@@ -1,4 +1,5 @@
 import { splitLines } from '../../utils/lines'
+import { MAX_MISTAKES, RunTracker, type Mistake, type RunAction } from './activity-mistakes'
 
 // TASK-2150 — the pure half of the daily activity digest (TASK-2149).
 // Takes raw Claude Code transcript JSONL contents plus the registered workspace
@@ -13,6 +14,11 @@ export const DEFAULT_TZ = 'Asia/Ho_Chi_Minh'
 
 const BUCKET_MS = 5 * 60_000
 const CONFIRMATION = /^(ok(ay)?|oke|y(es)?|ừ|rồi|được|đúng|go|tiếp|[0-9])\W*$/i
+// TASK-2339 — a user turn that pushes back on what Claude just did.
+const CORRECTION =
+  /(?<!\p{L})(sai rồi|không phải|lại nữa|sao lại|revert|undo|rollback|wrong|that['’]s not|không đúng)(?!\p{L})/iu
+// Claude Code writes this as a user row when Esc stops a run; it is not a prompt.
+const INTERRUPTION = /^\[Request interrupted by user/
 const MIN_REPEATED_LENGTH = 10
 const MAX_REPEATED = 20
 
@@ -30,12 +36,33 @@ export interface ProjectActivity {
   prompts: number
   activeMinutes: number
   tokens: number
+  interruptions: number
+  corrections: number
+}
+
+/** Per-task rollup, joined in the runner via sessions.cc_session_id (null = no task). */
+export interface TaskActivity {
+  taskId: string | null
+  sessions: number
+  prompts: number
+  interruptions: number
+  corrections: number
+}
+
+/** Raw counts per Claude Code session id — the engine stays task-agnostic. */
+export interface SessionActivity {
+  prompts: number
+  interruptions: number
+  corrections: number
 }
 
 export interface ActivityMetrics {
   prompts: number
   confirmationTurns: number
   confirmationRate: number
+  interruptions: number
+  correctionTurns: number
+  correctionRate: number
   claudeRunMinutes: number
   waitMinutes: number
   activeMinutes: number
@@ -50,6 +77,9 @@ export interface ActivityMetrics {
   skillsUsed: Record<string, number>
   tokens: { in: number; out: number; cacheRead: number }
   byProject: ProjectActivity[]
+  byTask: TaskActivity[]
+  /** TASK-2340 — the run behind each interruption / correction, capped at 50. */
+  mistakes: Mistake[]
   repeatedPrompts: { normalized: string; count: number }[]
 }
 
@@ -72,7 +102,12 @@ export interface TranscriptDigestInput {
   workspaces: string[]
 }
 
-export type TranscriptDigest = Pick<ActivityDigest, 'claudeCodeVersions' | 'sources' | 'metrics'>
+export interface TranscriptDigest extends Pick<
+  ActivityDigest,
+  'claudeCodeVersions' | 'sources' | 'metrics'
+> {
+  bySession: Record<string, SessionActivity>
+}
 
 interface Row {
   type?: unknown
@@ -93,6 +128,7 @@ interface Prompt {
   workspace: string
   resolved: boolean
   text: string
+  run: RunAction
 }
 
 const dateFormatters = new Map<string, Intl.DateTimeFormat>()
@@ -156,6 +192,24 @@ function bump(m: Map<string, number>, key: string, by = 1): void {
   m.set(key, (m.get(key) ?? 0) + by)
 }
 
+function mistake(kind: Mistake['kind'], workspace: string, run: RunAction): Mistake {
+  return { kind, workspace, tools: run.tools, paths: run.paths }
+}
+
+function sessionActivity(
+  prompts: Prompt[],
+  interruptions: { session: string }[],
+  corrections: Prompt[]
+): Record<string, SessionActivity> {
+  const out: Record<string, SessionActivity> = {}
+  const get = (s: string): SessionActivity =>
+    (out[s] ??= { prompts: 0, interruptions: 0, corrections: 0 })
+  for (const p of prompts) get(p.session).prompts++
+  for (const i of interruptions) get(i.session).interruptions++
+  for (const c of corrections) get(c.session).corrections++
+  return out
+}
+
 export function computeTranscriptDigest(input: TranscriptDigestInput): TranscriptDigest {
   const tz = input.tz ?? DEFAULT_TZ
   const sources: ActivitySources = {
@@ -176,6 +230,8 @@ export function computeTranscriptDigest(input: TranscriptDigestInput): Transcrip
   const toolMix = new Map<string, number>()
   const skills = new Map<string, number>()
   const tokens = { in: 0, out: 0, cacheRead: 0 }
+  const interruptions: { session: string; workspace: string; run: RunAction }[] = []
+  const runs = new RunTracker()
   let toolDenials = 0
 
   const attribute = (cwd: unknown): { workspace: string; resolved: boolean } => {
@@ -233,6 +289,7 @@ export function computeTranscriptDigest(input: TranscriptDigestInput): Transcrip
         const { workspace } = attribute(row.cwd)
         bump(projectTokens, workspace, used + num(usage?.output_tokens))
         if (!sidechain) {
+          runs.record(session, content, workspace)
           let times = assistantTimes.get(session)
           if (!times) assistantTimes.set(session, (times = []))
           times.push(t)
@@ -245,7 +302,12 @@ export function computeTranscriptDigest(input: TranscriptDigestInput): Transcrip
       const text = promptText(content)
       if (text === null) continue
       const { workspace, resolved } = attribute(row.cwd)
-      prompts.push({ t, session, workspace, resolved, text })
+      const run = runs.take(session)
+      if (INTERRUPTION.test(text.trim())) {
+        interruptions.push({ session, workspace, run })
+        continue
+      }
+      prompts.push({ t, session, workspace, resolved, text, run })
       markActive(t, session, workspace)
     }
   }
@@ -271,6 +333,7 @@ export function computeTranscriptDigest(input: TranscriptDigestInput): Transcrip
   }
 
   const confirmationTurns = prompts.filter((p) => CONFIRMATION.test(p.text.trim())).length
+  const corrections = prompts.filter((p) => CORRECTION.test(p.text))
   const activeMinutes = buckets.size * 5
 
   const repeated = new Map<string, number>()
@@ -281,15 +344,27 @@ export function computeTranscriptDigest(input: TranscriptDigestInput): Transcrip
 
   const projectPrompts = new Map<string, number>()
   for (const p of prompts) bump(projectPrompts, p.workspace)
-  const projectNames = new Set([...projectPrompts.keys(), ...projectBuckets.keys()])
+  const projectInterruptions = new Map<string, number>()
+  for (const i of interruptions) bump(projectInterruptions, i.workspace)
+  const projectCorrections = new Map<string, number>()
+  for (const c of corrections) bump(projectCorrections, c.workspace)
+  const projectNames = new Set([
+    ...projectPrompts.keys(),
+    ...projectBuckets.keys(),
+    ...projectInterruptions.keys()
+  ])
 
   return {
     claudeCodeVersions: [...versions].sort(),
+    bySession: sessionActivity(prompts, interruptions, corrections),
     sources,
     metrics: {
       prompts: prompts.length,
       confirmationTurns,
       confirmationRate: prompts.length ? round(confirmationTurns / prompts.length, 2) : 0,
+      interruptions: interruptions.length,
+      correctionTurns: corrections.length,
+      correctionRate: prompts.length ? round(corrections.length / prompts.length, 2) : 0,
       claudeRunMinutes: round(runMs / 60_000, 1),
       waitMinutes: round(waitMs / 60_000, 1),
       activeMinutes,
@@ -308,9 +383,16 @@ export function computeTranscriptDigest(input: TranscriptDigestInput): Transcrip
           workspace,
           prompts: projectPrompts.get(workspace) ?? 0,
           activeMinutes: (projectBuckets.get(workspace)?.size ?? 0) * 5,
-          tokens: projectTokens.get(workspace) ?? 0
+          tokens: projectTokens.get(workspace) ?? 0,
+          interruptions: projectInterruptions.get(workspace) ?? 0,
+          corrections: projectCorrections.get(workspace) ?? 0
         }))
         .sort((a, b) => b.prompts - a.prompts || a.workspace.localeCompare(b.workspace)),
+      byTask: [],
+      mistakes: [
+        ...interruptions.map((i) => mistake('interruption', i.workspace, i.run)),
+        ...corrections.map((c) => mistake('correction', c.workspace, c.run))
+      ].slice(0, MAX_MISTAKES),
       repeatedPrompts: [...repeated.entries()]
         .filter(([, count]) => count >= 2)
         .map(([normalized, count]) => ({ normalized, count }))

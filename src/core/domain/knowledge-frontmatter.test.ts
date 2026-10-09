@@ -42,6 +42,20 @@ describe('frontmatter structured fields (TASK-988)', () => {
     )
   })
 
+  it('round-trips gotcha guardsCodeRefs (TASK-2341)', () => {
+    const fm: KnowledgeFrontmatter = {
+      ...base,
+      type: 'gotcha',
+      title: 'interruption rows are not prompts',
+      structured: { guardsCodeRefs: ['coderef-activity-digest', 'coderef-activity-runner'] }
+    }
+    const parsed = parseFrontmatter(serializeFrontmatter(fm, 'b'))
+    expect(parsed.frontmatter.structured?.guardsCodeRefs).toEqual([
+      'coderef-activity-digest',
+      'coderef-activity-runner'
+    ])
+  })
+
   it('omits the structured block entirely for the original two-line types', () => {
     const fm: KnowledgeFrontmatter = { ...base, type: 'decision', structured: undefined }
     const text = serializeFrontmatter(fm, 'b')

@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3'
 import type {
   CodeRefPrefixFilter,
   CodeRefRow,
+  RelevantGotcha,
   TouchesEdge,
   TouchesRelation,
   UpsertCodeRefInput
@@ -128,6 +129,30 @@ export class CodeRefRepository {
       codeRefSlug: r.code_ref_slug,
       relation: r.relation as TouchesRelation
     }))
+  }
+
+  /**
+   * TASK-2341 — gotchas GUARDing a code_ref whose path is a plain string prefix
+   * of a path the task touches (guard `src/Foo` covers `src/Foo.ts`), newest
+   * verified first, one row per gotcha.
+   */
+  findGotchasGuardingTask(taskId: string, limit: number): RelevantGotcha[] {
+    return this.db
+      .prepare(
+        `SELECT k.slug AS slug, k.title AS title,
+                MIN(g.path) AS guardPath, MIN(t.path) AS touchedPath
+         FROM task_code_refs tcr
+         JOIN code_refs t ON t.slug = tcr.code_ref_slug
+         JOIN code_refs g ON g.project_id = t.project_id
+           AND substr(t.path, 1, length(g.path)) = g.path
+         JOIN relationships r ON r.to_id = g.slug AND r.type = 'GUARDS'
+         JOIN knowledge_index k ON k.slug = r.from_id AND k.type = 'gotcha'
+         WHERE tcr.task_id = ?
+         GROUP BY k.slug
+         ORDER BY MAX(k.last_verified_at) DESC, k.slug
+         LIMIT ?`
+      )
+      .all(taskId, limit) as RelevantGotcha[]
   }
 
   getTouchesForCodeRef(codeRefSlug: string): TouchesEdge[] {

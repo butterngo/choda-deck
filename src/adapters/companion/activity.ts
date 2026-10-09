@@ -57,6 +57,30 @@ export function parseRange(params: URLSearchParams, today: string): Range {
   return { from, to }
 }
 
+/**
+ * TASK-2339/2340 — files written before interruptions/corrections/byTask/mistakes get
+ * those fields defaulted, so the companion view never reads `undefined`.
+ */
+export function withDefaults(d: ActivityDigest): ActivityDigest {
+  const m = d.metrics ?? ({} as ActivityDigest['metrics'])
+  return {
+    ...d,
+    metrics: {
+      ...m,
+      interruptions: m.interruptions ?? 0,
+      correctionTurns: m.correctionTurns ?? 0,
+      correctionRate: m.correctionRate ?? 0,
+      byTask: m.byTask ?? [],
+      mistakes: m.mistakes ?? [],
+      byProject: (m.byProject ?? []).map((p) => ({
+        ...p,
+        interruptions: p.interruptions ?? 0,
+        corrections: p.corrections ?? 0
+      }))
+    }
+  }
+}
+
 /** Stored digests with from <= date <= to, ascending. Unreadable files are skipped. */
 export function readDigests(
   artifactsDir: string | undefined,
@@ -76,7 +100,8 @@ export function readDigests(
     const m = /^(\d{4}-\d{2}-\d{2})\.json$/.exec(name)
     if (!m || m[1] < from || m[1] > to) continue
     try {
-      out.push(JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8')) as ActivityDigest)
+      const raw = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8')) as ActivityDigest
+      out.push(withDefaults(raw))
     } catch {
       /* half-written or corrupt file — skip it, never 500 the whole range */
     }

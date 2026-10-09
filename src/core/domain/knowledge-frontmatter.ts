@@ -20,7 +20,7 @@ import {
 // (`realizesTasks: ["TASK-909","TASK-910"]`) — keeps the line-oriented parser
 // simple and CRLF-safe.
 const STRUCTURED_SCALAR_KEYS = ['anchorTaskId', 'effortBand', 'status', 'affectedFeatureId'] as const
-const STRUCTURED_LIST_KEYS = ['realizesTasks', 'inWorkspaces'] as const
+const STRUCTURED_LIST_KEYS = ['realizesTasks', 'inWorkspaces', 'guardsCodeRefs'] as const
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/
 
@@ -97,6 +97,7 @@ function assignStructured(
     const list = parseInlineList(rawValue)
     if (key === 'realizesTasks') s.realizesTasks = list
     else if (key === 'inWorkspaces') s.inWorkspaces = list
+    else if (key === 'guardsCodeRefs') s.guardsCodeRefs = list
     return true
   }
   return false
@@ -255,6 +256,9 @@ export function serializeFrontmatter(fm: KnowledgeFrontmatter, body: string): st
     if (s.effortBand) lines.push(`effortBand: ${s.effortBand}`)
     if (s.status) lines.push(`status: ${s.status}`)
     if (s.affectedFeatureId) lines.push(`affectedFeatureId: ${s.affectedFeatureId}`)
+    if (s.guardsCodeRefs && s.guardsCodeRefs.length > 0) {
+      lines.push(`guardsCodeRefs: ${JSON.stringify(s.guardsCodeRefs)}`)
+    }
   }
   lines.push('---')
   const trimmedBody = body.replace(/^\r?\n+/, '')
