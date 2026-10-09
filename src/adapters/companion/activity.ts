@@ -58,7 +58,7 @@ export function parseRange(params: URLSearchParams, today: string): Range {
 }
 
 /**
- * TASK-2339 — files written before interruptions/corrections/byTask existed get
+ * TASK-2339/2340 — files written before interruptions/corrections/byTask/mistakes get
  * those fields defaulted, so the companion view never reads `undefined`.
  */
 export function withDefaults(d: ActivityDigest): ActivityDigest {
@@ -71,6 +71,7 @@ export function withDefaults(d: ActivityDigest): ActivityDigest {
       correctionTurns: m.correctionTurns ?? 0,
       correctionRate: m.correctionRate ?? 0,
       byTask: m.byTask ?? [],
+      mistakes: m.mistakes ?? [],
       byProject: (m.byProject ?? []).map((p) => ({
         ...p,
         interruptions: p.interruptions ?? 0,

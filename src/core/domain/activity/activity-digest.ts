@@ -1,4 +1,5 @@
 import { splitLines } from '../../utils/lines'
+import { MAX_MISTAKES, RunTracker, type Mistake, type RunAction } from './activity-mistakes'
 
 // TASK-2150 — the pure half of the daily activity digest (TASK-2149).
 // Takes raw Claude Code transcript JSONL contents plus the registered workspace
@@ -77,6 +78,8 @@ export interface ActivityMetrics {
   tokens: { in: number; out: number; cacheRead: number }
   byProject: ProjectActivity[]
   byTask: TaskActivity[]
+  /** TASK-2340 — the run behind each interruption / correction, capped at 50. */
+  mistakes: Mistake[]
   repeatedPrompts: { normalized: string; count: number }[]
 }
 
@@ -125,6 +128,7 @@ interface Prompt {
   workspace: string
   resolved: boolean
   text: string
+  run: RunAction
 }
 
 const dateFormatters = new Map<string, Intl.DateTimeFormat>()
@@ -188,6 +192,10 @@ function bump(m: Map<string, number>, key: string, by = 1): void {
   m.set(key, (m.get(key) ?? 0) + by)
 }
 
+function mistake(kind: Mistake['kind'], workspace: string, run: RunAction): Mistake {
+  return { kind, workspace, tools: run.tools, paths: run.paths }
+}
+
 function sessionActivity(
   prompts: Prompt[],
   interruptions: { session: string }[],
@@ -222,7 +230,8 @@ export function computeTranscriptDigest(input: TranscriptDigestInput): Transcrip
   const toolMix = new Map<string, number>()
   const skills = new Map<string, number>()
   const tokens = { in: 0, out: 0, cacheRead: 0 }
-  const interruptions: { session: string; workspace: string }[] = []
+  const interruptions: { session: string; workspace: string; run: RunAction }[] = []
+  const runs = new RunTracker()
   let toolDenials = 0
 
   const attribute = (cwd: unknown): { workspace: string; resolved: boolean } => {
@@ -280,6 +289,7 @@ export function computeTranscriptDigest(input: TranscriptDigestInput): Transcrip
         const { workspace } = attribute(row.cwd)
         bump(projectTokens, workspace, used + num(usage?.output_tokens))
         if (!sidechain) {
+          runs.record(session, content, workspace)
           let times = assistantTimes.get(session)
           if (!times) assistantTimes.set(session, (times = []))
           times.push(t)
@@ -292,11 +302,12 @@ export function computeTranscriptDigest(input: TranscriptDigestInput): Transcrip
       const text = promptText(content)
       if (text === null) continue
       const { workspace, resolved } = attribute(row.cwd)
+      const run = runs.take(session)
       if (INTERRUPTION.test(text.trim())) {
-        interruptions.push({ session, workspace })
+        interruptions.push({ session, workspace, run })
         continue
       }
-      prompts.push({ t, session, workspace, resolved, text })
+      prompts.push({ t, session, workspace, resolved, text, run })
       markActive(t, session, workspace)
     }
   }
@@ -378,6 +389,10 @@ export function computeTranscriptDigest(input: TranscriptDigestInput): Transcrip
         }))
         .sort((a, b) => b.prompts - a.prompts || a.workspace.localeCompare(b.workspace)),
       byTask: [],
+      mistakes: [
+        ...interruptions.map((i) => mistake('interruption', i.workspace, i.run)),
+        ...corrections.map((c) => mistake('correction', c.workspace, c.run))
+      ].slice(0, MAX_MISTAKES),
       repeatedPrompts: [...repeated.entries()]
         .filter(([, count]) => count >= 2)
         .map(([normalized, count]) => ({ normalized, count }))

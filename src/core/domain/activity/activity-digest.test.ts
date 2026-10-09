@@ -206,3 +206,44 @@ describe('interruptions + corrections — TASK-2339', () => {
     expect(d.metrics.byTask).toEqual([])
   })
 })
+
+describe('mistakes — TASK-2340', () => {
+  const edit = (file: string) => ({ type: 'tool_use', name: 'Edit', input: { file_path: file } })
+  const toolResult = (ts: string) =>
+    JSON.stringify({
+      type: 'user',
+      timestamp: ts,
+      sessionId: 'S1',
+      cwd: WS,
+      message: { content: [{ type: 'tool_result', content: 'ok' }] }
+    })
+
+  it('records the tools and workspace-relative paths of the run being corrected', () => {
+    const d = digest([
+      prompt('rename the helper', at('10:00')),
+      assistant(at('10:01'), {}, [edit('C:\\ws\\src\\a.ts')]),
+      toolResult(at('10:01')),
+      assistant(at('10:02'), {}, [{ type: 'tool_use', name: 'Bash', input: { command: 'x' } }]),
+      prompt('sai rồi, không phải file đó', at('10:03')),
+      prompt('ok', at('10:04')),
+      prompt('[Request interrupted by user]', at('10:05'))
+    ])
+    expect(d.metrics.mistakes).toEqual([
+      { kind: 'interruption', workspace: 'c:/ws', tools: [], paths: [] },
+      { kind: 'correction', workspace: 'c:/ws', tools: ['Bash', 'Edit'], paths: ['src/a.ts'] }
+    ])
+  })
+
+  it('an interruption captures the tool use it stopped; no prompt text leaks', () => {
+    const d = digest([
+      prompt('refactor the whole module carefully', at('10:00')),
+      assistant(at('10:01'), {}, [edit('D:/elsewhere/x.ts')]),
+      prompt('[Request interrupted by user for tool use]', at('10:02'))
+    ])
+    expect(d.metrics.mistakes).toEqual([
+      { kind: 'interruption', workspace: 'c:/ws', tools: ['Edit'], paths: ['d:/elsewhere/x.ts'] }
+    ])
+    expect(JSON.stringify(d.metrics.mistakes)).not.toContain('refactor')
+  })
+})
+
