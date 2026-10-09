@@ -142,7 +142,67 @@ describe('computeTranscriptDigest — TASK-2150', () => {
     expect(d.claudeCodeVersions).toEqual(['2.1.281'])
     expect(d.metrics.repeatedPrompts).toEqual([{ normalized: 'please do the thing', count: 2 }])
     expect(d.metrics.byProject).toEqual([
-      { workspace: 'c:/ws', prompts: 2, activeMinutes: 10, tokens: 17 }
+      {
+        workspace: 'c:/ws',
+        prompts: 2,
+        activeMinutes: 10,
+        tokens: 17,
+        interruptions: 0,
+        corrections: 0
+      }
     ])
+  })
+})
+
+describe('interruptions + corrections — TASK-2339', () => {
+  it('an interruption is counted, never a prompt, never a repeated prompt', () => {
+    const d = digest([
+      prompt('fix the parser please', at('10:00')),
+      prompt('[Request interrupted by user]', at('10:01')),
+      prompt('[Request interrupted by user for tool use]', at('10:02')),
+      prompt('[Request interrupted by user]', at('10:03'))
+    ])
+    expect(d.metrics.prompts).toBe(1)
+    expect(d.metrics.interruptions).toBe(3)
+    expect(d.metrics.repeatedPrompts).toEqual([])
+  })
+
+  it('matches Vietnamese and English corrections, not confirmations', () => {
+    const texts = [
+      'sai rồi, làm lại',
+      'Không phải file đó',
+      'sao lại xoá test?',
+      'please revert that',
+      "That's not what I asked",
+      'this is wrong',
+      'ok',
+      'tiếp',
+      'undoubtedly fine',
+      'wrongly named but keep it'
+    ]
+    const d = digest(texts.map((t, i) => prompt(t, at(`10:${String(i).padStart(2, '0')}`))))
+    expect(d.metrics.prompts).toBe(10)
+    expect(d.metrics.correctionTurns).toBe(6)
+    expect(d.metrics.correctionRate).toBe(0.6)
+  })
+
+  it('splits interruptions and corrections by project and by cc session', () => {
+    const d = digest(
+      [
+        prompt('sai rồi', at('10:00')),
+        prompt('[Request interrupted by user]', at('10:01')),
+        prompt('build it', at('10:02'), { sessionId: 'S2', cwd: 'C:/other' }),
+        prompt('wrong file', at('10:03'), { sessionId: 'S2', cwd: 'C:/other' })
+      ],
+      [WS, 'C:/other']
+    )
+    const byWs = Object.fromEntries(d.metrics.byProject.map((p) => [p.workspace, p]))
+    expect(byWs['c:/ws']).toMatchObject({ prompts: 1, interruptions: 1, corrections: 1 })
+    expect(byWs['c:/other']).toMatchObject({ prompts: 2, interruptions: 0, corrections: 1 })
+    expect(d.bySession).toEqual({
+      S1: { prompts: 1, interruptions: 1, corrections: 1 },
+      S2: { prompts: 2, interruptions: 0, corrections: 1 }
+    })
+    expect(d.metrics.byTask).toEqual([])
   })
 })

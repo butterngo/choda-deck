@@ -91,6 +91,22 @@ describe('GET /activity/digests — TASK-2152', () => {
     expect(await res.json()).toEqual([])
   })
 
+  it('TASK-2339: a pre-2339 file gets the new metrics defaulted', async () => {
+    store('2026-09-25', {
+      metrics: { prompts: 3, byProject: [{ workspace: 'c:/ws', prompts: 3 }] }
+    })
+    const res = await fetch(`${base}/activity/digests?from=2026-09-25&to=2026-09-25`)
+    const [d] = (await res.json()) as { metrics: Record<string, unknown> }[]
+    expect(d.metrics).toMatchObject({
+      prompts: 3,
+      interruptions: 0,
+      correctionTurns: 0,
+      correctionRate: 0,
+      byTask: [],
+      byProject: [{ workspace: 'c:/ws', prompts: 3, interruptions: 0, corrections: 0 }]
+    })
+  })
+
   it('a corrupt digest file is skipped, not a 500', async () => {
     store('2026-09-25')
     fs.writeFileSync(path.join(artifactsDir, 'activity', '2026-09-24.json'), '{half')

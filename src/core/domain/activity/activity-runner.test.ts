@@ -10,6 +10,7 @@ import {
   addDays,
   localMidnightUtc,
   activityDir,
+  rollUpByTask,
   type ActivityRunnerOptions
 } from './activity-runner'
 
@@ -203,5 +204,62 @@ describe('runActivityDigest — TASK-2151', () => {
     const res = runActivityDigest({ date: DATE }, opts({ db: null }))
     expect(res.written).toHaveLength(1)
     expect(res.written[0].prompts).toBe(0)
+  })
+})
+
+describe('byTask rollup — TASK-2339', () => {
+  it('joins cc session ids to tasks; an unmapped cc session lands in the null bucket', () => {
+    const ccTasks = new Map<string, string | null>([
+      ['cc1', 'TASK-1'],
+      ['cc2', 'TASK-1'],
+      ['cc3', null]
+    ])
+    const rows = rollUpByTask(
+      {
+        cc1: { prompts: 4, interruptions: 1, corrections: 2 },
+        cc2: { prompts: 3, interruptions: 0, corrections: 1 },
+        cc3: { prompts: 1, interruptions: 0, corrections: 0 },
+        cc4: { prompts: 2, interruptions: 1, corrections: 0 }
+      },
+      ccTasks
+    )
+    expect(rows).toEqual([
+      { taskId: 'TASK-1', sessions: 2, prompts: 7, interruptions: 1, corrections: 3 },
+      { taskId: null, sessions: 2, prompts: 3, interruptions: 1, corrections: 0 }
+    ])
+  })
+
+  it('writes byTask from sessions.cc_session_id into the digest file', () => {
+    registerWorkspace('ws', 'C:/ws')
+    db.prepare(
+      "INSERT INTO sessions (id, project_id, task_id, started_at, status, cc_session_id) VALUES ('s1', 'p', 'TASK-9', '2026-09-25T00:00:00Z', 'active', 'CC-A')"
+    ).run()
+    const ts = '2026-09-25T03:00:00.000Z'
+    writeTranscript([
+      {
+        type: 'user',
+        timestamp: ts,
+        sessionId: 'CC-A',
+        cwd: 'C:/ws',
+        message: { content: 'sai rồi' }
+      },
+      {
+        type: 'user',
+        timestamp: ts,
+        sessionId: 'CC-B',
+        cwd: 'C:/ws',
+        message: { content: 'go on' }
+      }
+    ])
+    runActivityDigest({ date: DATE }, opts())
+    const d = JSON.parse(
+      fs.readFileSync(path.join(activityDir(artifactsDir), `${DATE}.json`), 'utf8')
+    )
+    expect(d.metrics.correctionTurns).toBe(1)
+    expect(d.metrics.byTask).toEqual([
+      { taskId: 'TASK-9', sessions: 1, prompts: 1, interruptions: 0, corrections: 1 },
+      { taskId: null, sessions: 1, prompts: 1, interruptions: 0, corrections: 0 }
+    ])
+    expect(d.bySession).toBeUndefined()
   })
 })
