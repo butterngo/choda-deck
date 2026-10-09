@@ -227,7 +227,12 @@ export class SqliteTaskService
     })
     this.projectMembers = new ProjectMemberRepository(this.db)
     this.investigations = new InvestigationRepository(this.db, this.counters)
-    this.investigationLifecycle = new InvestigationLifecycleService(this.db, this.investigations)
+    this.investigationLifecycle = new InvestigationLifecycleService(
+      this.db,
+      this.investigations,
+      this.sessions,
+      this.sessionEvents
+    )
     this.inboxLifecycle = new InboxLifecycleService(
       this.db,
       this.inbox,
