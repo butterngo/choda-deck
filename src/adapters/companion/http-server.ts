@@ -21,6 +21,7 @@ import { parseTaskListQuery, listTasks } from './task-list'
 import { handleArtifactsRoute } from './artifacts'
 import { handleMeetingsRoute } from './meetings'
 import { handleActivityRoute } from './activity'
+import { handleImproveRoute } from './improve'
 import { handleVaultRoute } from './vault'
 import { handleClaudeConfigRoute } from './claude-config'
 import { handleAcReviewRoute } from './ac-review'
@@ -124,6 +125,19 @@ async function route(
 
   // TASK-2152 — daily activity digests (read-only JSON from <artifactsDir>/activity).
   if (handleActivityRoute(req, res, { artifactsDir: services.artifactsDir })) {
+    return
+  }
+
+  // TASK-2357 — the improve loop: config, scorecards, runs, proposals. Owns its
+  // own PUT/POST methods and gates on the bridge token (it writes a repo file and
+  // starts a run that spends tokens), so it sits before the GET-only guard.
+  if (
+    await handleImproveRoute(req, res, {
+      svc: services.svc,
+      bridgeToken: services.bridgeToken,
+      artifactsDir: services.artifactsDir
+    })
+  ) {
     return
   }
 
