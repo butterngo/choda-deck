@@ -1,0 +1,36 @@
+{
+  "mode": "manual",
+  "url": "http://localhost:5173",
+  "startCmd": "pnpm --filter web dev",
+  "testCmd": "pnpm test",
+  "pages": ["/tasks/today", "/tasks", "/activity"],
+  "flows": [
+    {
+      "name": "create-task",
+      "steps": "Open /tasks, click New task, type a title, save, see it at the top of the list",
+      "spec": "packages/web/e2e/create-task.spec.ts"
+    }
+  ],
+  "criteria": [
+    { "name": "Test pass rate", "by": "auto", "measure": "test", "target": "100%" },
+    {
+      "name": "/tasks/today load",
+      "by": "auto",
+      "measure": "lcp:/tasks/today",
+      "target": "< 1.5s"
+    },
+    { "name": "Console errors", "by": "auto", "measure": "console:/tasks/today", "target": 0 },
+    {
+      "name": "UI scannable",
+      "by": "agent",
+      "measure": "Can the day's tasks be scanned at a glance: clear hierarchy, no clutter, status readable without hovering",
+      "target": "≥ 4/5"
+    },
+    {
+      "name": "Create-task flow",
+      "by": "auto",
+      "measure": "flow:create-task",
+      "target": "pass, ≤ 4 steps"
+    }
+  ]
+}
