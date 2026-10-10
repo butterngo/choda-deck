@@ -1,35 +1,35 @@
 {
   "mode": "manual",
   "url": "http://localhost:5173",
-  "startCmd": "pnpm --filter web dev",
+  "startCmd": "pnpm dev",
   "testCmd": "pnpm test",
-  "pages": ["/tasks/today", "/tasks", "/activity"],
+  "pages": ["/#/sync", "/#/projects", "/#/activity"],
   "flows": [
     {
-      "name": "create-task",
-      "steps": "Open /tasks, click New task, type a title, save, see it at the top of the list",
-      "spec": "packages/web/e2e/create-task.spec.ts"
+      "name": "search-to-task",
+      "steps": "Open Search, type a query, see the task hit, open the task",
+      "spec": "packages/web/e2e/search-to-task.spec.ts"
     }
   ],
   "criteria": [
     { "name": "Test pass rate", "by": "auto", "measure": "test", "target": "100%" },
     {
-      "name": "/tasks/today load",
+      "name": "/projects load (LCP)",
       "by": "auto",
-      "measure": "lcp:/tasks/today",
-      "target": "< 1.5s"
+      "measure": "lcp:/#/projects",
+      "target": "< 1500 ms"
     },
-    { "name": "Console errors", "by": "auto", "measure": "console:/tasks/today", "target": 0 },
+    { "name": "Console errors", "by": "auto", "measure": "console:/#/projects", "target": 0 },
     {
       "name": "UI scannable",
       "by": "agent",
-      "measure": "Can the day's tasks be scanned at a glance: clear hierarchy, no clutter, status readable without hovering",
+      "measure": "Can the projects page be scanned at a glance: clear hierarchy, no clutter, status readable without hovering",
       "target": "≥ 4/5"
     },
     {
-      "name": "Create-task flow",
+      "name": "Search → open task flow",
       "by": "auto",
-      "measure": "flow:create-task",
+      "measure": "flow:search-to-task",
       "target": "pass, ≤ 4 steps"
     }
   ]

@@ -27,7 +27,10 @@ beforeAll(() => {
     format: 'cjs',
     outfile: bundle,
     logLevel: 'silent',
+    // Mirrors package.json build:cli — playwright (TASK-2356) resolves its
+    // browsers and optional deps at runtime, so it is never bundled.
     external: [
+      'playwright',
       'better-sqlite3',
       'sqlite-vec',
       '@huggingface/transformers',
