@@ -11,7 +11,7 @@ refs:
   - path: src/adapters/mcp/server-bootstrap.ts
     commitSha: fffdd1767e9263074e69c6ccb04b879bb7edb6ae
 createdAt: 2026-09-08
-lastVerifiedAt: 2026-09-08
+lastVerifiedAt: 2026-10-10
 ---
 
 - **Status:** Accepted
@@ -89,3 +89,28 @@ can echo the key back (`src/adapters/companion/ac-review.ts:222-225`).
 * Point 3 is a rule for skills, which are prose — nothing enforces it at compile
   time. It is written here so a reviewer can point at it, not because the
   codebase can check it.
+
+## Amendment — 2026-10-10: opt-in scheduled runs (improve loop)
+
+TASK-2352 Q2. The improve loop (`/improve-loop <ws>`) calls a model from the
+`ChodaImproveLoop` scheduled task (`scripts/install-improve-loop-task.mjs`),
+which is a background timer and so breaks point 1 as written. It is allowed as
+a bounded exception:
+
+* **Opt-in per workspace, in that workspace's own file.** The launcher runs a
+  workspace only when its `.choda/improve.json` says `mode: "scheduled"`, read
+  fresh at every run. `manual`, `off`, a missing config and a config that does
+  not parse are all skipped. Installing the task opts nothing in.
+* **One run per opted-in workspace per day**, sequentially, under the
+  workspace's own `model`. The skill itself is bounded: the evaluator is called
+  only when a page's screenshot changed, and it files at most `maxProposals`
+  proposals.
+* **It stops itself.** When every criterion is marked good enough, or nothing
+  improved for `stopAfterFlat` runs, the skill writes `mode: "off"` and says why
+  in the inbox, so an opted-in workspace does not keep spending on a plateau.
+* **Points 2–6 still hold.** The run is a local `claude -p` with a fixed
+  `--allowedTools` list (no remote surface, no retry loop, no key in the
+  environment).
+
+No other scheduled or background model call is covered by this amendment. A
+new one needs its own amendment.
