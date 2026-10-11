@@ -22,6 +22,7 @@ import { handleArtifactsRoute } from './artifacts'
 import { handleMeetingsRoute } from './meetings'
 import { handleActivityRoute } from './activity'
 import { handleImproveRoute } from './improve'
+import { handleInboxDecideRoute } from './inbox-decide'
 import { handleVaultRoute } from './vault'
 import { handleClaudeConfigRoute } from './claude-config'
 import { handleAcReviewRoute } from './ac-review'
@@ -136,6 +137,17 @@ async function route(
       svc: services.svc,
       bridgeToken: services.bridgeToken,
       artifactsDir: services.artifactsDir
+    })
+  ) {
+    return
+  }
+
+  // TASK-2380 — pending automated inbox items + convert/archive, for the decide
+  // screen. Before the generic GET /inbox below only because it owns POSTs.
+  if (
+    await handleInboxDecideRoute(req, res, {
+      svc: services.svc,
+      bridgeToken: services.bridgeToken
     })
   ) {
     return
