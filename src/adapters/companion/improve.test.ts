@@ -11,6 +11,7 @@ import {
   handleImproveRoute,
   improveDir,
   resetActiveRuns,
+  resolveClaudeCommand,
   type RunHandle,
   type RunSpawner
 } from './improve'
@@ -203,5 +204,48 @@ describe('proposals', () => {
   it('an inbox item without this workspace tag is not a proposal → 404', async () => {
     const other = await svc.createInbox({ projectId: 'p', content: '[improve:other] nope' })
     expect((await call('POST', `/improve/web/proposals/${other.id}/approve`)).status).toBe(404)
+  })
+})
+
+describe('resolveClaudeCommand', () => {
+  // Forward slashes keep the fixture readable; the resolver joins with `path`
+  // exactly as the expectations do, so this holds on every CI runner.
+  const W = 'C:/Users/u/AppData/Roaming'
+  const lookup = (
+    files: string[],
+    env: Record<string, string>,
+    dirs: Record<string, string[]> = {}
+  ): Parameters<typeof resolveClaudeCommand>[0] => ({
+    env,
+    platform: 'win32',
+    exists: (p: string) => files.includes(p),
+    listDir: (d: string) => dirs[d] ?? []
+  })
+  const fnm = (v: string): string =>
+    path.join(W, 'fnm', 'node-versions', v, 'installation', 'claude.cmd')
+
+  it('finds claude when the service PATH has none — the packaged-app failure', () => {
+    // Task Scheduler PATH: the system node only. Before the fix a bare `claude`
+    // was launched and the run log said "'claude' is not recognized".
+    const files = [fnm('v20.20.2'), fnm('v24.15.0'), path.join(W, 'npm', 'claude.cmd')]
+    const got = resolveClaudeCommand(
+      lookup(
+        files,
+        { PATH: 'C:/Program Files/nodejs', APPDATA: W },
+        { [path.join(W, 'fnm', 'node-versions')]: ['v20.20.2', 'v24.15.0', 'v24.9.1'] }
+      )
+    )
+    expect(got).toBe(fnm('v24.15.0'))
+  })
+
+  it('prefers CHODA_CLAUDE_CMD, then PATH, then fnm, then npm', () => {
+    const explicit = 'D:/tools/claude.cmd'
+    const onPath = path.join('C:/bin', 'claude.cmd')
+    const npm = path.join(W, 'npm', 'claude.cmd')
+    const env = { CHODA_CLAUDE_CMD: explicit, PATH: 'C:/bin', APPDATA: W }
+    expect(resolveClaudeCommand(lookup([explicit, onPath, npm], env))).toBe(explicit)
+    expect(resolveClaudeCommand(lookup([onPath, npm], env))).toBe(onPath)
+    expect(resolveClaudeCommand(lookup([npm], env))).toBe(npm)
+    expect(resolveClaudeCommand(lookup([], env))).toBeNull()
   })
 })
