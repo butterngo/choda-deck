@@ -73,7 +73,13 @@ export interface RunHandle {
 }
 
 /** Starts the headless run; injected so tests never launch Claude. */
-export type RunSpawner = (args: { ws: string; model: string; logFile: string }) => RunHandle
+export type RunSpawner = (args: {
+  ws: string
+  model: string
+  logFile: string
+  /** Where the run starts: the choda-deck checkout that owns the data dir. */
+  runCwd: string
+}) => RunHandle
 
 export interface ImproveRouteDeps {
   svc: WorkspaceOperations & Pick<InboxOperations, 'findInbox'> & InboxLifecycleOperations
@@ -272,7 +278,34 @@ export function writeLeanMcpConfig(
 }
 
 /** The default spawner: a detached headless Claude run, stdout+stderr to the log file. */
-export const spawnClaudeRun: RunSpawner = ({ ws, model, logFile }) => {
+/** <repo>/data/artifacts → <repo>. A run starts in the checkout whose data it reads. */
+export function improveRunCwd(artifactsDir: string): string {
+  return path.resolve(artifactsDir, '..', '..')
+}
+
+/**
+ * TASK-2368 — never detached on Windows. DETACHED_PROCESS gives the child no
+ * console, and claude then wrote nothing to the inherited log handle: every Run
+ * now log was 0 bytes although the run worked (cmd.exe's own errors still got
+ * through, which hid it). A Windows child outlives its parent anyway; unref()
+ * and windowsHide keep it in the background. Elsewhere detaching is harmless.
+ */
+export function runSpawnOptions(
+  platform: NodeJS.Platform,
+  runCwd: string,
+  fd: number
+): {
+  cwd: string
+  detached: boolean
+  shell: boolean
+  windowsHide: boolean
+  stdio: ['ignore', number, number]
+} {
+  const win = platform === 'win32'
+  return { cwd: runCwd, detached: !win, shell: win, windowsHide: true, stdio: ['ignore', fd, fd] }
+}
+
+export const spawnClaudeRun: RunSpawner = ({ ws, model, logFile, runCwd }) => {
   const claude = resolveClaudeCommand()
   if (!claude) {
     throw new Error('claude was not found — set CHODA_CLAUDE_CMD to the full path of claude.cmd')
@@ -295,12 +328,11 @@ export const spawnClaudeRun: RunSpawner = ({ ws, model, logFile }) => {
   if (writeLeanMcpConfig(mcp))
     args.push('--strict-mcp-config', '--mcp-config', win ? `"${mcp}"` : mcp)
   // Through the shell on Windows, so the path is quoted for spaces.
-  const child = spawn(win ? `"${claude}"` : claude, args, {
-    detached: true,
-    shell: win,
-    windowsHide: true,
-    stdio: ['ignore', fd, fd]
-  })
+  const child = spawn(
+    win ? `"${claude}"` : claude,
+    args,
+    runSpawnOptions(process.platform, runCwd, fd)
+  )
   fs.closeSync(fd)
   child.unref()
   return { onExit: (cb) => child.on('exit', (code) => cb(code)) }
@@ -374,7 +406,12 @@ async function postRun({ res, deps, ws, cwd, dir }: Ctx): Promise<void> {
   activeRuns.set(ws, runId)
   const logFile = path.join(runsDir(dir), `${runId}.log`)
   try {
-    const handle = (deps.spawnRun ?? spawnClaudeRun)({ ws, model, logFile })
+    const handle = (deps.spawnRun ?? spawnClaudeRun)({
+      ws,
+      model,
+      logFile,
+      runCwd: improveRunCwd(deps.artifactsDir ?? dir)
+    })
     handle.onExit((code) => {
       activeRuns.delete(ws)
       writeRun(dir, { ...run, endedAt: new Date().toISOString(), exitCode: code })

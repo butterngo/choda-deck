@@ -11,7 +11,9 @@ import {
   handleImproveRoute,
   improveDir,
   resetActiveRuns,
+  improveRunCwd,
   resolveClaudeCommand,
+  runSpawnOptions,
   writeLeanMcpConfig,
   type RunHandle,
   type RunSpawner
@@ -27,11 +29,11 @@ let artifactsDir: string
 let svc: SqliteTaskService
 let server: Server
 let base: string
-let spawned: { ws: string; model: string }[]
+let spawned: { ws: string; model: string; runCwd: string }[]
 let finish: ((code: number) => void)[]
 
-const fakeSpawn: RunSpawner = ({ ws, model }) => {
-  spawned.push({ ws, model })
+const fakeSpawn: RunSpawner = ({ ws, model, runCwd }) => {
+  spawned.push({ ws, model, runCwd })
   let exit: (code: number | null) => void = () => {}
   finish.push((code) => exit(code))
   const handle: RunHandle = { onExit: (cb) => (exit = cb) }
@@ -274,5 +276,28 @@ describe('writeLeanMcpConfig (TASK-2366)', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('run spawn (TASK-2368)', () => {
+  it('never detaches on Windows — a detached claude wrote nothing to the log', () => {
+    const win = runSpawnOptions('win32', 'C:/dev/choda-deck', 7)
+    expect(win).toEqual({
+      cwd: 'C:/dev/choda-deck',
+      detached: false,
+      shell: true,
+      windowsHide: true,
+      stdio: ['ignore', 7, 7]
+    })
+    // CONTROL: elsewhere it still detaches, so a POSIX run survives the server.
+    expect(runSpawnOptions('linux', '/srv/choda-deck', 7).detached).toBe(true)
+  })
+
+  it('starts the run in the checkout that owns the data dir', async () => {
+    expect(improveRunCwd(path.join('C:/dev/choda-deck', 'data', 'artifacts'))).toBe(
+      path.resolve('C:/dev/choda-deck')
+    )
+    expect((await call('POST', '/improve/web/run')).status).toBe(202)
+    expect(spawned[0]?.runCwd).toBe(path.resolve(artifactsDir, '..', '..'))
   })
 })
