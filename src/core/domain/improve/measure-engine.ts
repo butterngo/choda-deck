@@ -11,6 +11,53 @@ import type { ImproveConfig, ImproveCriterion } from './improve-config'
 /** A page counts as changed when more than this share of its pixels differ. */
 export const UI_CHANGED_THRESHOLD = 0.01
 
+/** LCP noise floor in ms. On a fast page 20% is tens of ms, below run-to-run jitter. */
+export const LCP_TOLERANCE_MS = 50
+export const LCP_TOLERANCE_RATIO = 0.2
+
+/**
+ * TASK-2363 — two LCP readings of the same page on the same commit count as
+ * the same value when they differ by at most max(50 ms, 20% of the smaller).
+ * A pure ratio failed on the dev server: at 150–230 ms, back-to-back runs moved
+ * up to 40% with nothing changed (TASK-2356 AC-1).
+ */
+export function lcpStable(a: number, b: number): boolean {
+  const tolerance = Math.max(LCP_TOLERANCE_MS, LCP_TOLERANCE_RATIO * Math.min(a, b))
+  return Math.abs(a - b) <= tolerance
+}
+
+/** The pages the config scores for LCP — the arguments of its `lcp:` criteria. */
+export function lcpScoredPages(config: Pick<ImproveConfig, 'criteria'>): string[] {
+  return config.criteria
+    .filter((c) => c.by === 'auto' && c.measure.startsWith('lcp:'))
+    .map((c) => c.measure.slice('lcp:'.length))
+}
+
+export interface LcpPairCheck {
+  path: string
+  before: number | null
+  after: number | null
+  stable: boolean
+}
+
+/**
+ * Two scorecards of one commit, compared only on the pages the config scores
+ * for LCP. A page with no LCP reading in either run is not stable. Other pages
+ * are left out on purpose: `/#/sync` loads a live log and moved 76 ms in a
+ * clean pair, but nothing in the loop acts on its LCP (TASK-2363).
+ */
+export function lcpPairStable(
+  before: Pick<Scorecard, 'pages'>,
+  after: Pick<Scorecard, 'pages'>,
+  config: Pick<ImproveConfig, 'criteria'>
+): LcpPairCheck[] {
+  return lcpScoredPages(config).map((p) => {
+    const a = before.pages.find((x) => x.path === p)?.lcpMs ?? null
+    const b = after.pages.find((x) => x.path === p)?.lcpMs ?? null
+    return { path: p, before: a, after: b, stable: a !== null && b !== null && lcpStable(a, b) }
+  })
+}
+
 export interface TestSummary {
   total: number
   passed: number
