@@ -95,6 +95,22 @@ describe('GET /improve/:ws', () => {
     })
   })
 
+  it('lists only run records, never another JSON in runs/ (the 0.18.7 crash)', async () => {
+    const runs = path.join(improveDir(artifactsDir, 'web'), 'runs')
+    fs.mkdirSync(runs, { recursive: true })
+    const real = {
+      runId: 'r1',
+      ws: 'web',
+      startedAt: '2026-10-11T04:00:00Z',
+      endedAt: null,
+      exitCode: null
+    }
+    fs.writeFileSync(path.join(runs, 'r1.json'), JSON.stringify(real))
+    fs.writeFileSync(path.join(runs, 'improve-mcp.json'), JSON.stringify({ mcpServers: {} }))
+    const body = (await (await call('GET', '/improve/web')).json()) as { runs: unknown[] }
+    expect(body.runs).toEqual([real])
+  })
+
   it('refuses a missing token and an unknown workspace', async () => {
     expect((await fetch(`${base}/improve/web`)).status).toBe(401)
     expect((await call('GET', '/improve/nope')).status).toBe(404)
