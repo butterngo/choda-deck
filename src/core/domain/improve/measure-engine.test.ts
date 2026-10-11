@@ -4,6 +4,8 @@ import * as path from 'path'
 import { png } from './__fixtures__/png'
 import {
   buildScorecard,
+  lcpPairStable,
+  lcpStable,
   pageSlug,
   parseVitestSummary,
   pngDiffRatio,
@@ -57,6 +59,49 @@ describe('pngDiffRatio', () => {
 
   it('treats a size change as a full change', () => {
     expect(pngDiffRatio(png(100, 100), png(100, 120))).toBe(1)
+  })
+})
+
+describe('lcpStable (TASK-2363)', () => {
+  it('allows max(50 ms, 20% of the smaller) and no more', () => {
+    // Fast pages: the 50 ms floor decides (20% of 160 is only 32 ms).
+    expect(lcpStable(160, 200)).toBe(true)
+    expect(lcpStable(160, 224)).toBe(false)
+    // Slow pages: the 20% ratio decides (200 ms on 1000).
+    expect(lcpStable(1000, 1190)).toBe(true)
+    expect(lcpStable(1000, 1260)).toBe(false)
+  })
+
+  it('is symmetric and exact at the boundary', () => {
+    expect(lcpStable(200, 160)).toBe(true)
+    expect(lcpStable(224, 160)).toBe(false)
+    expect(lcpStable(100, 150)).toBe(true)
+    expect(lcpStable(100, 151)).toBe(false)
+    expect(lcpStable(1000, 1200)).toBe(true)
+  })
+
+  it('compares only the pages an lcp: criterion scores', () => {
+    const page = (path: string, lcpMs: number | null) => ({
+      path,
+      screenshot: '',
+      lcpMs,
+      consoleErrors: 0,
+      uiChanged: false,
+      diffRatio: 0
+    })
+    // The real clean pair from the 2026-10-11 runs: /#/sync moved 76 ms.
+    const before = { pages: [page('/#/sync', 176), page('/#/projects', 176)] }
+    const after = { pages: [page('/#/sync', 252), page('/#/projects', 168)] }
+    expect(lcpPairStable(before, after, config())).toEqual([
+      { path: '/#/projects', before: 176, after: 168, stable: true }
+    ])
+    // CONTROL: a scored page that moved too far fails, and a missing reading fails.
+    expect(lcpPairStable(before, { pages: [page('/#/projects', 240)] }, config())[0]?.stable).toBe(
+      false
+    )
+    expect(lcpPairStable(before, { pages: [page('/#/projects', null)] }, config())[0]?.stable).toBe(
+      false
+    )
   })
 })
 
