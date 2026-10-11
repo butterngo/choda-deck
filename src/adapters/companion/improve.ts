@@ -177,8 +177,74 @@ function writeRun(dir: string, run: ImproveRun): void {
   fs.writeFileSync(path.join(runsDir(dir), `${run.runId}.json`), JSON.stringify(run, null, 2))
 }
 
+interface ClaudeLookup {
+  env: NodeJS.ProcessEnv
+  platform: NodeJS.Platform
+  exists: (file: string) => boolean
+  listDir: (dir: string) => string[]
+}
+
+const realLookup: ClaudeLookup = {
+  env: process.env,
+  platform: process.platform,
+  exists: (f) => fs.existsSync(f),
+  listDir: (d) => {
+    try {
+      return fs.readdirSync(d)
+    } catch {
+      return []
+    }
+  }
+}
+
+function semverDesc(a: string, b: string): number {
+  const parts = (v: string): number[] =>
+    v
+      .replace(/^v/, '')
+      .split('.')
+      .map((n) => Number(n) || 0)
+  const [x, y] = [parts(a), parts(b)]
+  for (let i = 0; i < 3; i++) if ((y[i] ?? 0) !== (x[i] ?? 0)) return (y[i] ?? 0) - (x[i] ?? 0)
+  return 0
+}
+
+/**
+ * The claude executable to launch, as an absolute path. The companion service
+ * runs under Task Scheduler with the system node and a PATH that has no
+ * `claude` on it, so a bare `claude` failed with "'claude' is not recognized"
+ * on the first Run now from the packaged app. Order: CHODA_CLAUDE_CMD, PATH,
+ * the newest fnm node install, the npm global dir. null when none exists.
+ */
+export function resolveClaudeCommand(lookup: ClaudeLookup = realLookup): string | null {
+  const { env, platform, exists, listDir } = lookup
+  if (env.CHODA_CLAUDE_CMD && exists(env.CHODA_CLAUDE_CMD)) return env.CHODA_CLAUDE_CMD
+  const win = platform === 'win32'
+  const names = win ? ['claude.cmd', 'claude.exe'] : ['claude']
+  const sep = win ? ';' : ':'
+  for (const dir of (env.PATH ?? env.Path ?? '').split(sep).filter(Boolean)) {
+    for (const n of names) {
+      const f = path.join(dir, n)
+      if (exists(f)) return f
+    }
+  }
+  if (win && env.APPDATA) {
+    const fnm = path.join(env.APPDATA, 'fnm', 'node-versions')
+    for (const v of listDir(fnm).sort(semverDesc)) {
+      const f = path.join(fnm, v, 'installation', 'claude.cmd')
+      if (exists(f)) return f
+    }
+    const npm = path.join(env.APPDATA, 'npm', 'claude.cmd')
+    if (exists(npm)) return npm
+  }
+  return null
+}
+
 /** The default spawner: a detached headless Claude run, stdout+stderr to the log file. */
 export const spawnClaudeRun: RunSpawner = ({ ws, model, logFile }) => {
+  const claude = resolveClaudeCommand()
+  if (!claude) {
+    throw new Error('claude was not found — set CHODA_CLAUDE_CMD to the full path of claude.cmd')
+  }
   const fd = fs.openSync(logFile, 'a')
   const win = process.platform === 'win32'
   // Windows resolves `claude` to a .cmd shim, which Node only launches through a
@@ -193,7 +259,8 @@ export const spawnClaudeRun: RunSpawner = ({ ws, model, logFile }) => {
     '--allowedTools',
     RUN_ALLOWED_TOOLS.join(',')
   ]
-  const child = spawn('claude', args, {
+  // Through the shell on Windows, so the path is quoted for spaces.
+  const child = spawn(win ? `"${claude}"` : claude, args, {
     detached: true,
     shell: win,
     windowsHide: true,
