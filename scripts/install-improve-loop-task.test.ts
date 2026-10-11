@@ -11,7 +11,8 @@ import {
   claudeArgs,
   pickScheduled,
   readImproveConfig,
-  runScheduled
+  runScheduled,
+  writeLeanMcpConfig
 } from './install-improve-loop-task.mjs'
 
 // TASK-2361 — the pure half of the installer and the launcher's choice of
@@ -135,5 +136,50 @@ describe('install-improve-loop-task', () => {
     )
     expect(TASK_NAME).toBe('ChodaImproveLoop')
     expect(DAILY_AT).toBe('08:45')
+  })
+})
+
+describe('lean MCP config (TASK-2366)', () => {
+  it('keeps only choda-tasks from ~/.claude.json and adds --strict-mcp-config', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'improve-mcp-'))
+    try {
+      const claudeJson = path.join(dir, '.claude.json')
+      fs.writeFileSync(
+        claudeJson,
+        JSON.stringify({
+          mcpServers: {
+            'choda-tasks': { command: 'node', args: ['mcp-server.cjs'] },
+            gmail: { command: 'gmail' }
+          }
+        })
+      )
+      const out = path.join(dir, 'data', 'improve-mcp.json')
+      expect(writeLeanMcpConfig(out, claudeJson)).toBe(true)
+      expect(JSON.parse(fs.readFileSync(out, 'utf8'))).toEqual({
+        mcpServers: { 'choda-tasks': { command: 'node', args: ['mcp-server.cjs'] } }
+      })
+      expect(claudeArgs('web', 'sonnet', out).slice(-3)).toEqual([
+        '--strict-mcp-config',
+        '--mcp-config',
+        out
+      ])
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('CONTROL: no choda-tasks entry → nothing written, args unchanged', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'improve-mcp-'))
+    try {
+      const claudeJson = path.join(dir, '.claude.json')
+      fs.writeFileSync(claudeJson, JSON.stringify({ mcpServers: { gmail: {} } }))
+      const out = path.join(dir, 'improve-mcp.json')
+      expect(writeLeanMcpConfig(out, claudeJson)).toBe(false)
+      expect(fs.existsSync(out)).toBe(false)
+      expect(writeLeanMcpConfig(out, path.join(dir, 'missing.json'))).toBe(false)
+      expect(claudeArgs('web', 'sonnet', undefined)).not.toContain('--strict-mcp-config')
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

@@ -18,6 +18,7 @@
 // the screenshot path is refused rather than normalised away by `new URL()`.
 
 import * as fs from 'fs'
+import * as os from 'os'
 import * as path from 'path'
 import { Buffer } from 'buffer'
 import { randomUUID, timingSafeEqual } from 'crypto'
@@ -239,6 +240,37 @@ export function resolveClaudeCommand(lookup: ClaudeLookup = realLookup): string 
   return null
 }
 
+/**
+ * TASK-2366 — write an MCP config holding only the user's `choda-tasks` server,
+ * read from ~/.claude.json, so a run can pass `--strict-mcp-config`. Every other
+ * connector's tool schemas cost ~6k tokens a run and the loop uses none of them
+ * (37.9k vs 44.1k non-cached on a quiet day). Returns false, writing nothing,
+ * when there is no such entry; the run then loads the full config as before.
+ */
+export function writeLeanMcpConfig(
+  file: string,
+  claudeJson: string = path.join(os.homedir(), '.claude.json')
+): boolean {
+  let server: unknown
+  try {
+    const cfg = JSON.parse(fs.readFileSync(claudeJson, 'utf8')) as {
+      mcpServers?: Record<string, unknown>
+      projects?: Record<string, { mcpServers?: Record<string, unknown> }>
+    }
+    server =
+      cfg.mcpServers?.['choda-tasks'] ??
+      Object.values(cfg.projects ?? {}).find((p) => p.mcpServers?.['choda-tasks'])?.mcpServers?.[
+        'choda-tasks'
+      ]
+  } catch {
+    return false
+  }
+  if (!server) return false
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, JSON.stringify({ mcpServers: { 'choda-tasks': server } }, null, 2))
+  return true
+}
+
 /** The default spawner: a detached headless Claude run, stdout+stderr to the log file. */
 export const spawnClaudeRun: RunSpawner = ({ ws, model, logFile }) => {
   const claude = resolveClaudeCommand()
@@ -259,6 +291,9 @@ export const spawnClaudeRun: RunSpawner = ({ ws, model, logFile }) => {
     '--allowedTools',
     RUN_ALLOWED_TOOLS.join(',')
   ]
+  const mcp = path.join(path.dirname(logFile), 'improve-mcp.json')
+  if (writeLeanMcpConfig(mcp))
+    args.push('--strict-mcp-config', '--mcp-config', win ? `"${mcp}"` : mcp)
   // Through the shell on Windows, so the path is quoted for spaces.
   const child = spawn(win ? `"${claude}"` : claude, args, {
     detached: true,
