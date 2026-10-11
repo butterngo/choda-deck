@@ -20,12 +20,16 @@ import { parseFrontmatter, serializeFrontmatter } from './knowledge-frontmatter'
 class FakeGitOps implements GitOps {
   headSha = 'head1'
   commitsSinceMap = new Map<string, number>()
+  /** TASK-2369 — simulate `spawnSync git ENOENT` (git not on the PATH). */
+  unavailable = false
 
   getHeadSha(): string {
+    if (this.unavailable) throw new Error('git rev-parse HEAD failed: spawnSync git ENOENT')
     return this.headSha
   }
 
   countCommitsSince(_cwd: string, sinceSha: string, filePath: string): number {
+    if (this.unavailable) throw new Error('git log failed: spawnSync git ENOENT')
     const key = `${sinceSha}::${filePath}`
     return this.commitsSinceMap.get(key) ?? 0
   }
@@ -413,6 +417,111 @@ describe('verifyKnowledge', () => {
   })
 })
 
+// ── TASK-2369 — a git failure is never written as an empty SHA ───────────────
+// The MCP server spawns git without a shell; with git missing from its PATH,
+// every pin used to land as `commitSha: ` and staleness read as fresh.
+describe('TASK-2369 — git unavailable', () => {
+  async function createPinned(title: string): Promise<string> {
+    git.headSha = 'sha-good'
+    const entry = await svc.createKnowledge({
+      projectId: 'proj-k',
+      type: 'learning',
+      scope: 'project',
+      title,
+      body: 'original body\n',
+      refs: [{ path: 'src/x.ts' }]
+    })
+    return entry.slug
+  }
+
+  it('createKnowledge refuses a ref that needs HEAD, and writes nothing', async () => {
+    git.unavailable = true
+    await expect(
+      svc.createKnowledge({
+        projectId: 'proj-k',
+        type: 'learning',
+        scope: 'project',
+        title: 'Needs Head',
+        body: 'b',
+        refs: [{ path: 'src/x.ts' }]
+      })
+    ).rejects.toThrow(/cannot pin refs to HEAD in .*ENOENT/)
+
+    expect(fs.existsSync(path.join(projectCwd, 'docs', 'knowledge', 'needs-head.md'))).toBe(false)
+    expect(repo.get('needs-head')).toBeNull()
+  })
+
+  it('createKnowledge still accepts refs that carry their own SHA', async () => {
+    git.unavailable = true
+    const entry = await svc.createKnowledge({
+      projectId: 'proj-k',
+      type: 'learning',
+      scope: 'project',
+      title: 'Own Sha',
+      body: 'b',
+      refs: [{ path: 'src/x.ts', commitSha: 'sha-given' }]
+    })
+    expect(entry.frontmatter.refs).toEqual([{ path: 'src/x.ts', commitSha: 'sha-given' }])
+  })
+
+  it('verifyKnowledge fails and leaves the file and the DB row untouched', async () => {
+    const slug = await createPinned('Verify Me')
+    const filePath = repo.get(slug)!.filePath
+    const before = fs.readFileSync(filePath, 'utf8')
+    const rowBefore = repo.get(slug)
+
+    git.unavailable = true
+    await expect(svc.verifyKnowledge(slug)).rejects.toThrow(KnowledgeValidationError)
+
+    expect(fs.readFileSync(filePath, 'utf8')).toBe(before)
+    expect(parseFrontmatter(before).frontmatter.refs[0].commitSha).toBe('sha-good')
+    expect(repo.get(slug)).toEqual(rowBefore)
+  })
+
+  it('updateKnowledge (body only) fails instead of blanking the pinned SHA', async () => {
+    const slug = await createPinned('Update Me')
+    const filePath = repo.get(slug)!.filePath
+    const before = fs.readFileSync(filePath, 'utf8')
+
+    git.unavailable = true
+    await expect(svc.updateKnowledge({ slug, body: 'new body\n' })).rejects.toThrow(
+      /cannot pin refs to HEAD/
+    )
+    expect(fs.readFileSync(filePath, 'utf8')).toBe(before)
+  })
+
+  it('reports drift it cannot count as unknown, not as fresh — and INDEX.md says so', async () => {
+    const slug = await createPinned('Unknown Drift')
+
+    git.unavailable = true
+    const entry = await svc.getKnowledge(slug)
+    expect(entry?.staleness[0].commitsSince).toBe(-1)
+    expect(entry?.isStale).toBe(false)
+    expect(entry?.stalenessUnknown).toBe(true)
+
+    // Any regeneration renders the row with `?`, distinct from fresh ('') and stale ('✱').
+    await svc.createKnowledge({
+      projectId: 'proj-k',
+      type: 'learning',
+      scope: 'project',
+      title: 'Trigger Regen',
+      body: 'b',
+      refs: []
+    })
+    const indexMd = fs.readFileSync(path.join(projectCwd, 'docs', 'knowledge', 'INDEX.md'), 'utf8')
+    const row = indexMd.split('\n').find((l) => l.startsWith(`| [${slug}]`))
+    expect(row?.trimEnd().endsWith('| ? |')).toBe(true)
+    expect(indexMd).toContain('? staleness unknown')
+  })
+
+  it('a pinned ref with git available is neither stale nor unknown', async () => {
+    const slug = await createPinned('Fresh One')
+    const entry = await svc.getKnowledge(slug)
+    expect(entry?.isStale).toBe(false)
+    expect(entry?.stalenessUnknown).toBe(false)
+  })
+})
+
 // ── ADR-022 (TASK-651) — workspace-scoped knowledge ──────────────────────────
 describe('workspace-scoped knowledge', () => {
   let workspaces: WorkspaceRepository
@@ -464,6 +573,52 @@ describe('workspace-scoped knowledge', () => {
     if (fs.existsSync(projIndexPath)) {
       const projIndex = fs.readFileSync(projIndexPath, 'utf8')
       expect(projIndex).not.toContain('ws-decision')
+    }
+  })
+
+  // TASK-2369 — bpa-engine's SAD note is project-level (workspaceId null) but
+  // its file sits in the bpa-engine workspace folder; every workspace regen
+  // used to rewrite that folder's INDEX.md without it.
+  it("a workspace INDEX.md keeps a project-level entry whose file lives in that folder", async () => {
+    const fp = path.join(workspaceCwd, 'docs', 'knowledge', 'project-level-here.md')
+    fs.mkdirSync(path.dirname(fp), { recursive: true })
+    fs.writeFileSync(
+      fp,
+      serializeFrontmatter(
+        {
+          type: 'evaluation',
+          title: 'Project Level Here',
+          projectId: 'proj-k',
+          scope: 'project',
+          refs: [],
+          createdAt: '2026-10-02',
+          lastVerifiedAt: '2026-10-02'
+        },
+        '# body\n'
+      ),
+      'utf8'
+    )
+    await wsSvc.registerExistingKnowledge({ filePath: fp, projectId: 'proj-k' })
+    expect(repo.get('project-level-here')?.workspaceId).toBeNull()
+
+    await wsSvc.createKnowledge({
+      projectId: 'proj-k',
+      workspaceId: 'ws-1',
+      type: 'decision',
+      scope: 'project',
+      title: 'WS Note',
+      body: 'b',
+      refs: []
+    })
+
+    const wsIndex = fs.readFileSync(path.join(workspaceCwd, 'docs', 'knowledge', 'INDEX.md'), 'utf8')
+    expect(wsIndex).toContain('ws-note')
+    expect(wsIndex).toContain('project-level-here')
+
+    // ...and the project folder's INDEX.md does not claim a file it does not hold.
+    const projIndexPath = path.join(projectCwd, 'docs', 'knowledge', 'INDEX.md')
+    if (fs.existsSync(projIndexPath)) {
+      expect(fs.readFileSync(projIndexPath, 'utf8')).not.toContain('project-level-here')
     }
   })
 

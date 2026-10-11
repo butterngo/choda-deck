@@ -132,7 +132,14 @@ export interface KnowledgeSource {
 
 export interface KnowledgeEntry extends KnowledgeSource {
   staleness: KnowledgeRefStaleness[]
+  /** Some ref has commits since its pin. */
   isStale: boolean
+  /**
+   * TASK-2369 — some ref's drift could not be counted (`commitsSince: -1`): an
+   * unpinned ref, a SHA git does not know, or git failing to run. `isStale:
+   * false` then means "no drift found", not "fresh".
+   */
+  stalenessUnknown: boolean
 }
 
 export interface KnowledgeListItem {
@@ -187,6 +194,7 @@ export interface KnowledgeVerifyResult {
   slug: string
   refs: KnowledgeRefStaleness[]
   isStale: boolean
+  stalenessUnknown: boolean
   lastVerifiedAt: string
 }
 

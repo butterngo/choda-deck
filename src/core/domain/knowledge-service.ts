@@ -223,7 +223,7 @@ export class KnowledgeService implements KnowledgeOperations {
       body: input.body,
       filePath,
       staleness,
-      isStale: staleness.some((s) => s.commitsSince > 0)
+      ...stalenessVerdict(staleness)
     }
   }
 
@@ -311,7 +311,7 @@ export class KnowledgeService implements KnowledgeOperations {
       body,
       filePath: input.filePath,
       staleness,
-      isStale: staleness.some((s) => s.commitsSince > 0)
+      ...stalenessVerdict(staleness)
     }
   }
 
@@ -349,7 +349,7 @@ export class KnowledgeService implements KnowledgeOperations {
     return {
       ...source,
       staleness,
-      isStale: staleness.some((s) => s.commitsSince > 0)
+      ...stalenessVerdict(staleness)
     }
   }
 
@@ -458,10 +458,7 @@ export class KnowledgeService implements KnowledgeOperations {
     const newRefs: KnowledgeRef[] =
       input.refs !== undefined
         ? this.materializeRefs(input.refs, stalenessCwd, scope)
-        : existing.frontmatter.refs.map((r) => ({
-            path: r.path,
-            commitSha: stalenessCwd ? safeHeadSha(this.git, stalenessCwd) : r.commitSha
-          }))
+        : this.repinRefs(existing.frontmatter.refs, stalenessCwd)
 
     const isoDate = toIsoDate(this.now())
     const updatedFm: KnowledgeFrontmatter = {
@@ -488,7 +485,7 @@ export class KnowledgeService implements KnowledgeOperations {
       body: newBody,
       filePath: existing.filePath,
       staleness,
-      isStale: staleness.some((s) => s.commitsSince > 0)
+      ...stalenessVerdict(staleness)
     }
   }
 
@@ -498,14 +495,13 @@ export class KnowledgeService implements KnowledgeOperations {
     const row = await this.knowledge.get(slug)
     if (!row) throw new KnowledgeNotFoundError(slug)
 
+    // TASK-2369: resolve HEAD before writing anything — a git failure must leave
+    // the file, the DB row and INDEX.md exactly as they were.
+    const stalenessCwd = await this.resolveStalenessCwd(row.projectId, row.workspaceId)
+    const refreshedRefs = this.repinRefs(entry.frontmatter.refs, stalenessCwd)
+
     const isoDate = toIsoDate(this.now())
     await this.knowledge.updateLastVerified(slug, isoDate)
-
-    const stalenessCwd = await this.resolveStalenessCwd(row.projectId, row.workspaceId)
-    const refreshedRefs: KnowledgeRef[] = entry.frontmatter.refs.map((r) => {
-      const sha = stalenessCwd ? safeHeadSha(this.git, stalenessCwd) : r.commitSha
-      return { path: r.path, commitSha: sha }
-    })
     const updatedFm: KnowledgeFrontmatter = {
       ...entry.frontmatter,
       refs: refreshedRefs,
@@ -522,7 +518,7 @@ export class KnowledgeService implements KnowledgeOperations {
       commitSha: r.commitSha,
       commitsSince: 0
     }))
-    return { slug, refs: staleness, isStale: false, lastVerifiedAt: isoDate }
+    return { slug, refs: staleness, isStale: false, stalenessUnknown: false, lastVerifiedAt: isoDate }
   }
 
   // TASK-988: structured-field validation for the first-class types. A gotcha's
@@ -584,11 +580,20 @@ export class KnowledgeService implements KnowledgeOperations {
         .filter((r) => r.commitSha)
         .map((r) => ({ path: r.path, commitSha: r.commitSha as string }))
     }
-    const headSha = safeHeadSha(this.git, projectCwd)
-    return inputRefs.map((r) => ({
-      path: r.path,
-      commitSha: r.commitSha ?? headSha
-    }))
+    // Only ask git when a ref actually needs HEAD: refs that carry their own
+    // SHA must stay writable on a machine where git cannot be spawned.
+    let headSha: string | null = null
+    return inputRefs.map((r) => {
+      if (r.commitSha) return { path: r.path, commitSha: r.commitSha }
+      headSha ??= pinnedHeadSha(this.git, projectCwd)
+      return { path: r.path, commitSha: headSha }
+    })
+  }
+
+  private repinRefs(refs: KnowledgeRef[], cwd: string): KnowledgeRef[] {
+    if (!cwd || refs.length === 0) return refs.map((r) => ({ ...r }))
+    const headSha = pinnedHeadSha(this.git, cwd)
+    return refs.map((r) => ({ path: r.path, commitSha: headSha }))
   }
 
   private computeStaleness(
@@ -600,6 +605,7 @@ export class KnowledgeService implements KnowledgeOperations {
       return refs.map((r) => ({ path: r.path, commitSha: r.commitSha, commitsSince: 0 }))
     }
     return refs.map((r) => {
+      if (!r.commitSha) return { path: r.path, commitSha: r.commitSha, commitsSince: -1 }
       let commitsSince = 0
       try {
         commitsSince = this.git.countCommitsSince(projectCwd, r.commitSha, r.path)
@@ -611,8 +617,20 @@ export class KnowledgeService implements KnowledgeOperations {
   }
 
   private async regenerateIndexMd(projectId: string, projectCwd: string): Promise<void> {
-    const rows = await this.knowledge.list({ projectId, workspaceId: null, scope: 'project' })
+    const rows = await this.rowsFiledIn(projectId, projectCwd)
     this.writeIndexMd(projectCwd, `Knowledge — ${projectId}`, rows)
+  }
+
+  // TASK-2369: an INDEX.md describes the folder it sits in, so its rows are the
+  // entries whose FILE lives in that folder — not the ones whose workspaceId
+  // matches. Filtering by workspaceId dropped a project-level entry stored in a
+  // workspace's docs/knowledge (bpa-engine's SAD note) on every workspace regen,
+  // and when project.cwd and a workspace cwd are the same folder the two
+  // regenerations wrote different tables into one file.
+  private async rowsFiledIn(projectId: string, cwd: string): Promise<KnowledgeIndexRow[]> {
+    const folder = normalizeDir(path.join(cwd, 'docs', 'knowledge'))
+    const rows = await this.knowledge.list({ projectId, scope: 'project' })
+    return rows.filter((r) => normalizeDir(path.dirname(r.filePath)) === folder)
   }
 
   private async regenerateWorkspaceIndexMd(
@@ -625,7 +643,7 @@ export class KnowledgeService implements KnowledgeOperations {
     // a workspace whose cwd has been removed (e.g. orphan worktrees handled by
     // cleanup_worktree_orphans). Skip the regen — the workspace is gone.
     if (!fs.existsSync(workspaceCwd)) return
-    const rows = await this.knowledge.list({ projectId, workspaceId, scope: 'project' })
+    const rows = await this.rowsFiledIn(projectId, workspaceCwd)
     this.writeIndexMd(workspaceCwd, `Knowledge — ${projectId}/${workspaceId}`, rows)
   }
 
@@ -641,14 +659,20 @@ export class KnowledgeService implements KnowledgeOperations {
     } else {
       lines.push('| Slug | Type | Title | Last verified | Stale |')
       lines.push('|------|------|-------|---------------|-------|')
+      let anyUnknown = false
       for (const r of rows) {
         const fm = this.readFrontmatterSafe(r.filePath)
         const title = fm?.title ?? r.title
         const lastVerified = (fm?.lastVerifiedAt ?? r.lastVerifiedAt).slice(0, 10)
-        const flag = this.isEntryStale(r, fm) ? '✱' : ''
+        const flag = this.entryStaleFlag(r, fm)
+        if (flag === '?') anyUnknown = true
         lines.push(
           `| [${r.slug}](./${r.slug}.md) | ${r.type} | ${escapeMd(title)} | ${lastVerified} | ${flag} |`
         )
+      }
+      if (anyUnknown) {
+        lines.push('')
+        lines.push('✱ refs changed since pinned · ? staleness unknown (ref unpinned, or git could not be run)')
       }
     }
     lines.push('')
@@ -672,11 +696,12 @@ export class KnowledgeService implements KnowledgeOperations {
   // mismatched pairing that flips the ✱ flag incorrectly. Every project-scope
   // entry's file lives at `<cwd>/docs/knowledge/<slug>.md` (resolveFilePath),
   // so the entry's own cwd is always derivable from its filePath directly.
-  private isEntryStale(row: KnowledgeIndexRow, frontmatter: KnowledgeFrontmatter | null): boolean {
-    if (!frontmatter) return false
+  private entryStaleFlag(row: KnowledgeIndexRow, frontmatter: KnowledgeFrontmatter | null): '✱' | '?' | '' {
+    if (!frontmatter) return ''
     const ownCwd = path.dirname(path.dirname(path.dirname(row.filePath)))
-    const staleness = this.computeStaleness(frontmatter.refs, ownCwd, row.scope)
-    return staleness.some((s) => s.commitsSince > 0)
+    const verdict = stalenessVerdict(this.computeStaleness(frontmatter.refs, ownCwd, row.scope))
+    if (verdict.isStale) return '✱'
+    return verdict.stalenessUnknown ? '?' : ''
   }
 
   // TASK-1599 — leading prose of a knowledge body, for search result context.
@@ -791,12 +816,42 @@ function toIsoDate(d: Date): string {
   return d.toISOString().slice(0, 10)
 }
 
-function safeHeadSha(git: GitOps, cwd: string): string {
+// TASK-2369: this used to swallow the error and return '' — which was then
+// written into the frontmatter as `commitSha: `, silently turning staleness off
+// (git was not on the MCP server's PATH, so every pin failed). Refuse instead:
+// an unpinned ref must be a visible failure, never a quiet empty string.
+function pinnedHeadSha(git: GitOps, cwd: string): string {
+  let sha: string
   try {
-    return git.getHeadSha(cwd)
-  } catch {
-    return ''
+    sha = git.getHeadSha(cwd).trim()
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    throw new KnowledgeValidationError(
+      `cannot pin refs to HEAD in ${cwd}: ${msg} (is git on the PATH of this process?)`
+    )
   }
+  if (!sha) {
+    throw new KnowledgeValidationError(`cannot pin refs to HEAD in ${cwd}: git returned no commit`)
+  }
+  return sha
+}
+
+// -1 means the commits since the pin could not be counted (unpinned ref, a SHA
+// git does not know, or git itself failing). That is not "fresh", so it is
+// reported separately instead of folding into isStale=false.
+function stalenessVerdict(staleness: KnowledgeRefStaleness[]): {
+  isStale: boolean
+  stalenessUnknown: boolean
+} {
+  return {
+    isStale: staleness.some((s) => s.commitsSince > 0),
+    stalenessUnknown: staleness.some((s) => s.commitsSince < 0)
+  }
+}
+
+function normalizeDir(dir: string): string {
+  const resolved = path.resolve(dir)
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved
 }
 
 function escapeMd(s: string): string {

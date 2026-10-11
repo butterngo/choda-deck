@@ -43,7 +43,7 @@ export const register = (server: InstrumentedServer, svc: KnowledgeOperations): 
               commitSha: z
                 .string()
                 .optional()
-                .describe('Pin SHA. Omit to auto-capture current HEAD.')
+                .describe('Pin SHA. Omit to auto-capture current HEAD (the call fails if git cannot resolve HEAD — it never writes an empty SHA).')
             })
           )
           .optional()
@@ -122,7 +122,7 @@ export const register = (server: InstrumentedServer, svc: KnowledgeOperations): 
     'knowledge_get',
     {
       description:
-        'Read a knowledge entry by slug. Returns frontmatter + body + per-ref staleness (commits since pinned SHA). isStale=true if any ref has drifted.',
+        'Read a knowledge entry by slug. Returns frontmatter + body + per-ref staleness (commits since pinned SHA). isStale=true if any ref has drifted; stalenessUnknown=true if the drift of some ref could not be counted (commitsSince -1 — unpinned ref or git unavailable), so isStale=false is not proof of fresh.',
       inputSchema: {
         slug: z.string().describe('Slug of the entry')
       }
@@ -177,7 +177,7 @@ export const register = (server: InstrumentedServer, svc: KnowledgeOperations): 
               commitSha: z
                 .string()
                 .optional()
-                .describe('Pin SHA. Omit to auto-capture current HEAD.')
+                .describe('Pin SHA. Omit to auto-capture current HEAD (the call fails if git cannot resolve HEAD — it never writes an empty SHA).')
             })
           )
           .optional()
