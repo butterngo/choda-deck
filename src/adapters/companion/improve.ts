@@ -172,11 +172,18 @@ function readRuns(dir: string): ImproveRun[] {
   } catch {
     return []
   }
-  return names
-    .filter((n) => n.endsWith('.json'))
-    .map((n) => readJsonFile<ImproveRun | null>(path.join(runsDir(dir), n), null))
-    .filter((r): r is ImproveRun => r !== null)
-    .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+  return (
+    names
+      .filter((n) => n.endsWith('.json'))
+      .map((n) => readJsonFile<ImproveRun | null>(path.join(runsDir(dir), n), null))
+      // Only a run record counts. A stray JSON without these fields (the 0.18.7
+      // improve-mcp.json) reached the client and crashed it on startedAt.slice.
+      .filter(
+        (r): r is ImproveRun =>
+          r !== null && typeof r.runId === 'string' && typeof r.startedAt === 'string'
+      )
+      .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+  )
 }
 
 function writeRun(dir: string, run: ImproveRun): void {
@@ -324,7 +331,9 @@ export const spawnClaudeRun: RunSpawner = ({ ws, model, logFile, runCwd }) => {
     '--allowedTools',
     RUN_ALLOWED_TOOLS.join(',')
   ]
-  const mcp = path.join(path.dirname(logFile), 'improve-mcp.json')
+  // Beside runs/, never inside it: readRuns lists every JSON there as a run, and
+  // this one has no startedAt — it crashed the Improve tab (0.18.7).
+  const mcp = path.join(path.dirname(path.dirname(logFile)), 'improve-mcp.json')
   if (writeLeanMcpConfig(mcp))
     args.push('--strict-mcp-config', '--mcp-config', win ? `"${mcp}"` : mcp)
   // Through the shell on Windows, so the path is quoted for spaces.
