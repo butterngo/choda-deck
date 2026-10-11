@@ -21,6 +21,7 @@
 //   Options: --data-dir <path> --claude <path to claude.cmd>
 
 import * as fs from 'fs'
+import * as os from 'os'
 import * as path from 'path'
 import { createRequire } from 'module'
 import { execFileSync, spawnSync } from 'child_process'
@@ -73,8 +74,41 @@ export function pickScheduled(workspaces, readConfig = readImproveConfig) {
   return picked
 }
 
-export function claudeArgs(ws, model) {
-  return ['-p', `/improve-loop ${ws}`, '--model', model, '--allowedTools', ALLOWED_TOOLS.join(' ')]
+export function claudeArgs(ws, model, mcpConfig) {
+  const args = [
+    '-p',
+    `/improve-loop ${ws}`,
+    '--model',
+    model,
+    '--allowedTools',
+    ALLOWED_TOOLS.join(' ')
+  ]
+  return mcpConfig ? [...args, '--strict-mcp-config', '--mcp-config', mcpConfig] : args
+}
+
+/**
+ * TASK-2366 — an MCP config holding only the user's `choda-tasks` server, so a
+ * run skips every other connector's tool schemas (~6k tokens it never uses).
+ * Mirrors writeLeanMcpConfig in src/adapters/companion/improve.ts; this script
+ * is plain JS and cannot import it. False, writing nothing, when there is no
+ * such entry — the run then loads the full config.
+ */
+export function writeLeanMcpConfig(file, claudeJson = path.join(os.homedir(), '.claude.json')) {
+  let server
+  try {
+    const cfg = JSON.parse(fs.readFileSync(claudeJson, 'utf8'))
+    server =
+      cfg.mcpServers?.['choda-tasks'] ??
+      Object.values(cfg.projects ?? {}).find((p) => p.mcpServers?.['choda-tasks'])?.mcpServers?.[
+        'choda-tasks'
+      ]
+  } catch {
+    return false
+  }
+  if (!server) return false
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, JSON.stringify({ mcpServers: { 'choda-tasks': server } }, null, 2))
+  return true
 }
 
 /** Run each picked workspace in turn; one failing does not stop the next. */
@@ -149,12 +183,14 @@ function listWorkspaces(repoRoot, dataDir) {
 function run(repoRoot, dataDir) {
   const claudeCmd = arg('--claude')
   if (!claudeCmd) throw new Error('--run needs --claude <path to claude.cmd>')
+  const mcpFile = path.join(dataDir, 'improve-mcp.json')
+  const mcp = writeLeanMcpConfig(mcpFile) ? mcpFile : undefined
   runScheduled(listWorkspaces(repoRoot, dataDir), {
     invoke: (ws, model) => {
-      // A .cmd shim only launches through cmd.exe. Every token is either a
-      // constant or matched SAFE, so the hand-built line carries no quote or
-      // metacharacter from the outside.
-      const line = [`"${claudeCmd}"`, ...claudeArgs(ws, model).map((a) => `"${a}"`)].join(' ')
+      // A .cmd shim only launches through cmd.exe. Every token is a constant,
+      // matched SAFE, or a path we built under the data dir, so the hand-built
+      // line carries no quote or metacharacter from the outside.
+      const line = [`"${claudeCmd}"`, ...claudeArgs(ws, model, mcp).map((a) => `"${a}"`)].join(' ')
       const r = spawnSync('cmd.exe', ['/d', '/s', '/c', `"${line}"`], {
         cwd: repoRoot,
         stdio: 'inherit',

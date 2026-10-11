@@ -12,6 +12,7 @@ import {
   improveDir,
   resetActiveRuns,
   resolveClaudeCommand,
+  writeLeanMcpConfig,
   type RunHandle,
   type RunSpawner
 } from './improve'
@@ -247,5 +248,31 @@ describe('resolveClaudeCommand', () => {
     expect(resolveClaudeCommand(lookup([onPath, npm], env))).toBe(onPath)
     expect(resolveClaudeCommand(lookup([npm], env))).toBe(npm)
     expect(resolveClaudeCommand(lookup([], env))).toBeNull()
+  })
+})
+
+describe('writeLeanMcpConfig (TASK-2366)', () => {
+  it('writes only the choda-tasks server, found top-level or under a project', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'improve-mcp-'))
+    try {
+      const server = { command: 'node', args: ['mcp-server.cjs'] }
+      const claudeJson = path.join(dir, '.claude.json')
+      fs.writeFileSync(
+        claudeJson,
+        JSON.stringify({
+          projects: { 'C:/x': { mcpServers: { 'choda-tasks': server, other: {} } } }
+        })
+      )
+      const out = path.join(dir, 'runs', 'improve-mcp.json')
+      expect(writeLeanMcpConfig(out, claudeJson)).toBe(true)
+      expect(JSON.parse(fs.readFileSync(out, 'utf8'))).toEqual({
+        mcpServers: { 'choda-tasks': server }
+      })
+      fs.writeFileSync(claudeJson, JSON.stringify({ mcpServers: { other: {} } }))
+      expect(writeLeanMcpConfig(path.join(dir, 'b.json'), claudeJson)).toBe(false)
+      expect(fs.existsSync(path.join(dir, 'b.json'))).toBe(false)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
