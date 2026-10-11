@@ -23,6 +23,7 @@ import { handleMeetingsRoute } from './meetings'
 import { handleActivityRoute } from './activity'
 import { handleImproveRoute } from './improve'
 import { handleInboxDecideRoute } from './inbox-decide'
+import { handleAttentionRoute } from './attention'
 import { handleVaultRoute } from './vault'
 import { handleClaudeConfigRoute } from './claude-config'
 import { handleAcReviewRoute } from './ac-review'
@@ -148,6 +149,16 @@ async function route(
     await handleInboxDecideRoute(req, res, {
       svc: services.svc,
       bridgeToken: services.bridgeToken
+    })
+  ) {
+    return
+  }
+
+  // TASK-2384 — Claude sessions waiting on Butter (written by the attention hook).
+  if (
+    await handleAttentionRoute(req, res, {
+      dataDir: services.dataDir,
+      workspaces: () => listAllWorkspaces(services)
     })
   ) {
     return
