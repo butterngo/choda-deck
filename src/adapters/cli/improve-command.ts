@@ -1,5 +1,7 @@
 import * as fs from 'fs'
+import * as path from 'path'
 import { spawn } from 'child_process'
+import { BRIDGE_TOKEN_FILE } from '../companion/bridge-token'
 import type {
   CommandResult,
   MeasureDeps,
@@ -145,6 +147,24 @@ const shell = {
   }
 }
 
+/**
+ * TASK-2399 — env for the app the measure starts, so its dev proxy sends the
+ * adapter's bridge token the way the packaged app's static proxy does. Without it
+ * every token-gated read the page makes (the sidebar's GET /inbox/pending) 401s
+ * and the measure counts console errors a user never sees. Only the PATH is
+ * passed (`CHODA_BRIDGE_TOKEN_FILE`, read by the companion's vite.config.ts); a
+ * token or file the caller already set wins.
+ */
+export function bridgeTokenEnv(
+  dataDir: string,
+  env: NodeJS.ProcessEnv,
+  exists: (file: string) => boolean = fs.existsSync
+): Record<string, string> {
+  if (env.CHODA_BRIDGE_TOKEN || env.CHODA_BRIDGE_TOKEN_FILE) return {}
+  const file = path.join(dataDir, BRIDGE_TOKEN_FILE)
+  return exists(file) ? { CHODA_BRIDGE_TOKEN_FILE: file } : {}
+}
+
 async function reachable(url: string): Promise<boolean> {
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(2000) })
@@ -183,7 +203,9 @@ export async function dispatchImprove(sub: string | undefined, args: string[]): 
   const { localDate, DEFAULT_TZ } = await import('../../core/domain/activity/activity-digest')
   const { default: Database } = await import('better-sqlite3')
 
-  const { dbPath, artifactsDir } = resolveDataPaths()
+  const { dataDir, dbPath, artifactsDir } = resolveDataPaths()
+  // Inherited by the app the measure starts (and its test command).
+  Object.assign(process.env, bridgeTokenEnv(dataDir, process.env))
   if (!fs.existsSync(dbPath)) {
     process.stderr.write(`error: no database at ${dbPath} — unknown workspace "${ws}"\n`)
     return 2
