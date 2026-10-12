@@ -20,7 +20,7 @@ The original AC-1 asked for the last row to be fully visible in the measure's sc
 |---|---|---|
 | 3 | UI scannable evaluator note no longer mentions a clipped row | The re-measure plus improve-evaluator on the new `projects.png` scored **4/5** (from 3.5, target met), but the note still says "The bottom MANTU row is faded and clipped." The evaluator judges one still frame at scroll top, so a scroll container always shows a row at its edge. Carried to **TASK-2400** for a product call. |
 
-The task stays **IMPLEMENTED**.
+**Update 2026-10-12:** after TASK-2400 ("N more" bar, #183) and TASK-2401 (row-boundary snap, #184), the 2026-10-12 evaluator note has no clipped wording (4/5). AC-3 ticked; the task is **DONE**. See task-2401-ac-verification.md.
 
 ## Steps
 
