@@ -114,11 +114,13 @@ function install() {
   )
 
   // Register-ScheduledTask instead of bare schtasks /create: only the PS module
-  // exposes restart-on-failure settings (AC-4).
+  // exposes restart-on-failure settings (AC-4). The battery flags override
+  // Task Scheduler's defaults, which leave the task Queued on a laptop running
+  // unplugged and kill it when the charger is pulled.
   ps(
     `$action = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument '"${hiddenVbs}"';` +
       `$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME;` +
-      `$settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -StartWhenAvailable;` +
+      `$settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries;` +
       `Register-ScheduledTask -TaskName '${TASK_NAME}' -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null`
   )
   ps(`Start-ScheduledTask -TaskName '${TASK_NAME}'`)
