@@ -5,7 +5,7 @@ import * as path from 'path'
 import { createServer, type Server } from 'http'
 import type { AddressInfo } from 'net'
 import { SqliteTaskService } from '../../core/domain/sqlite-task-service'
-import { handleInboxDecideRoute } from './inbox-decide'
+import { handleInboxDecideRoute, pendingSource } from './inbox-decide'
 
 // TASK-2380 — the decide-screen routes over real HTTP and a real SQLite service.
 
@@ -142,5 +142,48 @@ describe('auth', () => {
 
   it('leaves the plain GET /inbox to the generic handler', async () => {
     expect((await call('GET', '/inbox')).status).toBe(418)
+  })
+})
+
+describe('loop notices (TASK-2417)', () => {
+  async function seedLoop(): Promise<string> {
+    const item = await svc.createInbox({
+      projectId: 'p',
+      content: '[loop:choda-deck] 🔴 TASK-1: typecheck failed twice'
+    })
+    return item.id
+  }
+
+  it('AC-1: pendingSource recognises [loop:<ws>] and nothing that merely starts with "loop"', () => {
+    expect(pendingSource('[loop:choda-deck] x')).toEqual({
+      source: 'loop',
+      tag: '[loop:choda-deck]'
+    })
+    expect(pendingSource('[loopx:a] x')).toBeNull()
+  })
+
+  it('AC-2: GET /inbox/pending lists a raw loop notice with source "loop"', async () => {
+    const id = await seedLoop()
+    const res = await call('GET', '/inbox/pending')
+    expect(res.status).toBe(200)
+    const { items } = (await res.json()) as { items: Array<{ id: string; source: string }> }
+    expect(items.find((i) => i.id === id)?.source).toBe('loop')
+  })
+
+  it('AC-3: converting a loop notice is 400 naming the loop source, and the item stays raw', async () => {
+    const id = await seedLoop()
+    const res = await call('POST', `/inbox/${id}/convert`)
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as { error: string; source: string }
+    expect(body.source).toBe('loop')
+    expect(body.error).toContain('[loop:choda-deck]')
+    expect((await svc.getInbox(id))?.status).toBe('raw')
+  })
+
+  it('AC-4: archiving a loop notice with a reason is 200 and the item becomes archived', async () => {
+    const id = await seedLoop()
+    const res = await call('POST', `/inbox/${id}/archive`, { reason: 'seen' })
+    expect(res.status).toBe(200)
+    expect((await svc.getInbox(id))?.status).toBe('archived')
   })
 })
