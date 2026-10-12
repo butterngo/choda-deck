@@ -18,7 +18,10 @@ const PREFIX = '/inbox/'
 const MAX_BODY_BYTES = 64 * 1024
 const ID = /^[A-Za-z0-9._-]+$/
 
-export type PendingSource = 'activity-digest' | 'improve' | 'improve-note'
+// `loop` (TASK-2417): status notices from /choda-autopilot and /choda-burn-backlog —
+// blocked, decision needed, PR ready, run start/end. They are read and dismissed,
+// never converted: a notice is a report, not a proposal.
+export type PendingSource = 'activity-digest' | 'improve' | 'improve-note' | 'loop'
 
 export interface PendingItem {
   id: string
@@ -40,7 +43,7 @@ export function pendingSource(content: string): { source: PendingSource; tag: st
   if (content.startsWith('[activity-digest]')) {
     return { source: 'activity-digest', tag: '[activity-digest]' }
   }
-  const m = /^\[(improve|improve-note):([A-Za-z0-9._-]+)\]/.exec(content)
+  const m = /^\[(improve|improve-note|loop):([A-Za-z0-9._-]+)\]/.exec(content)
   if (!m) return null
   return { source: m[1] as PendingSource, tag: m[0] }
 }
@@ -168,6 +171,13 @@ export async function handleInboxDecideRoute(
     }
 
     if (verb === 'convert') {
+      if (pending.source === 'loop') {
+        sendJson(res, 400, {
+          error: `${id} is a ${pendingSource(item.content)?.tag} loop notice — it can be archived, not converted`,
+          source: 'loop'
+        })
+        return true
+      }
       const result = await deps.svc.convertInboxToTask(id, {
         title: pending.title.slice(0, 200) || `Inbox ${id}`,
         labels: [pending.source === 'activity-digest' ? 'activity-digest' : 'improve-loop'],
