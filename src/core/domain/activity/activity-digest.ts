@@ -5,7 +5,8 @@ import { MAX_MISTAKES, RunTracker, type Mistake, type RunAction } from './activi
 // Takes raw Claude Code transcript JSONL contents plus the registered workspace
 // cwds and returns the transcript-derived metrics for ONE local date. No FS, git
 // or DB here: the CLI (TASK-2151) gathers inputs and fills the fields this module
-// leaves at zero (historyRows, skippedRepos, sessionsCompleted, mergesToDefault).
+// leaves at zero (historyRows, skippedRepos, sessionsCompleted, mergesToDefault,
+// directPushes).
 //
 // The transcript jsonl is an undocumented Claude Code format, so metrics key only
 // on `user`/`assistant` rows; every other type is counted, never interpreted.
@@ -72,6 +73,8 @@ export interface ActivityMetrics {
   parallelSessionsPeak: number
   sessionsCompleted: number
   mergesToDefault: number
+  /** TASK-2312 — non-bot commits on the default branch that did not come from a PR. */
+  directPushes: number
   toolMix: Record<string, number>
   toolDenials: number
   skillsUsed: Record<string, number>
@@ -374,6 +377,7 @@ export function computeTranscriptDigest(input: TranscriptDigestInput): Transcrip
       parallelSessionsPeak: Math.max(0, ...[...bucketSessions.values()].map((s) => s.size)),
       sessionsCompleted: 0,
       mergesToDefault: 0,
+      directPushes: 0,
       toolMix: sortedRecord(toolMix),
       toolDenials,
       skillsUsed: sortedRecord(skills),

@@ -29,6 +29,7 @@ Commands:
   activity digest  Write the daily Claude activity digest (TASK-2151)
   improve measure <ws>  Measure a workspace's improve loop scorecard (TASK-2356)
   member add|remove|list  Manage team project membership on the remote (TASK-2243)
+  session reconcile  List stale ACTIVE sessions whose task already merged (TASK-2312)
 
 Meta:
   --help        Show this help
@@ -70,6 +71,10 @@ async function main(): Promise<number> {
     case 'member': {
       const { dispatchMember } = await import('./member-command')
       return dispatchMember(sub, argv.slice(2))
+    }
+    case 'session': {
+      const { dispatchSession } = await import('./session-command')
+      return dispatchSession(sub, argv.slice(2))
     }
     default:
       process.stderr.write(`error: unknown command "${group}"\n\n${ROOT_HELP}`)

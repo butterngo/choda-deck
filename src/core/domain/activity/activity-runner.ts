@@ -1,6 +1,5 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import { execFileSync } from 'child_process'
 import type Database from 'better-sqlite3'
 import { splitLines } from '../../utils/lines'
 import {
@@ -11,6 +10,7 @@ import {
   type SessionActivity,
   type TaskActivity
 } from './activity-digest'
+import { classifyCommit, defaultBranchCommits, git } from './default-branch-log'
 
 // TASK-2151 — the I/O half of the daily activity digest. Gathers the inputs the
 // pure engine (activity-digest.ts) cannot touch — transcript files, history.jsonl,
@@ -152,62 +152,43 @@ export function rollUpByTask(
   )
 }
 
-function git(cwd: string, args: string[]): string {
-  return execFileSync('git', ['-C', cwd, ...args], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-    windowsHide: true,
-    timeout: 15_000
-  }).trim()
-}
-
 /**
- * First-parent commits on each registered repo's default branch inside the local
- * day. Several workspaces can share one repo, so repos are deduped by their git
- * common dir. A missing or non-git cwd is skipped and counted.
+ * TASK-2312 — PR merges vs direct pushes on each registered repo's default branch
+ * inside the local day. Bot commits (BOT_AUTHORS) count as neither. Several
+ * workspaces can share one repo, so repos are deduped by their git common dir. A
+ * missing or non-git cwd is skipped and counted.
  */
 export function countMergesToDefault(
   cwds: string[],
   date: string,
   tz: string
-): { merges: number; skipped: number } {
+): { merges: number; directPushes: number; skipped: number } {
   const since = new Date(localMidnightUtc(date, tz)).toISOString()
   const until = new Date(localMidnightUtc(addDays(date, 1), tz)).toISOString()
   const seen = new Set<string>()
-  let merges = 0
-  let skipped = 0
+  const counts = { merges: 0, directPushes: 0, skipped: 0 }
   for (const cwd of cwds) {
     let common: string
     try {
       if (!fs.statSync(cwd).isDirectory()) throw new Error('not a dir')
       common = git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir']).toLowerCase()
     } catch {
-      skipped++
+      counts.skipped++
       continue
     }
     if (seen.has(common)) continue
     seen.add(common)
-    let ref = 'origin/main'
     try {
-      ref = git(cwd, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])
+      for (const c of defaultBranchCommits(cwd, [`--since=${since}`, `--until=${until}`])) {
+        const kind = classifyCommit(c)
+        if (kind === 'merge') counts.merges++
+        else if (kind === 'direct') counts.directPushes++
+      }
     } catch {
-      /* no origin/HEAD — fall back to origin/main */
-    }
-    try {
-      const out = git(cwd, [
-        'log',
-        ref,
-        '--first-parent',
-        `--since=${since}`,
-        `--until=${until}`,
-        '--format=%H'
-      ])
-      merges += out ? out.split(/\r?\n/).length : 0
-    } catch {
-      skipped++
+      counts.skipped++
     }
   }
-  return { merges, skipped }
+  return counts
 }
 
 /** Build one date's digest from the live sources. */
@@ -222,7 +203,7 @@ export function buildDigest(date: string, opts: ActivityRunnerOptions): Activity
     files: files.map((f) => fs.readFileSync(f, 'utf8')),
     workspaces: cwds
   })
-  const { merges, skipped } = countMergesToDefault(cwds, date, tz)
+  const { merges, directPushes, skipped } = countMergesToDefault(cwds, date, tz)
   const sessionsCompleted = sessionEndings.filter((e) => {
     const t = Date.parse(e)
     return !Number.isNaN(t) && localDate(t, tz) === date
@@ -242,6 +223,7 @@ export function buildDigest(date: string, opts: ActivityRunnerOptions): Activity
       ...transcript.metrics,
       sessionsCompleted,
       mergesToDefault: merges,
+      directPushes,
       byTask: rollUpByTask(transcript.bySession, ccTasks)
     }
   }

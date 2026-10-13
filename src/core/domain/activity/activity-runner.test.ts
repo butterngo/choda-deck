@@ -11,6 +11,7 @@ import {
   localMidnightUtc,
   activityDir,
   rollUpByTask,
+  countMergesToDefault,
   type ActivityRunnerOptions
 } from './activity-runner'
 
@@ -45,7 +46,14 @@ function registerWorkspace(id: string, cwd: string): void {
   )
 }
 
-function gitRepo(dir: string, commits: { at: string }[]): void {
+interface FixtureCommit {
+  at: string
+  /** Defaults to a squash-merge subject, so it counts as a PR merge. */
+  subject?: string
+  author?: string
+}
+
+function gitRepo(dir: string, commits: FixtureCommit[]): void {
   fs.mkdirSync(dir, { recursive: true })
   const g = (args: string[], env: Record<string, string> = {}) =>
     execFileSync('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], {
@@ -56,7 +64,11 @@ function gitRepo(dir: string, commits: { at: string }[]): void {
   commits.forEach((c, i) => {
     fs.writeFileSync(path.join(dir, `f${i}.txt`), String(i))
     g(['add', '.'])
-    g(['commit', '-q', '-m', `c${i}`], { GIT_AUTHOR_DATE: c.at, GIT_COMMITTER_DATE: c.at })
+    g(['commit', '-q', '-m', c.subject ?? `c${i} (#${i + 1})`], {
+      GIT_AUTHOR_DATE: c.at,
+      GIT_COMMITTER_DATE: c.at,
+      ...(c.author ? { GIT_AUTHOR_NAME: c.author } : {})
+    })
   })
   g(['update-ref', 'refs/remotes/origin/master', 'HEAD'])
   g(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master'])
@@ -131,6 +143,34 @@ describe('runActivityDigest — TASK-2151', () => {
     )
     expect(d.metrics.mergesToDefault).toBe(2)
     expect(d.sources.skippedRepos).toBe(1)
+  })
+
+  it('TASK-2312 AC-1: counts PR merges only; a direct push is counted apart, a bot commit not at all', () => {
+    const repo = path.join(tmp, 'repo')
+    gitRepo(repo, [
+      { at: '2026-09-25T09:00:00+07:00', subject: 'Merge pull request #7 from u/feat/x' },
+      { at: '2026-09-25T10:00:00+07:00', subject: 'feat: squash-merged thing (#8)' },
+      { at: '2026-09-25T11:00:00+07:00', subject: 'k8s: jm-api -> c47d3f80', author: 'jm-ci' },
+      { at: '2026-09-25T12:00:00+07:00', subject: 'fix typo straight on master' }
+    ])
+    expect(countMergesToDefault([repo], DATE, 'Asia/Ho_Chi_Minh')).toEqual({
+      merges: 2,
+      directPushes: 1,
+      skipped: 0
+    })
+  })
+
+  it('TASK-2312 AC-2: the digest JSON carries metrics.directPushes as a number', () => {
+    const repo = path.join(tmp, 'repo')
+    gitRepo(repo, [{ at: '2026-09-25T12:00:00+07:00', subject: 'direct push' }])
+    registerWorkspace('ws', repo)
+    runActivityDigest({ date: DATE }, opts())
+    const d = JSON.parse(
+      fs.readFileSync(path.join(activityDir(artifactsDir), `${DATE}.json`), 'utf8')
+    )
+    expect(typeof d.metrics.directPushes).toBe('number')
+    expect(d.metrics.directPushes).toBe(1)
+    expect(d.metrics.mergesToDefault).toBe(0)
   })
 
   it('a repo registered twice is counted once', () => {
