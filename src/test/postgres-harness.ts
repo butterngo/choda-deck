@@ -6,8 +6,7 @@
 // dev machines without Docker Desktop running) — use `describeIfDocker`
 // at the top of each .pg.test.ts file.
 
-import { execFileSync } from 'node:child_process'
-import { describe } from 'vitest'
+import { describe, inject } from 'vitest'
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer
@@ -46,28 +45,11 @@ export async function stopPostgresTestEnv(env: PgTestEnv): Promise<void> {
   await env.container.stop()
 }
 
-// Detect Docker AND verify it can run Linux containers (postgres:16-alpine).
-// GitHub's windows-latest runner ships Docker in *Windows-container mode*, where
-// `docker ps` succeeds but testcontainers fails at the volume-mount step with
-// "invalid volume specification: '//var/run/docker.sock:/var/run/docker.sock:rw'".
-// Filtering on OSType=linux self-skips that case while still running locally on
-// Docker Desktop (Linux mode) and on Linux CI.
-function detectLinuxDockerSync(): boolean {
-  try {
-    const out = execFileSync('docker', ['info', '--format', '{{.OSType}}'], {
-      timeout: 5000,
-      stdio: ['ignore', 'pipe', 'ignore']
-    })
-      .toString()
-      .trim()
-    return out === 'linux'
-  } catch {
-    return false
-  }
-}
+// Docker detection runs once per vitest run in pg-docker-global-setup.ts
+// (TASK-2473), not here: a per-worker `docker info` could time out under load and
+// skip one worker's files. inject() returns undefined only when that globalSetup
+// was not registered, which counts as "no Docker" rather than a crash.
+const pgDocker = inject('pgDocker')
 
-// Resolved synchronously at module load so test files can pick describe vs
-// describe.skip without top-level await — which can destabilize Vitest's
-// worker pool when a child fork crashes during teardown.
-export const dockerAvailable = detectLinuxDockerSync()
+export const dockerAvailable = pgDocker?.ok ?? false
 export const describeIfDocker = dockerAvailable ? describe : describe.skip
