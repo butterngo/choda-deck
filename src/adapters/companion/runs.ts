@@ -3,6 +3,7 @@ import { Buffer } from 'buffer'
 import { timingSafeEqual } from 'crypto'
 import type { InboxItem, Session, Task } from '../../core/domain/task-types'
 import type { InboxOperations } from '../../core/domain/interfaces/inbox-repository.interface'
+import type { ProjectOperations } from '../../core/domain/interfaces/project-repository.interface'
 import type { SessionOperations } from '../../core/domain/interfaces/session-repository.interface'
 import type { TaskOperations } from '../../core/domain/interfaces/task-repository.interface'
 
@@ -19,6 +20,8 @@ import type { TaskOperations } from '../../core/domain/interfaces/task-repositor
 // is a report of a moment, an active session is the present.
 
 export type RunState = 'running' | 'finished' | 'halted' | 'waiting-merge' | 'idle'
+/** TASK-2535 — the lifecycle stepper on the Runs screen. */
+export type RunStage = 'started' | 'working' | 'pr-opened' | 'merged' | 'done'
 export type NoticeKind = 'started' | 'finished' | 'blocked' | 'decision' | 'ready' | 'other'
 
 export interface RunNotice {
@@ -43,11 +46,18 @@ export interface RunItem {
   tests: { passed: string[]; skipped: string[] } | null
   /** startedAt of an active session on this item, or null. */
   activeSince: string | null
+  /** TASK-2535 — blockers that are items of the same goal; outside blockers left out. */
+  deps: string[]
 }
 
 export interface Run {
   goal: { id: string; title: string; status: string; projectId: string }
+  project: { id: string; name: string }
   state: RunState
+  stage: RunStage
+  failedAt: RunStage | null
+  /** Distinct GitHub pull request links named in the run's notices, first seen first. */
+  prUrls: string[]
   items: RunItem[]
   notices: RunNotice[]
   lastActivityAt: string
@@ -56,13 +66,15 @@ export interface Run {
 export interface RunsDeps {
   svc: Pick<InboxOperations, 'findInbox'> &
     Pick<TaskOperations, 'getTask' | 'getSubtasks'> &
-    Pick<SessionOperations, 'findSessions'>
+    Pick<SessionOperations, 'findSessions'> &
+    Pick<ProjectOperations, 'getProject'>
   bridgeToken: string
 }
 
 const LOOP_TAG = /^\[loop:([A-Za-z0-9._-]+)\]\s*/
 const RUN_GOAL = /\brun (TASK-\d+)\b/
 const TASK_ID = /\bTASK-\d+\b/g
+const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g
 
 export function noticeKind(text: string): NoticeKind {
   const head = text.trimStart()
@@ -119,7 +131,37 @@ export function runState(items: RunItem[], notices: RunNotice[]): RunState {
   }
 }
 
-function toItem(task: Task, sessions: Session[]): RunItem {
+/**
+ * The stepper position, read in a fixed order: a finished notice wins, then a
+ * PR closed without merge, then an open PR, then a refusal at start, then any
+ * finished or active item. TASK-2447's PR was closed after its 🟢 ready
+ * notice, so "closed" has to be checked before "ready".
+ */
+export function runStage(
+  items: RunItem[],
+  notices: RunNotice[]
+): { stage: RunStage; failedAt: RunStage | null } {
+  if (notices.some((n) => n.kind === 'finished')) return { stage: 'done', failedAt: null }
+  if (notices.some((n) => n.content.includes('closed without merge'))) {
+    return { stage: 'merged', failedAt: 'merged' }
+  }
+  if (notices.some((n) => n.kind === 'ready')) return { stage: 'pr-opened', failedAt: null }
+  if (notices.some((n) => n.title.includes('refused'))) return { stage: 'started', failedAt: 'started' }
+  const moved = items.some((i) => i.activeSince || i.status === 'IMPLEMENTED' || i.status === 'DONE')
+  return { stage: moved ? 'working' : 'started', failedAt: null }
+}
+
+export function prUrls(notices: RunNotice[]): string[] {
+  const seen: string[] = []
+  for (const n of notices) {
+    for (const url of n.content.match(PR_URL) ?? []) if (!seen.includes(url)) seen.push(url)
+  }
+  return seen
+}
+
+const byNumericId = (a: string, b: string): number => a.localeCompare(b, undefined, { numeric: true })
+
+function toItem(task: Task, sessions: Session[], goalItems: Set<string>): RunItem {
   const mine = sessions
     .filter((s) => s.taskId === task.id)
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
@@ -135,7 +177,8 @@ function toItem(task: Task, sessions: Session[]): RunItem {
     tests: handoff?.testResults
       ? { passed: handoff.testResults.passed ?? [], skipped: handoff.testResults.skipped ?? [] }
       : null,
-    activeSince: active?.startedAt ?? null
+    activeSince: active?.startedAt ?? null,
+    deps: task.blockedBy.filter((id) => goalItems.has(id)).sort(byNumericId)
   }
 }
 
@@ -160,6 +203,7 @@ export async function buildRuns(
   }
 
   const sessionsByProject = new Map<string, Session[]>()
+  const projectNames = new Map<string, string>()
   const runs: Run[] = []
   for (const [goalId, goalNotices] of byGoal) {
     const goal = await svc.getTask(goalId)
@@ -172,12 +216,20 @@ export async function buildRuns(
     }
     const sessions = sessionsByProject.get(goal.projectId) ?? []
     const subtasks = await svc.getSubtasks(goalId)
+    const goalItems = new Set(subtasks.map((t) => t.id))
     const items = subtasks
-      .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }))
-      .map((t) => toItem(t, sessions))
+      .sort((a, b) => byNumericId(a.id, b.id))
+      .map((t) => toItem(t, sessions, goalItems))
+    if (!projectNames.has(goal.projectId)) {
+      projectNames.set(goal.projectId, (await svc.getProject(goal.projectId))?.name || goal.projectId)
+    }
     runs.push({
       goal: { id: goal.id, title: goal.title, status: goal.status, projectId: goal.projectId },
+      project: { id: goal.projectId, name: projectNames.get(goal.projectId) ?? goal.projectId },
       state: 'idle',
+      stage: 'started',
+      failedAt: null,
+      prUrls: [],
       items,
       notices: goalNotices,
       lastActivityAt: ''
@@ -196,6 +248,8 @@ export async function buildRuns(
   for (const run of runs) {
     run.notices.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     run.state = runState(run.items, run.notices)
+    Object.assign(run, runStage(run.items, run.notices))
+    run.prUrls = prUrls(run.notices)
     run.lastActivityAt = [
       ...run.notices.map((n) => n.createdAt),
       ...run.items.map((i) => i.activeSince ?? '')

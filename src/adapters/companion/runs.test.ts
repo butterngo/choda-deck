@@ -130,7 +130,8 @@ describe('GET /runs', () => {
       ac: { ticked: 2, total: 4, humanOpen: ['AC-4: Butter sees the run in the installed app — human'] },
       commit: '7061794 feat: item (TASK-11)',
       tests: { passed: ['ServiceActorTests 4/4'], skipped: ['e2e: no env'] },
-      activeSince: null
+      activeSince: null,
+      deps: []
     })
     expect(i12).toMatchObject({ id: 'TASK-12', commit: null, tests: null, activeSince: '2026-10-19T10:29:00.000Z' })
     expect(i13).toMatchObject({ id: 'TASK-13', ac: { ticked: 0, total: 0, humanOpen: [] }, activeSince: null })
@@ -156,6 +157,76 @@ describe('GET /runs', () => {
   })
 })
 
+// TASK-2535 — the fields the v2 Runs screen draws from: the flow, the stepper,
+// the PR link and the project heading.
+describe('GET /runs — TASK-2535 fields', () => {
+  const runsOf = async (): Promise<Run[]> => ((await (await get('/runs')).json()) as { runs: Run[] }).runs
+  const byGoal = (runs: Run[], id: string): Run => runs.find((r) => r.goal.id === id) as Run
+
+  it('AC-1: deps keep only blockers inside the goal', async () => {
+    await svc.createTask({ id: 'TASK-99', projectId: 'p', title: 'Outside, still open' })
+    await svc.createTask({ id: 'TASK-10', projectId: 'p', title: 'Goal', status: 'READY' })
+    await svc.createTask({ id: 'TASK-11', projectId: 'p', parentTaskId: 'TASK-10', title: 'First' })
+    await svc.createTask({ id: 'TASK-12', projectId: 'p', parentTaskId: 'TASK-10', title: 'Second', blockedBy: ['TASK-11'] })
+    await svc.createTask({ id: 'TASK-13', projectId: 'p', parentTaskId: 'TASK-10', title: 'Third', blockedBy: ['TASK-99', 'TASK-11'] })
+    await notice('[loop:web] ⚪ run TASK-10 started: 3 tasks')
+    const [run] = await runsOf()
+    expect(run.items.map((i) => [i.id, i.deps])).toEqual([
+      ['TASK-11', []],
+      ['TASK-12', ['TASK-11']],
+      ['TASK-13', ['TASK-11']]
+    ])
+  })
+
+  it('AC-2: the run carries its project id and name', async () => {
+    await svc.createTask({ id: 'TASK-10', projectId: 'p', title: 'Goal', status: 'READY' })
+    await notice('[loop:web] ⚪ run TASK-10 started: 0 tasks')
+    const [run] = await runsOf()
+    expect(run.project).toEqual({ id: 'p', name: 'P' })
+  })
+
+  it('AC-3..AC-6: stage and failedAt follow the six derivation rules', async () => {
+    // One goal per rule. Rule 5 needs an IMPLEMENTED item; the others have a TODO one.
+    for (const n of [1, 2, 3, 4, 5, 6]) {
+      await svc.createTask({ id: `TASK-${n}0`, projectId: 'p', title: `Rule ${n}`, status: 'READY' })
+      await svc.createTask({
+        id: `TASK-${n}1`,
+        projectId: 'p',
+        parentTaskId: `TASK-${n}0`,
+        title: 'Item',
+        status: n === 5 ? 'IMPLEMENTED' : 'TODO'
+      })
+    }
+    await notice('[loop:web] ⚪ run TASK-10 started: 1 tasks')
+    await notice('[loop:web] 🟢 run TASK-10 ready: 1 items in 1 PR(s)')
+    await notice('[loop:web] ⚪ run TASK-10 finished\nDONE: TASK-11')
+    await notice('[loop:web] 🟢 run TASK-20 ready: 1 items in 1 PR(s)')
+    await notice('[loop:web] 🔴 run TASK-20: https://github.com/o/r/pull/2 closed without merge — items stay IMPLEMENTED')
+    await notice('[loop:web] ⚪ run TASK-30 started: 1 tasks')
+    await notice('[loop:web] 🟢 run TASK-30 ready: 1 items in 1 PR(s)')
+    await notice('[loop:web] 🔴 run TASK-40 refused: dirty tree in C:\\x')
+    await notice('[loop:web] ⚪ run TASK-50 started: 1 tasks')
+    await notice('[loop:web] ⚪ run TASK-60 started: 1 tasks')
+
+    const runs = await runsOf()
+    const at = (n: number): Run => byGoal(runs, `TASK-${n}0`)
+    expect([1, 2, 3, 4, 5, 6].map((n) => at(n).stage)).toEqual(['done', 'merged', 'pr-opened', 'started', 'working', 'started'])
+    expect(at(2).failedAt).toBe('merged')
+    expect(at(4).failedAt).toBe('started')
+    expect([1, 3, 5, 6].map((n) => at(n).failedAt)).toEqual([null, null, null, null])
+  })
+
+  it('AC-7: prUrls are distinct and in first-seen order across notices', async () => {
+    await svc.createTask({ id: 'TASK-10', projectId: 'p', title: 'Goal', status: 'READY' })
+    await notice(
+      '[loop:web] 🟢 run TASK-10 ready: 2 items in 1 PR(s)\nhttps://github.com/butterngo/x/pull/7\nagain https://github.com/butterngo/x/pull/7'
+    )
+    await notice('[loop:web] ⚪ run TASK-10 finished\nmerged https://github.com/butterngo/y/pull/2')
+    const [run] = await runsOf()
+    expect(run.prUrls).toEqual(['https://github.com/butterngo/x/pull/7', 'https://github.com/butterngo/y/pull/2'])
+  })
+})
+
 describe('acceptanceCounts', () => {
   it('AC-3: counts only the Acceptance section and lists unticked human criteria', () => {
     expect(acceptanceCounts(BODY)).toEqual({
@@ -176,7 +247,8 @@ describe('runState', () => {
     ac: { ticked: 0, total: 0, humanOpen: [] },
     commit: null,
     tests: null,
-    activeSince
+    activeSince,
+    deps: []
   })
   const n = (text: string, at: string): RunNotice => ({
     id: at,
