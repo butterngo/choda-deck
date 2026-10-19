@@ -5,11 +5,11 @@ projectId: choda-deck
 scope: project
 refs:
   - path: scripts/dockerfile-build-scripts.test.ts
-    commitSha: 3f1de6130d7a67b9d7d31df63bf37a4c6346d010
+    commitSha: 5ff422509137117d73fe0a9e93a7dd0f7232ff7c
   - path: scripts/lib/test-files.mjs
-    commitSha: 3f1de6130d7a67b9d7d31df63bf37a4c6346d010
+    commitSha: 5ff422509137117d73fe0a9e93a7dd0f7232ff7c
 createdAt: 2026-09-16
-lastVerifiedAt: 2026-10-05
+lastVerifiedAt: 2026-10-19
 ---
 
 **Trigger:** a rule has to hold across two files that cannot import each other — a
