@@ -86,16 +86,16 @@ git worktree remove ../choda-deck.worktrees/hotfix         # cleanup
 
 ## MCP Tools Available
 
-`choda-tasks` server exposes domain tools across: project, workspace, task, phase, inbox, conversation, session, search, roadmap, backup. Source of truth = `src/adapters/mcp/server.ts` + `src/adapters/mcp/mcp-tools/`. After source changes: `pnpm run build:mcp` + `/mcp reconnect`.
+`choda-tasks` server exposes domain tools across: project, workspace, task, phase, inbox, conversation, session, search, roadmap, backup. Source of truth = `src/adapters/mcp/server.ts` + `src/adapters/mcp/mcp-tools/`. After source changes: `pnpm run build:mcp` + `/mcp reconnect` (`build:mcp` also rebuilds `dist/cli.cjs`, the bundle registered below).
 
-Register in `.claude.json` (production — uses bundled `dist/mcp-server.cjs`):
+Register in `.claude.json` (production — runs the bundled CLI's `mcp serve`; `dist/mcp-server.cjs` is deprecated and only kept for old configs):
 
 ```json
 {
   "mcpServers": {
     "choda-tasks": {
       "command": "node",
-      "args": ["C:\\dev\\choda-deck\\dist\\mcp-server.cjs"],
+      "args": ["C:\\dev\\choda-deck\\dist\\cli.cjs", "mcp", "serve"],
       "cwd": "C:\\dev\\choda-deck",
       "env": {
         "CHODA_DATA_DIR": "C:\\dev\\choda-deck\\data",
