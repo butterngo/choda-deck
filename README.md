@@ -141,7 +141,7 @@ Then point your client at the bundle you just built instead of at `npx`. Use **a
   "mcpServers": {
     "choda-tasks": {
       "command": "node",
-      "args": ["/absolute/path/to/choda-deck/dist/mcp-server.cjs"],
+      "args": ["/absolute/path/to/choda-deck/dist/cli.cjs", "mcp", "serve"],
       "cwd": "/absolute/path/to/choda-deck",
       "env": {
         "CHODA_DATA_DIR": "/absolute/path/to/choda-deck/data",
@@ -152,11 +152,11 @@ Then point your client at the bundle you just built instead of at `npx`. Use **a
 }
 ```
 
-On Windows, escape the backslashes: `"C:\\dev\\choda-deck\\dist\\mcp-server.cjs"`.
+On Windows, escape the backslashes: `"C:\\dev\\choda-deck\\dist\\cli.cjs"`. This is the same `mcp serve` command the `npx` config resolves to, without npx's per-launch package check (about 4 s on Windows). `dist/mcp-server.cjs` still starts the server for old configs but prints a deprecation notice.
 
 `CHODA_DATA_DIR` is optional — omit it and the server creates `./data` relative to its working directory. Setting it explicitly is strongly recommended, because "relative to the working directory" means a client that launches from somewhere else silently gets a **different, empty database**. Nothing else needs provisioning: the schema is created on first boot, and daily backups land in `<CHODA_DATA_DIR>/backups/`.
 
-**Editing the source.** The MCP client runs the *bundle*, not your TypeScript. After changing anything under `src/`, run `pnpm run build:mcp` and reconnect the server (`/mcp reconnect` in Claude Code) — otherwise you are still testing the old build.
+**Editing the source.** The MCP client runs the *bundle*, not your TypeScript. After changing anything under `src/`, run `pnpm run build:mcp` (it rebuilds both `dist/mcp-server.cjs` and `dist/cli.cjs`) and reconnect the server (`/mcp reconnect` in Claude Code) — otherwise you are still testing the old build.
 
 ## CLI
 
