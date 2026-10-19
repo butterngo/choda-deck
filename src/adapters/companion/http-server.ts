@@ -24,6 +24,7 @@ import { handleActivityRoute } from './activity'
 import { handleImproveRoute } from './improve'
 import { handleInboxDecideRoute } from './inbox-decide'
 import { handleAttentionRoute } from './attention'
+import { handleRunsRoute } from './runs'
 import { handleVaultRoute } from './vault'
 import { handleClaudeConfigRoute } from './claude-config'
 import { handleAcReviewRoute } from './ac-review'
@@ -151,6 +152,11 @@ async function route(
       bridgeToken: services.bridgeToken
     })
   ) {
+    return
+  }
+
+  // TASK-2531 — one record per /choda-autopilot or /choda-burn-backlog run.
+  if (await handleRunsRoute(req, res, { svc: services.svc, bridgeToken: services.bridgeToken })) {
     return
   }
 
