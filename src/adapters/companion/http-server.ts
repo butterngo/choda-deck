@@ -25,6 +25,7 @@ import { handleImproveRoute } from './improve'
 import { handleInboxDecideRoute } from './inbox-decide'
 import { handleAttentionRoute } from './attention'
 import { handleRunsRoute } from './runs'
+import { handleTaskTranslateRoute } from './task-translate'
 import { handleVaultRoute } from './vault'
 import { handleClaudeConfigRoute } from './claude-config'
 import { handleAcReviewRoute } from './ac-review'
@@ -262,6 +263,18 @@ async function route(
   // made structural is not weakened by adding a second thing a model can do.
   if (
     await handleAcReviewRoute(req, res, {
+      bridgeToken: services.bridgeToken,
+      svc: services.svc,
+      dataDir: services.dataDir,
+      fetchImpl: services.fetchImpl as typeof fetch | undefined
+    })
+  ) {
+    return
+  }
+  // TASK-2536 — the companion task page's translate button; the same cost
+  // boundary as ac-review: its own route, one task, one explicit click.
+  if (
+    await handleTaskTranslateRoute(req, res, {
       bridgeToken: services.bridgeToken,
       svc: services.svc,
       dataDir: services.dataDir,
