@@ -26,6 +26,7 @@ import { handleInboxDecideRoute } from './inbox-decide'
 import { handleAttentionRoute } from './attention'
 import { handleRunsRoute } from './runs'
 import { handleTaskTranslateRoute } from './task-translate'
+import { handleConversationDecideRoute } from './conversation-decide'
 import { handleVaultRoute } from './vault'
 import { handleClaudeConfigRoute } from './claude-config'
 import { handleAcReviewRoute } from './ac-review'
@@ -105,6 +106,14 @@ async function route(
   // Task-detail read for the graph node panel. GET /tasks/:id (POST
   // /tasks/:id/ready is a workflow route, handled above).
   if (await handleTaskDetailRoute(req, res, services.svc, services.bridgeToken)) {
+    return
+  }
+
+  // TASK-2541 — close a thread from the companion. Before the detail route so
+  // /conversations/:id/decide never reaches the shared 405 for non-GET.
+  if (
+    await handleConversationDecideRoute(req, res, { bridgeToken: services.bridgeToken, svc: services.svc })
+  ) {
     return
   }
 
