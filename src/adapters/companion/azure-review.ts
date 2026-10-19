@@ -225,6 +225,12 @@ export async function askAzureJson<T>(opts: {
   schemaName: string
   model?: string
   fetchImpl?: typeof fetch
+  /**
+   * TASK-2536 — a caller whose answer is as long as its input (a translated
+   * task body) needs more than the review-sized default, or the answer is cut
+   * off mid-JSON and reads as a parse failure.
+   */
+  maxTokens?: number
 }): Promise<T> {
   const doFetch = opts.fetchImpl ?? fetch
   const deployment = opts.model ?? opts.cfg.deployment
@@ -233,8 +239,8 @@ export async function askAzureJson<T>(opts: {
   // The field name is not a preference: a reasoning deployment REJECTS
   // max_tokens with a 400, and the others do not know max_completion_tokens.
   const budget = reasoning
-    ? { max_completion_tokens: REASONING_MAX_TOKENS }
-    : { max_tokens: MAX_TOKENS }
+    ? { max_completion_tokens: opts.maxTokens ?? REASONING_MAX_TOKENS }
+    : { max_tokens: opts.maxTokens ?? MAX_TOKENS }
 
   let res: Response
   try {
