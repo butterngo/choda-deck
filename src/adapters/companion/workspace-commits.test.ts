@@ -392,7 +392,8 @@ describe('handleWorkspaceCommitsRoute', () => {
       patch: () => '',
       defaultRef: () => null,
       isAncestorOf: () => false,
-      containingRefs: () => []
+      containingRefs: () => [],
+      remoteUrl: () => null
     }
     const cap = {} as Captured
     await handleWorkspaceCommitsRoute(req(`/workspaces/main/commits/${taggedSha}`), fakeRes(cap), {
@@ -401,6 +402,57 @@ describe('handleWorkspaceCommitsRoute', () => {
       reader: failing
     })
     expect(cap.status).toBe(409)
+  })
+})
+
+// TASK-2560 — the commit's GitHub page, served on the detail route. The real
+// repo has no origin, so the remote is injected over the real reader.
+describe('commit detail webUrl', () => {
+  async function webUrlFor(remote: string | null): Promise<{ status: number; webUrl: unknown }> {
+    const cap = {} as Captured
+    await handleWorkspaceCommitsRoute(req(`/workspaces/main/commits/${taggedSha}`), fakeRes(cap), {
+      svc: svcFor(repo),
+      bridgeToken: TOKEN,
+      reader: { ...execGitCommitReader, remoteUrl: () => remote }
+    })
+    return { status: cap.status, webUrl: (cap.body as { webUrl?: unknown }).webUrl }
+  }
+
+  it('AC-8: an https GitHub origin serves the commit page with the full sha', async () => {
+    expect((await webUrlFor('https://github.com/o/r.git')).webUrl).toBe(
+      `https://github.com/o/r/commit/${taggedSha}`
+    )
+    expect(taggedSha).toHaveLength(40)
+  })
+
+  it('AC-9: an ssh GitHub origin serves the same webUrl', async () => {
+    expect((await webUrlFor('git@github.com:o/r.git')).webUrl).toBe(`https://github.com/o/r/commit/${taggedSha}`)
+  })
+
+  it('AC-10: credentials in an https origin never reach the response', async () => {
+    const { webUrl } = await webUrlFor('https://x:tok123@github.com/o/r.git')
+    expect(webUrl).toBe(`https://github.com/o/r/commit/${taggedSha}`)
+    expect(String(webUrl)).not.toContain('tok123')
+  })
+
+  it('AC-11: another host serves webUrl: null', async () => {
+    expect((await webUrlFor('https://gitlab.com/o/r.git')).webUrl).toBeNull()
+  })
+
+  it('AC-12: no origin serves 200 with webUrl: null', async () => {
+    const res = await webUrlFor(null)
+    expect(res.status).toBe(200)
+    expect(res.webUrl).toBeNull()
+  })
+
+  it('reads the origin of a real repo through git', () => {
+    expect(execGitCommitReader.remoteUrl(repo)).toBeNull()
+    run(repo, ['remote', 'add', 'origin', 'https://github.com/o/real.git'])
+    try {
+      expect(execGitCommitReader.remoteUrl(repo)).toBe('https://github.com/o/real.git')
+    } finally {
+      run(repo, ['remote', 'remove', 'origin'])
+    }
   })
 })
 
@@ -422,6 +474,7 @@ describe('resolveReachability', () => {
       defaultRef: () => 'origin/main',
       isAncestorOf: () => false,
       containingRefs: () => [],
+      remoteUrl: () => null,
       ...over
     }
   }
