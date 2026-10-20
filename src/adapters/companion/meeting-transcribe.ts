@@ -65,6 +65,7 @@ const SPEAKER: Record<Track, 'Me' | 'Them'> = { mic: 'Me', loopback: 'Them' }
 const TRACK_ORDER: Track[] = ['mic', 'loopback']
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/
 const SENTENCE_END = /[.?!…]["')\]]*$/
+const HAS_SPEECH = /[\p{L}\p{N}]/u
 
 export interface TranscriptSegment {
   track: Track
@@ -149,8 +150,18 @@ export function readSpeechCredentials(file: string | undefined): SpeechCredentia
  * a token ending a sentence closes the segment. When they do not line up, the word
  * texts are used and only the length cap splits — a coarser answer, never a wrong
  * one.
+ *
+ * TASK-2555: a segment with no letter or digit is dropped. Azure emits noise as
+ * punctuation-only phrases (`.........` in 10 ms, confidence below 0.5), and on
+ * 2026-10-20 (m-mvgfntx6-2wa66c) nine of them came back identically on ten calls,
+ * so the physics check refused the mic track every time and retrying could never
+ * help. They hold no speech and would only produce a ▶ link to nothing.
  */
 export function splitPhrase(phrase: AzurePhrase, track: Track): TranscriptSegment[] {
+  return splitPhraseRaw(phrase, track).filter((s) => HAS_SPEECH.test(s.text))
+}
+
+function splitPhraseRaw(phrase: AzurePhrase, track: Track): TranscriptSegment[] {
   const locale = phrase.locale ?? null
   const words = phrase.words ?? []
   const base = { track, speaker: SPEAKER[track], locale }
