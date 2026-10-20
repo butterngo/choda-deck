@@ -43,11 +43,25 @@ export interface RunItem {
   ac: { ticked: number; total: number; humanOpen: string[] }
   /** "<sha> <subject>" as the newest handoff stored it, or null. */
   commit: string | null
+  /**
+   * TASK-2560 — every commit of every session on the item, newest session
+   * first, deduped by sha. 19 handoffs hold more than one commit and 14 tasks
+   * ran more than one session, so `commit` alone hides work. Each carries its
+   * session's workspace, because the stored string names no repo.
+   */
+  commits: RunCommit[]
   tests: { passed: string[]; skipped: string[] } | null
   /** startedAt of an active session on this item, or null. */
   activeSince: string | null
   /** TASK-2535 — blockers that are items of the same goal; outside blockers left out. */
   deps: string[]
+}
+
+export interface RunCommit {
+  sha: string
+  subject: string
+  workspaceId: string | null
+  sessionId: string
 }
 
 export interface Run {
@@ -161,6 +175,27 @@ export function prUrls(notices: RunNotice[]): string[] {
 
 const byNumericId = (a: string, b: string): number => a.localeCompare(b, undefined, { numeric: true })
 
+/** `sessions` newest first. The stored string is "<sha> <subject>", split as task-provenance.ts does. */
+export function itemCommits(sessions: Session[]): RunCommit[] {
+  const seen = new Set<string>()
+  const out: RunCommit[] = []
+  for (const s of sessions) {
+    for (const raw of s.handoff?.commits ?? []) {
+      const space = raw.indexOf(' ')
+      const sha = space === -1 ? raw : raw.slice(0, space)
+      if (sha === '' || seen.has(sha)) continue
+      seen.add(sha)
+      out.push({
+        sha,
+        subject: space === -1 ? '' : raw.slice(space + 1),
+        workspaceId: s.workspaceId ?? null,
+        sessionId: s.id
+      })
+    }
+  }
+  return out
+}
+
 function toItem(task: Task, sessions: Session[], goalItems: Set<string>): RunItem {
   const mine = sessions
     .filter((s) => s.taskId === task.id)
@@ -174,6 +209,7 @@ function toItem(task: Task, sessions: Session[], goalItems: Set<string>): RunIte
     status: task.status,
     ac: acceptanceCounts(task.body),
     commit: handoff?.commits?.[0] ?? null,
+    commits: itemCommits(mine),
     tests: handoff?.testResults
       ? { passed: handoff.testResults.passed ?? [], skipped: handoff.testResults.skipped ?? [] }
       : null,

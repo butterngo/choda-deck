@@ -129,6 +129,10 @@ describe('GET /runs', () => {
       status: 'IMPLEMENTED',
       ac: { ticked: 2, total: 4, humanOpen: ['AC-4: Butter sees the run in the installed app — human'] },
       commit: '7061794 feat: item (TASK-11)',
+      commits: [
+        { sha: '7061794', subject: 'feat: item (TASK-11)', workspaceId: 'web', sessionId: done.id },
+        { sha: '1111111', subject: 'old try (TASK-11)', workspaceId: 'web', sessionId: old.id }
+      ],
       tests: { passed: ['ServiceActorTests 4/4'], skipped: ['e2e: no env'] },
       activeSince: null,
       deps: []
@@ -137,6 +141,68 @@ describe('GET /runs', () => {
     expect(i13).toMatchObject({ id: 'TASK-13', ac: { ticked: 0, total: 0, humanOpen: [] }, activeSince: null })
     // The TASK-2513 case: newest notice is a halt, but an item is being worked.
     expect(runs[0].state).toBe('running')
+  })
+
+  // TASK-2560 — every commit of every session, each with its own workspace.
+  describe('item commits', () => {
+    async function twoSessions(): Promise<RunItem[]> {
+      await svc.addWorkspace('p', 'w-new', 'New', tmp)
+      await svc.addWorkspace('p', 'w-old', 'Old', tmp)
+      await svc.createTask({ id: 'TASK-10', projectId: 'p', title: 'Goal', status: 'READY' })
+      await svc.createTask({ id: 'TASK-11', projectId: 'p', parentTaskId: 'TASK-10', title: 'Item', status: 'IMPLEMENTED' })
+      await svc.createTask({ id: 'TASK-12', projectId: 'p', parentTaskId: 'TASK-10', title: 'Untouched' })
+      const older = await svc.createSession({ projectId: 'p', workspaceId: 'w-old', taskId: 'TASK-11', startedAt: '2026-10-19T08:00:00.000Z' })
+      await svc.updateSession(older.id, {
+        status: 'completed',
+        endedAt: '2026-10-19T08:10:00.000Z',
+        handoff: { commits: ['a1a1a1a zero', 'b1b1b1b one again'] }
+      })
+      const newer = await svc.createSession({ projectId: 'p', workspaceId: 'w-new', taskId: 'TASK-11', startedAt: '2026-10-19T09:00:00.000Z' })
+      await svc.updateSession(newer.id, {
+        status: 'completed',
+        endedAt: '2026-10-19T09:10:00.000Z',
+        handoff: { commits: ['b2b2b2b two', 'b1b1b1b one'] }
+      })
+      await notice('[loop:web] ⚪ run TASK-10 started: 2 tasks')
+      return ((await (await get('/runs')).json()) as { runs: Run[] }).runs[0].items
+    }
+
+    it('AC-1: serves items[0].commits newest session first, stored order within one', async () => {
+      const items = await twoSessions()
+      expect(items[0].commits.map((c) => c.sha)).toEqual(['b2b2b2b', 'b1b1b1b', 'a1a1a1a'])
+    })
+
+    it('AC-2: the a1a1a1a entry carries the older session workspace', async () => {
+      const items = await twoSessions()
+      expect(items[0].commits.find((c) => c.sha === 'a1a1a1a')?.workspaceId).toBe('w-old')
+    })
+
+    it('AC-3: the a1a1a1a entry has subject "zero"', async () => {
+      const items = await twoSessions()
+      expect(items[0].commits.find((c) => c.sha === 'a1a1a1a')?.subject).toBe('zero')
+    })
+
+    it('AC-4: the b2b2b2b entry carries the newer session workspace', async () => {
+      const items = await twoSessions()
+      expect(items[0].commits.find((c) => c.sha === 'b2b2b2b')?.workspaceId).toBe('w-new')
+    })
+
+    it('AC-5: a sha in both handoffs appears once, from the newer session', async () => {
+      const items = await twoSessions()
+      const b1 = items[0].commits.filter((c) => c.sha === 'b1b1b1b')
+      expect(b1).toHaveLength(1)
+      expect(b1[0].subject).toBe('one')
+    })
+
+    it('AC-6: commit is unchanged, the first commit of the newest handoff', async () => {
+      const items = await twoSessions()
+      expect(items[0].commit).toBe('b2b2b2b two')
+    })
+
+    it('AC-7: an item with no session serves commits: []', async () => {
+      const items = await twoSessions()
+      expect(items[1].commits).toEqual([])
+    })
   })
 
   it('attaches an item-level notice to the run that owns the item', async () => {

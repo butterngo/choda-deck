@@ -111,6 +111,11 @@ export type CommitReachability =
 
 export interface CommitDetail extends CommitRow {
   reachability: CommitReachability
+  /**
+   * TASK-2560 — the commit on GitHub, from the `origin` remote. Null for any
+   * other host or no origin: a link we had to guess would be one that 404s.
+   */
+  webUrl: string | null
   /** Commit body below the subject. Empty string when there is none. */
   body: string
   files: CommitFileStat[]
@@ -150,6 +155,8 @@ export interface GitCommitReader {
   isAncestorOf(cwd: string, sha: string, ref: string): boolean
   /** Refs that contain `sha`. Empty means the object is attached to nothing. */
   containingRefs(cwd: string, sha: string): string[]
+  /** TASK-2560 — `git remote get-url origin`, or null when there is none. */
+  remoteUrl(cwd: string): string | null
 }
 
 function git(cwd: string, args: string[]): string {
@@ -255,7 +262,32 @@ export const execGitCommitReader: GitCommitReader = {
     } catch {
       return []
     }
+  },
+  remoteUrl(cwd) {
+    try {
+      const url = git(cwd, ['remote', 'get-url', 'origin']).trim()
+      return url === '' ? null : url
+    } catch {
+      return null
+    }
   }
+}
+
+const GITHUB_HTTPS = /^https:\/\/(?:[^@/]+@)?github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/
+const GITHUB_SSH = /^git@github\.com:([\w.-]+)\/([\w.-]+?)(?:\.git)?$/
+
+/**
+ * TASK-2560 — the GitHub page of a commit, from an `origin` URL.
+ *
+ * The owner and repo are rebuilt from the match, never copied from the remote,
+ * so the userinfo of an https remote (`https://x:<token>@github.com/…`) cannot
+ * reach the response. Any other host answers null.
+ */
+export function githubCommitUrl(remote: string | null, sha: string): string | null {
+  if (remote === null) return null
+  const m = GITHUB_HTTPS.exec(remote.trim()) ?? GITHUB_SSH.exec(remote.trim())
+  if (!m) return null
+  return `https://github.com/${m[1]}/${m[2]}/commit/${sha}`
 }
 
 /**
@@ -387,6 +419,7 @@ export function getCommitDetail(
     subject,
     taskIds: extractTaskIds(subject ?? ''),
     reachability,
+    webUrl: githubCommitUrl(reader.remoteUrl(cwd), full),
     body,
     files: withHunks(parseNumstat(reader.numstat(cwd, sha)), cwd, sha, reader, opts.patch === true)
   }
