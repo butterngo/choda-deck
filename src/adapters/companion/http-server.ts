@@ -27,6 +27,7 @@ import { handleAttentionRoute } from './attention'
 import { handleRunsRoute } from './runs'
 import { handleTaskTranslateRoute } from './task-translate'
 import { handleConversationDecideRoute } from './conversation-decide'
+import { handleConversationSignoffRoute } from './conversation-signoff'
 import { handleVaultRoute } from './vault'
 import { handleClaudeConfigRoute } from './claude-config'
 import { handleAcReviewRoute } from './ac-review'
@@ -113,6 +114,12 @@ async function route(
   // /conversations/:id/decide never reaches the shared 405 for non-GET.
   if (
     await handleConversationDecideRoute(req, res, { bridgeToken: services.bridgeToken, svc: services.svc })
+  ) {
+    return
+  }
+  // TASK-2549 — sign off as one named participant, so a thread can close.
+  if (
+    await handleConversationSignoffRoute(req, res, { bridgeToken: services.bridgeToken, svc: services.svc })
   ) {
     return
   }
