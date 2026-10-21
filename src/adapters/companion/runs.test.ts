@@ -135,7 +135,11 @@ describe('GET /runs', () => {
       ],
       tests: { passed: ['ServiceActorTests 4/4'], skipped: ['e2e: no env'] },
       activeSince: null,
-      deps: []
+      deps: [],
+      // TASK-2597 — BODY's two ticked criteria are untagged (covered), AC-3 is open, AC-4 human.
+      acs: expect.any(Array),
+      sequence: null,
+      coverage: { covered: 2, weak: 0, open: 1, human: 1, total: 4 }
     })
     expect(i12).toMatchObject({ id: 'TASK-12', commit: null, tests: null, activeSince: '2026-10-19T10:29:00.000Z' })
     expect(i13).toMatchObject({ id: 'TASK-13', ac: { ticked: 0, total: 0, humanOpen: [] }, activeSince: null })
@@ -202,6 +206,121 @@ describe('GET /runs', () => {
     it('AC-7: an item with no session serves commits: []', async () => {
       const items = await twoSessions()
       expect(items[1].commits).toEqual([])
+    })
+  })
+
+  // TASK-2597 — each item's criteria with how they were proven, its diagram and coverage.
+  describe('run item criteria', () => {
+    // AC-0 — test, ticked with method test ref X
+    // AC-1 — test, ticked by a legacy call with no method (body pre-ticked, event without method)
+    // AC-2 — test, unchecked
+    // AC-3 — human, unchecked
+    // AC-4 — test, ticked in an older session ref A and again in a newer session ref B
+    const FIXTURE = [
+      '## Acceptance',
+      '- [ ] route serves acs — test',
+      '- [x] legacy tick — test',
+      '- [ ] not done yet — test',
+      '- [ ] Butter sees it — human',
+      '- [ ] re-proven later — test',
+      '',
+      '## Test Plan',
+      '- none',
+      ''
+    ].join('\n')
+
+    async function rawTick(sessionId: string, acIndex: number, extra: Record<string, unknown>): Promise<void> {
+      await svc.createSessionEvent({
+        sessionId,
+        eventType: 'observation',
+        payloadJson: JSON.stringify({ kind: 'ac_check', taskId: 'TASK-11', acIndex, text: 't', evidence: 'e', sessionId, ...extra })
+      })
+      await tick()
+    }
+
+    async function fixtureItem(): Promise<RunItem> {
+      await svc.createTask({ id: 'TASK-10', projectId: 'p', title: 'Goal', status: 'READY' })
+      await svc.createTask({ id: 'TASK-11', projectId: 'p', parentTaskId: 'TASK-10', title: 'Item', body: FIXTURE })
+      const older = (
+        await svc.createSession({ projectId: 'p', workspaceId: 'web', taskId: 'TASK-11', startedAt: '2026-10-19T08:00:00.000Z' })
+      ).id
+      await rawTick(older, 1, {})
+      await rawTick(older, 4, { method: 'test', ref: 'A' })
+      await svc.updateSession(older, { status: 'completed', endedAt: '2026-10-19T08:10:00.000Z' })
+      const newer = (
+        await svc.createSession({ projectId: 'p', workspaceId: 'web', taskId: 'TASK-11', startedAt: '2026-10-19T09:00:00.000Z' })
+      ).id
+      await svc.checkAcItem({ taskId: 'TASK-11', acIndex: 0, evidence: 'e', workspaceId: 'web', method: 'test', ref: 'X' })
+      await tick()
+      await svc.checkAcItem({ taskId: 'TASK-11', acIndex: 4, evidence: 'e', workspaceId: 'web', method: 'test', ref: 'B' })
+      expect(newer).not.toBe(older)
+      await notice('[loop:web] ⚪ run TASK-10 started: 1 tasks')
+      const runs = ((await (await get('/runs')).json()) as { runs: Run[] }).runs
+      return runs[0].items[0]
+    }
+
+    it('AC-0: a criterion ticked with method test serves state "covered"', async () => {
+      expect((await fixtureItem()).acs[0].state).toBe('covered')
+    })
+
+    it('AC-1: that criterion serves ref "X"', async () => {
+      expect((await fixtureItem()).acs[0].ref).toBe('X')
+    })
+
+    it('AC-2: a legacy tick with no method on a tagged criterion serves "weak"', async () => {
+      expect((await fixtureItem()).acs[1].state).toBe('weak')
+    })
+
+    it('AC-3: an unchecked test criterion serves "open"', async () => {
+      expect((await fixtureItem()).acs[2].state).toBe('open')
+    })
+
+    it('AC-4: an unchecked human criterion serves "human"', async () => {
+      expect((await fixtureItem()).acs[3].state).toBe('human')
+    })
+
+    it('AC-5: the newest tick of an index wins — ref "B", not "A"', async () => {
+      const item = await fixtureItem()
+      expect(item.acs[4].ref).toBe('B')
+      expect(item.acs[4].state).toBe('covered')
+    })
+
+    it('AC-6: coverage counts the fixture as 2 covered, 1 weak, 1 open, 1 human of 5', async () => {
+      expect((await fixtureItem()).coverage).toEqual({ covered: 2, weak: 1, open: 1, human: 1, total: 5 })
+    })
+
+    it('rows carry index, text, tag and method', async () => {
+      const row = (await fixtureItem()).acs[0]
+      expect(row).toMatchObject({ index: 0, text: 'route serves acs — test', tag: 'test', checked: true, method: 'test' })
+    })
+
+    async function sequenceOf(body: string): Promise<RunItem['sequence']> {
+      await svc.createTask({ id: 'TASK-10', projectId: 'p', title: 'Goal', status: 'READY' })
+      await svc.createTask({ id: 'TASK-11', projectId: 'p', parentTaskId: 'TASK-10', title: 'Item', body })
+      await notice('[loop:web] ⚪ run TASK-10 started: 1 tasks')
+      const runs = ((await (await get('/runs')).json()) as { runs: Run[] }).runs
+      return runs[0].items[0].sequence
+    }
+
+    it('AC-7: a ## Sequence mermaid fence serves sequence.mermaid equal to the fence text', async () => {
+      const fence = 'sequenceDiagram\n  participant W as Web\n  W->>A: GET /runs'
+      const body = `## Context\n\nx\n\n## Sequence\n\n\`\`\`mermaid\n${fence}\n\`\`\`\n\n## Acceptance\n\n- [ ] a — test\n`
+      expect(await sequenceOf(body)).toEqual({ mermaid: fence })
+    })
+
+    it('AC-8: "Sequence: n/a — docs only" serves { na: "docs only" }', async () => {
+      expect(await sequenceOf('## Context\n\nx\n\nSequence: n/a — docs only\n\n## Acceptance\n\n- [ ] a — grep\n')).toEqual({
+        na: 'docs only'
+      })
+    })
+
+    it('AC-9: a body with neither serves sequence: null', async () => {
+      expect(await sequenceOf('## Context\n\nx\n\n## Acceptance\n\n- [ ] a\n')).toBeNull()
+    })
+
+    it('a mermaid fence outside ## Sequence is not the item diagram', async () => {
+      const body = '## Context\n\n```mermaid\nflowchart TB\n  A-->B\n```\n\n## Acceptance\n\n- [ ] a\n'
+      expect(await sequenceOf(body)).toBeNull()
     })
   })
 

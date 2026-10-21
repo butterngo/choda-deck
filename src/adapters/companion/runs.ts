@@ -8,6 +8,14 @@ import type { SessionOperations } from '../../core/domain/interfaces/session-rep
 import type { TaskOperations } from '../../core/domain/interfaces/task-repository.interface'
 import type { RelationshipOperations } from '../../core/domain/interfaces/relationship-repository.interface'
 import type { KnowledgeOperations } from '../../core/domain/interfaces/knowledge-operations.interface'
+import type { SessionEventOperations } from '../../core/domain/interfaces/session-event-operations.interface'
+import {
+  acCoverage,
+  acRows,
+  type AcCoverage,
+  type AcRow,
+  type AcTick
+} from '../../core/domain/lifecycle/ac-coverage'
 
 // TASK-2531 — one record per loop run, for the companion's Runs screen
 // (TASK-2532). Butter, 2026-10-19: "làm sao để biết được xong task nào, đã test
@@ -57,7 +65,17 @@ export interface RunItem {
   activeSince: string | null
   /** TASK-2535 — blockers that are items of the same goal; outside blockers left out. */
   deps: string[]
+  /**
+   * TASK-2597 — each `## Acceptance` criterion with how it was proven: the
+   * newest ac_check tick of its index across the item's sessions.
+   */
+  acs: AcRow[]
+  /** The first mermaid fence under `## Sequence`, else `Sequence: n/a — <reason>`, else null. */
+  sequence: RunSequence
+  coverage: AcCoverage
 }
+
+export type RunSequence = { mermaid: string } | { na: string } | null
 
 export interface RunCommit {
   sha: string
@@ -99,7 +117,8 @@ export interface RunsDeps {
     Pick<SessionOperations, 'findSessions'> &
     Pick<ProjectOperations, 'getProject'> &
     Pick<RelationshipOperations, 'getRelationshipsFrom'> &
-    Pick<KnowledgeOperations, 'getKnowledge'>
+    Pick<KnowledgeOperations, 'getKnowledge'> &
+    Pick<SessionEventOperations, 'listSessionEvents'>
   bridgeToken: string
 }
 
@@ -248,13 +267,57 @@ export function itemCommits(sessions: Session[]): RunCommit[] {
   return out
 }
 
-function toItem(task: Task, sessions: Session[], goalItems: Set<string>): RunItem {
+const SEQUENCE_NA = /^\s*Sequence:\s*n\/a\s*—\s*(.+?)\s*$/im
+
+/** TASK-2597 — the item's own sequence diagram, as /choda-plan writes it. */
+export function taskSequence(body: string | null): RunSequence {
+  const text = body ?? ''
+  const section = text.split(/^## Sequence[^\n]*$/m)[1]?.split(/^## /m)[0]
+  if (section !== undefined) {
+    const fence = /^\s*```mermaid\s*\r?\n([\s\S]*?)\r?\n\s*```/m.exec(section)
+    if (fence) return { mermaid: fence[1] }
+  }
+  const na = SEQUENCE_NA.exec(text)
+  return na ? { na: na[1] } : null
+}
+
+/** Every ac_check tick on this task, from all of its sessions, oldest session first. */
+async function acTicks(svc: RunsDeps['svc'], taskId: string, sessionsNewestFirst: Session[]): Promise<AcTick[]> {
+  const ticks: AcTick[] = []
+  for (const s of [...sessionsNewestFirst].reverse()) {
+    for (const e of await svc.listSessionEvents(s.id, 'observation')) {
+      let p: Record<string, unknown>
+      try {
+        p = JSON.parse(e.payloadJson ?? '{}') as Record<string, unknown>
+      } catch {
+        continue
+      }
+      if (p.kind !== 'ac_check' || p.taskId !== taskId || typeof p.acIndex !== 'number') continue
+      ticks.push({
+        acIndex: p.acIndex,
+        method: typeof p.method === 'string' ? p.method : null,
+        ref: typeof p.ref === 'string' ? p.ref : null,
+        evidence: typeof p.evidence === 'string' ? p.evidence : null,
+        createdAt: e.createdAt
+      })
+    }
+  }
+  return ticks
+}
+
+async function toItem(
+  svc: RunsDeps['svc'],
+  task: Task,
+  sessions: Session[],
+  goalItems: Set<string>
+): Promise<RunItem> {
   const mine = sessions
     .filter((s) => s.taskId === task.id)
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
   const active = mine.find((s) => s.status === 'active') ?? null
   const withHandoff = mine.find((s) => s.handoff)
   const handoff = withHandoff?.handoff ?? null
+  const acs = acRows(task.body, await acTicks(svc, task.id, mine))
   return {
     id: task.id,
     title: task.title,
@@ -266,7 +329,10 @@ function toItem(task: Task, sessions: Session[], goalItems: Set<string>): RunIte
       ? { passed: handoff.testResults.passed ?? [], skipped: handoff.testResults.skipped ?? [] }
       : null,
     activeSince: active?.startedAt ?? null,
-    deps: task.blockedBy.filter((id) => goalItems.has(id)).sort(byNumericId)
+    deps: task.blockedBy.filter((id) => goalItems.has(id)).sort(byNumericId),
+    acs,
+    sequence: taskSequence(task.body),
+    coverage: acCoverage(acs)
   }
 }
 
@@ -305,9 +371,10 @@ export async function buildRuns(
     const sessions = sessionsByProject.get(goal.projectId) ?? []
     const subtasks = await svc.getSubtasks(goalId)
     const goalItems = new Set(subtasks.map((t) => t.id))
-    const items = subtasks
-      .sort((a, b) => byNumericId(a.id, b.id))
-      .map((t) => toItem(t, sessions, goalItems))
+    const items: RunItem[] = []
+    for (const t of subtasks.sort((a, b) => byNumericId(a.id, b.id))) {
+      items.push(await toItem(svc, t, sessions, goalItems))
+    }
     if (!projectNames.has(goal.projectId)) {
       projectNames.set(goal.projectId, (await svc.getProject(goal.projectId))?.name || goal.projectId)
     }
