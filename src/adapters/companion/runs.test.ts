@@ -205,6 +205,58 @@ describe('GET /runs', () => {
     })
   })
 
+  // TASK-2590 — the feature the goal realizes.
+  describe('run feature', () => {
+    async function goalRun(): Promise<Run> {
+      await notice('[loop:web] ⚪ run TASK-10 started: 0 tasks')
+      return ((await (await get('/runs')).json()) as { runs: Run[] }).runs[0]
+    }
+    async function feature(title: string, body: string): Promise<string> {
+      return (await svc.createKnowledge({ projectId: 'p', type: 'feature', scope: 'project', title, body, refs: [] })).slug
+    }
+
+    beforeEach(async () => {
+      await svc.createTask({ id: 'TASK-10', projectId: 'p', title: 'Goal', status: 'READY' })
+    })
+
+    it('AC-1: a goal with no REALIZES edge serves feature: null', async () => {
+      expect((await goalRun()).feature).toBeNull()
+    })
+
+    it('AC-2: why is the first paragraph under ## Why this exists', async () => {
+      const slug = await feature('BPA x WorkHub', '## Context\n\nTechnical.\n\n## Why this exists\n\nAlpha beta.\n\nSecond.\n')
+      await svc.addRelationship('TASK-10', slug, 'REALIZES')
+      expect((await goalRun()).feature?.why).toBe('Alpha beta.')
+    })
+
+    it('AC-3: title is the entry title and missing is false', async () => {
+      const slug = await feature('BPA x WorkHub', '## Why this exists\n\nAlpha beta.\n')
+      await svc.addRelationship('TASK-10', slug, 'REALIZES')
+      expect((await goalRun()).feature).toMatchObject({ slug, title: 'BPA x WorkHub', missing: false })
+    })
+
+    it('AC-4: without the section, why is the body first paragraph', async () => {
+      const slug = await feature('Plain', 'Opening line\nsame paragraph.\n\nLater.\n')
+      await svc.addRelationship('TASK-10', slug, 'REALIZES')
+      expect((await goalRun()).feature?.why).toBe('Opening line same paragraph.')
+    })
+
+    it('AC-5: a 600-character paragraph is cut to at most 401 characters ending with …', async () => {
+      const long = Array.from({ length: 100 }, () => 'word5').join(' ')
+      expect(long.length).toBeGreaterThan(590)
+      const slug = await feature('Long', `## Why this exists\n\n${long}\n`)
+      await svc.addRelationship('TASK-10', slug, 'REALIZES')
+      const why = (await goalRun()).feature?.why ?? ''
+      expect(why.length).toBeLessThanOrEqual(401)
+      expect(why.endsWith('…')).toBe(true)
+    })
+
+    it('AC-6: an edge to a slug with no entry serves missing: true', async () => {
+      await svc.addRelationship('TASK-10', 'gone', 'REALIZES')
+      expect((await goalRun()).feature).toEqual({ slug: 'gone', title: 'gone', why: null, missing: true })
+    })
+  })
+
   it('attaches an item-level notice to the run that owns the item', async () => {
     await svc.createTask({ id: 'TASK-10', projectId: 'p', title: 'Goal', status: 'READY' })
     await svc.createTask({ id: 'TASK-11', projectId: 'p', parentTaskId: 'TASK-10', title: 'Item' })
