@@ -6,6 +6,8 @@ import type { InboxOperations } from '../../core/domain/interfaces/inbox-reposit
 import type { ProjectOperations } from '../../core/domain/interfaces/project-repository.interface'
 import type { SessionOperations } from '../../core/domain/interfaces/session-repository.interface'
 import type { TaskOperations } from '../../core/domain/interfaces/task-repository.interface'
+import type { RelationshipOperations } from '../../core/domain/interfaces/relationship-repository.interface'
+import type { KnowledgeOperations } from '../../core/domain/interfaces/knowledge-operations.interface'
 
 // TASK-2531 — one record per loop run, for the companion's Runs screen
 // (TASK-2532). Butter, 2026-10-19: "làm sao để biết được xong task nào, đã test
@@ -75,14 +77,64 @@ export interface Run {
   items: RunItem[]
   notices: RunNotice[]
   lastActivityAt: string
+  /**
+   * TASK-2590 — the feature the goal realizes (Butter, 2026-10-21: "tôi cần
+   * biết đây là cái feature gì"). Null when the goal has no REALIZES edge.
+   */
+  feature: RunFeature | null
+}
+
+export interface RunFeature {
+  slug: string
+  title: string
+  /** Opening of "## Why this exists" (else of the body), ≤ 400 chars. */
+  why: string | null
+  /** The edge points at a slug with no knowledge entry. */
+  missing: boolean
 }
 
 export interface RunsDeps {
   svc: Pick<InboxOperations, 'findInbox'> &
     Pick<TaskOperations, 'getTask' | 'getSubtasks'> &
     Pick<SessionOperations, 'findSessions'> &
-    Pick<ProjectOperations, 'getProject'>
+    Pick<ProjectOperations, 'getProject'> &
+    Pick<RelationshipOperations, 'getRelationshipsFrom'> &
+    Pick<KnowledgeOperations, 'getKnowledge'>
   bridgeToken: string
+}
+
+const WHY_MAX = 400
+
+/** First paragraph of a markdown body: the first run of non-blank, non-heading lines. */
+function firstParagraph(markdown: string): string | null {
+  const lines: string[] = []
+  for (const raw of markdown.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (line === '' || line.startsWith('#')) {
+      if (lines.length > 0) break
+      continue
+    }
+    lines.push(line)
+  }
+  const text = lines.join(' ').replace(/\s+/g, ' ').trim()
+  return text === '' ? null : text
+}
+
+/** "## Why this exists" first, else the body's own first paragraph; cut at a word near 400. */
+export function featureWhy(body: string): string | null {
+  const section = body.split(/^##\s+Why this exists\s*$/im)[1]?.split(/^##\s/m)[0]
+  const text = (section !== undefined ? firstParagraph(section) : null) ?? firstParagraph(body)
+  if (text === null || text.length <= WHY_MAX) return text
+  const cut = text.lastIndexOf(' ', WHY_MAX)
+  return `${text.slice(0, cut > 0 ? cut : WHY_MAX)}…`
+}
+
+async function runFeature(svc: RunsDeps['svc'], goalId: string): Promise<RunFeature | null> {
+  const slug = (await svc.getRelationshipsFrom(goalId, 'REALIZES'))[0]?.toId
+  if (!slug) return null
+  const entry = await svc.getKnowledge(slug)
+  if (!entry) return { slug, title: slug, why: null, missing: true }
+  return { slug, title: entry.frontmatter.title, why: featureWhy(entry.body), missing: false }
 }
 
 const LOOP_TAG = /^\[loop:([A-Za-z0-9._-]+)\]\s*/
@@ -268,7 +320,8 @@ export async function buildRuns(
       prUrls: [],
       items,
       notices: goalNotices,
-      lastActivityAt: ''
+      lastActivityAt: '',
+      feature: await runFeature(svc, goal.id)
     })
   }
 
