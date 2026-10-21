@@ -2,8 +2,11 @@ import { splitLines } from '../../utils/lines'
 import {
   AcAlreadyCheckedError,
   AcIndexOutOfRangeError,
+  AcMethodMismatchError,
+  AcRefRequiredError,
   BodyLockViolationError
 } from './errors'
+import { acTag, allowedMethods, methodAllowed, refRequired, type AcMethod } from './ac-tag'
 
 export interface CheckAcItemInput {
   taskId: string
@@ -16,6 +19,10 @@ export interface CheckAcItemInput {
    * the alternative is the server guessing on the caller's behalf.
    */
   sessionId?: string
+  /** TASK-2595 — how the criterion was proven. Required by a tagged AC (see ac-tag.ts). */
+  method?: AcMethod
+  /** TASK-2595 — the test name, the command, or the pattern + file that proved it. */
+  ref?: string
 }
 
 export interface CheckAcItemResult {
@@ -25,6 +32,29 @@ export interface CheckAcItemResult {
   evidence: string
   eventId: string
   sessionId: string
+  method?: AcMethod
+  ref?: string
+}
+
+/**
+ * TASK-2595 — refuse a tick whose method or ref the AC's tag does not allow.
+ * Runs before any write, so a refused call ticks nothing and logs nothing.
+ */
+export function assertAcProof(
+  taskId: string,
+  index: number,
+  text: string,
+  method: AcMethod | undefined,
+  ref: string | undefined
+): void {
+  const tag = acTag(text)
+  if (tag === null) return
+  if (!methodAllowed(tag, method)) {
+    throw new AcMethodMismatchError(taskId, index, tag, method ?? null, allowedMethods(tag))
+  }
+  if (refRequired(tag) && !(ref && ref.trim())) {
+    throw new AcRefRequiredError(taskId, index, tag)
+  }
 }
 
 // ADR-029 channel 2 — narrow body-lock bypass for ticking a single AC checkbox.

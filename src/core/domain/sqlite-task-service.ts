@@ -54,7 +54,7 @@ import type {
   ResolveInvestigationResult,
   StartInvestigationInput
 } from './investigation-types'
-import { flipAcCheckbox, type CheckAcItemInput, type CheckAcItemResult } from './lifecycle/ac-check'
+import { assertAcProof, flipAcCheckbox, type CheckAcItemInput, type CheckAcItemResult } from './lifecycle/ac-check'
 import {
   AmbiguousSessionError,
   NoActiveSessionError,
@@ -776,6 +776,11 @@ export class SqliteTaskService
     if (!task) throw new TaskNotFoundError(input.taskId)
 
     const { newBody, item } = flipAcCheckbox(task.body ?? '', task.id, input.acIndex)
+    assertAcProof(task.id, input.acIndex, item.text, input.method, input.ref)
+    const proof = {
+      ...(input.method !== undefined ? { method: input.method } : {}),
+      ...(input.ref !== undefined ? { ref: input.ref } : {})
+    }
 
     // TASK-1577 — resolving WHICH session is the part that caused damage, so it
     // is spelled out rather than left to a LIMIT 1.
@@ -792,7 +797,8 @@ export class SqliteTaskService
           acIndex: input.acIndex,
           text: item.text,
           evidence: input.evidence,
-          sessionId: session.id
+          sessionId: session.id,
+          ...proof
         }),
         memoryCandidate: false
       })
@@ -802,7 +808,8 @@ export class SqliteTaskService
         text: item.text,
         evidence: input.evidence,
         eventId: event.id,
-        sessionId: session.id
+        sessionId: session.id,
+        ...proof
       }
     })
     return tx()

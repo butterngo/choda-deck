@@ -6,6 +6,7 @@ import type { WorkspaceOperations } from '../../../core/domain/interfaces/worksp
 import type { TaskOperations } from '../../../core/domain/interfaces/task-repository.interface'
 import type { CheckAcItemInput, CheckAcItemResult } from '../../../core/domain/lifecycle/ac-check'
 import { resolveWorkspaceId } from './workspace-resolver'
+import { AC_METHODS, type AcMethod } from '../../../core/domain/lifecycle/ac-tag'
 
 // ADR-029 channel 2 — narrow body-lock bypass for ticking a single AC checkbox.
 // Stdio-only: must NOT appear in `REMOTE_TOOL_ALLOWLIST` (server-bootstrap.ts).
@@ -52,10 +53,25 @@ export const register = (server: InstrumentedServer, svc: AcCheckDeps): void => 
           .describe(
             'The session this tick belongs to. Optional while the workspace has exactly one active session; required once it has more. ' +
               'A named session must exist, be active, and be in the resolved workspace — a mismatch is SESSION_MISMATCH, never a silent substitution.'
+          ),
+        method: z
+          .enum(AC_METHODS as [AcMethod, ...AcMethod[]])
+          .optional()
+          .describe(
+            'How the criterion was proven (TASK-2595). An AC ending " — test" needs test; " — command" needs command or test; ' +
+              '" — grep" needs grep, command or test; " — human" needs manual. Otherwise METHOD_MISMATCH. Optional on an untagged AC.'
+          ),
+        ref: z
+          .string()
+          .min(1)
+          .max(300)
+          .optional()
+          .describe(
+            'What proved it: the test name, the command, or the pattern + file. Required on an AC tagged test/command/grep (REF_REQUIRED).'
           )
       }
     },
-    async ({ taskId, acIndex, evidence, cwd, sessionId }) => {
+    async ({ taskId, acIndex, evidence, cwd, sessionId, method, ref }) => {
       try {
         const task = await svc.getTask(taskId)
         if (!task) {
@@ -67,7 +83,15 @@ export const register = (server: InstrumentedServer, svc: AcCheckDeps): void => 
         const workspaces = await svc.findWorkspaces(task.projectId)
         const workspaceId =
           resolveWorkspaceId({ cwd, workspaces }) ?? undefined
-        const result = await svc.checkAcItem({ taskId, acIndex, evidence, workspaceId, sessionId })
+        const result = await svc.checkAcItem({
+          taskId,
+          acIndex,
+          evidence,
+          workspaceId,
+          sessionId,
+          ...(method !== undefined ? { method } : {}),
+          ...(ref !== undefined ? { ref } : {})
+        })
         return textResponse(result)
       } catch (e) {
         if (e instanceof LifecycleError) return textResponse({ error: e.code, message: e.message })
