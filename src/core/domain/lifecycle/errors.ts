@@ -124,6 +124,28 @@ export class AcAlreadyCheckedError extends LifecycleError {
   }
 }
 
+/** TASK-2595 — the AC's tag does not allow the method the tick claims. */
+export class AcMethodMismatchError extends LifecycleError {
+  constructor(taskId: string, index: number, tag: string, method: string | null, allowed: readonly string[]) {
+    super(
+      'METHOD_MISMATCH',
+      `Task ${taskId} AC[${index}] is tagged "${tag}" — method ${method ? `"${method}"` : '(none)'} cannot prove it; use ${allowed.join(' or ')}`
+    )
+    this.name = 'AcMethodMismatchError'
+  }
+}
+
+/** TASK-2595 — a tagged machine AC was ticked without naming what proved it. */
+export class AcRefRequiredError extends LifecycleError {
+  constructor(taskId: string, index: number, tag: string) {
+    super(
+      'REF_REQUIRED',
+      `Task ${taskId} AC[${index}] is tagged "${tag}" — pass ref: the test name, the command, or the pattern and file`
+    )
+    this.name = 'AcRefRequiredError'
+  }
+}
+
 export class BodyLockViolationError extends LifecycleError {
   constructor(taskId: string, detail: string) {
     super(
