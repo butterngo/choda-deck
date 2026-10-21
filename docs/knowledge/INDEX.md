@@ -2,8 +2,9 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
+| [companion-runs](./companion-runs.md) | feature | Companion Runs: what each loop run did, tested and left for Butter | 2026-10-21 |  |
 | [a-self-skipping-pg-suite-must-fail-on-linux-ci-when-its-precondition-check-fails](./a-self-skipping-pg-suite-must-fail-on-linux-ci-when-its-precondition-check-fails.md) | gotcha | A self-skipping pg suite must fail on Linux CI when its precondition check fails | 2026-10-19 |  |
-| [a-retry-budget-sized-for-a-rare-failure-becomes-a-wall-when-the-rate-climbs-keep](./a-retry-budget-sized-for-a-rare-failure-becomes-a-wall-when-the-rate-climbs-keep.md) | learning | A retry budget sized for a rare failure becomes a wall when the rate climbs — keep each part's success across attempts | 2026-10-19 |  |
+| [a-retry-budget-sized-for-a-rare-failure-becomes-a-wall-when-the-rate-climbs-keep](./a-retry-budget-sized-for-a-rare-failure-becomes-a-wall-when-the-rate-climbs-keep.md) | learning | A retry budget sized for a rare failure becomes a wall when the rate climbs — keep each part's success across attempts | 2026-10-19 | ✱ |
 | [feature-daily-activity-digest](./feature-daily-activity-digest.md) | feature | Daily activity digest: Claude activity to daily numbers, diagnosis and proposals | 2026-09-27 |  |
 | [workspace-docs-serves-raster-images-as-bytes-and-nothing-else-binary](./workspace-docs-serves-raster-images-as-bytes-and-nothing-else-binary.md) | gotcha | /workspace-docs serves raster images as bytes, and nothing else binary | 2026-10-19 |  |
 | [a-display-ceiling-refuses-it-does-not-truncate](./a-display-ceiling-refuses-it-does-not-truncate.md) | gotcha | A display ceiling refuses; it does not truncate | 2026-09-20 |  |
