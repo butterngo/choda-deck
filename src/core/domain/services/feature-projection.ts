@@ -122,6 +122,13 @@ export interface TesterView {
 export interface Honesty {
   used: string[]
   lacked: string[]
+  /**
+   * TASK-2591 — ceo-po only: what was left out of the CEO answer because it
+   * carried code (a file path, a dotted symbol, SQL). Section headings as
+   * parsed (lower-case), `concern: <slug>` for a gotcha title, and
+   * `currently blocking` for the blocker line.
+   */
+  omitted?: string[]
 }
 
 // answeredSlices keys map 1:1 to the B4 replay questions for M1 scoring.
@@ -175,6 +182,12 @@ export function assertNoNumberOfDays(label: string, ...texts: Array<string | nul
       )
     }
   }
+}
+
+/** TASK-2591 — the same three M3 tests as assertNoCodeBleed, as a yes/no for screening. */
+export function hasCodeBleed(text: string | null): boolean {
+  if (!text) return false
+  return FILE_PATH_RE.test(text) || DOTTED_SYMBOL_RE.test(text) || SQL_RE.test(text)
 }
 
 export function assertNoCodeBleed(label: string, ...texts: Array<string | null>): void {
@@ -288,21 +301,56 @@ function deriveCeoBlockers(input: FeatureProjectionInput): Array<{ slug: string;
   return [{ slug: 'currently-blocking', title: firstLine(blocking) }]
 }
 
-function projectCeo(input: FeatureProjectionInput): CeoView {
+/**
+ * TASK-2591 — the CEO answer is built only from text that passes the M3 screen.
+ *
+ * On 2026-10-21 `journey-lead-to-delivered` could not be projected for ceo-po at
+ * all: one of its 26 gotcha titles says "jsonb", and the guard threw for the
+ * whole answer. A technical feature is the common case, so a throw there made
+ * the CEO view unusable exactly where it is needed. Screening leaves the
+ * technical part out and names it in `honesty.omitted`; the guard in
+ * projectFeature still runs on what remains, so anything that slips past the
+ * screen still throws.
+ *
+ * The description is the first of `description`, `why this exists` that passes;
+ * every body section that fails is listed, so a reader can see what was dropped.
+ */
+function projectCeo(input: FeatureProjectionInput): { view: CeoView; omitted: string[] } {
   // Human-authored band wins (AC #3); only derive when none was pre-authored.
   const authored = input.effortBand ?? null
   const derived = authored ? null : deriveEffortBand(input.effortSignal)
+  const omitted: string[] = []
+  for (const [heading, text] of Object.entries(input.sections)) {
+    if (hasCodeBleed(text)) omitted.push(heading)
+  }
+  const description =
+    ['description', 'why this exists']
+      .map((name) => sectionFor(input, name))
+      .find((text) => text !== null && !hasCodeBleed(text)) ?? null
+  const blockers = deriveCeoBlockers(input).filter((b) => !hasCodeBleed(b.title))
+  if (blockers.length < deriveCeoBlockers(input).length && !omitted.includes('currently blocking')) {
+    omitted.push('currently blocking')
+  }
+  // Gotchas are concerns, not blockers. Titles only — bodies carry symbols/SQL,
+  // and a title that does too is left out rather than failing the answer.
+  const concerns: CeoView['concerns'] = []
+  for (const g of input.gotchas) {
+    if (hasCodeBleed(g.title)) omitted.push(`concern: ${g.slug}`)
+    else concerns.push({ slug: g.slug, title: g.title })
+  }
   return {
-    description: sectionFor(input, 'description'),
-    apps: input.workspaces,
-    teams: null,
-    effortBand: authored ?? derived?.band ?? null,
-    effortBandSource: authored ? 'authored' : derived ? 'derived' : null,
-    effortBandReasoning: derived?.reasoning ?? null,
-    status: input.status ?? null,
-    blockers: deriveCeoBlockers(input),
-    // Gotchas are concerns, not blockers. Titles only — bodies carry symbols/SQL.
-    concerns: input.gotchas.map((g) => ({ slug: g.slug, title: g.title }))
+    view: {
+      description,
+      apps: input.workspaces,
+      teams: null,
+      effortBand: authored ?? derived?.band ?? null,
+      effortBandSource: authored ? 'authored' : derived ? 'derived' : null,
+      effortBandReasoning: derived?.reasoning ?? null,
+      status: input.status ?? null,
+      blockers,
+      concerns
+    },
+    omitted
   }
 }
 
@@ -385,11 +433,11 @@ export function projectFeature(
   const honesty = computeHonesty(input, role)
 
   if (role === 'ceo-po') {
-    const view = projectCeo(input)
+    const { view, omitted } = projectCeo(input)
     const ceoTitles = [...view.blockers, ...view.concerns].map((b) => b.title)
     assertNoCodeBleed('ceo-po', view.description, view.effortBandReasoning, ...ceoTitles)
     assertNoNumberOfDays('ceo-po', view.description, view.effortBand, view.effortBandReasoning, ...ceoTitles)
-    return { featureId: input.featureId, role, view, recall: input.gotchas, honesty }
+    return { featureId: input.featureId, role, view, recall: input.gotchas, honesty: { ...honesty, omitted } }
   }
 
   if (role === 'tester') {

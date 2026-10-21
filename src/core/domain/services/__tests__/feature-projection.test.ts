@@ -146,11 +146,16 @@ describe('projectFeature CEO', () => {
     expect(view.blockers.every((b) => b.slug !== 'gotcha-a')).toBe(true)
   })
 
-  it('throws if a gotcha title smuggles a symbol path into the CEO view', () => {
+  // TASK-2591 changed this from "throws" to "leaves it out": one technical gotcha
+  // title used to fail the whole CEO answer (journey-lead-to-delivered, 2026-10-21).
+  // The path still never reaches the CEO view, which is what M3 protects.
+  it('leaves a gotcha title that carries a file path out of the CEO view', () => {
     const input = makeInput({
       gotchas: [{ slug: 'g', title: 'breaks Domain/Product.cs handling' }]
     })
-    expect(() => projectFeature(input, 'ceo-po')).toThrow(RoleBleedError)
+    const bundle = projectFeature(input, 'ceo-po')
+    expect(JSON.stringify(bundle.view)).not.toContain('Product.cs')
+    expect(bundle.honesty.omitted).toContain('concern: g')
   })
 
   it('reports lacked effort-band when none set', () => {
@@ -415,5 +420,56 @@ describe('projectFeature ceo-po — blockers vs concerns (TASK-1026)', () => {
     ).view as CeoView
     expect(view.blockers).toEqual([])
     expect(view.concerns).toHaveLength(1)
+  })
+})
+
+// TASK-2591 — ceo-po leaves technical sections and titles out instead of throwing.
+describe('ceo-po screening (TASK-2591)', () => {
+  const technical = makeInput({
+    sections: {
+      context: 'Each record stores its fields as jsonb and is read FROM records.',
+      'why this exists': 'Sales teams lose track of leads; this keeps one journey from lead to delivery.'
+    },
+    gotchas: [
+      { slug: 'g-sql', title: 'A jsonb round-trip can disagree with itself' },
+      { slug: 'g-plain', title: 'Running late is harmless; not running is not' }
+    ]
+  })
+
+  it('AC-1: a technical Context and a plain Why returns a ceo-po answer instead of throwing', () => {
+    expect(() => projectFeature(technical, 'ceo-po')).not.toThrow()
+  })
+
+  it('AC-2: that answer does not contain jsonb', () => {
+    const bundle = projectFeature(technical, 'ceo-po')
+    expect(JSON.stringify(bundle.view)).not.toContain('jsonb')
+  })
+
+  it('AC-3: honesty.omitted lists the context section', () => {
+    expect(projectFeature(technical, 'ceo-po').honesty.omitted).toContain('context')
+  })
+
+  it('a technical gotcha title is listed as an omitted concern and the plain one stays', () => {
+    const bundle = projectFeature(technical, 'ceo-po')
+    expect(bundle.honesty.omitted).toContain('concern: g-sql')
+    expect((bundle.view as CeoView).concerns.map((c) => c.slug)).toEqual(['g-plain'])
+  })
+
+  it('the description falls back to the plain Why section', () => {
+    expect((projectFeature(technical, 'ceo-po').view as CeoView).description).toContain('Sales teams lose track')
+  })
+
+  it('AC-4: a feature whose only prose is technical returns an empty description with every section omitted', () => {
+    const allTech = makeInput({
+      sections: { description: 'Edit Domain/Product.cs', 'why this exists': 'SELECT * FROM leads' },
+      gotchas: []
+    })
+    const bundle = projectFeature(allTech, 'ceo-po')
+    expect((bundle.view as CeoView).description).toBeNull()
+    expect(bundle.honesty.omitted).toEqual(expect.arrayContaining(['description', 'why this exists']))
+  })
+
+  it('AC-5: the guard still throws when code reaches the CEO output directly', () => {
+    expect(() => assertNoCodeBleed('ceo-po', 'see Ichiba.Pim.Domain.Product')).toThrow(RoleBleedError)
   })
 })
