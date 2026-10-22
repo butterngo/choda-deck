@@ -31,6 +31,7 @@ Commands:
   member add|remove|list  Manage team project membership on the remote (TASK-2243)
   session reconcile  List stale ACTIVE sessions whose task already merged (TASK-2312)
   mermaid check <file|->  Parse every mermaid fence in a markdown file (TASK-2596)
+  run report <goalId> [--smoke f] [--out p]  Write a goal's test report (TASK-2600)
 
 Meta:
   --help        Show this help
@@ -80,6 +81,10 @@ async function main(): Promise<number> {
     case 'mermaid': {
       const { dispatchMermaid } = await import('./mermaid-command')
       return dispatchMermaid(sub, argv.slice(2))
+    }
+    case 'run': {
+      const { dispatchRun } = await import('./run-report-command')
+      return dispatchRun(sub, argv.slice(2))
     }
     default:
       process.stderr.write(`error: unknown command "${group}"\n\n${ROOT_HELP}`)

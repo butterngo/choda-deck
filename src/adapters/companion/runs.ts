@@ -12,9 +12,9 @@ import type { SessionEventOperations } from '../../core/domain/interfaces/sessio
 import {
   acCoverage,
   acRows,
+  readAcTicks,
   type AcCoverage,
-  type AcRow,
-  type AcTick
+  type AcRow
 } from '../../core/domain/lifecycle/ac-coverage'
 
 // TASK-2531 — one record per loop run, for the companion's Runs screen
@@ -281,30 +281,6 @@ export function taskSequence(body: string | null): RunSequence {
   return na ? { na: na[1] } : null
 }
 
-/** Every ac_check tick on this task, from all of its sessions, oldest session first. */
-async function acTicks(svc: RunsDeps['svc'], taskId: string, sessionsNewestFirst: Session[]): Promise<AcTick[]> {
-  const ticks: AcTick[] = []
-  for (const s of [...sessionsNewestFirst].reverse()) {
-    for (const e of await svc.listSessionEvents(s.id, 'observation')) {
-      let p: Record<string, unknown>
-      try {
-        p = JSON.parse(e.payloadJson ?? '{}') as Record<string, unknown>
-      } catch {
-        continue
-      }
-      if (p.kind !== 'ac_check' || p.taskId !== taskId || typeof p.acIndex !== 'number') continue
-      ticks.push({
-        acIndex: p.acIndex,
-        method: typeof p.method === 'string' ? p.method : null,
-        ref: typeof p.ref === 'string' ? p.ref : null,
-        evidence: typeof p.evidence === 'string' ? p.evidence : null,
-        createdAt: e.createdAt
-      })
-    }
-  }
-  return ticks
-}
-
 async function toItem(
   svc: RunsDeps['svc'],
   task: Task,
@@ -317,7 +293,8 @@ async function toItem(
   const active = mine.find((s) => s.status === 'active') ?? null
   const withHandoff = mine.find((s) => s.handoff)
   const handoff = withHandoff?.handoff ?? null
-  const acs = acRows(task.body, await acTicks(svc, task.id, mine))
+  const ticks = await readAcTicks((id, type) => svc.listSessionEvents(id, type), task.id, mine.map((s) => s.id))
+  const acs = acRows(task.body, ticks)
   return {
     id: task.id,
     title: task.title,

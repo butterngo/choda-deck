@@ -79,6 +79,37 @@ export function acRows(body: string | null, ticks: AcTick[]): AcRow[] {
   })
 }
 
+/**
+ * Every ac_check tick on this task across the given sessions, oldest session
+ * first. Shared by GET /runs and `choda-deck run report` (TASK-2600).
+ */
+export async function readAcTicks(
+  listSessionEvents: (sessionId: string, eventType: 'observation') => Promise<{ payloadJson?: string | null; createdAt: string }[]>,
+  taskId: string,
+  sessionIdsNewestFirst: string[]
+): Promise<AcTick[]> {
+  const ticks: AcTick[] = []
+  for (const id of [...sessionIdsNewestFirst].reverse()) {
+    for (const e of await listSessionEvents(id, 'observation')) {
+      let p: Record<string, unknown>
+      try {
+        p = JSON.parse(e.payloadJson ?? '{}') as Record<string, unknown>
+      } catch {
+        continue
+      }
+      if (p.kind !== 'ac_check' || p.taskId !== taskId || typeof p.acIndex !== 'number') continue
+      ticks.push({
+        acIndex: p.acIndex,
+        method: typeof p.method === 'string' ? p.method : null,
+        ref: typeof p.ref === 'string' ? p.ref : null,
+        evidence: typeof p.evidence === 'string' ? p.evidence : null,
+        createdAt: e.createdAt
+      })
+    }
+  }
+  return ticks
+}
+
 export function acCoverage(rows: AcRow[]): AcCoverage {
   const out: AcCoverage = { covered: 0, weak: 0, open: 0, human: 0, total: rows.length }
   for (const r of rows) out[r.state]++
