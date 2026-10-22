@@ -26,6 +26,7 @@ import { handleInboxDecideRoute } from './inbox-decide'
 import { handleAttentionRoute } from './attention'
 import { handleRunsRoute } from './runs'
 import { handleDeployChecksRoute } from './deploy-checks'
+import { handleSecretsCopyRoute } from './secrets-copy'
 import { handleTaskTranslateRoute } from './task-translate'
 import { handleConversationDecideRoute } from './conversation-decide'
 import { handleConversationSignoffRoute } from './conversation-signoff'
@@ -174,6 +175,11 @@ async function route(
   }
 
   // TASK-2531 — one record per /choda-autopilot or /choda-burn-backlog run.
+  // TASK-2607 — a deploy checklist secret, for the clipboard only. No log sink:
+  // nothing about the request is written anywhere.
+  if (await handleSecretsCopyRoute(req, res, { svc: services.svc, bridgeToken: services.bridgeToken })) {
+    return
+  }
   // TASK-2605 — deploy checklist ticks; before /runs, which matches only the bare path.
   if (await handleDeployChecksRoute(req, res, { svc: services.svc, bridgeToken: services.bridgeToken })) {
     return
