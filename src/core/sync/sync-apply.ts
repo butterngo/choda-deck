@@ -30,7 +30,9 @@ export const APPLY_TABLES: readonly string[] = [
   'inbox_items',
   'conversations',
   'conversation_messages',
-  'conversation_actions'
+  'conversation_actions',
+  // TASK-2605 — deploy checklist ticks; no FK, so last.
+  'deploy_checks'
 ]
 
 export type ApplyVerdict = 'applied' | 'tombstoned' | 'conflict'
