@@ -94,7 +94,8 @@ export function parseSmoke(text: string): Smoke | null {
   }
 }
 
-async function goalTree(deps: RunReportDeps, goalId: string): Promise<Task[]> {
+/** Every descendant of the goal (not the goal itself), by numeric id. Shared with deploy scan (TASK-2604). */
+export async function goalTree(deps: Pick<RunReportDeps, 'getSubtasks'>, goalId: string): Promise<Task[]> {
   const out: Task[] = []
   const walk = async (id: string): Promise<void> => {
     for (const t of await deps.getSubtasks(id)) {
