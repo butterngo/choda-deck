@@ -37,6 +37,7 @@ import * as codeRefTools from './mcp-tools/code-ref-tools'
 import * as graphTools from './mcp-tools/graph-tools'
 import * as featureProjectionTools from './mcp-tools/feature-projection-tools'
 import * as featureLinkTools from './mcp-tools/feature-link'
+import * as deployCheckTools from './mcp-tools/deploy-check-tool'
 import * as statsTools from './mcp-tools/stats-tools'
 import * as cleanupTools from './mcp-tools/cleanup-tools'
 import * as cleanupArtifacts from './mcp-tools/cleanup-artifacts'
@@ -113,6 +114,7 @@ function buildMcpServer(
   graphTools.register(instrumented, deps.svc)
   featureProjectionTools.register(instrumented, deps.svc)
   featureLinkTools.register(instrumented, deps.svc)
+  deployCheckTools.register(instrumented, deps.svc)
   statsTools.register(instrumented, deps.svc)
   cleanupTools.register(instrumented, deps.svc)
   cleanupArtifacts.register(instrumented, deps.artifactsDir)
