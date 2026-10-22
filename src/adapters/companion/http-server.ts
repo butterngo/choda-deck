@@ -25,6 +25,7 @@ import { handleImproveRoute } from './improve'
 import { handleInboxDecideRoute } from './inbox-decide'
 import { handleAttentionRoute } from './attention'
 import { handleRunsRoute } from './runs'
+import { handleDeployChecksRoute } from './deploy-checks'
 import { handleTaskTranslateRoute } from './task-translate'
 import { handleConversationDecideRoute } from './conversation-decide'
 import { handleConversationSignoffRoute } from './conversation-signoff'
@@ -173,6 +174,10 @@ async function route(
   }
 
   // TASK-2531 — one record per /choda-autopilot or /choda-burn-backlog run.
+  // TASK-2605 — deploy checklist ticks; before /runs, which matches only the bare path.
+  if (await handleDeployChecksRoute(req, res, { svc: services.svc, bridgeToken: services.bridgeToken })) {
+    return
+  }
   if (await handleRunsRoute(req, res, { svc: services.svc, bridgeToken: services.bridgeToken })) {
     return
   }

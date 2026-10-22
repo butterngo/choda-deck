@@ -23,7 +23,7 @@ import type { ApplySink } from './sync-apply'
 import type { PulledRow } from './sync-pull'
 
 interface MutatorSpec {
-  table: 'tasks' | 'inbox_items' | 'projects' | 'workspaces'
+  table: 'tasks' | 'inbox_items' | 'projects' | 'workspaces' | 'deploy_checks'
   op: 'upsert' | 'delete'
 }
 
@@ -42,7 +42,10 @@ const MUTATORS: Record<string, MutatorSpec> = {
   updateInbox: { table: 'inbox_items', op: 'upsert' },
   deleteInbox: { table: 'inbox_items', op: 'delete' },
   ensureProject: { table: 'projects', op: 'upsert' },
-  addWorkspace: { table: 'workspaces', op: 'upsert' }
+  addWorkspace: { table: 'workspaces', op: 'upsert' },
+  // TASK-2605 — a tick or an un-tick; an un-tick is the row with sync_deleted_at
+  // set, pushed as an upsert so the soft delete travels with it.
+  setDeployCheck: { table: 'deploy_checks', op: 'upsert' }
 }
 
 // TASK-1136 — conversation methods push differently from the single-row task/

@@ -836,6 +836,21 @@ function createM2Tables(db: Database.Database): void {
       recall_count INTEGER DEFAULT 0
     )
   `)
+  // TASK-2605 — deploy checklist ticks per goal and environment; synced
+  // (SYNCABLE_TABLES adds the sync_* columns). The synthetic id is
+  // `<goal>:<env>:<item_key>` because the sync engine keys on a single id.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS deploy_checks (
+      id TEXT PRIMARY KEY,
+      goal_task_id TEXT NOT NULL,
+      env TEXT NOT NULL CHECK (env IN ('qc','prod')),
+      item_key TEXT NOT NULL,
+      done_by TEXT NOT NULL,
+      done_at TEXT NOT NULL,
+      note TEXT,
+      UNIQUE (goal_task_id, env, item_key)
+    )
+  `)
 }
 
 // ADR-035 (TASK-603): Investigation domain object — a first-class, stdio-only

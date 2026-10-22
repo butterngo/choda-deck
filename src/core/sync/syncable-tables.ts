@@ -16,7 +16,11 @@
 // tables (tags, relationships, conversation_participants/links/reads) and
 // stdio-only tables (sessions, documents, knowledge_index, …) are intentionally
 // excluded — they are not part of the Phase 1 syncable set.
-export const SYNCABLE_TABLES: readonly string[] = [
+// The tables Postgres migration 012_sync_columns ALTERs. Frozen: 012 has already
+// run on live databases, and a table added later (deploy_checks, TASK-2605) does
+// not exist yet when 012 runs on a fresh one — its own migration creates it with
+// the sync columns.
+export const SYNC_COLUMNS_012_TABLES: readonly string[] = [
   'projects',
   'workspaces',
   'tasks',
@@ -25,6 +29,8 @@ export const SYNCABLE_TABLES: readonly string[] = [
   'conversation_messages',
   'conversation_actions'
 ]
+
+export const SYNCABLE_TABLES: readonly string[] = [...SYNC_COLUMNS_012_TABLES, 'deploy_checks']
 
 // The three sync-metadata columns, per ADR-030. They are prefixed `sync_` to
 // stay in their own namespace: `tasks` and `inbox_items` already carry a

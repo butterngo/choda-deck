@@ -133,6 +133,13 @@ import { SessionRepository } from './repositories/session-repository'
 import { ContextSourceRepository } from './repositories/context-source-repository'
 import { ConversationRepository } from './repositories/conversation-repository'
 import { InboxRepository } from './repositories/inbox-repository'
+import {
+  DeployCheckRepository,
+  type DeployCheckRow,
+  type DeployChecks,
+  type SetDeployCheckInput
+} from './repositories/deploy-check-repository'
+import type { DeployCheckOperations } from './interfaces/deploy-check-operations.interface'
 import { ProjectMemberRepository } from './repositories/project-member-repository'
 import { CounterRepository } from './repositories/counter-repository'
 import { ToolInvocationsRepository } from './repositories/tool-invocations-repository'
@@ -167,7 +174,8 @@ export class SqliteTaskService
     KnowledgeOperations,
     SessionEventOperations,
     AgentMemoryOperations,
-    InvestigationOperations
+    InvestigationOperations,
+    DeployCheckOperations
 {
   private readonly db: Database.Database
   private readonly projects: ProjectRepository
@@ -181,6 +189,7 @@ export class SqliteTaskService
   private readonly conversations: ConversationRepository
   private readonly inbox: InboxRepository
   private readonly projectMembers: ProjectMemberRepository
+  private readonly deployChecks: DeployCheckRepository
   private readonly counters: CounterRepository
   private readonly toolInvocations: ToolInvocationsRepository
   private readonly sessionEvents: SessionEventRepository
@@ -226,6 +235,7 @@ export class SqliteTaskService
       remoteIds: options.remoteInboxIds === true
     })
     this.projectMembers = new ProjectMemberRepository(this.db)
+    this.deployChecks = new DeployCheckRepository(this.db)
     this.investigations = new InvestigationRepository(this.db, this.counters)
     this.investigationLifecycle = new InvestigationLifecycleService(
       this.db,
@@ -590,6 +600,14 @@ export class SqliteTaskService
   }
   async archiveInbox(id: string, reason?: string): Promise<InboxItem> {
     return this.inboxLifecycle.archiveInbox(id, reason)
+  }
+
+  // TASK-2605 — deploy checklist ticks per goal and environment.
+  async setDeployCheck(input: SetDeployCheckInput): Promise<DeployCheckRow> {
+    return this.deployChecks.set(input)
+  }
+  async listDeployChecks(goalTaskId: string): Promise<DeployChecks> {
+    return this.deployChecks.list(goalTaskId)
   }
 
   // ── Conversation lifecycle (composite, transactional) ──────────────────────

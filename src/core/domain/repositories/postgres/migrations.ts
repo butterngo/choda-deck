@@ -17,7 +17,7 @@
 // table, but defense in depth is cheap.
 
 import type { PgConnection } from './connection'
-import { SYNCABLE_TABLES, SYNC_COLUMNS } from '../../../sync/syncable-tables'
+import { SYNC_COLUMNS_012_TABLES, SYNC_COLUMNS } from '../../../sync/syncable-tables'
 
 export interface Migration {
   name: string
@@ -29,7 +29,7 @@ export interface Migration {
 // EXISTS` makes it idempotent at the SQL level on top of the `_migrations` gate.
 function buildSyncColumnsSql(): string {
   const lines: string[] = []
-  for (const table of SYNCABLE_TABLES) {
+  for (const table of SYNC_COLUMNS_012_TABLES) {
     for (const col of SYNC_COLUMNS) {
       lines.push(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${col.name} ${col.pgType};`)
     }
@@ -378,6 +378,26 @@ export const MIGRATIONS: readonly Migration[] = [
     sql: `
       ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee TEXT;
       CREATE INDEX IF NOT EXISTS tasks_assignee_idx ON tasks (project_id, assignee);
+    `
+  },
+  {
+    // TASK-2605 — deploy checklist ticks, synced. Created with the sync columns
+    // here because 012_sync_columns only covers the tables that existed then.
+    name: '019_deploy_checks',
+    sql: `
+      CREATE TABLE IF NOT EXISTS deploy_checks (
+        id TEXT PRIMARY KEY,
+        goal_task_id TEXT NOT NULL,
+        env TEXT NOT NULL CHECK (env IN ('qc','prod')),
+        item_key TEXT NOT NULL,
+        done_by TEXT NOT NULL,
+        done_at TEXT NOT NULL,
+        note TEXT,
+        sync_updated_at BIGINT,
+        sync_deleted_at BIGINT,
+        sync_origin TEXT,
+        UNIQUE (goal_task_id, env, item_key)
+      );
     `
   }
 ]

@@ -29,6 +29,7 @@ import type {
   ToolInvocationWindow
 } from './interfaces/tool-invocations-repository.interface'
 import type { CheckAcItemInput, CheckAcItemResult } from './lifecycle/ac-check'
+import type { DeployCheckOperations } from './interfaces/deploy-check-operations.interface'
 import type { TableDelta } from '../sync/sync-pull'
 import type { ApplyResult } from '../sync/sync-apply'
 
@@ -48,7 +49,8 @@ export interface BackendTaskService
     SessionEventOperations,
     AgentMemoryOperations,
     InvestigationOperations,
-    RelationshipOperations {
+    RelationshipOperations,
+    DeployCheckOperations {
   initializeAsync(): Promise<void>
   backup(absolutePath: string): Promise<void>
   recordToolInvocation(invocation: ToolInvocation): Promise<void>
