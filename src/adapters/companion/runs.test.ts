@@ -394,6 +394,60 @@ describe('GET /runs', () => {
   })
 })
 
+// TASK-2601 — the goal's test report, read from the home workspace's working tree.
+describe('GET /runs — run report', () => {
+  const runOf = async (): Promise<Run> => {
+    await notice('[loop:web] ⚪ run TASK-10 started: 0 tasks')
+    return ((await (await get('/runs')).json()) as { runs: Run[] }).runs[0]
+  }
+  const writeReport = (text: string): void => {
+    fs.mkdirSync(path.join(tmp, 'docs', 'reports'), { recursive: true })
+    fs.writeFileSync(path.join(tmp, 'docs', 'reports', 'task-10-test-report.md'), text)
+  }
+  const FM = [
+    '---',
+    'goal: "TASK-10"',
+    'generatedAt: "2026-10-22T00:00:00.000Z"',
+    'suite: {"passed":827,"skipped":1,"failed":0}',
+    'testsAdded: 85',
+    'unreadableCommits: []',
+    'ac: {"covered":10,"weak":0,"open":0,"human":1,"total":11}',
+    'smoke: null',
+    'regression: []',
+    '---',
+    '',
+    '# Test report — TASK-10',
+    ''
+  ].join('\n')
+
+  beforeEach(async () => {
+    await svc.createTask({ id: 'TASK-10', projectId: 'p', title: 'Goal', status: 'READY' })
+  })
+
+  it('AC-1: a goal with no report file serves report: null', async () => {
+    expect((await runOf()).report).toBeNull()
+  })
+
+  it('AC-2: a report with testsAdded 85 serves report.summary.testsAdded 85', async () => {
+    writeReport(FM)
+    expect((await runOf()).report?.summary?.testsAdded).toBe(85)
+  })
+
+  it('AC-3: the report path is docs/reports/task-10-test-report.md in the home workspace', async () => {
+    writeReport(FM)
+    const report = (await runOf()).report
+    expect(report?.path).toBe('docs/reports/task-10-test-report.md')
+    expect(report?.workspaceId).toBe('web')
+  })
+
+  it('AC-4: a broken frontmatter block serves summary: null with the path still set', async () => {
+    writeReport(FM.replace('testsAdded: 85', 'testsAdded: {broken'))
+    const report = (await runOf()).report
+    expect(report?.summary).toBeNull()
+    expect(report?.path).toBe('docs/reports/task-10-test-report.md')
+  })
+})
+
 // TASK-2535 — the fields the v2 Runs screen draws from: the flow, the stepper,
 // the PR link and the project heading.
 describe('GET /runs — TASK-2535 fields', () => {

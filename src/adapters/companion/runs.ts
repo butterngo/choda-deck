@@ -1,6 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'http'
 import { Buffer } from 'buffer'
 import { timingSafeEqual } from 'crypto'
+import * as fs from 'fs'
+import * as path from 'path'
 import type { InboxItem, Session, Task } from '../../core/domain/task-types'
 import type { InboxOperations } from '../../core/domain/interfaces/inbox-repository.interface'
 import type { ProjectOperations } from '../../core/domain/interfaces/project-repository.interface'
@@ -9,6 +11,12 @@ import type { TaskOperations } from '../../core/domain/interfaces/task-repositor
 import type { RelationshipOperations } from '../../core/domain/interfaces/relationship-repository.interface'
 import type { KnowledgeOperations } from '../../core/domain/interfaces/knowledge-operations.interface'
 import type { SessionEventOperations } from '../../core/domain/interfaces/session-event-operations.interface'
+import type { WorkspaceOperations } from '../../core/domain/interfaces/workspace-repository.interface'
+import {
+  parseReportFrontmatter,
+  reportFileName,
+  type ReportFrontmatter
+} from '../../core/domain/services/run-report'
 import {
   acCoverage,
   acRows,
@@ -100,6 +108,20 @@ export interface Run {
    * biết đây là cái feature gì"). Null when the goal has no REALIZES edge.
    */
   feature: RunFeature | null
+  /**
+   * TASK-2601 — the goal's test report (`choda-deck run report`, TASK-2600),
+   * read from the goal home workspace's working tree. Null when there is no
+   * file; `summary: null` when its frontmatter does not parse, so the web can
+   * say "report unreadable" instead of hiding it.
+   */
+  report: RunReportRef | null
+}
+
+export interface RunReportRef {
+  /** Relative to the workspace cwd, `/` separated — opens via GET /workspace-docs/<workspaceId>/<path>. */
+  path: string
+  workspaceId: string
+  summary: ReportFrontmatter | null
 }
 
 export interface RunFeature {
@@ -116,6 +138,7 @@ export interface RunsDeps {
     Pick<TaskOperations, 'getTask' | 'getSubtasks'> &
     Pick<SessionOperations, 'findSessions'> &
     Pick<ProjectOperations, 'getProject'> &
+    Pick<WorkspaceOperations, 'findWorkspaces'> &
     Pick<RelationshipOperations, 'getRelationshipsFrom'> &
     Pick<KnowledgeOperations, 'getKnowledge'> &
     Pick<SessionEventOperations, 'listSessionEvents'>
@@ -156,7 +179,28 @@ async function runFeature(svc: RunsDeps['svc'], goalId: string): Promise<RunFeat
   return { slug, title: entry.frontmatter.title, why: featureWhy(entry.body), missing: false }
 }
 
-const LOOP_TAG = /^\[loop:([A-Za-z0-9._-]+)\]\s*/
+const samePath = (a: string, b: string): boolean => {
+  const norm = (p: string): string => path.resolve(p).replace(/[\\/]+$/, '')
+  return process.platform === 'win32' ? norm(a).toLowerCase() === norm(b).toLowerCase() : norm(a) === norm(b)
+}
+
+/** The goal home workspace — its cwd is the project's own — and the report file in it. */
+async function runReport(svc: RunsDeps['svc'], goal: Task): Promise<RunReportRef | null> {
+  const project = await svc.getProject(goal.projectId)
+  if (!project?.cwd) return null
+  const home = (await svc.findWorkspaces(goal.projectId)).find((w) => samePath(w.cwd, project.cwd))
+  if (!home) return null
+  const rel = `docs/reports/${reportFileName(goal.id)}`
+  let text: string
+  try {
+    text = await fs.promises.readFile(path.join(home.cwd, rel), 'utf8')
+  } catch {
+    return null
+  }
+  return { path: rel, workspaceId: home.id, summary: parseReportFrontmatter(text) }
+}
+
+const LOOP_TAG =/^\[loop:([A-Za-z0-9._-]+)\]\s*/
 const RUN_GOAL = /\brun (TASK-\d+)\b/
 const TASK_ID = /\bTASK-\d+\b/g
 const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g
@@ -365,7 +409,8 @@ export async function buildRuns(
       items,
       notices: goalNotices,
       lastActivityAt: '',
-      feature: await runFeature(svc, goal.id)
+      feature: await runFeature(svc, goal.id),
+      report: await runReport(svc, goal)
     })
   }
 

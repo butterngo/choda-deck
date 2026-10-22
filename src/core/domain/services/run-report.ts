@@ -201,6 +201,29 @@ export function reportFileName(goalId: string): string {
 
 const FRONTMATTER_KEYS = ['goal', 'generatedAt', 'suite', 'testsAdded', 'unreadableCommits', 'ac', 'smoke', 'regression'] as const
 
+export type ReportFrontmatter = Omit<RunReport, 'items'>
+
+/**
+ * TASK-2601 — read a report file's frontmatter back. Null when the block is
+ * missing, a line is not `key: <json>`, or a written key is absent.
+ */
+export function parseReportFrontmatter(text: string): ReportFrontmatter | null {
+  const block = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)?.[1]
+  if (block === undefined) return null
+  const fm: Record<string, unknown> = {}
+  for (const line of block.split(/\r?\n/)) {
+    if (line.trim() === '') continue
+    const i = line.indexOf(': ')
+    if (i <= 0) return null
+    try {
+      fm[line.slice(0, i)] = JSON.parse(line.slice(i + 2))
+    } catch {
+      return null
+    }
+  }
+  return FRONTMATTER_KEYS.every((k) => k in fm) ? (fm as ReportFrontmatter) : null
+}
+
 const cell = (s: string): string => s.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
 
 export function renderRunReport(r: RunReport): string {

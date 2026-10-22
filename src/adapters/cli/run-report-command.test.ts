@@ -5,6 +5,7 @@ import * as path from 'path'
 import { execFileSync } from 'child_process'
 import { SqliteTaskService } from '../../core/domain/sqlite-task-service'
 import { acCoverage, acRows, readAcTicks, type AcCoverage } from '../../core/domain/lifecycle/ac-coverage'
+import { parseReportFrontmatter } from '../../core/domain/services/run-report'
 import { gitShow, runReportCommand, type RunReportCommandDeps } from './run-report-command'
 
 // TASK-2600 — `choda-deck run report` against a real SQLite service and a real
@@ -202,6 +203,11 @@ describe('choda-deck run report', () => {
   it('a goal with no feature has an empty regression list', async () => {
     expect(await runReportCommand(['TASK-10'], io, deps())).toBe(0)
     expect(frontmatter(reportPath()).regression).toEqual([])
+  })
+
+  it('the written file reads back through parseReportFrontmatter (GET /runs)', async () => {
+    expect(await runReportCommand(['TASK-10'], io, deps())).toBe(0)
+    expect(parseReportFrontmatter(fs.readFileSync(reportPath(), 'utf8'))?.goal).toBe('TASK-10')
   })
 
   it('--out writes to the given path', async () => {
