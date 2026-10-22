@@ -18,6 +18,11 @@ import {
   type ReportFrontmatter
 } from '../../core/domain/services/run-report'
 import {
+  deployChecklistFileName,
+  parseDeployChecklist,
+  type DeployItem
+} from '../../core/domain/services/deploy-scan'
+import {
   acCoverage,
   acRows,
   readAcTicks,
@@ -115,6 +120,17 @@ export interface Run {
    * say "report unreadable" instead of hiding it.
    */
   report: RunReportRef | null
+  /**
+   * TASK-2607 — the goal's deploy checklist from the same home workspace. Null
+   * when there is no file; `items: null` when its frontmatter does not parse.
+   */
+  deploy: RunDeployRef | null
+}
+
+export interface RunDeployRef {
+  path: string
+  workspaceId: string
+  items: DeployItem[] | null
 }
 
 export interface RunReportRef {
@@ -184,20 +200,38 @@ const samePath = (a: string, b: string): boolean => {
   return process.platform === 'win32' ? norm(a).toLowerCase() === norm(b).toLowerCase() : norm(a) === norm(b)
 }
 
-/** The goal home workspace — its cwd is the project's own — and the report file in it. */
-async function runReport(svc: RunsDeps['svc'], goal: Task): Promise<RunReportRef | null> {
+/** The goal home workspace: the one whose cwd is the project's own. */
+async function homeWorkspace(svc: RunsDeps['svc'], goal: Task): Promise<{ id: string; cwd: string } | null> {
   const project = await svc.getProject(goal.projectId)
   if (!project?.cwd) return null
-  const home = (await svc.findWorkspaces(goal.projectId)).find((w) => samePath(w.cwd, project.cwd))
+  return (await svc.findWorkspaces(goal.projectId)).find((w) => samePath(w.cwd, project.cwd)) ?? null
+}
+
+/** A docs/reports file of the goal in its home workspace, or null when there is none. */
+async function reportsFile(
+  svc: RunsDeps['svc'],
+  goal: Task,
+  name: string
+): Promise<{ rel: string; workspaceId: string; text: string } | null> {
+  const home = await homeWorkspace(svc, goal)
   if (!home) return null
-  const rel = `docs/reports/${reportFileName(goal.id)}`
-  let text: string
+  const rel = `docs/reports/${name}`
   try {
-    text = await fs.promises.readFile(path.join(home.cwd, rel), 'utf8')
+    return { rel, workspaceId: home.id, text: await fs.promises.readFile(path.join(home.cwd, rel), 'utf8') }
   } catch {
     return null
   }
-  return { path: rel, workspaceId: home.id, summary: parseReportFrontmatter(text) }
+}
+
+async function runReport(svc: RunsDeps['svc'], goal: Task): Promise<RunReportRef | null> {
+  const f = await reportsFile(svc, goal, reportFileName(goal.id))
+  return f ? { path: f.rel, workspaceId: f.workspaceId, summary: parseReportFrontmatter(f.text) } : null
+}
+
+/** TASK-2607 — the deploy checklist written by `choda-deck deploy scan` (TASK-2604). */
+async function runDeploy(svc: RunsDeps['svc'], goal: Task): Promise<RunDeployRef | null> {
+  const f = await reportsFile(svc, goal, deployChecklistFileName(goal.id))
+  return f ? { path: f.rel, workspaceId: f.workspaceId, items: parseDeployChecklist(f.text) } : null
 }
 
 const LOOP_TAG =/^\[loop:([A-Za-z0-9._-]+)\]\s*/
@@ -410,7 +444,8 @@ export async function buildRuns(
       notices: goalNotices,
       lastActivityAt: '',
       feature: await runFeature(svc, goal.id),
-      report: await runReport(svc, goal)
+      report: await runReport(svc, goal),
+      deploy: await runDeploy(svc, goal)
     })
   }
 

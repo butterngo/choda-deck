@@ -448,6 +448,47 @@ describe('GET /runs — run report', () => {
   })
 })
 
+// TASK-2607 — the goal's deploy checklist, from the same home workspace.
+describe('GET /runs — deploy checklist', () => {
+  const runOf = async (): Promise<Run> => {
+    await notice('[loop:web] ⚪ run TASK-10 started: 0 tasks')
+    return ((await (await get('/runs')).json()) as { runs: Run[] }).runs[0]
+  }
+  const ITEMS = [
+    { key: 'sql:docs/deploy/sql/x-all.sql', phase: 'before', kind: 'sql', title: 'Run x-all.sql', why: 'w', workspaceId: 'web', file: 'docs/deploy/sql/x-all.sql' },
+    { key: 'migration:1_A', phase: 'before', kind: 'migration', title: 'Apply 1_A', why: 'w', workspaceId: 'web' },
+    { key: 'endpoint:GET /x', phase: 'after', kind: 'endpoint', title: 'Check GET /x', why: 'w', workspaceId: 'web' }
+  ]
+
+  beforeEach(async () => {
+    await svc.createTask({ id: 'TASK-10', projectId: 'p', title: 'Goal', status: 'READY' })
+  })
+
+  it('AC-1: a goal with a checklist file serves deploy.items in the frontmatter order', async () => {
+    fs.mkdirSync(path.join(tmp, 'docs', 'reports'), { recursive: true })
+    fs.writeFileSync(
+      path.join(tmp, 'docs', 'reports', 'task-10-deploy-checklist.md'),
+      `---\ngoal: "TASK-10"\nitems: ${JSON.stringify(ITEMS)}\n---\n\n# Deploy checklist — TASK-10\n`
+    )
+    const deploy = (await runOf()).deploy
+    expect(deploy?.items?.map((i) => i.key)).toEqual(ITEMS.map((i) => i.key))
+    expect(deploy?.path).toBe('docs/reports/task-10-deploy-checklist.md')
+    expect(deploy?.workspaceId).toBe('web')
+  })
+
+  it('AC-2: a goal without one serves deploy: null', async () => {
+    expect((await runOf()).deploy).toBeNull()
+  })
+
+  it('a broken frontmatter serves items: null with the path kept', async () => {
+    fs.mkdirSync(path.join(tmp, 'docs', 'reports'), { recursive: true })
+    fs.writeFileSync(path.join(tmp, 'docs', 'reports', 'task-10-deploy-checklist.md'), '---\nitems: [broken\n---\n')
+    const deploy = (await runOf()).deploy
+    expect(deploy?.items).toBeNull()
+    expect(deploy?.path).toBe('docs/reports/task-10-deploy-checklist.md')
+  })
+})
+
 // TASK-2535 — the fields the v2 Runs screen draws from: the flow, the stepper,
 // the PR link and the project heading.
 describe('GET /runs — TASK-2535 fields', () => {
