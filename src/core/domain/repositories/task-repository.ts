@@ -4,6 +4,7 @@ import type {
   TaskStatus,
   TaskDependency,
   TaskBlocker,
+  TaskStatusChange,
   CreateTaskInput,
   UpdateTaskInput,
   TaskFilter
@@ -102,8 +103,9 @@ export class TaskRepository {
       if (blockers.length > 0) throw new TaskBlockedError(id, blockers)
     }
 
+    const ts = now()
     const sets: string[] = ['updated_at = ?']
-    const params: Param[] = [now()]
+    const params: Param[] = [ts]
 
     if (input.title !== undefined) {
       sets.push('title = ?')
@@ -147,9 +149,21 @@ export class TaskRepository {
     }
 
     params.push(id)
-    this.db
-      .prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`)
-      .run(...(params as (string | number | null)[]))
+    // TASK-2670 — the status row and the UPDATE commit together: a failed insert
+    // must not leave a status change nobody recorded.
+    const statusChanged = input.status !== undefined && input.status !== existing.status
+    this.db.transaction(() => {
+      this.db
+        .prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`)
+        .run(...(params as (string | number | null)[]))
+      if (statusChanged) {
+        this.db
+          .prepare(
+            'INSERT INTO task_status_changes (task_id, from_status, to_status, at) VALUES (?, ?, ?, ?)'
+          )
+          .run(id, existing.status, input.status!, ts)
+      }
+    })()
 
     if (input.blockedBy !== undefined) {
       this.replaceBlockedBy(id, input.blockedBy)
@@ -158,6 +172,22 @@ export class TaskRepository {
     const task = this.get(id)
     if (!task) throw new Error(`Task not found: ${id}`)
     return task
+  }
+
+  /** TASK-2670 — status changes with fromIso ≤ at < toIso, oldest first. */
+  listStatusChanges(fromIso: string, toIso: string): TaskStatusChange[] {
+    const rows = this.db
+      .prepare(
+        'SELECT id, task_id, from_status, to_status, at FROM task_status_changes WHERE at >= ? AND at < ? ORDER BY at, id'
+      )
+      .all(fromIso, toIso) as Record<string, unknown>[]
+    return rows.map((r) => ({
+      id: r.id as number,
+      taskId: r.task_id as string,
+      fromStatus: r.from_status as TaskStatus,
+      toStatus: r.to_status as TaskStatus,
+      at: r.at as string
+    }))
   }
 
   delete(id: string): void {
