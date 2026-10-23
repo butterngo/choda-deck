@@ -44,6 +44,7 @@ import { handleWorkspaceDocsRoute } from './workspace-docs'
 import { handleWorkspaceDiagramRoute } from './mermaid-check'
 import { handleWorkspaceSymbolsRoute } from './workspace-symbols'
 import { handleWorkspaceCommitsRoute } from './workspace-commits'
+import { handleDailyReportRoute } from './daily-report'
 import { handleConversationDetailRoute } from './conversation-detail'
 import {
   CAPTURE_MAX_IMAGE_BYTES,
@@ -185,6 +186,12 @@ async function route(
     return
   }
   if (await handleRunsRoute(req, res, { svc: services.svc, bridgeToken: services.bridgeToken })) {
+    return
+  }
+
+  // TASK-2673 — the Today screen: yesterday, every project's focus, outstanding
+  // work and scan coverage, computed live. Read-only, so no bridge token.
+  if (await handleDailyReportRoute(req, res, { svc: services.svc })) {
     return
   }
 
