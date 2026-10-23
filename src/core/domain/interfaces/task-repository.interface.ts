@@ -3,7 +3,8 @@ import type {
   CreateTaskInput,
   UpdateTaskInput,
   TaskFilter,
-  TaskDependency
+  TaskDependency,
+  TaskStatusChange
 } from '../task-types'
 
 export interface TaskOperations {
@@ -18,4 +19,6 @@ export interface TaskOperations {
   addDependency(sourceId: string, targetId: string): Promise<void>
   removeDependency(sourceId: string, targetId: string): Promise<void>
   getDependencies(taskId: string): Promise<TaskDependency[]>
+  /** TASK-2670 — status changes with fromIso ≤ at < toIso, oldest first. SQLite only. */
+  listStatusChanges(fromIso: string, toIso: string): Promise<TaskStatusChange[]>
 }

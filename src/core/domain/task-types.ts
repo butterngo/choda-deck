@@ -94,6 +94,15 @@ export interface TaskDependency {
   targetId: string
 }
 
+/** TASK-2670 — one row of task_status_changes: a status that actually changed. */
+export interface TaskStatusChange {
+  id: number
+  taskId: string
+  fromStatus: TaskStatus
+  toStatus: TaskStatus
+  at: string
+}
+
 export interface CreateTaskInput {
   id?: string
   projectId: string

@@ -89,6 +89,7 @@ import type {
   UpdateTaskInput,
   TaskFilter,
   TaskDependency,
+  TaskStatusChange,
   Document,
   DocumentType,
   CreateDocumentInput,
@@ -386,6 +387,9 @@ export class SqliteTaskService
   }
   async getDueTasks(date: string): Promise<Task[]> {
     return this.tasks.getDue(date)
+  }
+  async listStatusChanges(fromIso: string, toIso: string): Promise<TaskStatusChange[]> {
+    return this.tasks.listStatusChanges(fromIso, toIso)
   }
   async addDependency(sourceId: string, targetId: string): Promise<void> {
     this.tasks.addDependency(sourceId, targetId)

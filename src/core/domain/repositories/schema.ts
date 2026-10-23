@@ -851,6 +851,19 @@ function createM2Tables(db: Database.Database): void {
       UNIQUE (goal_task_id, env, item_key)
     )
   `)
+  // TASK-2670 — one row per status that actually changed, written by
+  // TaskRepository.update in the same transaction as the UPDATE. Local only:
+  // not in SYNCABLE_TABLES (ADR-026) — a change pulled by sync bypasses the
+  // repository and is not recorded here.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_status_changes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      from_status TEXT NOT NULL,
+      to_status TEXT NOT NULL,
+      at TEXT NOT NULL
+    )
+  `)
 }
 
 // ADR-035 (TASK-603): Investigation domain object — a first-class, stdio-only
@@ -964,6 +977,7 @@ function createIndexes(db: Database.Database): void {
   db.exec(
     'CREATE INDEX IF NOT EXISTS idx_agent_memories_recall ON agent_memories(importance DESC, recall_count DESC)'
   )
+  db.exec('CREATE INDEX IF NOT EXISTS idx_task_status_changes_at ON task_status_changes(at)')
 }
 
 // Rename any existing task rows whose ID exceeds COUNTER_SANE_MAX (legacy
