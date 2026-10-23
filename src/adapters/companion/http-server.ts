@@ -45,6 +45,7 @@ import { handleWorkspaceDiagramRoute } from './mermaid-check'
 import { handleWorkspaceSymbolsRoute } from './workspace-symbols'
 import { handleWorkspaceCommitsRoute } from './workspace-commits'
 import { handleDailyReportRoute } from './daily-report'
+import { createScanCache } from '../../core/domain/daily/scan-cache'
 import { handleConversationDetailRoute } from './conversation-detail'
 import {
   CAPTURE_MAX_IMAGE_BYTES,
@@ -63,6 +64,9 @@ export interface CompanionServerHandle {
   address: { port: number; bind: string }
   close: () => Promise<void>
 }
+
+// TASK-2704 — one git-scan cache for the adapter process, behind GET /daily-report.
+const dailyScanCache = createScanCache()
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body)
@@ -190,8 +194,9 @@ async function route(
   }
 
   // TASK-2673 — the Today screen: yesterday, every project's focus, outstanding
-  // work and scan coverage, computed live. Read-only, so no bridge token.
-  if (await handleDailyReportRoute(req, res, { svc: services.svc })) {
+  // work and scan coverage. Read-only, so no bridge token. The git half is
+  // served from dailyScanCache (TASK-2704); the rest is computed live.
+  if (await handleDailyReportRoute(req, res, { svc: services.svc, scanCache: dailyScanCache })) {
     return
   }
 

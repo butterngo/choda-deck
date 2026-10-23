@@ -8,6 +8,7 @@ import Database from 'better-sqlite3'
 import { SqliteTaskService } from '../../core/domain/sqlite-task-service'
 import { focusBoard } from '../../core/domain/daily/focus'
 import type { RepoScan, ScanWorkspaceInput } from '../../core/domain/daily/workspace-scan'
+import { createScanCache } from '../../core/domain/daily/scan-cache'
 import { handleDailyReportRoute, type DailyReport } from './daily-report'
 
 // TASK-2673 — GET /daily-report over real HTTP and a real SQLite service, with
@@ -284,5 +285,129 @@ describe('GET /daily-report', () => {
     const projects = (await svc.listProjects()).map((p) => p.id).sort()
     expect(r.today.focus.map((f) => f.projectId).sort()).toEqual(projects)
     expect(r.today.focus).toEqual(JSON.parse(JSON.stringify(await focusBoard(svc, NOW))))
+  })
+})
+
+// TASK-2704 — the git half served from a scan cache: a counting scan stub and a
+// clock the test moves.
+describe('GET /daily-report with a scan cache', () => {
+  let clock: number
+  let scanCalls: number
+  let gate: Promise<void> | null
+  let cachedServer: Server
+  let cachedBase: string
+
+  beforeEach(async () => {
+    clock = NOW
+    scanCalls = 0
+    gate = null
+    const scanCache = createScanCache({
+      now: () => clock,
+      scan: async (ws) => {
+        scanCalls++
+        if (gate) await gate
+        return scanResult(ws)
+      }
+    })
+    cachedServer = createServer((req, res) => {
+      void handleDailyReportRoute(req, res, { svc, now: () => clock, scanCache })
+    })
+    await new Promise<void>((r) => cachedServer.listen(0, '127.0.0.1', () => r()))
+    cachedBase = `http://127.0.0.1:${(cachedServer.address() as AddressInfo).port}`
+  })
+
+  afterEach(async () => {
+    await new Promise<void>((r) => cachedServer.close(() => r()))
+  })
+
+  const cached = async (query = ''): Promise<DailyReport> =>
+    (await (await fetch(`${cachedBase}/daily-report${query}`)).json()) as DailyReport
+  const iso = (ms: number): string => new Date(ms).toISOString()
+  const MIN = 60 * 1000
+
+  it('AC-1: two calls 1 minute apart run the scan once and share scannedAt', async () => {
+    const first = await cached()
+    clock += MIN
+    const second = await cached()
+    expect(scanCalls).toBe(1)
+    expect(first.coverage.scannedAt).toBe(iso(NOW))
+    expect(second.coverage.scannedAt).toBe(first.coverage.scannedAt)
+  })
+
+  it('AC-2: ?fresh=1 scans even when the cache is 1 minute old', async () => {
+    await cached()
+    clock += MIN
+    const r = await cached('?fresh=1')
+    expect(scanCalls).toBe(2)
+    expect(r.coverage.scannedAt).toBe(iso(NOW + MIN))
+  })
+
+  it('AC-3: a 6-minute-old cache answers at once, rescans once in the background, and the next call is new', async () => {
+    await cached()
+    clock += 6 * MIN
+    let release!: () => void
+    gate = new Promise<void>((r) => (release = r))
+    const stale = await cached()
+    expect(stale.coverage.scannedAt).toBe(iso(NOW))
+    expect(scanCalls).toBe(2)
+    const again = await cached()
+    expect(again.coverage.scannedAt).toBe(iso(NOW))
+    expect(scanCalls).toBe(2)
+    release()
+    await new Promise((r) => setTimeout(r, 20))
+    const next = await cached()
+    expect(next.coverage.scannedAt).toBe(iso(NOW + 6 * MIN))
+    expect(scanCalls).toBe(2)
+  })
+
+  it('AC-4: five concurrent calls on an empty cache start exactly one scan', async () => {
+    let release!: () => void
+    gate = new Promise<void>((r) => (release = r))
+    const pending = Promise.all(Array.from({ length: 5 }, () => cached()))
+    await new Promise((r) => setTimeout(r, 50))
+    release()
+    const all = await pending
+    expect(scanCalls).toBe(1)
+    expect(new Set(all.map((r) => r.coverage.scannedAt))).toEqual(new Set([iso(NOW)]))
+  })
+
+  it('AC-5: a repo cached as failed/timeout stays unscanned on a cached call, never dirty', async () => {
+    await svc.addWorkspace('p', 'w1', 'W1', path.join(tmp, 'w1'))
+    scanResult = (ws) =>
+      ws.map((w) => ({
+        ...okRepo(w),
+        toplevel: null,
+        state: 'failed',
+        reason: 'timeout',
+        dirtyFiles: null,
+        unmergedBranches: null,
+        prs: 'unknown'
+      }))
+    await cached()
+    clock += MIN
+    const r = await cached()
+    expect(scanCalls).toBe(1)
+    expect(r.coverage.workspaces.find((c) => c.id === 'w1')).toMatchObject({
+      state: 'failed',
+      reason: 'timeout'
+    })
+    const p = r.outstanding.projects.find((x) => x.projectId === 'p')!
+    expect(p.counts.unscannedWorkspaces).toBe(1)
+    expect(p.counts.dirtyWorkspaces).toBe(0)
+  })
+
+  it('AC-6: a task status change between two cached calls shows in the second call', async () => {
+    await svc.createTask({ id: 'TASK-9', projectId: 'p', title: 'moving', status: 'IN-PROGRESS' })
+    const before = await cached()
+    await svc.updateTask('TASK-9', { status: 'IMPLEMENTED' })
+    clock += MIN
+    const after = await cached()
+    expect(scanCalls).toBe(1)
+    const ids = (r: DailyReport): string[] =>
+      (r.outstanding.projects.find((x) => x.projectId === 'p')?.items ?? [])
+        .filter((i) => i.kind === 'implemented-not-done')
+        .map((i) => i.id)
+    expect(ids(before)).not.toContain('TASK-9')
+    expect(ids(after)).toContain('TASK-9')
   })
 })
