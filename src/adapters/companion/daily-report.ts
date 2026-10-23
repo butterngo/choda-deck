@@ -2,6 +2,7 @@
 // in one response, computed live on every call — no snapshot.
 //
 //   GET /daily-report?date=YYYY-MM-DD  (date optional, default planDate(now))
+//   GET /daily-report?fresh=1          (scan git now instead of serving the cache)
 //   200 { date, generatedAt, yesterday, today: { date, focus }, outstanding, coverage }
 //   400 { error: "invalid date: <value>" }
 //
@@ -12,6 +13,9 @@
 // is counted in unscannedWorkspaces and never in dirtyWorkspaces, so "nothing
 // outstanding" is something the report has proven. Focus per project comes from
 // resolveFocus (TASK-2686), the same definition the focus_board tool uses.
+//
+// TASK-2704 — with a scanCache the git half comes from memory (scan-cache.ts)
+// and coverage.scannedAt says how old it is; the SQL half stays live.
 
 import type { IncomingMessage, ServerResponse } from 'http'
 import type { InboxItem, Session, Task } from '../../core/domain/task-types'
@@ -25,6 +29,7 @@ import {
   type RepoScanState,
   type ScanWorkspaceInput
 } from '../../core/domain/daily/workspace-scan'
+import type { ScanCache } from '../../core/domain/daily/scan-cache'
 import { STALE_DAYS } from '../../core/domain/activity/session-reconcile'
 
 export const DAILY_REPORT_ROUTE = '/daily-report'
@@ -36,6 +41,8 @@ export type DailyReportDeps = {
   svc: FocusDeps & Pick<TaskOperations, 'listStatusChanges'> & Pick<InboxOperations, 'findInbox'>
   /** Defaults to scanWorkspaces with its own timeouts; injected in tests. */
   scan?: (workspaces: ScanWorkspaceInput[]) => Promise<RepoScan[]>
+  /** When set, the git scan is served from it instead of run on every call (TASK-2704). */
+  scanCache?: ScanCache
   now?: () => number
 }
 
@@ -104,6 +111,8 @@ export interface DailyReport {
   coverage: {
     total: number
     scanned: number
+    /** ISO time the git scan these numbers come from started. */
+    scannedAt: string
     workspaces: {
       id: string
       projectId: string
@@ -152,7 +161,11 @@ const byAt = (a: OutstandingItem, b: OutstandingItem): number => {
   return a.at.localeCompare(b.at)
 }
 
-export async function buildDailyReport(deps: DailyReportDeps, date: string): Promise<DailyReport> {
+export async function buildDailyReport(
+  deps: DailyReportDeps,
+  date: string,
+  opts: { fresh?: boolean } = {}
+): Promise<DailyReport> {
   const nowMs = deps.now?.() ?? Date.now()
   const svc = deps.svc
   const yesterday = addDays(date, -1)
@@ -284,7 +297,14 @@ export async function buildDailyReport(deps: DailyReportDeps, date: string): Pro
     for (const w of await svc.findWorkspaces(p.id))
       workspaces.push({ id: w.id, projectId: p.id, cwd: w.cwd })
   }
-  const scans = await (deps.scan ?? ((ws) => scanWorkspaces(ws)))(workspaces)
+  let scans: RepoScan[]
+  let scannedAt: string
+  if (deps.scanCache) {
+    ;({ scans, scannedAt } = await deps.scanCache.get(workspaces, { fresh: opts.fresh }))
+  } else {
+    scannedAt = new Date(deps.now?.() ?? Date.now()).toISOString()
+    scans = await (deps.scan ?? ((ws) => scanWorkspaces(ws)))(workspaces)
+  }
   const wsById = new Map(workspaces.map((w) => [w.id, w]))
   const coverage: DailyReport['coverage']['workspaces'] = []
 
@@ -381,6 +401,7 @@ export async function buildDailyReport(deps: DailyReportDeps, date: string): Pro
     coverage: {
       total: workspaces.length,
       scanned: coverage.filter((c) => c.state === 'ok').length,
+      scannedAt,
       workspaces: coverage
     }
   }
@@ -411,6 +432,7 @@ export async function handleDailyReportRoute(
     }
     date = parsed
   }
-  sendJson(res, 200, await buildDailyReport(deps, date))
+  const fresh = url.searchParams.get('fresh') === '1'
+  sendJson(res, 200, await buildDailyReport(deps, date, { fresh }))
   return true
 }
