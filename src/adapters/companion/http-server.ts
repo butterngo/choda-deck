@@ -34,6 +34,10 @@ import { handleVaultRoute } from './vault'
 import { handleClaudeConfigRoute } from './claude-config'
 import { handleAcReviewRoute } from './ac-review'
 import { handleAssistantRoute } from './assistant-routes'
+import { handleAssistantMessageRoute } from './assistant-chat'
+import { createAssistantTools } from './assistant-tools'
+import { createAssistantReadServices } from './assistant-read-services'
+import { planDate } from '../../core/domain/daily/plan-date'
 import { handleDockerRoute } from './docker-containers'
 import { handleDockerActionRoute } from './docker-actions'
 import { handleDockerImageRoute } from './docker-images'
@@ -45,7 +49,7 @@ import { handleWorkspaceDocsRoute } from './workspace-docs'
 import { handleWorkspaceDiagramRoute } from './mermaid-check'
 import { handleWorkspaceSymbolsRoute } from './workspace-symbols'
 import { handleWorkspaceCommitsRoute } from './workspace-commits'
-import { handleDailyReportRoute } from './daily-report'
+import { handleDailyReportRoute, buildDailyReport } from './daily-report'
 import { createScanCache } from '../../core/domain/daily/scan-cache'
 import { handleConversationDetailRoute } from './conversation-detail'
 import {
@@ -307,6 +311,30 @@ async function route(
       svc: services.svc,
       dataDir: services.dataDir,
       fetchImpl: services.fetchImpl as typeof fetch | undefined
+    })
+  ) {
+    return
+  }
+
+  // TASK-2735 — the one assistant route that spends money: one message, at most
+  // 8 read-only tool calls (ADR adr-when-this-project-may-call-a-model, 2026-10-24).
+  if (
+    await handleAssistantMessageRoute(req, res, {
+      bridgeToken: services.bridgeToken,
+      store: services.assistantStore ?? null,
+      dataDir: services.dataDir,
+      fetchImpl: services.fetchImpl as typeof fetch | undefined,
+      tools: () =>
+        createAssistantTools(
+          createAssistantReadServices({
+            svc: services.svc,
+            artifactsDir: services.artifactsDir,
+            vaultDir: services.vaultDir,
+            store: services.assistantStore ?? null,
+            dailyReport: (date) =>
+              buildDailyReport({ svc: services.svc, scanCache: dailyScanCache }, date ?? planDate(Date.now()))
+          })
+        )
     })
   ) {
     return
