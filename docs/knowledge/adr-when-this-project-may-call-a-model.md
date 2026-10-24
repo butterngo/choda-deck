@@ -114,3 +114,44 @@ a bounded exception:
 
 No other scheduled or background model call is covered by this amendment. A
 new one needs its own amendment.
+
+## Amendment — 2026-10-24: companion chat assistant
+
+TASK-2732, for goal TASK-2731 (discovery
+`docs/reports/companion-chat-assistant-discovery.md`, thread
+CONV-1792821501482-50). The companion's chat assistant answers a question by
+calling read-only tools, so one message can lead to several model calls. Point 2
+("one subject per call, a tool never fans out internally") does not cover that.
+It is allowed as a bounded exception:
+
+* **One user message is one explicit request.** Nothing calls the model on page
+  load, on opening a chat or on changing the model; only pressing Send does
+  (point 1). One message runs **at most 8 executed tool calls**. When the eighth
+  has run, the loop makes **one final call with `tool_choice: 'none'`**, so the
+  model must answer with what it has, and the reply is marked `capped`.
+* **Every tool in the loop is read-only.** The tool registry is built from a
+  service interface that exposes only list, get and search methods. A tool that
+  creates, updates or deletes anything is not covered here and **needs its own
+  amendment**.
+* **A per-chat token budget.** Each chat has a budget, **default 300000 tokens,
+  allowed 200000–400000**, set when the chat is created. It is **checked before
+  the first call of a message**: a chat at or over its budget refuses the
+  message with no provider call. One message may finish past the budget; the
+  next one is refused. Tokens come from the response `usage`
+  (`prompt_tokens + completion_tokens`); when `usage` is missing, an estimate
+  is recorded and marked as one. Steps and tokens are shown under every reply.
+* **Tool output is redacted and capped before it reaches the provider.** Every
+  IPv4 address becomes `[ip]` and every line naming a password, token, secret,
+  API key or connection string becomes `[line redacted]`; the result is then
+  **capped at 16000 characters**. The vault holds client infrastructure notes,
+  which is why this is a rule and not an option.
+* **Chats stay on this machine.** They are stored in their own tables, which are
+  not in the remote sync allowlist (`src/core/sync/sync-apply.ts`).
+* **Points 1, 4, 5 and 6 still hold:** no call without a sent message, **no
+  automatic retry** (`rate_limit` and the other `AiError` kinds are shown to the
+  user), **no remote surface** (the routes live in the companion adapter and
+  nothing is added to `REMOTE_TOOL_ALLOWLIST`), and the key stays in
+  **`ai-key.txt`**; a provider's response body is never forwarded.
+
+No other multi-call loop is covered by this amendment. A new one needs its own
+amendment.
