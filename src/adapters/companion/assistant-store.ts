@@ -175,6 +175,31 @@ export class AssistantStore {
     return toMessage(row)
   }
 
+  /** Chats whose user or assistant messages contain every word, newest first. */
+  searchChats(query: string, limit: number): { id: string; title: string; updatedAt: string; match: string }[] {
+    const words = query
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((w) => w.length > 0)
+    if (words.length === 0) return []
+    const where = words.map(() => 'instr(lower(m.content), ?) > 0').join(' AND ')
+    const rows = this.db
+      .prepare(
+        `SELECT c.id, c.title, c.updated_at, m.content
+           FROM assistant_messages m JOIN assistant_chats c ON c.id = m.chat_id
+          WHERE m.role IN ('user','assistant') AND m.content IS NOT NULL AND ${where}
+          ORDER BY c.updated_at DESC`
+      )
+      .all(...words) as { id: string; title: string; updated_at: string; content: string }[]
+    const out: { id: string; title: string; updatedAt: string; match: string }[] = []
+    for (const r of rows) {
+      if (out.some((o) => o.id === r.id)) continue
+      out.push({ id: r.id, title: r.title, updatedAt: r.updated_at, match: r.content.slice(0, 200) })
+      if (out.length >= limit) break
+    }
+    return out
+  }
+
   addTokens(chatId: string, tokens: number): AssistantChat | null {
     this.db
       .prepare('UPDATE assistant_chats SET tokens_used = tokens_used + ?, updated_at = ? WHERE id = ?')

@@ -138,7 +138,7 @@ function summarize(slug: string, text: string): VaultNoteSummary {
 }
 
 /** Resolve `rel` under `root`, or null if it would escape. */
-function safeResolve(root: string, rel: string): string | null {
+export function safeResolve(root: string, rel: string): string | null {
   if (rel.length === 0 || hasTraversal(rel)) return null
   const resolvedRoot = path.resolve(root)
   const target = path.resolve(resolvedRoot, rel)

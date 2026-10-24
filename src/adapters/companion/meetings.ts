@@ -513,6 +513,8 @@ export async function handleMeetingsRoute(
     }
     await handleMeetingFiles(req, res, {
       vaultDir: opts.vaultDir,
+      // TASK-2734 — where a reviewed note is kept for the chat assistant.
+      meetingDir: meetingDir(artifactsDir, id as string),
       findWorkspace: opts.findWorkspace ?? (async () => null)
     })
     return true
