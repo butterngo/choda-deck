@@ -33,6 +33,7 @@ import { handleConversationSignoffRoute } from './conversation-signoff'
 import { handleVaultRoute } from './vault'
 import { handleClaudeConfigRoute } from './claude-config'
 import { handleAcReviewRoute } from './ac-review'
+import { handleAssistantRoute } from './assistant-routes'
 import { handleDockerRoute } from './docker-containers'
 import { handleDockerActionRoute } from './docker-actions'
 import { handleDockerImageRoute } from './docker-images'
@@ -304,6 +305,19 @@ async function route(
     await handleAcReviewRoute(req, res, {
       bridgeToken: services.bridgeToken,
       svc: services.svc,
+      dataDir: services.dataDir,
+      fetchImpl: services.fetchImpl as typeof fetch | undefined
+    })
+  ) {
+    return
+  }
+
+  // TASK-2733 — the chat assistant's free routes (models, chats). Token-gated;
+  // owns its POST, so it sits before the GET-only guard.
+  if (
+    await handleAssistantRoute(req, res, {
+      bridgeToken: services.bridgeToken,
+      store: services.assistantStore ?? null,
       dataDir: services.dataDir,
       fetchImpl: services.fetchImpl as typeof fetch | undefined
     })
