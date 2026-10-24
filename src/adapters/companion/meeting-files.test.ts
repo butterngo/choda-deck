@@ -226,3 +226,37 @@ describe('AC-7 — an unregistered workspace writes nothing anywhere', () => {
     expect(treeHash(repoDir)).toBe(repoBefore)
   })
 })
+
+describe('TASK-2734 — a reviewed note is kept beside the meeting for the chat assistant', () => {
+  const noteFile = (): string => path.join(artifactsDir, 'meetings', 'm1', 'note.json')
+  const structured = { tldr: 't', decisions: [{ text: 'Ship v2 on Friday', atMs: 1000 }], actions: [] }
+
+  beforeEach(() => {
+    fs.mkdirSync(path.join(artifactsDir, 'meetings', 'm1'), { recursive: true })
+    fs.rmSync(noteFile(), { force: true })
+  })
+
+  it('a save carrying a note writes note.json with that note', async () => {
+    const r = await put(body({ note: structured }))
+    expect(r.status).toBe(201)
+    const stored = JSON.parse(fs.readFileSync(noteFile(), 'utf8')) as { note: typeof structured }
+    expect(stored.note.decisions).toEqual(structured.decisions)
+  })
+
+  it('a save without a note writes no note.json', async () => {
+    expect((await put(body())).status).toBe(201)
+    expect(fs.existsSync(noteFile())).toBe(false)
+  })
+
+  it('a refused save (409) writes no note.json', async () => {
+    expect((await put(body())).status).toBe(201)
+    expect((await put(body({ note: structured }))).status).toBe(409)
+    expect(fs.existsSync(noteFile())).toBe(false)
+  })
+
+  it('a note without a decisions array is a 400', async () => {
+    const r = await put(body({ note: { tldr: 'x' } }))
+    expect(r.status).toBe(400)
+    expect(r.json.error).toBe('note must be an object with a decisions array')
+  })
+})

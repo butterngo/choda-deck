@@ -25,6 +25,13 @@ import type { IncomingMessage, ServerResponse } from 'http'
 import { readRawBody, writeAtomic } from './atomic-file'
 
 export const MEETING_FILE_NAMES = ['transcript.md', 'note.md'] as const
+
+/**
+ * TASK-2734 — the reviewed note, structured, kept beside the meeting's meta.json
+ * when a save carries one. The chat assistant's get_meeting tool reads it.
+ * Drafting still writes nothing (TASK-1992 AC-10): only a save after review does.
+ */
+export const NOTE_FILE = 'note.json'
 export type MeetingFileName = (typeof MEETING_FILE_NAMES)[number]
 
 export const REPO_MEETINGS_DIR = path.join('docs', 'meetings')
@@ -41,6 +48,8 @@ export interface MeetingFilesRequest {
   files: Array<{ name: MeetingFileName; markdown: string }>
   alsoRepo: boolean
   keepOutOfGit: boolean
+  /** TASK-2734 — the reviewed structured note, or null when the save carries none. */
+  note: Record<string, unknown> | null
 }
 
 export interface RegisteredWorkspace {
@@ -50,6 +59,8 @@ export interface RegisteredWorkspace {
 
 export interface MeetingFilesOptions {
   vaultDir?: string
+  /** TASK-2734 — this meeting's artifacts directory; a carried note is written there. */
+  meetingDir?: string
   /** Look a workspace up by id in the registry. Null when not registered. */
   findWorkspace: (id: string) => Promise<RegisteredWorkspace | null>
 }
@@ -86,6 +97,14 @@ export function parseMeetingFilesRequest(raw: unknown): MeetingFilesRequest | st
     files.push({ name: f.name as MeetingFileName, markdown: f.markdown })
   }
 
+  const note = b.note ?? null
+  if (
+    note !== null &&
+    (typeof note !== 'object' || Array.isArray(note) || !Array.isArray((note as Record<string, unknown>).decisions))
+  ) {
+    return 'note must be an object with a decisions array'
+  }
+
   const alsoRepo = b.alsoRepo === true
   if (alsoRepo && workspaceId === null) return 'alsoRepo needs a workspaceId'
 
@@ -97,7 +116,8 @@ export function parseMeetingFilesRequest(raw: unknown): MeetingFilesRequest | st
     files,
     alsoRepo,
     // Default ON: forgetting the field must not put client content into git.
-    keepOutOfGit: b.keepOutOfGit !== false
+    keepOutOfGit: b.keepOutOfGit !== false,
+    note: note as Record<string, unknown> | null
   }
 }
 
@@ -182,6 +202,14 @@ export async function handleMeetingFiles(
   for (const t of targets) {
     writeAtomic(t.path, Buffer.from(t.file.markdown, 'utf8'))
     written.push(t.path)
+  }
+  // TASK-2734 — after the files, so a refused save stores nothing. Not listed in
+  // `written`: it is the companion's own copy, not a file Butter asked for.
+  if (request.note && opts.meetingDir && fs.existsSync(opts.meetingDir)) {
+    writeAtomic(
+      path.join(opts.meetingDir, NOTE_FILE),
+      Buffer.from(JSON.stringify({ note: request.note, savedAt: new Date().toISOString() }, null, 2), 'utf8')
+    )
   }
   sendJson(res, 201, { written })
 }
