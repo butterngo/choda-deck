@@ -9,7 +9,7 @@ import * as path from 'path'
 import Database from 'better-sqlite3'
 import { initSchema } from '../../core/domain/repositories/schema'
 import { cap, redact } from './assistant-redact'
-import { createAssistantTools } from './assistant-tools'
+import { createAssistantTools, type AssistantReadServices } from './assistant-tools'
 import { createAssistantReadServices, type AssistantTaskReads } from './assistant-read-services'
 import { AssistantStore } from './assistant-store'
 
@@ -209,5 +209,43 @@ describe('registry', () => {
     }
     const called = [...writes.entries()].filter(([, spy]) => spy.mock.calls.length > 0).map(([n]) => n)
     expect(called).toEqual([])
+  })
+})
+
+describe('TASK-2743 — redaction masks string values, not the whole JSON result', () => {
+  const body = ['## Context', 'uses x-choda-bridge-token', 'plain line'].join('\n')
+  const stub = (over: Partial<AssistantReadServices>): AssistantReadServices =>
+    ({ getTask: async () => ({ id: 'TASK-9', status: 'IMPLEMENTED', body }), ...over }) as unknown as AssistantReadServices
+
+  it('keeps the status field of a task whose body names a secret', async () => {
+    const out = JSON.parse(await createAssistantTools(stub({})).execute('get_task', '{"id":"TASK-9"}')) as {
+      status: string
+    }
+    expect(out.status).toBe('IMPLEMENTED')
+  })
+
+  it('redacts only the offending body line and leaves the others unchanged', async () => {
+    const out = JSON.parse(await createAssistantTools(stub({})).execute('get_task', '{"id":"TASK-9"}')) as {
+      body: string
+    }
+    expect(out.body.split('\n')).toEqual(['## Context', '[line redacted]', 'plain line'])
+  })
+
+  it('turns an IPv4 inside a nested string value into [ip]', async () => {
+    const t = createAssistantTools(stub({ getTask: async () => ({ a: { b: 'host 10.20.30.40' } }) }))
+    const out = JSON.parse(await t.execute('get_task', '{"id":"x"}')) as { a: { b: string } }
+    expect(out.a.b).toBe('host [ip]')
+  })
+
+  it('keeps line-level redaction on a plain string result (a vault note)', async () => {
+    const t = createAssistantTools(stub({ readVaultNote: async () => 'intro\npassword: x\noutro' }))
+    expect(await t.execute('read_vault_note', '{"path":"30-Knowledge/a.md"}')).toBe('intro\n[line redacted]\noutro')
+  })
+
+  it('still caps a long result with \n[truncated]', async () => {
+    const t = createAssistantTools(stub({ getTask: async () => ({ body: 'z'.repeat(20000) }) }))
+    const out = await t.execute('get_task', '{"id":"x"}')
+    expect(out.length).toBe(16000 + '\n[truncated]'.length)
+    expect(out.endsWith('\n[truncated]')).toBe(true)
   })
 })
