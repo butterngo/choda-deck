@@ -91,6 +91,31 @@ describe('resolveWorkspaceId', () => {
     ).toThrow(WorkspaceResolutionError)
   })
 
+  it('maps a cwd inside the <ws>.worktrees/<name> sibling to the workspace (TASK-2726)', () => {
+    const id = resolveWorkspaceId({
+      cwd: path.join(`${ROOT}.worktrees`, 'autopilot-TASK-1', 'src'),
+      workspaces: [ws('root', ROOT), ws('other', OTHER)]
+    })
+    expect(id).toBe('root')
+  })
+
+  it('worktrees of sibling repos sharing a prefix resolve to their own workspace (TASK-2726)', () => {
+    const deck = path.resolve('/dev/choda-deck')
+    const companion = path.resolve('/dev/choda-deck-companion')
+    const workspaces = [ws('main', deck), ws('choda-deck-companion', companion)]
+    expect(resolveWorkspaceId({ cwd: path.join(`${companion}.worktrees`, 'x'), workspaces })).toBe('choda-deck-companion')
+    expect(resolveWorkspaceId({ cwd: path.join(`${deck}.worktrees`, 'x'), workspaces })).toBe('main')
+  })
+
+  it('the .worktrees folder itself is not a checkout and throws (TASK-2726)', () => {
+    expect(() =>
+      resolveWorkspaceId({
+        cwd: `${ROOT}.worktrees`,
+        workspaces: [ws('root', ROOT)]
+      })
+    ).toThrow(WorkspaceResolutionError)
+  })
+
   it('normalizes trailing separators', () => {
     const id = resolveWorkspaceId({
       cwd: ROOT + path.sep,

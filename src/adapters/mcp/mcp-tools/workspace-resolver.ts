@@ -17,6 +17,22 @@ function isDescendantOrEqual(parent: string, child: string): boolean {
   return !path.isAbsolute(rel)
 }
 
+// TASK-2726 — a run worktree lives BESIDE its workspace, at
+// `<workspaceCwd>.worktrees/<name>` (src/core/worktree-path.ts). Returns the
+// normalized worktree root when `cwd` is inside one of `wsCwd`'s worktrees,
+// else null. The `.worktrees` folder itself is not a checkout.
+function worktreeRootFor(wsCwd: string, cwd: string): string | null {
+  const base = `${wsCwd}.worktrees`
+  if (cwd === base || !isDescendantOrEqual(base, cwd)) return null
+  return path.join(base, path.relative(base, cwd).split(/[\\/]/)[0])
+}
+
+/** Length of the checkout `cwd` sits in for workspace `wsCwd`, or -1 when it is in none. */
+function matchedRootLength(wsCwd: string, cwd: string): number {
+  if (isDescendantOrEqual(wsCwd, cwd)) return wsCwd.length
+  return worktreeRootFor(wsCwd, cwd)?.length ?? -1
+}
+
 export interface ResolveWorkspaceInput {
   explicitWorkspaceId?: string
   cwd?: string
@@ -39,9 +55,9 @@ export function resolveWorkspaceId(input: ResolveWorkspaceInput): string | null 
 
   const normalizedCwd = normalize(cwd)
   const matches = workspaces
-    .map((w) => ({ workspace: w, normalized: normalize(w.cwd) }))
-    .filter((m) => isDescendantOrEqual(m.normalized, normalizedCwd))
-    .sort((a, b) => b.normalized.length - a.normalized.length)
+    .map((w) => ({ workspace: w, rootLength: matchedRootLength(normalize(w.cwd), normalizedCwd) }))
+    .filter((m) => m.rootLength >= 0)
+    .sort((a, b) => b.rootLength - a.rootLength)
 
   if (matches.length === 0) {
     const list = workspaces.map((w) => `  - ${w.id} (${w.cwd})`).join('\n')

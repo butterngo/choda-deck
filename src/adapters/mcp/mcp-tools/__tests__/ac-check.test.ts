@@ -199,6 +199,22 @@ describe('ac_check MCP tool — integration via SqliteTaskService', () => {
     expect(payload.text).toMatch(/^First criterion/)
   })
 
+  it('ticks from a cwd inside the workspace .worktrees sibling (autopilot run, TASK-2726)', async () => {
+    const session = await svc.startSession({ projectId: 'proj-ac', taskId: 'TASK-AC', workspaceId: 'ws-main' })
+
+    const out = await callAcCheck({
+      taskId: 'TASK-AC',
+      acIndex: 0,
+      evidence: 'ticked from the run worktree',
+      cwd: 'C:/tmp/proj-ac.worktrees/autopilot-TASK-1'
+    })
+
+    expect(out.error).toBeUndefined()
+    expect(out.sessionId).toBe(session.session.id)
+    const after = await svc.getTask('TASK-AC')!
+    expect(findAcItems(after.body ?? '')[0].checked).toBe(true)
+  })
+
   it('returns NO_ACTIVE_SESSION error when no session is active for the workspace', async () => {
     const out = await callAcCheck({
       taskId: 'TASK-AC',
