@@ -51,6 +51,7 @@ export function initSchema(db: Database.Database): void {
   createM1Tables(db)
   createM2Tables(db)
   createInvestigationTables(db)
+  createAssistantTables(db)
   dropLegacyOAuthTables(db)
   addSyncColumns(db)
   createSyncClockTables(db)
@@ -864,6 +865,40 @@ function createM2Tables(db: Database.Database): void {
       at TEXT NOT NULL
     )
   `)
+}
+
+// TASK-2733 — the companion chat assistant's history. Local only: deliberately
+// NOT in SYNCABLE_TABLES / APPLY_TABLES. A chat carries text the assistant read
+// from the vault (redacted, but still client context), and the remote sync
+// allowlist already ships conversations; these tables must never follow them.
+function createAssistantTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS assistant_chats (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      model TEXT,
+      token_budget INTEGER NOT NULL DEFAULT 300000,
+      tokens_used INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS assistant_messages (
+      id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL REFERENCES assistant_chats(id),
+      role TEXT NOT NULL CHECK (role IN ('user','assistant','tool')),
+      content TEXT,
+      tool_name TEXT,
+      tool_call_id TEXT,
+      model TEXT,
+      prompt_tokens INTEGER,
+      completion_tokens INTEGER,
+      tokens_estimated INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    )
+  `)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_assistant_messages_chat ON assistant_messages(chat_id, created_at)')
 }
 
 // ADR-035 (TASK-603): Investigation domain object — a first-class, stdio-only
