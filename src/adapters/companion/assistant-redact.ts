@@ -29,3 +29,20 @@ export function redact(text: string): string {
 export function cap(text: string): string {
   return text.length > CAP_CHARS ? text.slice(0, CAP_CHARS) + TRUNCATED_MARKER : text
 }
+
+/**
+ * TASK-2743 — redact every string VALUE inside a tool result, line by line,
+ * before it is serialised. Redacting the serialised JSON instead was wrong:
+ * JSON.stringify yields ONE line, so a single secret-naming word anywhere (a
+ * task body mentioning x-choda-bridge-token) wiped the whole result, status
+ * and all, and the model answered "UNKNOWN" (TASK-2731 smoke, 2026-10-24).
+ * Keys are left alone: a field called tokenBudget names no secret.
+ */
+export function redactDeep(value: unknown): unknown {
+  if (typeof value === 'string') return redact(value)
+  if (Array.isArray(value)) return value.map(redactDeep)
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, redactDeep(v)]))
+  }
+  return value
+}

@@ -10,7 +10,7 @@
 // service all come back as `{"error": …}` for the model to read, and the loop
 // carries on. Every result is redacted, then capped, before it is returned.
 
-import { cap, redact } from './assistant-redact'
+import { cap, redact, redactDeep } from './assistant-redact'
 
 /** The read-only surface the tools are allowed to touch. Nothing here may write. */
 export interface AssistantReadServices {
@@ -234,8 +234,10 @@ export interface AssistantTools {
 }
 
 function finish(value: unknown): string {
-  const text = typeof value === 'string' ? value : JSON.stringify(value ?? null)
-  return cap(redact(text))
+  // A plain string (a vault note) is redacted line by line; anything else has
+  // its string values redacted BEFORE it becomes one line of JSON (TASK-2743).
+  const text = typeof value === 'string' ? redact(value) : JSON.stringify(redactDeep(value ?? null))
+  return cap(text)
 }
 
 export function createAssistantTools(read: AssistantReadServices): AssistantTools {
