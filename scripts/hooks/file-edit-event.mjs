@@ -36,6 +36,15 @@
  * Fallback: if stdin is empty, reads `$CLAUDE_TOOL_INPUT` env var (legacy /
  * hand-test convention) and uses `process.cwd()` for workspace resolution.
  *
+ * ## Gotcha surfacing (TASK-2722)
+ *
+ * When the edited file is named in the frontmatter `refs[].path` of a gotcha
+ * filed under the workspace's `docs/knowledge/`, stdout carries ONE line
+ * `{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":…}}`
+ * naming it, and a `kind='gotcha_surfaced'` observation is recorded — once per
+ * gotcha per session. A cwd inside `<workspaceCwd>.worktrees/<name>` (an
+ * autopilot run) resolves to that workspace.
+ *
  * ## Safety contract
  *
  * - Never crashes the host Edit — all error paths write to stderr and exit 0.
@@ -79,17 +88,128 @@ function isDescendantOrEqual(parent, child) {
   if (rel.startsWith('..')) return false
   return !path.isAbsolute(rel)
 }
-export function resolveWorkspaceIdForCwd(db, cwd) {
+// TASK-2722 — a run worktree lives BESIDE its workspace, at
+// `<workspaceCwd>.worktrees/<name>` (src/core/worktree-path.ts), so plain
+// descendant matching never sees an autopilot run. Returns the worktree root
+// when `normCwd` is inside one of `normWs`'s worktrees, else null.
+function worktreeRootFor(normWs, normCwd) {
+  const base = `${normWs}.worktrees`
+  if (!isDescendantOrEqual(base, normCwd) || normCwd === base) return null
+  const first = path.relative(base, normCwd).split(/[\\/]/)[0]
+  return path.join(base, first)
+}
+
+/**
+ * Resolve the workspace a cwd belongs to. `root` is the checkout the cwd sits
+ * in — the workspace cwd itself, or the `.worktrees/<name>` sibling — in the
+ * caller's original casing, so repo-relative paths come out readable.
+ * Longest root wins, so `C:\dev\x-companion` never resolves to `C:\dev\x`.
+ */
+export function resolveWorkspaceForCwd(db, cwd) {
   if (!cwd) return null
   const rows = db
     .prepare("SELECT id, cwd FROM workspaces WHERE archived_at IS NULL")
     .all()
+  const resolvedCwd = path.resolve(cwd)
   const normCwd = normalizePath(cwd)
-  const matches = rows
-    .map((w) => ({ id: w.id, norm: normalizePath(w.cwd) }))
-    .filter((m) => isDescendantOrEqual(m.norm, normCwd))
-    .sort((a, b) => b.norm.length - a.norm.length)
-  return matches.length > 0 ? matches[0].id : null
+  const matches = []
+  for (const w of rows) {
+    const normWs = normalizePath(w.cwd)
+    if (isDescendantOrEqual(normWs, normCwd)) {
+      matches.push({ id: w.id, cwd: w.cwd, root: w.cwd, rootLen: normWs.length })
+      continue
+    }
+    const wt = worktreeRootFor(normWs, normCwd)
+    if (wt) {
+      matches.push({ id: w.id, cwd: w.cwd, root: resolvedCwd.slice(0, wt.length), rootLen: wt.length })
+    }
+  }
+  matches.sort((a, b) => b.rootLen - a.rootLen)
+  if (matches.length === 0) return null
+  const { id, cwd: workspaceCwd, root } = matches[0]
+  return { id, cwd: workspaceCwd, root }
+}
+
+export function resolveWorkspaceIdForCwd(db, cwd) {
+  return resolveWorkspaceForCwd(db, cwd)?.id ?? null
+}
+
+// ── gotcha surfacing (TASK-2722) ──────────────────────────────────────────────
+// A gotcha "guards" every file its frontmatter `refs[].path` names. When one of
+// those files is edited, the hook hands the gotcha to the agent once per session
+// via PostToolUse `additionalContext`, and records a `gotcha_surfaced`
+// observation so the surfacing can be evaluated later.
+
+const toRelKey = (p) => {
+  const posix = p.replace(/\\/g, '/').replace(/^\.\//, '')
+  return isWindows ? posix.toLowerCase() : posix
+}
+
+/** `refs[].path` values from a knowledge file's frontmatter, [] when none. */
+export function parseFrontmatterRefPaths(text) {
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)
+  if (!fm) return []
+  const lines = fm[1].split(/\r?\n/)
+  const start = lines.findIndex((l) => /^refs:\s*$/.test(l))
+  if (start < 0) return []
+  const out = []
+  for (const line of lines.slice(start + 1)) {
+    if (/^\S/.test(line)) break // next top-level key ends the block
+    const m = /^\s*-?\s*path:\s*["']?([^"'\r\n]+?)["']?\s*$/.exec(line)
+    if (m) out.push(m[1])
+  }
+  return out
+}
+
+/**
+ * Gotchas filed under the workspace's `docs/knowledge/` whose refs name
+ * `relPath` and that this session has not surfaced yet. A gotcha whose file is
+ * missing or unreadable is skipped.
+ */
+export function findGotchasToSurface(db, { sessionId, workspaceCwd, relPath }) {
+  const knowledgeDir = normalizePath(path.join(workspaceCwd, 'docs', 'knowledge'))
+  const already = new Set()
+  const prior = db
+    .prepare(
+      "SELECT payload_json FROM session_events WHERE session_id = ? AND event_type = 'observation' AND payload_json LIKE '%gotcha_surfaced%'"
+    )
+    .all(sessionId)
+  for (const row of prior) {
+    try {
+      const p = JSON.parse(row.payload_json)
+      if (p?.kind === 'gotcha_surfaced' && typeof p.slug === 'string') already.add(p.slug)
+    } catch {
+      /* malformed payload — ignore */
+    }
+  }
+
+  const key = toRelKey(relPath)
+  const gotchas = db
+    .prepare("SELECT slug, title, file_path FROM knowledge_index WHERE type = 'gotcha' ORDER BY slug")
+    .all()
+  const hits = []
+  for (const g of gotchas) {
+    if (already.has(g.slug)) continue
+    if (!isDescendantOrEqual(knowledgeDir, normalizePath(g.file_path))) continue
+    let text
+    try {
+      text = fs.readFileSync(g.file_path, 'utf8')
+    } catch {
+      continue
+    }
+    if (parseFrontmatterRefPaths(text).some((r) => toRelKey(r) === key)) {
+      hits.push({ slug: g.slug, title: g.title })
+    }
+  }
+  return hits
+}
+
+/** The single stdout line Claude Code reads, or null when nothing surfaced. */
+export function formatHookOutput(result) {
+  if (!result?.additionalContext) return null
+  return JSON.stringify({
+    hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: result.additionalContext }
+  })
 }
 
 // ── event-id generation ───────────────────────────────────────────────────────
@@ -215,8 +335,10 @@ export function runHook({ stdinJson, envToolInput, cwdOverride, dbPathOverride }
   try {
     db.pragma('foreign_keys = ON')
 
-    const workspaceId = resolveWorkspaceIdForCwd(db, cwd ?? process.cwd())
-    if (!workspaceId) return { skipped: 'no-workspace-match' }
+    const effectiveCwd = cwd ?? process.cwd()
+    const workspace = resolveWorkspaceForCwd(db, effectiveCwd)
+    if (!workspace) return { skipped: 'no-workspace-match' }
+    const workspaceId = workspace.id
 
     const session = db
       .prepare(
@@ -242,7 +364,42 @@ export function runHook({ stdinJson, envToolInput, cwdOverride, dbPathOverride }
       insert.run(id, session.id, payloadJson, ts)
       eventIds.push(id)
     }
-    return { ok: true, sessionId: session.id, workspaceId, eventIds }
+
+    // Surfacing must never cost the file_modified event above or the host
+    // Edit: any failure here (no knowledge_index, unreadable file) surfaces nothing.
+    const surfaced = []
+    const lines = []
+    try {
+      for (const mod of modifications) {
+        const abs = path.resolve(effectiveCwd, mod.path)
+        const relPath = path.relative(workspace.root, abs).replace(/\\/g, '/')
+        if (relPath.startsWith('..') || path.isAbsolute(relPath)) continue
+        const hits = findGotchasToSurface(db, { sessionId: session.id, workspaceCwd: workspace.cwd, relPath })
+        if (hits.length === 0) continue
+        lines.push(`Gotchas guarding ${relPath} — read before continuing:`)
+        for (const g of hits) {
+          insert.run(
+            generateEventId(),
+            session.id,
+            JSON.stringify({ kind: 'gotcha_surfaced', slug: g.slug, path: relPath }),
+            ts
+          )
+          surfaced.push(g.slug)
+          lines.push(`- ${g.title} (knowledge_get "${g.slug}")`)
+        }
+      }
+    } catch (err) {
+      process.stderr.write(`[file-edit-event] gotcha lookup skipped: ${err.message ?? err}\n`)
+    }
+
+    return {
+      ok: true,
+      sessionId: session.id,
+      workspaceId,
+      eventIds,
+      surfaced,
+      ...(lines.length > 0 ? { additionalContext: lines.join('\n') } : {})
+    }
   } finally {
     db.close()
   }
@@ -280,7 +437,30 @@ function runSelfTest() {
       memory_candidate INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE knowledge_index (
+      slug TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      file_path TEXT NOT NULL
+    );
   `)
+  // A real on-disk workspace whose gotcha guards src/guarded.ts.
+  const guardedWs = path.join(tmp, 'guarded-ws')
+  const gotchaFile = path.join(guardedWs, 'docs', 'knowledge', 'selftest-gotcha.md')
+  fs.mkdirSync(path.dirname(gotchaFile), { recursive: true })
+  fs.writeFileSync(
+    gotchaFile,
+    '---\ntype: gotcha\ntitle: Self-test gotcha\nrefs:\n  - path: src/guarded.ts\n    commitSha: abc\n---\nbody\n'
+  )
+  db.prepare(
+    "INSERT INTO workspaces (id, project_id, label, cwd, archived_at) VALUES ('ws-guarded', 'proj', 'Guarded', ?, NULL)"
+  ).run(guardedWs)
+  db.prepare(
+    "INSERT INTO sessions (id, project_id, workspace_id, task_id, status, started_at) VALUES ('SESSION-guarded', 'proj', 'ws-guarded', NULL, 'active', ?)"
+  ).run(new Date().toISOString())
+  db.prepare(
+    "INSERT INTO knowledge_index (slug, type, title, file_path) VALUES ('selftest-gotcha', 'gotcha', 'Self-test gotcha', ?)"
+  ).run(gotchaFile)
   const fakeCwd = isWindows ? 'C:\\tmp\\selftest-ws' : '/tmp/selftest-ws'
   db.prepare(
     "INSERT INTO workspaces (id, project_id, label, cwd, archived_at) VALUES ('ws-selftest', 'proj', 'Self Test', ?, NULL)"
@@ -328,6 +508,30 @@ function runSelfTest() {
       console.error(`[self-test] ${c.label}: expected ok=true, got`, r)
       process.exit(1)
     }
+    if (r.surfaced.length !== 0) {
+      console.error(`[self-test] ${c.label}: expected nothing surfaced, got`, r.surfaced)
+      process.exit(1)
+    }
+  }
+  const guardedEdit = JSON.stringify({
+    cwd: guardedWs,
+    tool_name: 'Edit',
+    tool_input: { file_path: path.join(guardedWs, 'src', 'guarded.ts'), old_string: 'a', new_string: 'b' }
+  })
+  const first = runHook({ stdinJson: guardedEdit, dbPathOverride: dbPath })
+  const out = formatHookOutput(first)
+  if (
+    first.surfaced?.join() !== 'selftest-gotcha' ||
+    !out ||
+    !JSON.parse(out).hookSpecificOutput.additionalContext.includes('selftest-gotcha')
+  ) {
+    console.error('[self-test] guarded Edit: expected selftest-gotcha surfaced, got', first)
+    process.exit(1)
+  }
+  const second = runHook({ stdinJson: guardedEdit, dbPathOverride: dbPath })
+  if (second.surfaced?.length !== 0 || formatHookOutput(second) !== null) {
+    console.error('[self-test] repeat guarded Edit: expected nothing surfaced, got', second)
+    process.exit(1)
   }
   // Verify rows
   const verify = new Database(dbPath)
@@ -336,22 +540,14 @@ function runSelfTest() {
     .all()
   verify.close()
   fs.rmSync(tmp, { recursive: true, force: true })
-  if (rows.length !== 3) {
-    console.error(`[self-test] expected 3 events, got ${rows.length}`)
+  const kinds = rows.map((row) => (row.event_type === 'observation' ? JSON.parse(row.payload_json).kind : row.event_type))
+  const fileModified = kinds.filter((k) => k === 'file_modified').length
+  const surfacedRows = kinds.filter((k) => k === 'gotcha_surfaced').length
+  if (fileModified !== 5 || surfacedRows !== 1 || kinds.length !== 6) {
+    console.error(`[self-test] expected 5 file_modified + 1 gotcha_surfaced, got ${JSON.stringify(kinds)}`)
     process.exit(1)
   }
-  for (const row of rows) {
-    if (row.event_type !== 'observation') {
-      console.error(`[self-test] expected observation, got ${row.event_type}`)
-      process.exit(1)
-    }
-    const payload = JSON.parse(row.payload_json)
-    if (payload.kind !== 'file_modified') {
-      console.error(`[self-test] expected kind=file_modified, got ${payload.kind}`)
-      process.exit(1)
-    }
-  }
-  console.error('[self-test] OK — 3 file_modified events landed (Edit, Write, MultiEdit)')
+  console.error('[self-test] OK — 5 file_modified events + 1 gotcha_surfaced (once per session)')
   process.exit(0)
 }
 
@@ -376,6 +572,9 @@ if (isDirectExec()) {
           `[file-edit-event] wrote ${result.eventIds.length} file_modified event(s) for session ${result.sessionId}\n`
         )
       }
+      const out = formatHookOutput(result)
+      // Synchronous: process.exit below must not cut the line Claude Code reads.
+      if (out) fs.writeSync(1, `${out}\n`)
       process.exit(0)
     }
   } catch (err) {
