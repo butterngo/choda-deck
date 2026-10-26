@@ -33,11 +33,7 @@ import { handleConversationSignoffRoute } from './conversation-signoff'
 import { handleVaultRoute } from './vault'
 import { handleClaudeConfigRoute } from './claude-config'
 import { handleAcReviewRoute } from './ac-review'
-import { handleAssistantRoute } from './assistant-routes'
-import { handleAssistantMessageRoute } from './assistant-chat'
-import { createAssistantTools } from './assistant-tools'
-import { createAssistantReadServices } from './assistant-read-services'
-import { planDate } from '../../core/domain/daily/plan-date'
+import { isAssistantPath } from './assistant-child'
 import { handleDockerRoute } from './docker-containers'
 import { handleDockerActionRoute } from './docker-actions'
 import { handleDockerImageRoute } from './docker-images'
@@ -49,7 +45,7 @@ import { handleWorkspaceDocsRoute } from './workspace-docs'
 import { handleWorkspaceDiagramRoute } from './mermaid-check'
 import { handleWorkspaceSymbolsRoute } from './workspace-symbols'
 import { handleWorkspaceCommitsRoute } from './workspace-commits'
-import { handleDailyReportRoute, buildDailyReport } from './daily-report'
+import { handleDailyReportRoute } from './daily-report'
 import { createScanCache } from '../../core/domain/daily/scan-cache'
 import { handleConversationDetailRoute } from './conversation-detail'
 import {
@@ -316,40 +312,12 @@ async function route(
     return
   }
 
-  // TASK-2735 — the one assistant route that spends money: one message, at most
-  // 8 read-only tool calls (ADR adr-when-this-project-may-call-a-model, 2026-10-24).
-  if (
-    await handleAssistantMessageRoute(req, res, {
-      bridgeToken: services.bridgeToken,
-      store: services.assistantStore ?? null,
-      dataDir: services.dataDir,
-      fetchImpl: services.fetchImpl as typeof fetch | undefined,
-      tools: () =>
-        createAssistantTools(
-          createAssistantReadServices({
-            svc: services.svc,
-            artifactsDir: services.artifactsDir,
-            vaultDir: services.vaultDir,
-            store: services.assistantStore ?? null,
-            dailyReport: (date) =>
-              buildDailyReport({ svc: services.svc, scanCache: dailyScanCache }, date ?? planDate(Date.now()))
-          })
-        )
-    })
-  ) {
-    return
-  }
-
-  // TASK-2733 — the chat assistant's free routes (models, chats). Token-gated;
-  // owns its POST, so it sits before the GET-only guard.
-  if (
-    await handleAssistantRoute(req, res, {
-      bridgeToken: services.bridgeToken,
-      store: services.assistantStore ?? null,
-      dataDir: services.dataDir,
-      fetchImpl: services.fetchImpl as typeof fetch | undefined
-    })
-  ) {
+  // TASK-2758 — /assistant/* belongs to the assistant service, a child of this
+  // adapter (assistant-child.ts). Forwarded as-is; the service checks the token.
+  // Owns its POST/PATCH/DELETE, so it sits before the GET-only guard.
+  if (isAssistantPath(req.url)) {
+    if (services.assistant) services.assistant.handle(req, res)
+    else sendJson(res, 503, { error: 'assistant service unavailable' })
     return
   }
   // TASK-2536 — the companion task page's translate button; the same cost

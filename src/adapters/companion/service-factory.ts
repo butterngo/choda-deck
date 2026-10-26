@@ -23,6 +23,7 @@ import type { CaptureDispatcher } from './capture-contract'
 import { CompanionCaptureDispatcher } from './capture-dispatcher'
 import { defaultSpeechCredentialsFile } from './meeting-transcribe'
 import { AssistantStore } from './assistant-store'
+import type { AssistantChild } from './assistant-child'
 
 export interface CompanionServices {
   svc: BackendTaskService
@@ -67,6 +68,9 @@ export interface CompanionServices {
   // TASK-2733 — the chat assistant's local-only history, on its own writable
   // connection (`db` above is read-only). Absent → the chat routes 501.
   assistantStore?: AssistantStore | null
+  // TASK-2758 — the assistant service child; /assistant/* is forwarded to it.
+  // Set by index.ts once the adapter knows its own port. Absent → 503.
+  assistant?: AssistantChild | null
   // TASK-1175 — mutating sync actions (own writable connection per call). Injected
   // so http-server stays decoupled and tests can pass fakes. Throw
   // SyncNotConfiguredError when the laptop has no remote configured.
