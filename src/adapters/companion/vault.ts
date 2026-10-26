@@ -20,7 +20,7 @@ import { Buffer } from 'buffer'
 import { timingSafeEqual } from 'crypto'
 import type { IncomingMessage, ServerResponse } from 'http'
 import { PROJECTS_DIR, handleProjectVault } from './vault-projects'
-import { searchVaultFiles } from './vault-search'
+import { resolveReadableNote, searchVaultFiles } from './vault-search'
 
 const ROUTE_PREFIX = '/vault/'
 const NOTES_DIR = '30-Knowledge'
@@ -30,6 +30,7 @@ const ASSETS_ROUTE = '/vault/assets/'
 // TASK-2048 — the one route on this prefix with a DIFFERENT sandbox root.
 const PROJECTS_ROUTE = '/vault/projects/'
 const SEARCH_ROUTE = '/vault/search'
+const NOTE_ROUTE = '/vault/note'
 const SEARCH_DEFAULT_LIMIT = 10
 const SEARCH_MAX_LIMIT = 50
 
@@ -186,6 +187,10 @@ export function handleVaultRoute(
   // TASK-2754 — full-text search over 10-Projects + 30-Knowledge, for the
   // assistant service (which reads the vault only through this adapter).
   if (rawPath === SEARCH_ROUTE) return searchVault(req, res, opts.vaultDir)
+  // TASK-2756 — one note by vault-relative path, for the assistant's
+  // read_vault_note. Same allowlist as the search: 10-Projects and
+  // 30-Knowledge, `.md` only (Butter, 2026-10-26, CONV-1792980384690-64).
+  if (rawPath === NOTE_ROUTE) return serveReadableNote(req, res, opts.vaultDir)
 
   // TASK-2048 — matched BEFORE the notes root is computed, and given its own.
   // The two roots are resolved at their own call sites rather than sharing a
@@ -233,6 +238,40 @@ function searchVault(req: IncomingMessage, res: ServerResponse, vaultDir: string
   const raw = Number.parseInt(params.get('limit') ?? '', 10)
   const limit = Number.isFinite(raw) && raw > 0 ? Math.min(raw, SEARCH_MAX_LIMIT) : SEARCH_DEFAULT_LIMIT
   sendJson(res, 200, searchVaultFiles(vaultDir, q, limit))
+  return true
+}
+
+/**
+ * GET /vault/note?path=<vault-relative .md path> -> text/markdown
+ *
+ * 400 without a path · 403 when the path is outside 10-Projects / 30-Knowledge,
+ * not a `.md`, or escapes its folder · 404 when no such note exists. A refusal
+ * is a 403, never a 404, so a caller cannot probe what sits outside the
+ * readable folders.
+ */
+function serveReadableNote(req: IncomingMessage, res: ServerResponse, vaultDir: string): boolean {
+  const rel = new URLSearchParams((req.url ?? '').split('?')[1] ?? '').get('path') ?? ''
+  if (rel.trim() === '') {
+    sendJson(res, 400, { error: 'path is required' })
+    return true
+  }
+  const target = resolveReadableNote(vaultDir, rel)
+  if (target === null) {
+    sendJson(res, 403, { error: 'path not readable' })
+    return true
+  }
+  let text: string
+  try {
+    text = fs.readFileSync(target, 'utf8')
+  } catch {
+    sendJson(res, 404, { error: 'note not found' })
+    return true
+  }
+  res.writeHead(200, {
+    'content-type': 'text/markdown; charset=utf-8',
+    'content-length': String(Buffer.byteLength(text, 'utf8'))
+  })
+  res.end(text)
   return true
 }
 

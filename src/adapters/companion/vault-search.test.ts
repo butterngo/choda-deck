@@ -109,6 +109,24 @@ describe('GET /vault/search', () => {
     expect(r.body as unknown[]).toHaveLength(2)
   })
 
+  it('TASK-2756: GET /vault/note serves a 10-Projects note by its vault path', async () => {
+    const r = await fetch(`${base}/vault/note?path=${encodeURIComponent('10-Projects/ichiba-devops/server-1.md')}`, {
+      headers: { 'x-choda-bridge-token': TOKEN }
+    })
+    expect(r.status).toBe(200)
+    expect(await r.text()).toContain('Server 1 runs the gateway')
+  })
+
+  it('TASK-2756: GET /vault/note refuses 20-Areas, traversal and non-markdown with 403', async () => {
+    for (const p of ['20-Areas/preferences.md', '30-Knowledge/../20-Areas/preferences.md', '10-Projects/ichiba-devops/x.txt']) {
+      const r = await fetch(`${base}/vault/note?path=${encodeURIComponent(p)}`, { headers: { 'x-choda-bridge-token': TOKEN } })
+      expect(r.status).toBe(403)
+      expect(await r.text()).not.toContain(PRIVATE_WORD)
+    }
+    const missing = await fetch(`${base}/vault/note`, { headers: { 'x-choda-bridge-token': TOKEN } })
+    expect(missing.status).toBe(400)
+  })
+
   it('AC-6: the in-process searchVault and the route return the same hits', async () => {
     const reads = createAssistantReadServices({ svc: fakeSvc as never, vaultDir, store: null })
     for (const q of ['gateway', 'zebra', PRIVATE_WORD]) {
