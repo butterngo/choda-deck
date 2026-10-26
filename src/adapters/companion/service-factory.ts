@@ -22,8 +22,7 @@ import { resolveBridgeToken } from './bridge-token'
 import type { CaptureDispatcher } from './capture-contract'
 import { CompanionCaptureDispatcher } from './capture-dispatcher'
 import { defaultSpeechCredentialsFile } from './meeting-transcribe'
-import { AssistantStore } from './assistant-store'
-import type { AssistantChild } from './assistant-child'
+import type { AssistantChild } from './spawn-assistant'
 
 export interface CompanionServices {
   svc: BackendTaskService
@@ -65,9 +64,6 @@ export interface CompanionServices {
   // TASK-1843 — injectable so the review route is testable without a network.
   // Unset in production; the client falls back to globalThis.fetch.
   fetchImpl?: (url: string, init: Record<string, unknown>) => Promise<Response>
-  // TASK-2733 — the chat assistant's local-only history, on its own writable
-  // connection (`db` above is read-only). Absent → the chat routes 501.
-  assistantStore?: AssistantStore | null
   // TASK-2758 — the assistant service child; /assistant/* is forwarded to it.
   // Set by index.ts once the adapter knows its own port. Absent → 503.
   assistant?: AssistantChild | null
@@ -99,9 +95,6 @@ export async function createCompanionServices(): Promise<CompanionServices> {
   // initializeAsync has created + migrated the file (incl. the loop-status
   // columns), so a read-only open now always succeeds.
   const db = new Database(dataPaths.dbPath, { readonly: true })
-  // initializeAsync ran initSchema, so the assistant tables exist.
-  const assistantDb = new Database(dataPaths.dbPath)
-  assistantDb.pragma('busy_timeout = 5000')
   const intervalMs = Number.parseInt(process.env.CHODA_SYNC_INTERVAL_MS ?? '30000', 10) || 30000
   const bridgeToken = resolveBridgeToken(dataPaths.dataDir)
   return {
@@ -117,12 +110,10 @@ export async function createCompanionServices(): Promise<CompanionServices> {
     claudeHome: process.env.CHODA_CLAUDE_HOME?.trim() || path.join(os.homedir(), '.claude'),
     dataDir: dataPaths.dataDir,
     speechCredentialsFile: defaultSpeechCredentialsFile(dataPaths.dataDir),
-    assistantStore: new AssistantStore(assistantDb),
     pull: () => runPull(dataPaths.dbPath, resolveRemoteConfig()),
     push: () => runPush(dataPaths.dbPath, resolveRemoteConfig()),
     close: () => {
       db.close()
-      assistantDb.close()
     }
   }
 }

@@ -7,8 +7,6 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import Database from 'better-sqlite3'
-import { initSchema } from '../../core/domain/repositories/schema'
-import { AssistantStore } from '../companion/assistant-store'
 import { startAssistantService, type AssistantServiceHandle } from './server'
 import { ChatStore } from './chat-store'
 
@@ -50,22 +48,33 @@ function call(
   })
 }
 
-/** Seeds the shared choda-deck.db the way the adapter-era store wrote it. */
+/**
+ * Seeds the shared choda-deck.db the way the adapter-era store wrote it
+ * (TASK-2733 schema, ids `CHAT-n` / `CHAT-n-Mk`). Written as SQL because that
+ * store and its schema are gone from the adapter (TASK-2759); a machine that
+ * has not started the service yet still has exactly these rows.
+ */
 function seedShared(): void {
   fs.mkdirSync(path.dirname(sharedDbPath), { recursive: true })
   const db = new Database(sharedDbPath)
-  initSchema(db)
-  let t = 0
-  const old = new AssistantStore(db, () => new Date(Date.UTC(2026, 9, 24, 8, 0, t++)).toISOString())
-  const a = old.createChat({ title: 'Ichiba servers' })
-  const b = old.createChat({ title: 'Summarise meeting BPA sync' })
-  old.appendMessage(a.id, { role: 'user', content: 'which servers?' })
-  old.appendMessage(a.id, { role: 'tool', content: '{"hits":[]}', toolName: 'search_vault', toolCallId: 'c1' })
-  old.appendMessage(a.id, { role: 'assistant', content: 'None found.', promptTokens: 100, completionTokens: 20 })
-  old.addTokens(a.id, 120)
-  old.appendMessage(b.id, { role: 'user', content: 'summarise' })
-  old.appendMessage(b.id, { role: 'assistant', content: 'Two decisions.', promptTokens: 50, completionTokens: 10 })
-  old.addTokens(b.id, 60)
+  db.exec(`
+    CREATE TABLE assistant_chats (id TEXT PRIMARY KEY, title TEXT NOT NULL, model TEXT,
+      token_budget INTEGER NOT NULL DEFAULT 300000, tokens_used INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE assistant_messages (id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, role TEXT NOT NULL,
+      content TEXT, tool_name TEXT, tool_call_id TEXT, model TEXT, prompt_tokens INTEGER,
+      completion_tokens INTEGER, tokens_estimated INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
+  `)
+  const at = (s: number): string => new Date(Date.UTC(2026, 9, 24, 8, 0, s)).toISOString()
+  const chat = db.prepare('INSERT INTO assistant_chats VALUES (?, ?, NULL, 300000, ?, ?, ?)')
+  chat.run('CHAT-1', 'Ichiba servers', 120, at(0), at(5))
+  chat.run('CHAT-2', 'Summarise meeting BPA sync', 60, at(1), at(7))
+  const msg = db.prepare('INSERT INTO assistant_messages VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, 0, ?)')
+  msg.run('CHAT-1-M1', 'CHAT-1', 'user', 'which servers?', null, null, null, null, at(2))
+  msg.run('CHAT-1-M2', 'CHAT-1', 'tool', '{"hits":[]}', 'search_vault', 'c1', null, null, at(3))
+  msg.run('CHAT-1-M3', 'CHAT-1', 'assistant', 'None found.', null, null, 100, 20, at(4))
+  msg.run('CHAT-2-M1', 'CHAT-2', 'user', 'summarise', null, null, null, null, at(6))
+  msg.run('CHAT-2-M2', 'CHAT-2', 'assistant', 'Two decisions.', null, null, 50, 10, at(7))
   db.close()
 }
 
