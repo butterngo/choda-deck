@@ -5,7 +5,7 @@
 
 import { createCompanionServices } from './service-factory'
 import { startCompanionServer, COMPANION_BIND } from './http-server'
-import { AssistantChild, ASSISTANT_CHILD_FILE, resolveAssistantEntry } from './assistant-child'
+import { AssistantChild, ASSISTANT_CHILD_FILE, resolveAssistantEntry } from './spawn-assistant'
 
 const DEFAULT_PORT = 7338 // sits next to the MCP HTTP default (7337)
 

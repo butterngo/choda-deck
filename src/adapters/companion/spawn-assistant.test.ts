@@ -10,7 +10,7 @@ import * as path from 'path'
 import { startCompanionServer, COMPANION_BIND, type CompanionServerHandle } from './http-server'
 import type { CompanionServices } from './service-factory'
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
-import { AssistantChild } from './assistant-child'
+import { AssistantChild } from './spawn-assistant'
 
 const TOKEN = 'child-token'
 

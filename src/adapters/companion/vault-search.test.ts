@@ -11,7 +11,7 @@ import * as path from 'path'
 import { startCompanionServer, COMPANION_BIND, type CompanionServerHandle } from './http-server'
 import type { CompanionServices } from './service-factory'
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
-import { createAssistantReadServices } from './assistant-read-services'
+import { searchVaultFiles } from './vault-search'
 
 const TOKEN = 'vault-search-test-token'
 const PRIVATE_WORD = 'privateonlyword'
@@ -127,12 +127,12 @@ describe('GET /vault/search', () => {
     expect(missing.status).toBe(400)
   })
 
-  it('AC-6: the in-process searchVault and the route return the same hits', async () => {
-    const reads = createAssistantReadServices({ svc: fakeSvc as never, vaultDir, store: null })
+  // TASK-2759 — the in-process search_vault tool is gone with the adapter's
+  // assistant code; the route and the shared walk must still agree.
+  it('AC-6: the route and searchVaultFiles return the same hits', async () => {
     for (const q of ['gateway', 'zebra', PRIVATE_WORD]) {
       const route = await get(`/vault/search?q=${q}&limit=10`)
-      const inProcess = await reads.searchVault(q, 10)
-      expect(route.body).toEqual(inProcess)
+      expect(route.body).toEqual(searchVaultFiles(vaultDir, q, 10))
     }
   })
 })

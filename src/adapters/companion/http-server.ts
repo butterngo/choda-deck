@@ -33,7 +33,7 @@ import { handleConversationSignoffRoute } from './conversation-signoff'
 import { handleVaultRoute } from './vault'
 import { handleClaudeConfigRoute } from './claude-config'
 import { handleAcReviewRoute } from './ac-review'
-import { isAssistantPath } from './assistant-child'
+import { isAssistantPath } from './spawn-assistant'
 import { handleDockerRoute } from './docker-containers'
 import { handleDockerActionRoute } from './docker-actions'
 import { handleDockerImageRoute } from './docker-images'
@@ -313,7 +313,7 @@ async function route(
   }
 
   // TASK-2758 — /assistant/* belongs to the assistant service, a child of this
-  // adapter (assistant-child.ts). Forwarded as-is; the service checks the token.
+  // adapter (spawn-assistant.ts). Forwarded as-is; the service checks the token.
   // Owns its POST/PATCH/DELETE, so it sits before the GET-only guard.
   if (isAssistantPath(req.url)) {
     if (services.assistant) services.assistant.handle(req, res)
