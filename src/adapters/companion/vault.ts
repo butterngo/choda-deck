@@ -20,6 +20,7 @@ import { Buffer } from 'buffer'
 import { timingSafeEqual } from 'crypto'
 import type { IncomingMessage, ServerResponse } from 'http'
 import { PROJECTS_DIR, handleProjectVault } from './vault-projects'
+import { searchVaultFiles } from './vault-search'
 
 const ROUTE_PREFIX = '/vault/'
 const NOTES_DIR = '30-Knowledge'
@@ -28,6 +29,9 @@ const LINKS_ROUTE = '/vault/links'
 const ASSETS_ROUTE = '/vault/assets/'
 // TASK-2048 — the one route on this prefix with a DIFFERENT sandbox root.
 const PROJECTS_ROUTE = '/vault/projects/'
+const SEARCH_ROUTE = '/vault/search'
+const SEARCH_DEFAULT_LIMIT = 10
+const SEARCH_MAX_LIMIT = 50
 
 // TASK-1601 — `[[target]]`, `[[target|alias]]`, `[[target#heading]]`. The
 // capture stops at `|` and `#` so an aliased or anchored link resolves to the
@@ -179,6 +183,10 @@ export function handleVaultRoute(
     return true
   }
 
+  // TASK-2754 — full-text search over 10-Projects + 30-Knowledge, for the
+  // assistant service (which reads the vault only through this adapter).
+  if (rawPath === SEARCH_ROUTE) return searchVault(req, res, opts.vaultDir)
+
   // TASK-2048 — matched BEFORE the notes root is computed, and given its own.
   // The two roots are resolved at their own call sites rather than sharing a
   // `root` variable, so a later edit cannot reach 10-Projects through the
@@ -205,6 +213,26 @@ export function handleVaultRoute(
   }
 
   sendJson(res, 404, { error: 'not found' })
+  return true
+}
+
+/**
+ * GET /vault/search?q=<words>&limit=<n> -> [{ path, snippet }]
+ *
+ * `path` is relative to the vault root. `limit` defaults to 10 and is clamped
+ * to 50. The walk itself lives in vault-search.ts, shared with the assistant's
+ * in-process tool, so the route and the tool cannot drift apart.
+ */
+function searchVault(req: IncomingMessage, res: ServerResponse, vaultDir: string): boolean {
+  const params = new URLSearchParams((req.url ?? '').split('?')[1] ?? '')
+  const q = params.get('q') ?? ''
+  if (q.trim() === '') {
+    sendJson(res, 400, { error: 'q is required' })
+    return true
+  }
+  const raw = Number.parseInt(params.get('limit') ?? '', 10)
+  const limit = Number.isFinite(raw) && raw > 0 ? Math.min(raw, SEARCH_MAX_LIMIT) : SEARCH_DEFAULT_LIMIT
+  sendJson(res, 200, searchVaultFiles(vaultDir, q, limit))
   return true
 }
 
