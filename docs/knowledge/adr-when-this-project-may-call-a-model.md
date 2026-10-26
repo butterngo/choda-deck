@@ -155,3 +155,43 @@ It is allowed as a bounded exception:
 
 No other multi-call loop is covered by this amendment. A new one needs its own
 amendment.
+
+## Amendment — 2026-10-26: assistant service
+
+TASK-2753, for goal TASK-2751 (discovery
+`docs/reports/assistant-chatgpt-like-chat-discovery.md`, thread
+CONV-1792980384690-64). The chat assistant moves out of the companion adapter
+into a process of its own, streams its replies, and gains regenerate and
+edit-and-resend. The 2026-10-24 amendment assumed the routes live in the
+adapter and that one message runs one non-streamed loop; this amendment covers
+the new shape. Everything the 2026-10-24 amendment allows, it still allows, on
+the same terms:
+
+* **A separate local process, reached only through the adapter.** The assistant
+  runs as its own process, spawned by the companion adapter as a child and
+  bound to 127.0.0.1. Nothing else starts it. The web reaches it only through
+  the adapter's `/assistant/*` forward, which carries the bridge token as every
+  other companion route does. Nothing is added to `REMOTE_TOOL_ALLOWLIST`, so no
+  remote connector can reach the assistant (point 5).
+* **Its own database, never synced.** Chats live in `<dataDir>/assistant.db`,
+  a file of their own that is never synced: it is not the shared database and
+  is not named in the remote sync allowlist (`src/core/sync/sync-apply.ts`). The
+  chat rows that already exist in the shared database are copied into it once;
+  they are not dropped.
+* **Regenerate and edit-and-resend are requests of their own.** Each is a new
+  explicit request, made only when the user presses its button, gated by the
+  same budget check as Send before any provider call, and counted again: its
+  tokens are added to the chat's total like any other message.
+* **A streamed reply still records what it cost.** A streamed reply records
+  `usage` from the final chunk of the stream (`stream_options.include_usage`).
+  A stream that ends without it (the user pressed Stop, the connection dropped)
+  records an estimate, marked as one, exactly as a non-streamed reply without
+  `usage` does.
+* **The 2026-10-24 limits still hold:** the 8-step cap with one final call on
+  `tool_choice: 'none'`, redaction of tool output plus the 16000-character cap
+  before it reaches the provider, no automatic retry (point 4), and the key in
+  `ai-key.txt` (point 6). Tools stay read-only; the service reads work data
+  through the adapter's read routes and writes nothing but its own chats.
+
+No other process, stream or loop is covered by this amendment. A new one needs
+its own amendment.
