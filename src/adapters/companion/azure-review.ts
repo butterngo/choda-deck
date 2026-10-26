@@ -42,7 +42,15 @@ const DEPLOYMENTS_API_VERSION = '2023-03-15-preview'
  * whoever created it — `gpt-5-mini`, `gpt-5-mini-prod`, `gpt-5-mini-2` are all
  * the same model with the same two constraints.
  */
-const REASONING_PREFIXES = ['gpt-5', 'o1', 'o3', 'o4']
+const REASONING_PREFIXES = ['gpt-5', 'gpt-6', 'o1', 'o3', 'o4']
+
+/**
+ * Deployments that refuse function tools on /chat/completions unless reasoning
+ * is turned off: gpt-6-luna and gpt-6-sol answer 400 "Function tools with
+ * reasoning_effort are not supported … set reasoning_effort to 'none'", and 200
+ * once it is (measured 2026-10-26). gpt-5.x accepts tools without it.
+ */
+const TOOLS_NEED_NO_REASONING_PREFIXES = ['gpt-6']
 
 const MAX_TOKENS = 2048
 /** Reasoning burns budget before writing; 2048 measured as empty, 4096 as fine. */
@@ -63,6 +71,12 @@ export interface AzureModel {
 export function isReasoningDeployment(deployment: string): boolean {
   const id = deployment.toLowerCase()
   return REASONING_PREFIXES.some((p) => id.startsWith(p))
+}
+
+/** True when a request carrying tools must send `reasoning_effort: 'none'` to this deployment. */
+export function toolsNeedNoReasoning(deployment: string): boolean {
+  const id = deployment.toLowerCase()
+  return TOOLS_NEED_NO_REASONING_PREFIXES.some((p) => id.startsWith(p))
 }
 
 /**

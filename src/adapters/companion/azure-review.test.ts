@@ -160,6 +160,7 @@ describe('AC-3 — the token field follows the deployment family', () => {
     // A deployment is named by whoever created it.
     expect(isReasoningDeployment('gpt-5-mini-prod')).toBe(true)
     expect(isReasoningDeployment('o3-review')).toBe(true)
+    expect(isReasoningDeployment('gpt-6-luna')).toBe(true)
     expect(isReasoningDeployment('gpt-4.1-mini')).toBe(false)
   })
 })

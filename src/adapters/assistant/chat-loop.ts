@@ -16,7 +16,7 @@
 // (ADR adr-when-this-project-may-call-a-model, 2026-10-26 amendment).
 
 import { AiError } from '../companion/ai-review'
-import { isReasoningDeployment, type AzureConfig } from '../companion/azure-review'
+import { isReasoningDeployment, toolsNeedNoReasoning, type AzureConfig } from '../companion/azure-review'
 import type { ChatStore, ChatSummary } from './chat-store'
 import type { AssistantTools, ToolDefinition } from './tools'
 
@@ -118,6 +118,7 @@ async function streamTurn(opts: {
   const body = JSON.stringify({
     model: opts.deployment,
     ...budget,
+    ...(toolsNeedNoReasoning(opts.deployment) ? { reasoning_effort: 'none' } : {}),
     stream: true,
     stream_options: { include_usage: true },
     messages: opts.messages,
