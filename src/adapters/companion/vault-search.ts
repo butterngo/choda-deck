@@ -7,6 +7,7 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
+import { safeResolve } from './vault'
 
 /** The two vault folders the assistant may read. 20-Areas (personal) is never reachable. */
 export const VAULT_READABLE_DIRS = ['10-Projects', '30-Knowledge'] as const
@@ -39,6 +40,22 @@ function* markdownFiles(root: string, rel = ''): Generator<string> {
     if (e.isDirectory()) yield* markdownFiles(root, child)
     else if (e.isFile() && e.name.toLowerCase().endsWith('.md')) yield child
   }
+}
+
+/**
+ * The absolute path of `rel` when it names a `.md` file inside one of the
+ * readable folders, else null. `rel` is relative to the vault root
+ * (`10-Projects/ichiba-devops/context.md`). The folder is matched against the
+ * allowlist before anything is joined, and the join is containment-checked by
+ * safeResolve, so 20-Areas is unreachable by name and by traversal alike.
+ */
+export function resolveReadableNote(vaultDir: string, rel: string): string | null {
+  const norm = rel.replace(/\\/g, '/')
+  const top = VAULT_READABLE_DIRS.find((d) => norm.startsWith(`${d}/`))
+  if (!top) return null
+  const target = safeResolve(path.resolve(vaultDir, top), norm.slice(top.length + 1))
+  if (target === null || !target.toLowerCase().endsWith('.md')) return null
+  return target
 }
 
 /** Notes whose path or text contains every word of `query`, at most `limit`. */
