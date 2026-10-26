@@ -12,6 +12,7 @@ import { listMeetings, readMeta, MEETINGS_DIR } from './meetings'
 import { NOTE_FILE } from './meeting-files'
 import { buildRuns, type RunsDeps } from './runs'
 import { safeResolve } from './vault'
+import { VAULT_READABLE_DIRS, searchVaultFiles, searchWords } from './vault-search'
 
 /** The task-service methods the assistant may call. All of them read. */
 export type AssistantTaskReads = Pick<
@@ -30,33 +31,9 @@ export interface AssistantReadDeps {
   dailyReport?: (date: string | undefined) => Promise<unknown>
 }
 
-/** The two vault folders the assistant may read. 20-Areas (personal) is never reachable. */
-export const VAULT_READABLE_DIRS = ['10-Projects', '30-Knowledge'] as const
-const VAULT_MAX_FILES = 3000
+export { VAULT_READABLE_DIRS }
 const MEETING_ID = /^[A-Za-z0-9_-]{1,64}$/
-const SNIPPET = 160
-
-function words(query: string): string[] {
-  return query
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((w) => w.length > 0)
-}
-
-function* markdownFiles(root: string, rel = ''): Generator<string> {
-  let entries: fs.Dirent[]
-  try {
-    entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true })
-  } catch {
-    return
-  }
-  for (const e of entries) {
-    if (e.name.startsWith('.')) continue
-    const child = rel === '' ? e.name : `${rel}/${e.name}`
-    if (e.isDirectory()) yield* markdownFiles(root, child)
-    else if (e.isFile() && e.name.toLowerCase().endsWith('.md')) yield child
-  }
-}
+const words = searchWords
 
 export function createAssistantReadServices(deps: AssistantReadDeps): AssistantReadServices {
   const { svc } = deps
@@ -188,27 +165,7 @@ export function createAssistantReadServices(deps: AssistantReadDeps): AssistantR
 
     async searchVault(query, limit) {
       if (!deps.vaultDir) throw new Error('vault not configured')
-      const q = words(query)
-      const hits: { path: string; snippet: string }[] = []
-      let seen = 0
-      for (const dir of VAULT_READABLE_DIRS) {
-        const root = path.resolve(deps.vaultDir, dir)
-        for (const rel of markdownFiles(root)) {
-          if (++seen > VAULT_MAX_FILES || hits.length >= limit) break
-          const full = `${dir}/${rel}`
-          let text: string
-          try {
-            text = fs.readFileSync(path.join(root, rel), 'utf8')
-          } catch {
-            continue
-          }
-          const hay = `${full}\n${text}`.toLowerCase()
-          if (!q.every((w) => hay.includes(w))) continue
-          const at = Math.max(0, text.toLowerCase().indexOf(q[0] ?? ''))
-          hits.push({ path: full, snippet: text.slice(Math.max(0, at - 40), at + SNIPPET).replace(/\s+/g, ' ') })
-        }
-      }
-      return hits
+      return searchVaultFiles(deps.vaultDir, query, limit)
     },
 
     async readVaultNote(rel) {
