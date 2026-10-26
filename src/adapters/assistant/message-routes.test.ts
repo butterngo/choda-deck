@@ -150,6 +150,19 @@ describe('send', () => {
     expect(requests[0].stream_options).toEqual({ include_usage: true })
   })
 
+  it('a gpt-6 deployment gets max_completion_tokens and reasoning_effort none, a gpt-5.x one no reasoning_effort', async () => {
+    // gpt-6-luna answers 400 to max_tokens, and to tools without reasoning_effort 'none'.
+    script = [{ chunks: [delta('ok'), finish('stop')] }, { chunks: [delta('ok'), finish('stop')] }]
+    await post(`/assistant/chats/${newChat()}/messages`, { content: 'hi', model: 'gpt-6-luna' })
+    await post(`/assistant/chats/${newChat()}/messages`, { content: 'hi', model: 'gpt-5.6-luna' })
+    expect(requests[0].model).toBe('gpt-6-luna')
+    expect(requests[0].reasoning_effort).toBe('none')
+    expect(requests[0].max_completion_tokens).toBeGreaterThan(0)
+    expect(requests[0].max_tokens).toBeUndefined()
+    expect(requests[1].model).toBe('gpt-5.6-luna')
+    expect(requests[1].reasoning_effort).toBeUndefined()
+  })
+
   it('AC-3: a tool call split into 4 fragments runs once with the joined arguments and emits one step', async () => {
     script = [
       {
