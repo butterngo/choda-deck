@@ -126,7 +126,10 @@ async function startAtPrompt(rec: Recorded, s: PtySession, start: Record<string,
   const tl = timeline()
   await s.handle(JSON.stringify({ t: 'start', ...start }))
   tl.mark((await until(() => rec.text().length > 0)) ? 'first output' : 'NO output')
-  tl.mark((await until(() => PROMPT.test(visible(rec.text())))) ? 'prompt' : 'NO prompt')
+  tl.mark((await until(() => PROMPT.test(visible(rec.text())))) ? 'prompt' : `NO prompt, received ${JSON.stringify(rec.text().slice(0, 400))}`)
+  // Printed on a pass too: the spread of prompt times on a runner is what says
+  // whether a budget is wide enough.
+  console.log(`[pty-session.test] ${String(tl)}`)
   return tl
 }
 
@@ -139,7 +142,7 @@ async function writeAndAwait(rec: Recorded, s: PtySession, tl: Timeline, d: stri
   const ok = await until(pred)
   const next = rec.at.slice(before).find((t, i) => t >= sent && rec.frames[before + i]?.t === 'out')
   tl.mark(next === undefined ? 'NO output after write' : `output +${next - sent}ms after write`)
-  tl.mark(ok ? 'answered' : 'NOT answered')
+  tl.mark(ok ? 'answered' : `NOT answered, received ${JSON.stringify(rec.text().slice(-400))}`)
   return ok
 }
 
