@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
@@ -373,6 +373,20 @@ describe('GET /runs', () => {
     it('AC-6: an edge to a slug with no entry serves missing: true', async () => {
       await svc.addRelationship('TASK-10', 'gone', 'REALIZES')
       expect((await goalRun()).feature).toEqual({ slug: 'gone', title: 'gone', why: null, missing: true })
+    })
+
+    // TASK-2833 — getKnowledge spawns git per ref to compute staleness; it was
+    // 97% of GET /runs. The card needs the text only, so the call must not happen.
+    it('serves the feature without calling getKnowledge (no git staleness check)', async () => {
+      const slug = await feature('BPA x WorkHub', '## Why this exists\n\nAlpha beta.\n')
+      await svc.addRelationship('TASK-10', slug, 'REALIZES')
+      const spy = vi.spyOn(svc, 'getKnowledge').mockRejectedValue(new Error('staleness must not run on GET /runs'))
+      try {
+        expect((await goalRun()).feature).toMatchObject({ slug, title: 'BPA x WorkHub', why: 'Alpha beta.', missing: false })
+        expect(spy).not.toHaveBeenCalled()
+      } finally {
+        spy.mockRestore()
+      }
     })
   })
 
