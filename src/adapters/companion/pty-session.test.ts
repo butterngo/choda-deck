@@ -17,12 +17,21 @@ import { PtySession, samePath, defaultShell, type PtyLike, type PtySpawner } fro
 const REAL_CWD = processCwd()
 const isWindows = platform === 'win32'
 // A shell that exists on the runner, chosen per platform rather than assumed.
-const SHELL = isWindows ? 'powershell.exe' : '/bin/sh'
-const WIDTH_CMD = isWindows ? '$Host.UI.RawUI.WindowSize.Width\r' : 'tput cols\r'
+// cmd.exe on Windows, not powershell.exe (TASK-2010): it is what the app spawns
+// by default (`defaultShell` → COMSPEC), and Windows PowerShell's cold start on
+// windows-latest took 4.9-9.6 s to its prompt, and sometimes never printed one
+// within 12 s — it stopped after its banner. cmd.exe prompts in ~0.1 s.
+const SHELL = isWindows ? 'cmd.exe' : '/bin/sh'
+// `mode con` prints "Columns:        132". Matched with its label: cmd's banner
+// carries the Windows build number, which can contain "132" on its own.
+const WIDTH_CMD = isWindows ? 'mode con\r' : 'tput cols\r'
+const WIDTH_132 = isWindows ? /Columns:\s+132\b/ : /\b132\b/
 const EXIT_CMD = isWindows ? 'exit 0\r' : 'exit 0\r'
 
 interface Recorded {
   frames: Record<string, unknown>[]
+  /** Arrival time (Date.now()) of each frame, index for index. */
+  at: number[]
   text: () => string
 }
 
@@ -30,6 +39,7 @@ function sink(): Recorded {
   const frames: Record<string, unknown>[] = []
   return {
     frames,
+    at: [],
     text: () =>
       frames
         .filter((f) => f.t === 'out')
@@ -67,7 +77,12 @@ const describePty = ptyWorks ? describe : describe.skip
 
 function session(rec: Recorded, opts: Partial<{ allowed: string[]; spawn: PtySpawner }> = {}): PtySession {
   const s = new PtySession(
-    { send: (f) => rec.frames.push(f) },
+    {
+      send: (f) => {
+        rec.frames.push(f)
+        rec.at.push(Date.now())
+      }
+    },
     {
       allowedCwds: () => opts.allowed ?? [REAL_CWD],
       spawn: opts.spawn,
@@ -88,6 +103,55 @@ async function until(pred: () => boolean, ms = 12_000): Promise<boolean> {
   return pred()
 }
 
+// TASK-2010 — on Windows the first bytes are ConPTY's own mode switches
+// (`\x1b[?9001h\x1b[?1004h`), not the shell. AC-1, AC-4 and AC-5 used to write
+// on them, and failed on windows-latest after exactly one `until` budget
+// (12.1-12.6 s) whenever the shell had not started reading yet. So a test
+// writes only once the shell has said it reads input — its prompt — and a
+// failure carries a timeline of which step it stopped at.
+const PROMPT = isWindows ? /[A-Za-z]:\\[^\r\n]*>/ : /[$#] ?$/m
+const visible = (s: string): string => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+
+interface Timeline {
+  mark: (what: string) => void
+  /** Marks so far, for an assertion message: which step a failure stopped at. */
+  toString: () => string
+}
+
+function timeline(): Timeline {
+  const t0 = Date.now()
+  const marks: string[] = []
+  return {
+    mark: (what) => marks.push(`${what} @${Date.now() - t0}ms`),
+    toString: () => marks.join(', ')
+  }
+}
+
+/** Start the shell and wait for its prompt, marking the first byte and the prompt. */
+async function startAtPrompt(rec: Recorded, s: PtySession, start: Record<string, unknown>): Promise<Timeline> {
+  const tl = timeline()
+  await s.handle(JSON.stringify({ t: 'start', ...start }))
+  tl.mark((await until(() => rec.text().length > 0)) ? 'first output' : 'NO output')
+  tl.mark((await until(() => PROMPT.test(visible(rec.text())))) ? 'prompt' : `NO prompt, received ${JSON.stringify(rec.text().slice(0, 400))}`)
+  // Printed on a pass too: the spread of prompt times on a runner is what says
+  // whether a budget is wide enough.
+  console.log(`[pty-session.test] ${String(tl)}`)
+  return tl
+}
+
+/** Write a line, then mark when the shell's first output after it arrived. */
+async function writeAndAwait(rec: Recorded, s: PtySession, tl: Timeline, d: string, pred: () => boolean): Promise<boolean> {
+  const before = rec.frames.length
+  const sent = Date.now()
+  tl.mark('wrote')
+  await s.handle(JSON.stringify({ t: 'in', d }))
+  const ok = await until(pred)
+  const next = rec.at.slice(before).find((t, i) => t >= sent && rec.frames[before + i]?.t === 'out')
+  tl.mark(next === undefined ? 'NO output after write' : `output +${next - sent}ms after write`)
+  tl.mark(ok ? 'answered' : `NOT answered, received ${JSON.stringify(rec.text().slice(-400))}`)
+  return ok
+}
+
 afterEach(() => {
   // node-pty holds the event loop open on Windows — measured: a bare node
   // script with an exited PTY did not return to the shell. A leaked one here
@@ -101,18 +165,16 @@ describePty('AC-1 — a shell starts, speaks, and answers', () => {
   it('spawns on start and relays output both ways', async () => {
     const rec = sink()
     const s = session(rec)
-    await s.handle(JSON.stringify({ t: 'start', cwd: REAL_CWD, cols: 80, rows: 24 }))
+    const tl = await startAtPrompt(rec, s, { cwd: REAL_CWD, cols: 80, rows: 24 })
 
     expect(rec.frames.some((f) => f.t === 'ready')).toBe(true)
     expect(s.pid).toBeGreaterThan(0)
-    await until(() => rec.text().length > 0)
 
-    await s.handle(JSON.stringify({ t: 'in', d: 'echo MARKER_9182\r' }))
     // The marker comes back only if input reached the shell AND its output
     // came back out. A shell running into a void passes neither half.
-    const saw = await until(() => rec.text().includes('MARKER_9182'))
-    expect(saw).toBe(true)
-  }, 30_000)
+    const saw = await writeAndAwait(rec, s, tl, 'echo MARKER_9182\r', () => rec.text().includes('MARKER_9182'))
+    expect(saw, String(tl)).toBe(true)
+  }, 45_000)
 })
 
 describe('AC-2 — the cwd must already be a registered workspace', () => {
@@ -194,35 +256,31 @@ describePty('AC-4 — a resize is seen INSIDE the shell', () => {
   it('a program reading terminal width reports the new value', async () => {
     const rec = sink()
     const s = session(rec)
-    await s.handle(JSON.stringify({ t: 'start', cwd: REAL_CWD, cols: 80, rows: 24 }))
-    await until(() => rec.text().length > 0)
+    const tl = await startAtPrompt(rec, s, { cwd: REAL_CWD, cols: 80, rows: 24 })
 
     await s.handle(JSON.stringify({ t: 'size', cols: 132, rows: 40 }))
     await new Promise((r) => setTimeout(r, 400))
-    await s.handle(JSON.stringify({ t: 'in', d: WIDTH_CMD }))
 
     // Asked of the shell rather than of our own call log. "Accepted and
     // ignored" is the failure mode, and a spy on resize() cannot see it.
-    const saw = await until(() => rec.text().includes('132'))
-    expect(saw).toBe(true)
-  }, 30_000)
+    const saw = await writeAndAwait(rec, s, tl, WIDTH_CMD, () => WIDTH_132.test(visible(rec.text())))
+    expect(saw, String(tl)).toBe(true)
+  }, 45_000)
 })
 
 describePty('AC-5 — an exit is announced, with its code', () => {
   it('sends an exit frame carrying the code', async () => {
     const rec = sink()
     const s = session(rec)
-    await s.handle(JSON.stringify({ t: 'start', cwd: REAL_CWD }))
-    await until(() => rec.text().length > 0)
-    await s.handle(JSON.stringify({ t: 'in', d: EXIT_CMD }))
+    const tl = await startAtPrompt(rec, s, { cwd: REAL_CWD })
 
-    const got = await until(() => rec.frames.some((f) => f.t === 'exit'))
-    expect(got).toBe(true)
+    const got = await writeAndAwait(rec, s, tl, EXIT_CMD, () => rec.frames.some((f) => f.t === 'exit'))
+    expect(got, String(tl)).toBe(true)
     const exit = rec.frames.find((f) => f.t === 'exit')
     // The code, not merely the fact: a socket that simply drops cannot tell a
     // clean exit from a crash, which is the whole reason this frame exists.
     expect(exit?.code).toBe(0)
-  }, 30_000)
+  }, 45_000)
 })
 
 describe('frames that are not the contract', () => {
