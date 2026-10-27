@@ -34,10 +34,17 @@ export interface ReportItem {
   suiteLine: string | null
 }
 
+/** TASK-2637 — one repo's suite: the newest fixed-shape suite line of a session in that workspace. */
+export interface WorkspaceSuite extends SuiteTotal {
+  workspaceId: string
+}
+
 export interface RunReport {
   goal: string
   generatedAt: string
   suite: SuiteTotal | null
+  /** One entry per session workspace, ordered by workspaceId; empty when no item session has a suite line. */
+  suites: WorkspaceSuite[]
   testsAdded: number
   unreadableCommits: string[]
   ac: AcCoverage
@@ -134,6 +141,8 @@ export async function buildRunReport(
   const seen = new Set<string>()
   let suite: SuiteTotal | null = null
   let suiteAt = ''
+  // A goal spanning repos has one suite per repo; `suite` alone showed only the newest one.
+  const byWorkspace = new Map<string, { at: string; total: SuiteTotal }>()
   const reportItems: ReportItem[] = []
 
   for (const task of items) {
@@ -167,6 +176,10 @@ export async function buildRunReport(
         suite = parsed
         suiteAt = s.startedAt
       }
+      const ws = s.workspaceId ?? ''
+      if (parsed && ws !== '' && s.startedAt > (byWorkspace.get(ws)?.at ?? '')) {
+        byWorkspace.set(ws, { at: s.startedAt, total: parsed })
+      }
     }
     reportItems.push({ task: task.id, title: task.title, ac, testsAdded, suiteLine })
   }
@@ -186,6 +199,9 @@ export async function buildRunReport(
     goal: goalId,
     generatedAt: deps.now(),
     suite,
+    suites: [...byWorkspace.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([workspaceId, { total }]) => ({ workspaceId, ...total })),
     testsAdded: reportItems.reduce((n, i) => n + i.testsAdded, 0),
     unreadableCommits: unreadable,
     ac: total,
@@ -201,8 +217,10 @@ export function reportFileName(goalId: string): string {
 }
 
 const FRONTMATTER_KEYS = ['goal', 'generatedAt', 'suite', 'testsAdded', 'unreadableCommits', 'ac', 'smoke', 'regression'] as const
+/** Written, but not required on read: a report written before TASK-2637 has no `suites` line and must stay readable. */
+const OPTIONAL_FRONTMATTER_KEYS = ['suites'] as const
 
-export type ReportFrontmatter = Omit<RunReport, 'items'>
+export type ReportFrontmatter = Omit<RunReport, 'items' | 'suites'> & { suites?: WorkspaceSuite[] }
 
 /**
  * TASK-2601 — read a report file's frontmatter back. Null when the block is
@@ -228,7 +246,7 @@ export function parseReportFrontmatter(text: string): ReportFrontmatter | null {
 const cell = (s: string): string => s.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
 
 export function renderRunReport(r: RunReport): string {
-  const fm = FRONTMATTER_KEYS.map((k) => `${k}: ${JSON.stringify(r[k])}`).join('\n')
+  const fm = [...FRONTMATTER_KEYS, ...OPTIONAL_FRONTMATTER_KEYS].map((k) => `${k}: ${JSON.stringify(r[k])}`).join('\n')
   const out: string[] = [`---\n${fm}\n---`, '', `# Test report — ${r.goal}`, '', `Generated ${r.generatedAt}.`, '']
 
   out.push('## Unit and integration suite', '')
@@ -237,6 +255,10 @@ export function renderRunReport(r: RunReport): string {
       ? `${r.suite.passed} passed, ${r.suite.skipped} skipped, ${r.suite.failed} failed (newest item session with a suite line).`
       : 'No suite line: no item session recorded `full suite: N passed, M skipped, K failed`.'
   )
+  if (r.suites.length > 1) {
+    out.push('', '| Workspace | Passed | Skipped | Failed |', '|---|---|---|---|')
+    for (const w of r.suites) out.push(`| ${cell(w.workspaceId)} | ${w.passed} | ${w.skipped} | ${w.failed} |`)
+  }
   out.push('', '## Tests added by this run', '', `${r.testsAdded} test case(s) added across the run's commits.`)
   if (r.unreadableCommits.length) out.push('', `Commits not readable here: ${r.unreadableCommits.join(', ')}.`)
 
