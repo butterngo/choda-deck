@@ -17,8 +17,15 @@ import { PtySession, samePath, defaultShell, type PtyLike, type PtySpawner } fro
 const REAL_CWD = processCwd()
 const isWindows = platform === 'win32'
 // A shell that exists on the runner, chosen per platform rather than assumed.
-const SHELL = isWindows ? 'powershell.exe' : '/bin/sh'
-const WIDTH_CMD = isWindows ? '$Host.UI.RawUI.WindowSize.Width\r' : 'tput cols\r'
+// cmd.exe on Windows, not powershell.exe (TASK-2010): it is what the app spawns
+// by default (`defaultShell` → COMSPEC), and Windows PowerShell's cold start on
+// windows-latest took 4.9-9.6 s to its prompt, and sometimes never printed one
+// within 12 s — it stopped after its banner. cmd.exe prompts in ~0.1 s.
+const SHELL = isWindows ? 'cmd.exe' : '/bin/sh'
+// `mode con` prints "Columns:        132". Matched with its label: cmd's banner
+// carries the Windows build number, which can contain "132" on its own.
+const WIDTH_CMD = isWindows ? 'mode con\r' : 'tput cols\r'
+const WIDTH_132 = isWindows ? /Columns:\s+132\b/ : /\b132\b/
 const EXIT_CMD = isWindows ? 'exit 0\r' : 'exit 0\r'
 
 interface Recorded {
@@ -97,13 +104,12 @@ async function until(pred: () => boolean, ms = 12_000): Promise<boolean> {
 }
 
 // TASK-2010 — on Windows the first bytes are ConPTY's own mode switches
-// (`\x1b[?9001h\x1b[?1004h`), ~0.5 s before PowerShell prints its prompt
-// (measured locally: first byte 56-156 ms, prompt 495-942 ms). Input written on
-// those bytes reaches a shell still starting up, and a slow runner drops it:
-// AC-1, AC-4 and AC-5 failed on windows-latest after exactly one `until` budget
-// (12.1-12.6 s), output present, the command's answer never. So a test writes
-// only once the shell has said it reads input — its prompt.
-const PROMPT = isWindows ? /PS [A-Za-z]:\\[^\r\n]*>/ : /[$#] ?$/m
+// (`\x1b[?9001h\x1b[?1004h`), not the shell. AC-1, AC-4 and AC-5 used to write
+// on them, and failed on windows-latest after exactly one `until` budget
+// (12.1-12.6 s) whenever the shell had not started reading yet. So a test
+// writes only once the shell has said it reads input — its prompt — and a
+// failure carries a timeline of which step it stopped at.
+const PROMPT = isWindows ? /[A-Za-z]:\\[^\r\n]*>/ : /[$#] ?$/m
 const visible = (s: string): string => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
 
 interface Timeline {
@@ -257,7 +263,7 @@ describePty('AC-4 — a resize is seen INSIDE the shell', () => {
 
     // Asked of the shell rather than of our own call log. "Accepted and
     // ignored" is the failure mode, and a spy on resize() cannot see it.
-    const saw = await writeAndAwait(rec, s, tl, WIDTH_CMD, () => rec.text().includes('132'))
+    const saw = await writeAndAwait(rec, s, tl, WIDTH_CMD, () => WIDTH_132.test(visible(rec.text())))
     expect(saw, String(tl)).toBe(true)
   }, 45_000)
 })
