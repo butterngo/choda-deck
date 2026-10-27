@@ -121,6 +121,68 @@ describe('choda-deck run report', () => {
     expect(frontmatter(reportPath()).suite).toEqual({ passed: 760, skipped: 1, failed: 0 })
   })
 
+  describe('suites per workspace (TASK-2637)', () => {
+    async function inWorkspace(workspaceId: string, taskId: string, startedAt: string, line: string): Promise<void> {
+      const s = await svc.createSession({ projectId: 'p', workspaceId, taskId, startedAt })
+      await svc.updateSession(s.id, {
+        status: 'completed',
+        endedAt: startedAt,
+        handoff: { testResults: { passed: [line], skipped: [] } }
+      })
+    }
+
+    beforeEach(async () => {
+      await svc.addWorkspace('p', 'b', 'B', repo)
+      await svc.addWorkspace('p', 'a', 'A', repo)
+      await svc.createTask({ id: 'TASK-11', projectId: 'p', parentTaskId: 'TASK-10', title: 'Item', body: BODY })
+      await svc.createTask({ id: 'TASK-12', projectId: 'p', parentTaskId: 'TASK-10', title: 'Item 2', body: BODY })
+      // b is the newest overall, so `suite` must come from b.
+      await inWorkspace('a', 'TASK-11', '2026-10-20T08:00:00.000Z', 'full suite: 10 passed, 0 skipped, 0 failed')
+      await inWorkspace('b', 'TASK-12', '2026-10-21T08:00:00.000Z', 'full suite: 20 passed, 1 skipped, 0 failed')
+    })
+
+    it('a goal with item sessions in workspaces a and b writes suites with both, ordered a then b', async () => {
+      expect(await runReportCommand(['TASK-10'], io, deps())).toBe(0)
+      expect(frontmatter(reportPath()).suites).toEqual([
+        { workspaceId: 'a', passed: 10, skipped: 0, failed: 0 },
+        { workspaceId: 'b', passed: 20, skipped: 1, failed: 0 }
+      ])
+    })
+
+    it('two sessions in the same workspace keep only the newer one in suites', async () => {
+      await inWorkspace('a', 'TASK-12', '2026-10-19T08:00:00.000Z', 'full suite: 5 passed, 0 skipped, 0 failed')
+      await inWorkspace('a', 'TASK-11', '2026-10-20T09:00:00.000Z', 'full suite: 11 passed, 0 skipped, 0 failed')
+      expect(await runReportCommand(['TASK-10'], io, deps())).toBe(0)
+      const suites = frontmatter(reportPath()).suites as { workspaceId: string; passed: number }[]
+      expect(suites.filter((s) => s.workspaceId === 'a')).toEqual([{ workspaceId: 'a', passed: 11, skipped: 0, failed: 0 }])
+    })
+
+    it('the same fixture still writes suite from the newest session overall', async () => {
+      expect(await runReportCommand(['TASK-10'], io, deps())).toBe(0)
+      expect(frontmatter(reportPath()).suite).toEqual({ passed: 20, skipped: 1, failed: 0 })
+    })
+
+    it('the written report read back with parseReportFrontmatter returns suites with both entries', async () => {
+      expect(await runReportCommand(['TASK-10'], io, deps())).toBe(0)
+      const fm = parseReportFrontmatter(fs.readFileSync(reportPath(), 'utf8'))
+      expect(fm?.suites?.map((s) => s.workspaceId)).toEqual(['a', 'b'])
+    })
+
+    it('a report text with every other key but no suites line still parses', async () => {
+      expect(await runReportCommand(['TASK-10'], io, deps())).toBe(0)
+      const old = fs
+        .readFileSync(reportPath(), 'utf8')
+        .split(/\r?\n/)
+        .filter((l) => !l.startsWith('suites: '))
+        .join('\n')
+      expect(old).not.toContain('suites: ')
+      const fm = parseReportFrontmatter(old)
+      expect(fm).not.toBeNull()
+      expect(fm?.suites).toBeUndefined()
+      expect(fm?.suite).toEqual({ passed: 20, skipped: 1, failed: 0 })
+    })
+  })
+
   it('items with only free-text suite lines give suite null', async () => {
     await svc.createTask({ id: 'TASK-11', projectId: 'p', parentTaskId: 'TASK-10', title: 'Item', body: BODY })
     await session('TASK-11', '2026-10-21T08:00:00.000Z', { testResults: { passed: ['vitest 860/860'], skipped: [] } })
