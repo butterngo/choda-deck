@@ -16,3 +16,29 @@ export function isLikelyWorktreePath(absPath: string): boolean {
   const normalized = path.normalize(absPath)
   return WORKTREE_SEGMENT_RE.test(normalized)
 }
+
+const slashes = (p: string): string => p.replace(/\\/g, '/').replace(/\/+$/, '')
+
+/**
+ * TASK-2790 — the checkout a command run from `cwd` belongs to, for a home
+ * workspace at `homeCwd`. A run worktree lives BESIDE its workspace at
+ * `<homeCwd>.worktrees/<name>` (the same convention workspace-resolver.ts
+ * follows for MCP since TASK-2726), so a cwd anywhere inside one returns that
+ * worktree's root; any other cwd, the registered checkout included, returns
+ * `homeCwd`. The bare `.worktrees` folder is not a checkout.
+ *
+ * Pure string work, no `path.resolve`: a Windows path must compare the same way
+ * when the tests run on Linux CI. Drive-letter paths (and win32) compare
+ * case-insensitively, and `\` and `/` are treated alike.
+ */
+export function checkoutRootFor(homeCwd: string, cwd: string): string {
+  const fold = process.platform === 'win32' || /^[a-z]:/i.test(homeCwd)
+  const key = (p: string): string => (fold ? slashes(p).toLowerCase() : slashes(p))
+  const base = `${key(homeCwd)}.worktrees/`
+  const c = slashes(cwd)
+  if (!key(c).startsWith(base)) return homeCwd
+  const name = c.slice(base.length).split('/')[0]
+  if (!name) return homeCwd
+  const root = c.slice(0, base.length + name.length)
+  return cwd.includes('\\') ? root.replace(/\//g, '\\') : root
+}

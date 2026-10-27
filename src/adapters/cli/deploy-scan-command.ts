@@ -1,5 +1,6 @@
 import * as fs from 'fs'
 import * as path from 'path'
+import { checkoutRootFor } from '../../core/worktree-path'
 import { execFileSync } from 'child_process'
 import {
   buildDeployChecklist,
@@ -25,6 +26,8 @@ export interface DeployIo {
 
 export type DeployScanCommandDeps = DeployScanDeps & {
   homeCwd(goalId: string): Promise<string | null>
+  /** Where the command runs; defaults to process.cwd(). Picks the worktree to write into. */
+  cwd?: () => string
 }
 
 export function git(cwd: string, args: string[]): string | null {
@@ -72,7 +75,8 @@ export async function deployScanCommand(args: string[], io: DeployIo, deps: Depl
       io.err(`error: goal ${goalId} has no home workspace cwd — pass --out\n`)
       return 2
     }
-    target = path.join(home, 'docs', 'reports', deployChecklistFileName(goalId))
+    // TASK-2790 — run from a worktree of the home workspace, write into that worktree.
+    target = path.join(checkoutRootFor(home, deps.cwd?.() ?? process.cwd()), 'docs', 'reports', deployChecklistFileName(goalId))
   }
   fs.mkdirSync(path.dirname(target), { recursive: true })
   fs.writeFileSync(target, renderDeployChecklist(goalId, items))

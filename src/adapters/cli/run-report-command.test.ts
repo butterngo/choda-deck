@@ -103,6 +103,16 @@ afterEach(async () => {
 })
 
 describe('choda-deck run report', () => {
+  it('TASK-2790: run from inside a worktree of the home workspace, it writes into that worktree, not the registered cwd', async () => {
+    const worktree = `${home}.worktrees${path.sep}autopilot-TASK-10`
+    const runIn = { ...deps(), cwd: () => path.join(worktree, 'src', 'deep') }
+    expect(await runReportCommand(['TASK-10'], io, runIn)).toBe(0)
+    const written = path.join(worktree, 'docs', 'reports', 'task-10-test-report.md')
+    expect(out.trim()).toBe(written)
+    expect(fs.existsSync(written)).toBe(true)
+    expect(fs.existsSync(reportPath())).toBe(false)
+  })
+
   it('an unknown goal returns exit code 2', async () => {
     expect(await runReportCommand(['TASK-999'], io, deps())).toBe(2)
     expect(err).toContain('unknown goal: TASK-999')

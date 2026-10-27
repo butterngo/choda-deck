@@ -110,6 +110,15 @@ describe('choda-deck deploy scan', () => {
     expect(err).toContain('unknown goal: TASK-999')
   })
 
+  it('TASK-2790: run from inside a worktree of the home workspace, it writes into that worktree, not the registered cwd', async () => {
+    await goal()
+    const worktree = `${home}.worktrees${path.sep}autopilot-TASK-10`
+    const runIn = { ...deps(), cwd: () => path.join(worktree, 'src', 'deep') }
+    expect(await deployScanCommand(['TASK-10'], io, runIn)).toBe(0)
+    expect(fs.existsSync(path.join(worktree, 'docs', 'reports', 'task-10-deploy-checklist.md'))).toBe(true)
+    expect(fs.existsSync(file())).toBe(false)
+  })
+
   it('AC-2: a migration plus its Designer and the snapshot yields exactly one migration item', async () => {
     await goal()
     await session(runCommit())
