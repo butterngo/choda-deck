@@ -1,5 +1,33 @@
 import { describe, it, expect } from 'vitest'
-import { isLikelyWorktreePath } from './worktree-path'
+import { checkoutRootFor, isLikelyWorktreePath } from './worktree-path'
+
+describe('checkoutRootFor (TASK-2790)', () => {
+  it('a cwd deep inside <home>.worktrees/<name> returns that worktree root', () => {
+    expect(checkoutRootFor('C:\\dev\\x', 'C:\\dev\\x.worktrees\\autopilot-TASK-1\\src\\a')).toBe(
+      'C:\\dev\\x.worktrees\\autopilot-TASK-1'
+    )
+  })
+
+  it('a cwd inside the registered checkout, and a cwd elsewhere, both return homeCwd', () => {
+    expect(checkoutRootFor('C:\\dev\\x', 'C:\\dev\\x\\docs')).toBe('C:\\dev\\x')
+    expect(checkoutRootFor('C:\\dev\\x', 'C:\\tmp')).toBe('C:\\dev\\x')
+    // A sibling repo whose name merely starts with the home's name is not one of its worktrees.
+    expect(checkoutRootFor('C:\\dev\\x', 'C:\\dev\\x-other.worktrees\\run-a')).toBe('C:\\dev\\x')
+  })
+
+  it('another case and forward slashes still map to the worktree', () => {
+    expect(checkoutRootFor('C:\\dev\\x', 'C:/DEV/X.worktrees/run-a')).toBe('C:/DEV/X.worktrees/run-a')
+  })
+
+  it('the bare .worktrees folder is not a checkout', () => {
+    expect(checkoutRootFor('C:\\dev\\x', 'C:\\dev\\x.worktrees')).toBe('C:\\dev\\x')
+    expect(checkoutRootFor('C:\\dev\\x', 'C:\\dev\\x.worktrees\\')).toBe('C:\\dev\\x')
+  })
+
+  it('POSIX paths map the same way', () => {
+    expect(checkoutRootFor('/home/u/repo', '/home/u/repo.worktrees/feat/src')).toBe('/home/u/repo.worktrees/feat')
+  })
+})
 
 describe('isLikelyWorktreePath', () => {
   it('matches Windows worktree paths', () => {

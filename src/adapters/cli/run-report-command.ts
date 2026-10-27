@@ -1,5 +1,6 @@
 import * as fs from 'fs'
 import * as path from 'path'
+import { checkoutRootFor } from '../../core/worktree-path'
 import { execFileSync } from 'child_process'
 import {
   buildRunReport,
@@ -28,6 +29,8 @@ export interface RunIo {
 export type RunReportCommandDeps = RunReportDeps & {
   /** The goal's home workspace cwd: the project's own cwd. */
   homeCwd(goalId: string): Promise<string | null>
+  /** Where the command runs; defaults to process.cwd(). Picks the worktree to write into. */
+  cwd?: () => string
 }
 
 /** `git show` of one commit, patch only; null when the repo does not have it. */
@@ -95,7 +98,8 @@ export async function runReportCommand(args: string[], io: RunIo, deps: RunRepor
       io.err(`error: goal ${goalId} has no home workspace cwd — pass --out\n`)
       return 2
     }
-    target = path.join(home, 'docs', 'reports', reportFileName(goalId))
+    // TASK-2790 — run from a worktree of the home workspace, write into that worktree.
+    target = path.join(checkoutRootFor(home, deps.cwd?.() ?? process.cwd()), 'docs', 'reports', reportFileName(goalId))
   }
   fs.mkdirSync(path.dirname(target), { recursive: true })
   fs.writeFileSync(target, renderRunReport(report))
