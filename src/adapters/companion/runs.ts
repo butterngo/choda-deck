@@ -156,7 +156,7 @@ export interface RunsDeps {
     Pick<ProjectOperations, 'getProject'> &
     Pick<WorkspaceOperations, 'findWorkspaces'> &
     Pick<RelationshipOperations, 'getRelationshipsFrom'> &
-    Pick<KnowledgeOperations, 'getKnowledge'> &
+    Pick<KnowledgeOperations, 'readKnowledgeSource'> &
     Pick<SessionEventOperations, 'listSessionEvents'>
   bridgeToken: string
 }
@@ -190,7 +190,10 @@ export function featureWhy(body: string): string | null {
 async function runFeature(svc: RunsDeps['svc'], goalId: string): Promise<RunFeature | null> {
   const slug = (await svc.getRelationshipsFrom(goalId, 'REALIZES'))[0]?.toId
   if (!slug) return null
-  const entry = await svc.getKnowledge(slug)
+  // TASK-2833 — the text only. getKnowledge also computes staleness, which
+  // spawns git per ref: 97% of GET /runs (1.5-1.9 s for 21 runs) went there,
+  // for a title and a paragraph. Same trap as TASK-1785.
+  const entry = await svc.readKnowledgeSource(slug)
   if (!entry) return { slug, title: slug, why: null, missing: true }
   return { slug, title: entry.frontmatter.title, why: featureWhy(entry.body), missing: false }
 }
