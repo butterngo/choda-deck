@@ -23,7 +23,7 @@ import { handleMeetingsRoute } from './meetings'
 import { handleActivityRoute } from './activity'
 import { handleImproveRoute } from './improve'
 import { handleInboxDecideRoute } from './inbox-decide'
-import { handleAttentionRoute } from './attention'
+import { handleAttentionRoute, listAttention } from './attention'
 import { handleAgentsRoute } from './agents'
 import { createProcessesRoute } from './processes'
 import { handleRunsRoute } from './runs'
@@ -195,7 +195,15 @@ async function route(
   if (await handleDeployChecksRoute(req, res, { svc: services.svc, bridgeToken: services.bridgeToken })) {
     return
   }
-  if (await handleRunsRoute(req, res, { svc: services.svc, bridgeToken: services.bridgeToken })) {
+  if (
+    await handleRunsRoute(req, res, {
+      svc: services.svc,
+      bridgeToken: services.bridgeToken,
+      // TASK-2857 — marks a run whose Claude Code session waits on Butter.
+      attention: () =>
+        listAttention({ dataDir: services.dataDir, workspaces: () => listAllWorkspaces(services) })
+    })
+  ) {
     return
   }
 

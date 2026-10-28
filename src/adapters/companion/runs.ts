@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'http'
+import type { AttentionSession } from './attention'
 import { Buffer } from 'buffer'
 import { timingSafeEqual } from 'crypto'
 import * as fs from 'fs'
@@ -125,6 +126,34 @@ export interface Run {
    * when there is no file; `items: null` when its frontmatter does not parse.
    */
   deploy: RunDeployRef | null
+  /**
+   * TASK-2857 — the run's Claude Code session is waiting on Butter. Null when no
+   * waiting attention file belongs to the run. A waiting run looked the same as
+   * a working one, and recorded waits reached 9.3 h (INBOX-2382).
+   */
+  waiting: RunWaiting | null
+}
+
+export interface RunWaiting {
+  sessionId: string
+  since: string
+}
+
+/**
+ * A run works in `<cwd>.worktrees/autopilot-<goalId>` (choda-autopilot §1.1), so
+ * a session belongs to the run when a segment of its cwd is exactly that name.
+ * The join is by path: a choda work-session id is not a Claude Code session id.
+ * Exact segment match keeps `autopilot-TASK-10` off the run for TASK-1.
+ */
+export function runWaiting(goalId: string, attention: AttentionSession[]): RunWaiting | null {
+  const dir = `autopilot-${goalId}`.toLowerCase()
+  // listAttention sorts oldest first, so the first match is the longest wait.
+  const hit = attention.find(
+    (a) =>
+      a.state === 'waiting' &&
+      a.cwd.split(/[\\/]/).some((seg) => seg.toLowerCase() === dir)
+  )
+  return hit ? { sessionId: hit.sessionId, since: hit.since } : null
 }
 
 export interface RunDeployRef {
@@ -159,6 +188,8 @@ export interface RunsDeps {
     Pick<KnowledgeOperations, 'readKnowledgeSource'> &
     Pick<SessionEventOperations, 'listSessionEvents'>
   bridgeToken: string
+  /** TASK-2857 — Claude Code sessions waiting on / finished for Butter (attention.ts). */
+  attention?: () => Promise<AttentionSession[]>
 }
 
 const WHY_MAX = 400
@@ -395,7 +426,8 @@ async function toItem(
 }
 
 export async function buildRuns(
-  svc: RunsDeps['svc']
+  svc: RunsDeps['svc'],
+  attention: AttentionSession[] = []
 ): Promise<{ runs: Run[]; otherNotices: RunNotice[] }> {
   const [raw, archived] = await Promise.all([
     svc.findInbox({ status: 'raw' }),
@@ -448,7 +480,8 @@ export async function buildRuns(
       lastActivityAt: '',
       feature: await runFeature(svc, goal.id),
       report: await runReport(svc, goal),
-      deploy: await runDeploy(svc, goal)
+      deploy: await runDeploy(svc, goal),
+      waiting: runWaiting(goal.id, attention)
     })
   }
 
@@ -502,7 +535,7 @@ export async function handleRunsRoute(
   }
   if (req.method !== 'GET') return (sendJson(res, 405, { error: 'GET only' }), true)
   try {
-    sendJson(res, 200, await buildRuns(deps.svc))
+    sendJson(res, 200, await buildRuns(deps.svc, deps.attention ? await deps.attention() : []))
   } catch (err) {
     sendJson(res, 500, { error: (err as Error).message })
   }
