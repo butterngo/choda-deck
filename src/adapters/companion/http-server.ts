@@ -26,7 +26,8 @@ import { handleInboxDecideRoute } from './inbox-decide'
 import { handleAttentionRoute, listAttention } from './attention'
 import { handleAgentsRoute } from './agents'
 import { createProcessesRoute } from './processes'
-import { handleRunsRoute } from './runs'
+import { buildRuns, handleRunsRoute } from './runs'
+import { CHECK_INTERVAL_MS, createMonitorAlerts, type WaitingRun } from './monitor-alerts'
 import { handleDeployChecksRoute } from './deploy-checks'
 import { handleSecretsCopyRoute } from './secrets-copy'
 import { handleTaskTranslateRoute } from './task-translate'
@@ -650,6 +651,28 @@ async function handleCapture(
   }
 }
 
+/** TASK-2859 — the runs whose Claude Code session waits on Butter, with that session's workspace. */
+async function waitingRuns(services: CompanionServices): Promise<WaitingRun[]> {
+  const attention = await listAttention({
+    dataDir: services.dataDir,
+    workspaces: () => listAllWorkspaces(services)
+  })
+  const { runs } = await buildRuns(services.svc, attention)
+  return runs.flatMap((r) =>
+    r.waiting
+      ? [
+          {
+            goalId: r.goal.id,
+            projectId: r.goal.projectId,
+            workspaceId: attention.find((a) => a.sessionId === r.waiting?.sessionId)?.workspaceId ?? null,
+            sessionId: r.waiting.sessionId,
+            since: r.waiting.since
+          }
+        ]
+      : []
+  )
+}
+
 export function startCompanionServer(
   services: CompanionServices,
   port: number
@@ -672,6 +695,21 @@ export function startCompanionServer(
         allowedCwds: async () => (await listAllWorkspaces(services)).map((w) => w.cwd)
       })
   })
+  // TASK-2859 — a run waiting on Butter for 20 min files one [monitor:] notice.
+  // Rule-based, no model call; a failed pass is retried by the next tick.
+  const monitor = createMonitorAlerts({
+    waitingRuns: () => waitingRuns(services),
+    rawInboxContents: async () =>
+      (await services.svc.findInbox({ status: 'raw' })).map((i) => i.content),
+    addInbox: async (item) => {
+      await services.svc.createInbox(item)
+    }
+  })
+  const monitorTimer = setInterval(() => {
+    monitor.check().catch(() => undefined)
+  }, CHECK_INTERVAL_MS)
+  monitorTimer.unref()
+
   return new Promise((resolve, reject) => {
     server.once('error', reject)
     server.listen(port, COMPANION_BIND, () => {
@@ -680,6 +718,7 @@ export function startCompanionServer(
       resolve({
         address: { port: boundPort, bind: COMPANION_BIND },
         close: async () => {
+          clearInterval(monitorTimer)
           // The socket first: an open WebSocket keeps the http server from
           // ever firing its close callback.
           await terminal.close()
