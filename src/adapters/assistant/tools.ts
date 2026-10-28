@@ -30,6 +30,10 @@ export interface AssistantReadServices {
   readVaultNote(path: string): Promise<string | null>
   searchChats(query: string, limit: number): Promise<unknown[]>
   getChat(id: string): Promise<unknown | null>
+  /** TASK-2860 — the live Claude Code sessions (adapter GET /agents). */
+  getAgents(): Promise<unknown>
+  /** TASK-2860 — a workspace's processes and ports (adapter GET /processes). */
+  getProcesses(workspaceId: string): Promise<unknown>
 }
 
 /** OpenAI / Azure function-tool format. */
@@ -225,6 +229,20 @@ const SPECS: ToolSpec[] = [
     { id: { type: 'string', description: 'Chat id.' } },
     ['id'],
     (r, a) => r.getChat(need(a, 'id'))
+  ),
+  tool(
+    'get_agents',
+    'The Claude Code sessions running on this laptop now: name, folder, workspace, status (busy, idle, waiting on Butter, finished) and since when, last activity, last tool used and subagent count. Use for "what are my agents doing" and "is anything waiting on me".',
+    {},
+    [],
+    (r) => r.getAgents()
+  ),
+  tool(
+    'get_processes',
+    "The processes running for one workspace: pid, name, memory, listening ports and command line (secrets masked), plus the ports its .NET projects declare and whether anything listens on them. Use when a service, test or smoke seems stuck or a port is not up.",
+    { workspaceId: { type: 'string', description: 'Workspace id, e.g. main.' } },
+    ['workspaceId'],
+    (r, a) => r.getProcesses(need(a, 'workspaceId'))
   )
 ]
 

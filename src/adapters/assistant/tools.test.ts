@@ -7,6 +7,8 @@ import { createServer, type Server } from 'http'
 import type { AddressInfo } from 'net'
 import { createAdapterReads } from './adapter-reads'
 import { createAssistantTools } from './tools'
+import { CAP_CHARS, TRUNCATED_MARKER } from './redact'
+import { REMOTE_TOOL_ALLOWLIST } from '../mcp/server-bootstrap'
 
 const TOKEN = 'tools-token'
 
@@ -115,9 +117,9 @@ describe('tools over the adapter', () => {
     expect(out).not.toContain('10.20.30.40')
   })
 
-  it('AC-8: the registry has exactly 15 tools, each description at most 1024 characters', () => {
+  it('AC-8: the registry has exactly 17 tools, each description at most 1024 characters', () => {
     const defs = tools().definitions
-    expect(defs).toHaveLength(15)
+    expect(defs).toHaveLength(17)
     for (const d of defs) expect(d.function.description.length).toBeLessThanOrEqual(1024)
   })
 
@@ -145,7 +147,9 @@ describe('tools over the adapter', () => {
       ['get_runs', '{}'],
       ['get_daily_report', '{}'],
       ['search_vault', '{"query":"x"}'],
-      ['read_vault_note', '{"path":"30-Knowledge/a.md"}']
+      ['read_vault_note', '{"path":"30-Knowledge/a.md"}'],
+      ['get_agents', '{}'],
+      ['get_processes', '{"workspaceId":"main"}']
     ]
     for (const [name, args] of calls) await t.execute(name, args)
     expect(seen.length).toBeGreaterThanOrEqual(calls.length)
@@ -155,5 +159,46 @@ describe('tools over the adapter', () => {
   it('execute never throws on junk arguments or an unknown tool', async () => {
     expect(JSON.parse(await tools().execute('get_task', 'not json'))).toEqual({ error: 'invalid arguments' })
     expect(JSON.parse(await tools().execute('drop_tables', '{}'))).toEqual({ error: 'unknown tool' })
+  })
+})
+
+// TASK-2860 — get_agents and get_processes: read-only, redacted, capped.
+describe('monitor tools', () => {
+  it('AC-1 the registry lists get_agents and get_processes, and get_processes requires workspaceId', () => {
+    const defs = new Map(tools().definitions.map((d) => [d.function.name, d]))
+    expect(defs.has('get_agents')).toBe(true)
+    expect(defs.get('get_processes')?.function.parameters.required).toEqual(['workspaceId'])
+  })
+
+  it('AC-2 a command line with --password=abc never comes back from get_processes', async () => {
+    answer = () => ({
+      status: 200,
+      body: { processes: [{ pid: 1, name: 'node.exe', cmdline: 'node app.js --password=abc' }], expectedPorts: [] }
+    })
+    const out = await tools().execute('get_processes', '{"workspaceId":"main"}')
+    expect(out).not.toContain('abc')
+    expect(new URL(seen[0].url, 'http://x').searchParams.get('workspaceId')).toBe('main')
+  })
+
+  it('AC-3 a 50000-char /agents payload comes back capped at 16000 chars plus the marker', async () => {
+    answer = () => ({ status: 200, body: { agents: [{ name: 'x'.repeat(50_000) }], unreadable: 0 } })
+    const out = await tools().execute('get_agents', '{}')
+    expect(out.length).toBeLessThanOrEqual(CAP_CHARS + TRUNCATED_MARKER.length)
+    expect(out.endsWith(TRUNCATED_MARKER)).toBe(true)
+  })
+
+  it('AC-4 both tools send only GET requests to the adapter', async () => {
+    answer = () => ({ status: 200, body: {} })
+    await tools().execute('get_agents', '{}')
+    await tools().execute('get_processes', '{"workspaceId":"main"}')
+    expect(seen.map((s) => `${s.method} ${new URL(s.url, 'http://x').pathname}`)).toEqual([
+      'GET /agents',
+      'GET /processes'
+    ])
+  })
+
+  it('AC-5 REMOTE_TOOL_ALLOWLIST holds neither get_agents nor get_processes', () => {
+    expect(REMOTE_TOOL_ALLOWLIST.has('get_agents')).toBe(false)
+    expect(REMOTE_TOOL_ALLOWLIST.has('get_processes')).toBe(false)
   })
 })
