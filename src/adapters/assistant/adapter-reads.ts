@@ -14,6 +14,8 @@
 //   get_meeting       GET /meetings + GET /artifacts/meetings/:id/{note,transcript}.json
 //   get_runs          GET /runs
 //   get_daily_report  GET /daily-report?date=
+//   get_agents        GET /agents
+//   get_processes     GET /processes?workspaceId=
 //   search_vault      GET /vault/search?q=&limit=
 //   read_vault_note   GET /vault/note?path=   (10-Projects, 30-Knowledge, .md only)
 //   search_chats, get_chat — the service's own store
@@ -223,6 +225,14 @@ export function createAdapterReads(deps: AdapterReadsDeps): AssistantReadService
 
     async getDailyReport(date) {
       return getJson(`/daily-report${q({ date })}`)
+    },
+
+    async getAgents() {
+      return getJson('/agents')
+    },
+
+    async getProcesses(workspaceId) {
+      return getJson(`/processes${q({ workspaceId })}`)
     },
 
     async searchVault(query, limit) {

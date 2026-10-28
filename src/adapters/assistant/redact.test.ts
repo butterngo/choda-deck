@@ -66,7 +66,9 @@ describe('read-only', () => {
       'searchVault',
       'readVaultNote',
       'searchChats',
-      'getChat'
+      'getChat',
+      'getAgents',
+      'getProcesses'
     ])
     const writes = new Map<string, ReturnType<typeof vi.fn>>()
     const svc = new Proxy({} as Record<string, unknown>, {
@@ -91,7 +93,8 @@ describe('read-only', () => {
       search_vault: '{"query":"x"}',
       read_vault_note: '{"path":"30-Knowledge/a.md"}',
       search_chats: '{"query":"x"}',
-      get_chat: '{"id":"CHAT-1"}'
+      get_chat: '{"id":"CHAT-1"}',
+      get_processes: '{"workspaceId":"main"}'
     }
     for (const d of tools.definitions) await tools.execute(d.function.name, args[d.function.name] ?? '{}')
     for (const [name, spy] of writes) expect(spy, name).toHaveBeenCalledTimes(0)
