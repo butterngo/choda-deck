@@ -2,6 +2,7 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
+| [every-new-oauth-connector-client-needs-its-callback-in-keycloak-valid-redirect-u](./every-new-oauth-connector-client-needs-its-callback-in-keycloak-valid-redirect-u.md) | gotcha | Every new OAuth connector client needs its callback in Keycloak Valid Redirect URIs | 2026-10-28 |  |
 | [companion-today](./companion-today.md) | feature | Companion Today: what moved yesterday, what is planned today, what is still left across all projects | 2026-10-23 |  |
 | [companion-runs](./companion-runs.md) | feature | Companion Runs: what each loop run did, tested and left for Butter | 2026-10-21 |  |
 | [a-self-skipping-pg-suite-must-fail-on-linux-ci-when-its-precondition-check-fails](./a-self-skipping-pg-suite-must-fail-on-linux-ci-when-its-precondition-check-fails.md) | gotcha | A self-skipping pg suite must fail on Linux CI when its precondition check fails | 2026-10-19 | ✱ |
