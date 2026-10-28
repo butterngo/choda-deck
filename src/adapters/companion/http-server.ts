@@ -24,6 +24,7 @@ import { handleActivityRoute } from './activity'
 import { handleImproveRoute } from './improve'
 import { handleInboxDecideRoute } from './inbox-decide'
 import { handleAttentionRoute } from './attention'
+import { handleAgentsRoute } from './agents'
 import { handleRunsRoute } from './runs'
 import { handleDeployChecksRoute } from './deploy-checks'
 import { handleSecretsCopyRoute } from './secrets-copy'
@@ -204,6 +205,16 @@ async function route(
   // TASK-2384 — Claude sessions waiting on Butter (written by the attention hook).
   if (
     await handleAttentionRoute(req, res, {
+      dataDir: services.dataDir,
+      workspaces: () => listAllWorkspaces(services)
+    })
+  ) {
+    return
+  }
+
+  // TASK-2855 — live Claude Code sessions (registry + attention + transcript tail).
+  if (
+    await handleAgentsRoute(req, res, {
       dataDir: services.dataDir,
       workspaces: () => listAllWorkspaces(services)
     })

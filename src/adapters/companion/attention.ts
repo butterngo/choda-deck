@@ -49,8 +49,15 @@ export function workspaceForCwd(
   let best: { id: string; len: number } | null = null
   for (const w of workspaces) {
     const root = norm(w.cwd)
+    // An autopilot run works in the sibling `<root>.worktrees/<name>` (TASK-2707);
+    // it belongs to the same workspace (gotcha anything-that-maps-a-cwd-to-a-workspace…).
+    const worktrees = root + '.worktrees'
     const inside =
-      target === root || target.startsWith(root + path.sep) || target.startsWith(root + '/')
+      target === root ||
+      target.startsWith(root + path.sep) ||
+      target.startsWith(root + '/') ||
+      target.startsWith(worktrees + path.sep) ||
+      target.startsWith(worktrees + '/')
     if (inside && (!best || root.length > best.len)) best = { id: w.id, len: root.length }
   }
   return best?.id ?? null
