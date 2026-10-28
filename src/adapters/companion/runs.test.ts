@@ -5,8 +5,10 @@ import * as path from 'path'
 import { createServer, type Server } from 'http'
 import type { AddressInfo } from 'net'
 import { SqliteTaskService } from '../../core/domain/sqlite-task-service'
+import type { AttentionSession } from './attention'
 import {
   acceptanceCounts,
+  buildRuns,
   handleRunsRoute,
   noticeKind,
   runState,
@@ -624,5 +626,80 @@ describe('noticeKind', () => {
   it('reads the leading emoji', () => {
     expect(noticeKind('🟡 TASK-1 needs a decision')).toBe('decision')
     expect(noticeKind('plain text')).toBe('other')
+  })
+})
+
+// TASK-2857 — Run.waiting: a run whose Claude Code session waits on Butter.
+describe('Run.waiting', () => {
+  const S = '2026-10-28T09:05:00.000Z'
+  const att = (state: 'waiting' | 'finished', cwd: string): AttentionSession => ({
+    sessionId: 'cc-1',
+    cwd,
+    workspaceId: 'web',
+    state,
+    since: S
+  })
+
+  async function goal(): Promise<void> {
+    await svc.createTask({ id: 'TASK-1', projectId: 'p', title: 'Goal', status: 'IN-PROGRESS' })
+    await svc.createTask({ id: 'TASK-2', projectId: 'p', parentTaskId: 'TASK-1', title: 'Item', body: BODY })
+    await notice(String.raw`[loop:web] ⚪ run TASK-1 started in C:\dev\x.worktrees\autopilot-TASK-1`)
+  }
+
+  const run1 = (runs: Run[]): Run | undefined => runs.find((r) => r.goal.id === 'TASK-1')
+
+  it('AC-1 a waiting attention file inside autopilot-TASK-1 marks that run waiting', async () => {
+    await goal()
+    const { runs } = await buildRuns(svc, [att('waiting', String.raw`C:\dev\x.worktrees\autopilot-TASK-1`)])
+    expect(run1(runs)?.waiting).toEqual({ sessionId: 'cc-1', since: S })
+  })
+
+  it('AC-2 the same file with state finished → waiting null', async () => {
+    await goal()
+    const { runs } = await buildRuns(svc, [att('finished', String.raw`C:\dev\x.worktrees\autopilot-TASK-1`)])
+    expect(run1(runs)?.waiting).toBeNull()
+  })
+
+  it('AC-3 a waiting file in autopilot-TASK-10 does not mark the run for TASK-1', async () => {
+    await goal()
+    const { runs } = await buildRuns(svc, [att('waiting', String.raw`C:\dev\x.worktrees\autopilot-TASK-10`)])
+    expect(run1(runs)?.waiting).toBeNull()
+  })
+
+  it('AC-4 a run with no attention file → waiting null', async () => {
+    await goal()
+    const { runs } = await buildRuns(svc)
+    expect(run1(runs)?.waiting).toBeNull()
+  })
+
+  it('AC-5 every other run field equals the response built without the attention join', async () => {
+    await goal()
+    const strip = (r: Run | undefined): Omit<Run, 'waiting'> | undefined => {
+      if (!r) return r
+      const { waiting: _w, ...rest } = r
+      return rest
+    }
+    const without = await buildRuns(svc)
+    const withJoin = await buildRuns(svc, [att('waiting', String.raw`C:\dev\x.worktrees\autopilot-TASK-1`)])
+    expect(strip(run1(withJoin.runs))).toEqual(strip(run1(without.runs)))
+    expect(withJoin.otherNotices).toEqual(without.otherNotices)
+  })
+
+  it('GET /runs passes the attention source through', async () => {
+    await goal()
+    const s = createServer((req, res) => {
+      void handleRunsRoute(req, res, {
+        svc,
+        bridgeToken: TOKEN,
+        attention: async () => [att('waiting', 'C:/dev/x.worktrees/autopilot-TASK-1/sub')]
+      })
+    })
+    await new Promise<void>((r) => s.listen(0, '127.0.0.1', () => r()))
+    const r = await fetch(`http://127.0.0.1:${(s.address() as AddressInfo).port}/runs`, {
+      headers: { 'x-choda-bridge-token': TOKEN }
+    })
+    const body = (await r.json()) as { runs: Run[] }
+    await new Promise<void>((r2) => s.close(() => r2()))
+    expect(run1(body.runs)?.waiting).toEqual({ sessionId: 'cc-1', since: S })
   })
 })
