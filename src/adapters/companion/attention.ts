@@ -57,7 +57,9 @@ export function workspaceForCwd(
       target.startsWith(root + path.sep) ||
       target.startsWith(root + '/') ||
       target.startsWith(worktrees + path.sep) ||
-      target.startsWith(worktrees + '/')
+      target.startsWith(worktrees + '/') ||
+      // A Windows cwd read on Linux (CI) keeps its '\', which is not path.sep there.
+      target.startsWith(worktrees + '\\')
     if (inside && (!best || root.length > best.len)) best = { id: w.id, len: root.length }
   }
   return best?.id ?? null
