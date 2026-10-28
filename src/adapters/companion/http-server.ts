@@ -25,6 +25,7 @@ import { handleImproveRoute } from './improve'
 import { handleInboxDecideRoute } from './inbox-decide'
 import { handleAttentionRoute } from './attention'
 import { handleAgentsRoute } from './agents'
+import { createProcessesRoute } from './processes'
 import { handleRunsRoute } from './runs'
 import { handleDeployChecksRoute } from './deploy-checks'
 import { handleSecretsCopyRoute } from './secrets-copy'
@@ -69,6 +70,9 @@ export interface CompanionServerHandle {
 
 // TASK-2704 — one git-scan cache for the adapter process, behind GET /daily-report.
 const dailyScanCache = createScanCache()
+
+// TASK-2856 — GET /processes; one instance so its 10 s snapshot cache is shared.
+const processesRoute = createProcessesRoute()
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body)
@@ -218,6 +222,17 @@ async function route(
       dataDir: services.dataDir,
       workspaces: () => listAllWorkspaces(services)
     })
+  ) {
+    return
+  }
+
+  // TASK-2856 — a workspace's processes, ports and declared .NET ports.
+  if (
+    await processesRoute(
+      req,
+      res,
+      async (id) => (await listAllWorkspaces(services)).find((w) => w.id === id) ?? null
+    )
   ) {
     return
   }
