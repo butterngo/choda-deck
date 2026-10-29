@@ -1,3 +1,4 @@
+import * as fs from 'node:fs'
 import type { InstrumentedServer } from '../instrumented-server'
 import { z } from 'zod'
 import { textResponse } from './types'
@@ -12,7 +13,7 @@ export const register = (server: InstrumentedServer, svc: ProjectToolsDeps): voi
     'project_add',
     {
       description:
-        'Add a new project (or update existing). A project owns tasks, conversations, sessions. On an existing project only `org` is updated; name and cwd stay as first registered.',
+        'Add a new project (or update existing). A project owns tasks, conversations, sessions. On an existing project only `org` is updated; name and cwd stay as first registered — use project_update to change them.',
       inputSchema: {
         id: z.string().describe('Project ID (kebab-case, e.g. automation-rule)'),
         name: z.string().describe('Display name'),
@@ -30,6 +31,31 @@ export const register = (server: InstrumentedServer, svc: ProjectToolsDeps): voi
     async ({ id, name, cwd, org }) => {
       await svc.ensureProject(id, name, cwd, org)
       return textResponse(await svc.getProject(id))
+    }
+  )
+
+  server.registerTool(
+    'project_update',
+    {
+      description:
+        'Change an existing project\'s cwd and/or name in place — e.g. after the repo folder was moved. project_add never touches them on an existing project. Warns when the new cwd does not exist on disk.',
+      inputSchema: {
+        id: z.string().describe('Project ID'),
+        cwd: z.string().min(1).optional().describe('New default working directory'),
+        name: z.string().min(1).optional().describe('New display name')
+      }
+    },
+    async ({ id, cwd, name }) => {
+      if (cwd === undefined && name === undefined) {
+        return textResponse({ ok: false, error: 'Pass cwd and/or name' })
+      }
+      const updated = await svc.updateProject(id, { cwd, name })
+      if (!updated) return textResponse({ ok: false, error: `Project ${id} not found` })
+      const cwdExists = cwd === undefined || fs.existsSync(cwd)
+      return textResponse({
+        project: updated,
+        warning: cwdExists ? null : `cwd ${cwd} not found on disk`
+      })
     }
   )
 

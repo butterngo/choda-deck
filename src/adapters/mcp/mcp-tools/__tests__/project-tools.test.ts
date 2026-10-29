@@ -80,4 +80,18 @@ describe('project tools', () => {
     expect(out).toContain('tasks: 1')
     expect(await svc.getProject('busy')).not.toBeNull()
   })
+
+  it('project_update changes cwd and keeps name + org', async () => {
+    await call('project_add', { id: 'hc', name: 'Headless CMS', cwd: '/old', org: 'ichiba' })
+    const out = JSON.parse(await call('project_update', { id: 'hc', cwd: '/definitely/missing' }))
+    expect(out.project).toEqual({ id: 'hc', name: 'Headless CMS', cwd: '/definitely/missing', org: 'ichiba' })
+    expect(out.warning).toContain('not found on disk')
+    expect((await svc.getProject('hc'))?.cwd).toBe('/definitely/missing')
+  })
+
+  it('project_update refuses an unknown project and an empty patch', async () => {
+    expect(JSON.parse(await call('project_update', { id: 'nope', cwd: '/x' })).ok).toBe(false)
+    await call('project_add', { id: 'hc', name: 'Headless CMS', cwd: '/hc' })
+    expect(JSON.parse(await call('project_update', { id: 'hc' })).ok).toBe(false)
+  })
 })

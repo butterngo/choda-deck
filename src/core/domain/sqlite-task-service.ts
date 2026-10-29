@@ -123,7 +123,7 @@ import type {
 
 import { initSchema } from './repositories/schema'
 import { ProjectRepository } from './repositories/project-repository'
-import type { ProjectRow, RemoveProjectResult } from './repositories/project-repository'
+import type { ProjectPatch, ProjectRow, RemoveProjectResult } from './repositories/project-repository'
 import { WorkspaceRepository } from './repositories/workspace-repository'
 import type { WorkspacePatch, WorkspaceRow } from './repositories/workspace-repository'
 import { TaskRepository } from './repositories/task-repository'
@@ -323,6 +323,10 @@ export class SqliteTaskService
 
   async ensureProject(id: string, name: string, cwd: string, org?: string | null): Promise<void> {
     this.projects.ensure(id, name, cwd, org)
+  }
+
+  async updateProject(id: string, patch: ProjectPatch): Promise<ProjectRow | null> {
+    return this.projects.update(id, patch)
   }
 
   async getProject(id: string): Promise<ProjectRow | null> {

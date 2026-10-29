@@ -42,6 +42,7 @@ const MUTATORS: Record<string, MutatorSpec> = {
   updateInbox: { table: 'inbox_items', op: 'upsert' },
   deleteInbox: { table: 'inbox_items', op: 'delete' },
   ensureProject: { table: 'projects', op: 'upsert' },
+  updateProject: { table: 'projects', op: 'upsert' },
   addWorkspace: { table: 'workspaces', op: 'upsert' },
   updateWorkspace: { table: 'workspaces', op: 'upsert' },
   // TASK-2605 — a tick or an un-tick; an un-tick is the row with sync_deleted_at

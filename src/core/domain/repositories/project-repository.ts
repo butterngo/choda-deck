@@ -9,6 +9,11 @@ export interface ProjectRow {
   org: string | null
 }
 
+export interface ProjectPatch {
+  name?: string
+  cwd?: string
+}
+
 // TASK-2200 — every table that owns rows by project_id, apart from workspaces
 // (which removal deletes with the project). A project holding any row here is
 // in use and cannot be removed.
@@ -41,6 +46,17 @@ export class ProjectRepository {
     if (org !== undefined) {
       this.db.prepare('UPDATE projects SET org = ? WHERE id = ?').run(org, id)
     }
+  }
+
+  // Rewrites name and/or cwd in place — ensure() deliberately never touches them on
+  // an existing project, so a moved repo needs this explicit path.
+  update(id: string, patch: ProjectPatch): ProjectRow | null {
+    const existing = this.get(id)
+    if (!existing) return null
+    const name = patch.name ?? existing.name
+    const cwd = patch.cwd ?? existing.cwd
+    this.db.prepare('UPDATE projects SET name = ?, cwd = ? WHERE id = ?').run(name, cwd, id)
+    return { ...existing, name, cwd }
   }
 
   get(id: string): ProjectRow | null {

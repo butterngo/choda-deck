@@ -131,3 +131,15 @@ describe('ProjectRepository — remove', () => {
     }
   })
 })
+
+describe('ProjectRepository.update', () => {
+  it('changes cwd only and leaves name + org alone', () => {
+    projects.ensure('p', 'P', 'C:\\old', 'ichiba')
+    expect(projects.update('p', { cwd: 'C:\\new' })).toEqual({ id: 'p', name: 'P', cwd: 'C:\\new', org: 'ichiba' })
+    expect(projects.get('p')?.cwd).toBe('C:\\new')
+  })
+
+  it('returns null for a missing project', () => {
+    expect(projects.update('missing', { name: 'X' })).toBeNull()
+  })
+})

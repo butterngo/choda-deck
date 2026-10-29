@@ -184,6 +184,18 @@ describe('wrapWithSyncWriteThrough', () => {
     expect(countPendingOps(svc.syncDatabase)).toBe(0)
   })
 
+  it('updateProject pushes the project row with the new cwd', async () => {
+    await svc.ensureProject('p', 'P', '/old', 'ichiba')
+    const wrapped = wrapWithSyncWriteThrough(svc, sink)
+
+    await wrapped.updateProject('p', { cwd: '/new' })
+
+    expect(sink.calls).toHaveLength(1)
+    const delta = sink.calls[0].deltas[0]
+    expect(delta.table).toBe('projects')
+    expect(delta.rows[0]).toMatchObject({ id: 'p', cwd: '/new', org: 'ichiba', sync_origin: 'laptop' })
+  })
+
   it('updateWorkspace pushes the workspace row with the new cwd', async () => {
     await svc.ensureProject('p', 'P', '/p')
     await svc.addWorkspace('p', 'ws', 'WS', '/old')
