@@ -178,7 +178,7 @@ All tools are namespaced `mcp__choda-tasks__<name>`. Claude calls them on your b
 | Domain | Tools | What it does |
 |---|---|---|
 | **Project** | `project_add`, `project_list`, `project_context` | Multi-project setup. Each project has its own task list and metadata. |
-| **Workspace** | `workspace_add`, `workspace_list`, `workspace_archive` | Sub-scope inside a project (e.g. `frontend`, `backend`, `infra`). Knowledge + tasks can be scoped to a workspace. |
+| **Workspace** | `workspace_add`, `workspace_list`, `workspace_update`, `workspace_archive` | Sub-scope inside a project (e.g. `frontend`, `backend`, `infra`). Knowledge + tasks can be scoped to a workspace. |
 | **Task** | `task_create`, `task_list`, `task_update`, `task_context`, `ac_check` | TODO → READY → IN-PROGRESS → DONE/CANCELLED. Each task has body + acceptance criteria + labels + priority. `ac_check` ticks one AC item with evidence. |
 | **Session** | `session_start`, `session_checkpoint`, `session_end`, `session_resume`, `session_cancel`, `session_list`, `session_event_add`, `session_event_list` | Bind a work session to a task. Checkpoint progress so the next session resumes with full context; `session_cancel` retires a session without completing its task. |
 | **Conversation** | `conversation_open`, `conversation_add`, `conversation_decide`, `conversation_signoff`, `conversation_mark_read`, `conversation_list`, `conversation_read`, `conversation_poll` | Structured threads (e.g. FE/BE alignment, ADR debate). Status is `open` → `decided`; `decide` logs the resolution, `signoff` records agreement. |

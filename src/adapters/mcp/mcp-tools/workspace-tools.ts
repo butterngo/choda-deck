@@ -46,12 +46,45 @@ export const register = (server: InstrumentedServer, svc: WorkspaceToolsDeps): v
       const existing = await svc.getWorkspace(id)
       if (existing) {
         return textResponse(
-          `Workspace ${id} already exists (project ${existing.projectId}) — use workspace_archive or pick a different id`
+          `Workspace ${id} already exists (project ${existing.projectId}) — use workspace_update to change its cwd/label, or pick a different id`
         )
       }
       const ws = await svc.addWorkspace(projectId, id, label, cwd)
       const cwdExists = fs.existsSync(cwd)
       return textResponse({ workspace: ws, warning: cwdExists ? null : `cwd ${cwd} not found on disk` })
+    }
+  )
+
+  server.registerTool(
+    'workspace_update',
+    {
+      description:
+        'Change a workspace\'s cwd and/or label in place — e.g. after the repo folder was moved. Keeps the id, so sessions, knowledge and tasks stay linked. Warns when the new cwd does not exist on disk.',
+      inputSchema: {
+        projectId: z.string().describe('Parent project ID'),
+        workspaceId: z.string().describe('Workspace ID to update'),
+        cwd: z.string().min(1).optional().describe('New working directory path'),
+        label: z.string().min(1).optional().describe('New short label')
+      }
+    },
+    async ({ projectId, workspaceId, cwd, label }) => {
+      if (cwd === undefined && label === undefined) {
+        return textResponse({ ok: false, error: 'Pass cwd and/or label' })
+      }
+      const ws = await svc.getWorkspace(workspaceId)
+      if (!ws) return textResponse({ ok: false, error: `Workspace ${workspaceId} not found` })
+      if (ws.projectId !== projectId) {
+        return textResponse({
+          ok: false,
+          error: `Workspace ${workspaceId} belongs to project ${ws.projectId}, not ${projectId}`
+        })
+      }
+      const updated = await svc.updateWorkspace(workspaceId, { cwd, label })
+      const cwdExists = cwd === undefined || fs.existsSync(cwd)
+      return textResponse({
+        workspace: updated,
+        warning: cwdExists ? null : `cwd ${cwd} not found on disk`
+      })
     }
   )
 

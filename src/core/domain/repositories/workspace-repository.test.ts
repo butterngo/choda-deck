@@ -130,4 +130,22 @@ describe('WorkspaceRepository', () => {
     expect(workspaces.countReferences('a')).toEqual({ sessions: 2 })
     expect(workspaces.countReferences('b')).toEqual({ sessions: 0 })
   })
+
+  it('update changes cwd only and keeps label + archive state', () => {
+    workspaces.add('p1', 'be', 'BE', 'C:\\old')
+    workspaces.archive('be')
+    const row = workspaces.update('be', { cwd: 'C:\\new' })
+    expect(row).toMatchObject({ id: 'be', label: 'BE', cwd: 'C:\\new' })
+    expect(row?.archivedAt).not.toBeNull()
+    expect(workspaces.get('be')).toEqual(row)
+  })
+
+  it('update changes label only', () => {
+    workspaces.add('p1', 'be', 'BE', 'C:\\dev')
+    expect(workspaces.update('be', { label: 'Backend' })).toMatchObject({ label: 'Backend', cwd: 'C:\\dev' })
+  })
+
+  it('update returns null for missing id', () => {
+    expect(workspaces.update('missing', { cwd: 'C:\\x' })).toBeNull()
+  })
 })

@@ -184,6 +184,20 @@ describe('wrapWithSyncWriteThrough', () => {
     expect(countPendingOps(svc.syncDatabase)).toBe(0)
   })
 
+  it('updateWorkspace pushes the workspace row with the new cwd', async () => {
+    await svc.ensureProject('p', 'P', '/p')
+    await svc.addWorkspace('p', 'ws', 'WS', '/old')
+    const wrapped = wrapWithSyncWriteThrough(svc, sink)
+
+    await wrapped.updateWorkspace('ws', { cwd: '/new' })
+
+    expect(sink.calls).toHaveLength(1)
+    const delta = sink.calls[0].deltas[0]
+    expect(delta.table).toBe('workspaces')
+    expect(delta.rows[0]).toMatchObject({ id: 'ws', cwd: '/new', label: 'WS', sync_origin: 'laptop' })
+    expect(delta.rows[0].sync_updated_at).toBeGreaterThan(0)
+  })
+
   it('exposes syncDatabase through the proxy (bootstrap reads the loop db from it)', () => {
     const wrapped = wrapWithSyncWriteThrough(svc, sink)
     const db = (wrapped as unknown as { syncDatabase: typeof svc.syncDatabase }).syncDatabase

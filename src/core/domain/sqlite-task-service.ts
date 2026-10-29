@@ -125,7 +125,7 @@ import { initSchema } from './repositories/schema'
 import { ProjectRepository } from './repositories/project-repository'
 import type { ProjectRow, RemoveProjectResult } from './repositories/project-repository'
 import { WorkspaceRepository } from './repositories/workspace-repository'
-import type { WorkspaceRow } from './repositories/workspace-repository'
+import type { WorkspacePatch, WorkspaceRow } from './repositories/workspace-repository'
 import { TaskRepository } from './repositories/task-repository'
 import { DocumentRepository } from './repositories/document-repository'
 import { TagRepository } from './repositories/tag-repository'
@@ -355,6 +355,9 @@ export class SqliteTaskService
   }
   async findWorkspaces(projectId: string, includeArchived = false): Promise<WorkspaceRow[]> {
     return this.workspaces.findByProject(projectId, includeArchived)
+  }
+  async updateWorkspace(id: string, patch: WorkspacePatch): Promise<WorkspaceRow | null> {
+    return this.workspaces.update(id, patch)
   }
   async archiveWorkspace(id: string): Promise<WorkspaceRow | null> {
     return this.workspaces.archive(id)

@@ -8,6 +8,11 @@ export interface WorkspaceRow {
   archivedAt: string | null
 }
 
+export interface WorkspacePatch {
+  label?: string
+  cwd?: string
+}
+
 export interface WorkspaceReferenceCounts {
   sessions: number
 }
@@ -38,6 +43,17 @@ export class WorkspaceRepository {
       : 'SELECT id, project_id, label, cwd, archived_at FROM workspaces WHERE project_id = ? AND archived_at IS NULL ORDER BY label'
     const rows = this.db.prepare(sql).all(projectId) as Array<Record<string, unknown>>
     return rows.map(mapRow)
+  }
+
+  // Rewrites label and/or cwd in place, keeping the id so sessions, knowledge and
+  // tasks that reference the workspace stay linked (e.g. after a repo is moved).
+  update(id: string, patch: WorkspacePatch): WorkspaceRow | null {
+    const existing = this.get(id)
+    if (!existing) return null
+    const label = patch.label ?? existing.label
+    const cwd = patch.cwd ?? existing.cwd
+    this.db.prepare('UPDATE workspaces SET label = ?, cwd = ? WHERE id = ?').run(label, cwd, id)
+    return { ...existing, label, cwd }
   }
 
   archive(id: string): WorkspaceRow | null {
