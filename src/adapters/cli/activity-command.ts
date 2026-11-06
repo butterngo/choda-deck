@@ -10,6 +10,10 @@ export const ACTIVITY_HELP = `activity digest [--date YYYY-MM-DD] [--catch-up] [
   --date      Local date to digest (default: yesterday)
   --catch-up  Fill every missing date in the last 7 days; never rewrites a file
   --tz        Time zone for day boundaries (default: Asia/Ho_Chi_Minh)
+activity week [--week YYYY-Www] [--json]
+  Choda projects with >= 60 active minutes in an ISO week, and the week's pick.
+activity week pick <projectId>... [--week YYYY-Www]
+  Record the week's owned projects (at most 4 — rule 1 of personal-operating-rules).
 `
 
 interface ParsedArgs {
@@ -46,10 +50,116 @@ function parseArgs(args: string[]): ParsedArgs | string {
   return out
 }
 
+interface WeekArgs {
+  pick: string[] | null
+  week?: string
+  json: boolean
+}
+
+function parseWeekArgs(args: string[]): WeekArgs | string {
+  const out: WeekArgs = { pick: null, json: false }
+  let i = 0
+  if (args[0] === 'pick') {
+    out.pick = []
+    i = 1
+  }
+  for (; i < args.length; i++) {
+    const a = args[i]
+    if (a === '--json') out.json = true
+    else if (a === '--week') {
+      const v = args[++i]
+      if (!v) return '--week needs a value'
+      out.week = v
+    } else if (a.startsWith('--')) return `unknown option "${a}"`
+    else if (out.pick) out.pick.push(a)
+    else return `unexpected argument "${a}"`
+  }
+  return out
+}
+
+// TASK-3127 — rule 1 of personal-operating-rules: report the week's active
+// projects, or record the week's pick. A refused pick exits 1 and writes nothing.
+async function runWeek(args: string[]): Promise<number> {
+  const parsed = parseWeekArgs(args)
+  if (typeof parsed === 'string') {
+    process.stderr.write(`error: ${parsed}\n\n${ACTIVITY_HELP}`)
+    return 2
+  }
+  const week = await import('../../core/domain/activity/activity-week')
+  const { localDate, DEFAULT_TZ } = await import('../../core/domain/activity/activity-digest')
+  const label = parsed.week ?? week.isoWeekOf(localDate(Date.now(), DEFAULT_TZ))
+  if (!week.isValidWeek(label)) {
+    process.stderr.write(`error: --week must be an ISO week like 2026-W45 (got "${label}")\n`)
+    return 2
+  }
+
+  const { resolveDataPaths } = await import('../../core/paths')
+  const { default: Database } = await import('better-sqlite3')
+  const { dbPath, artifactsDir } = resolveDataPaths()
+  const db = fs.existsSync(dbPath)
+    ? new Database(dbPath, { readonly: true, fileMustExist: true })
+    : null
+  try {
+    const workspaces = (db
+      ?.prepare(
+        `SELECT project_id AS projectId, cwd FROM workspaces WHERE archived_at IS NULL
+       UNION ALL SELECT id AS projectId, cwd FROM projects`
+      )
+      .all() ?? []) as { projectId: string; cwd: string }[]
+
+    if (parsed.pick) {
+      const projects = (db?.prepare('SELECT id FROM projects').all() ?? []) as { id: string }[]
+      const refused = week.validatePick(
+        parsed.pick,
+        projects.map((p) => p.id)
+      )
+      if (refused) {
+        process.stderr.write(`error: ${refused}\n`)
+        return 1
+      }
+      const prev = week.readWeekPick(artifactsDir, label)
+      const file = week.writeWeekPick(artifactsDir, {
+        week: label,
+        picked: parsed.pick,
+        pickedAt: new Date().toISOString(),
+        swaps: prev?.swaps ?? []
+      })
+      process.stdout.write(`activity week ${label}: picked ${parsed.pick.join(', ')} -> ${file}\n`)
+      return 0
+    }
+
+    const report = week.weekReport(artifactsDir, label, workspaces, {
+      homeDir: os.homedir(),
+      vaultDir: process.env.CHODA_CONTENT_ROOT || undefined
+    })
+    if (parsed.json) {
+      process.stdout.write(JSON.stringify(report, null, 2) + '\n')
+      return 0
+    }
+    process.stdout.write(
+      `activity week ${label}: ${report.active.length} active projects (limit ${report.limit})\n`
+    )
+    for (const p of report.active) {
+      process.stdout.write(
+        `  ${p.projectId}  ${p.minutes} min${p.registered ? '' : ' (unregistered)'}\n`
+      )
+    }
+    process.stdout.write(
+      report.picked
+        ? `picked: ${report.picked.join(', ')}\n`
+        : 'picked: none — run `activity week pick`\n'
+    )
+    return 0
+  } finally {
+    db?.close()
+  }
+}
+
 export async function dispatchActivity(sub: string | undefined, args: string[]): Promise<number> {
+  if (sub === 'week') return runWeek(args)
   if (sub !== 'digest') {
     process.stderr.write(
-      `error: unknown activity subcommand "${sub ?? ''}" — only "activity digest" is supported\n\n${ACTIVITY_HELP}`
+      `error: unknown activity subcommand "${sub ?? ''}" — expected "digest" or "week"\n\n${ACTIVITY_HELP}`
     )
     return 2
   }
