@@ -399,6 +399,14 @@ export const MIGRATIONS: readonly Migration[] = [
         UNIQUE (goal_task_id, env, item_key)
       );
     `
+  },
+  {
+    // TASK-3128 — what a project gives Butter (income | reputation | fun). Nullable and
+    // additive like 015_project_org, so a node on the previous schema drops it on push.
+    name: '020_project_purpose',
+    sql: `
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS purpose TEXT;
+    `
   }
 ]
 

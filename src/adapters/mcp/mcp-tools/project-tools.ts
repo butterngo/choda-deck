@@ -4,9 +4,20 @@ import { z } from 'zod'
 import { textResponse } from './types'
 import { buildProjectContext, type ProjectContextDeps } from './project-context-builder'
 import type { ProjectOperations } from '../../../core/domain/interfaces/project-repository.interface'
+import {
+  PROJECT_PURPOSES,
+  isProjectPurpose
+} from '../../../core/domain/repositories/project-repository'
 import type { WorkspaceOperations } from '../../../core/domain/interfaces/workspace-repository.interface'
 
 export type ProjectToolsDeps = ProjectOperations & WorkspaceOperations & ProjectContextDeps
+
+function purposeError(got: unknown): string {
+  const allowed = PROJECT_PURPOSES.join(' | ')
+  return got === undefined
+    ? `purpose is required for a new project — one of ${allowed}`
+    : `purpose must be one of ${allowed} (got "${String(got)}")`
+}
 
 export const register = (server: InstrumentedServer, svc: ProjectToolsDeps): void => {
   server.registerTool(
@@ -25,11 +36,24 @@ export const register = (server: InstrumentedServer, svc: ProjectToolsDeps): voi
           .optional()
           .describe(
             'Organisation the project belongs to (e.g. ichiba, mantu, personal). Omit to leave it unchanged; null clears it.'
+          ),
+        purpose: z
+          .enum(PROJECT_PURPOSES)
+          .optional()
+          .describe(
+            'What the project gives you: income | reputation | fun. Required for a new project; omit on an existing one to leave it unchanged.'
           )
       }
     },
-    async ({ id, name, cwd, org }) => {
-      await svc.ensureProject(id, name, cwd, org)
+    async ({ id, name, cwd, org, purpose }) => {
+      // TASK-3128 — rule 4 of personal-operating-rules: a new project must say what it gives.
+      if (purpose !== undefined && !isProjectPurpose(purpose)) {
+        return textResponse({ ok: false, error: purposeError(purpose) })
+      }
+      if (purpose === undefined && !(await svc.getProject(id))) {
+        return textResponse({ ok: false, error: purposeError(undefined) })
+      }
+      await svc.ensureProject(id, name, cwd, org, purpose)
       return textResponse(await svc.getProject(id))
     }
   )
@@ -38,18 +62,25 @@ export const register = (server: InstrumentedServer, svc: ProjectToolsDeps): voi
     'project_update',
     {
       description:
-        'Change an existing project\'s cwd and/or name in place — e.g. after the repo folder was moved. project_add never touches them on an existing project. Warns when the new cwd does not exist on disk.',
+        'Change an existing project\'s cwd, name and/or purpose in place — e.g. after the repo folder was moved. project_add never touches cwd or name on an existing project. Warns when the new cwd does not exist on disk.',
       inputSchema: {
         id: z.string().describe('Project ID'),
         cwd: z.string().min(1).optional().describe('New default working directory'),
-        name: z.string().min(1).optional().describe('New display name')
+        name: z.string().min(1).optional().describe('New display name'),
+        purpose: z
+          .enum(PROJECT_PURPOSES)
+          .optional()
+          .describe('What the project gives you: income | reputation | fun')
       }
     },
-    async ({ id, cwd, name }) => {
-      if (cwd === undefined && name === undefined) {
-        return textResponse({ ok: false, error: 'Pass cwd and/or name' })
+    async ({ id, cwd, name, purpose }) => {
+      if (cwd === undefined && name === undefined && purpose === undefined) {
+        return textResponse({ ok: false, error: 'Pass cwd, name and/or purpose' })
       }
-      const updated = await svc.updateProject(id, { cwd, name })
+      if (purpose !== undefined && !isProjectPurpose(purpose)) {
+        return textResponse({ ok: false, error: purposeError(purpose) })
+      }
+      const updated = await svc.updateProject(id, { cwd, name, purpose })
       if (!updated) return textResponse({ ok: false, error: `Project ${id} not found` })
       const cwdExists = cwd === undefined || fs.existsSync(cwd)
       return textResponse({
@@ -62,13 +93,19 @@ export const register = (server: InstrumentedServer, svc: ProjectToolsDeps): voi
   server.registerTool(
     'project_list',
     {
-      description: 'List all projects with their workspaces. Pass org to list one organisation only.',
+      description:
+        'List all projects with their workspaces. Pass org to list one organisation only; missingPurpose=true lists only projects with no purpose yet.',
       inputSchema: {
-        org: z.string().min(1).optional().describe('Only projects of this organisation')
+        org: z.string().min(1).optional().describe('Only projects of this organisation'),
+        missingPurpose: z
+          .boolean()
+          .optional()
+          .describe('Only projects whose purpose is not set (rule 4 of personal-operating-rules)')
       }
     },
-    async ({ org }) => {
-      const projects = await svc.listProjects(org)
+    async ({ org, missingPurpose }) => {
+      const all = await svc.listProjects(org)
+      const projects = missingPurpose ? all.filter((p) => p.purpose === null) : all
       const result = await Promise.all(
         projects.map(async (p) => ({
           ...p,

@@ -166,3 +166,28 @@ describe('planApplyRow — idempotent re-delivery vs a genuine tie (TASK-1508 AC
     expect(planApplyRow(null, at(1))).toBe('applied')
   })
 })
+
+// TASK-3128 — a pushed project row carrying `purpose` sets it on the receiving side.
+describe('applyDeltaToSqlite — projects.purpose', () => {
+  it('applies a project row and stores its purpose', () => {
+    const db = new Database(':memory:')
+    initSchema(db)
+    const row: PulledRow = {
+      id: 'np',
+      name: 'New Project',
+      cwd: '/np',
+      org: null,
+      purpose: 'reputation',
+      sync_updated_at: 7,
+      sync_deleted_at: null,
+      sync_origin: 'laptop'
+    }
+    const result = applyDeltaToSqlite(db, [{ table: 'projects', rows: [row] }], 'laptop')
+    expect(result.applied).toBe(1)
+    const stored = db.prepare('SELECT purpose FROM projects WHERE id = ?').get('np') as {
+      purpose: string
+    }
+    expect(stored.purpose).toBe('reputation')
+    db.close()
+  })
+})

@@ -276,6 +276,13 @@ function runLegacyMigrations(db: Database.Database): void {
     /* exists */
   }
 
+  // TASK-3128: what a project gives Butter — income | reputation | fun (nullable, additive)
+  try {
+    db.exec('ALTER TABLE projects ADD COLUMN purpose TEXT')
+  } catch {
+    /* exists */
+  }
+
 
   // Global counter table — replaces per-project counters.
   // IDs (TASK-NNN, INBOX-NNN) must be globally unique because PKs are single column.
