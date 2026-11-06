@@ -14,6 +14,9 @@ activity week [--week YYYY-Www] [--json]
   Choda projects with >= 60 active minutes in an ISO week, and the week's pick.
 activity week pick <projectId>... [--week YYYY-Www]
   Record the week's owned projects (at most 4 — rule 1 of personal-operating-rules).
+activity week swap <out> <in> [--override "<reason>"] [--week YYYY-Www]
+  Hand a picked project's slot to another. Refused (exit 3) while <out> still has
+  READY / IN-PROGRESS / IMPLEMENTED tasks or a green open PR, unless overridden.
 `
 
 interface ParsedArgs {
@@ -52,28 +55,37 @@ function parseArgs(args: string[]): ParsedArgs | string {
 
 interface WeekArgs {
   pick: string[] | null
+  swap: string[] | null
+  override?: string
   week?: string
   json: boolean
 }
 
 function parseWeekArgs(args: string[]): WeekArgs | string {
-  const out: WeekArgs = { pick: null, json: false }
+  const out: WeekArgs = { pick: null, swap: null, json: false }
   let i = 0
   if (args[0] === 'pick') {
     out.pick = []
+    i = 1
+  } else if (args[0] === 'swap') {
+    out.swap = []
     i = 1
   }
   for (; i < args.length; i++) {
     const a = args[i]
     if (a === '--json') out.json = true
-    else if (a === '--week') {
+    else if (a === '--week' || a === '--override') {
       const v = args[++i]
-      if (!v) return '--week needs a value'
-      out.week = v
+      if (!v) return `${a} needs a value`
+      if (a === '--week') out.week = v
+      else out.override = v
     } else if (a.startsWith('--')) return `unknown option "${a}"`
     else if (out.pick) out.pick.push(a)
+    else if (out.swap) out.swap.push(a)
     else return `unexpected argument "${a}"`
   }
+  if (out.swap && out.swap.length !== 2) return 'swap takes exactly <out> <in>'
+  if (out.override !== undefined && !out.swap) return '--override only applies to swap'
   return out
 }
 
@@ -106,6 +118,25 @@ async function runWeek(args: string[]): Promise<number> {
        UNION ALL SELECT id AS projectId, cwd FROM projects`
       )
       .all() ?? []) as { projectId: string; cwd: string }[]
+
+    // TASK-3129 — a picked project with nothing left open hands its slot to another.
+    if (parsed.swap) {
+      if (!db) {
+        process.stderr.write(`error: no choda database at ${dbPath}\n`)
+        return 1
+      }
+      const { swapWeekSlot } = await import('../../core/domain/activity/rules-check')
+      const [out, into] = parsed.swap
+      const res = swapWeekSlot(db, artifactsDir, label, out, into, { override: parsed.override })
+      if (!res.ok) {
+        process.stderr.write(`error: ${res.error}\n`)
+        return res.code
+      }
+      process.stdout.write(
+        `activity week ${label}: ${out} -> ${into}, picked ${res.pick.picked.join(', ')}\n`
+      )
+      return 0
+    }
 
     if (parsed.pick) {
       const projects = (db?.prepare('SELECT id FROM projects').all() ?? []) as { id: string }[]
