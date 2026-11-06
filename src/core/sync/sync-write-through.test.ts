@@ -154,6 +154,15 @@ describe('wrapWithSyncWriteThrough', () => {
     expect(delta.rows[0]).toMatchObject({ id: 'p', org: 'ichiba', sync_origin: 'laptop' })
   })
 
+  // TASK-3128 — purpose rides along the same way.
+  it('ensureProject and updateProject push the project row carrying purpose', async () => {
+    const wrapped = wrapWithSyncWriteThrough(svc, sink)
+    await wrapped.ensureProject('p', 'P', '/p', undefined, 'fun')
+    expect(sink.calls[0].deltas[0].rows[0]).toMatchObject({ id: 'p', purpose: 'fun' })
+    await wrapped.updateProject('p', { purpose: 'income' })
+    expect(sink.calls[1].deltas[0].rows[0]).toMatchObject({ id: 'p', purpose: 'income' })
+  })
+
   it('removeProject tombstones each workspace, then the project', async () => {
     await svc.ensureProject('gone', 'Gone', '/gone')
     await svc.addWorkspace('gone', 'gone-ws', 'WS', '/gone/ws')

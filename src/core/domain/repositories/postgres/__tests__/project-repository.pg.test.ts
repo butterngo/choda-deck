@@ -46,4 +46,25 @@ describeIfDocker('PostgresProjectRepository — org', () => {
     expect((await repo.get('b'))?.org).toBeNull()
     expect((await repo.list('ichiba')).map((p) => p.id)).toEqual(['a'])
   })
+
+  // TASK-3128 — projects.purpose (rule 4 of personal-operating-rules).
+  it('020_project_purpose adds a nullable purpose; a pre-migration row reads back null', async () => {
+    await env.conn.query('ALTER TABLE projects DROP COLUMN purpose')
+    await env.conn.query("DELETE FROM _migrations WHERE name = '020_project_purpose'")
+    await env.conn.query(
+      "INSERT INTO projects (id, name, cwd) VALUES ('pre', 'Pre Purpose', 'C:/dev/pre')"
+    )
+
+    const result = await migrate(env.conn)
+
+    expect(result.applied).toEqual(['020_project_purpose'])
+    const col = await env.conn.query(
+      "SELECT is_nullable FROM information_schema.columns WHERE table_name = 'projects' AND column_name = 'purpose'"
+    )
+    expect(col.rows[0]).toEqual({ is_nullable: 'YES' })
+    const repo = new PostgresProjectRepository(env.conn)
+    expect((await repo.get('pre'))?.purpose).toBeNull()
+    await repo.ensure('pre', 'Pre Purpose', 'C:/dev/pre', undefined, 'reputation')
+    expect((await repo.get('pre'))?.purpose).toBe('reputation')
+  })
 })

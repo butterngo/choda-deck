@@ -59,7 +59,7 @@ describe('ProjectRepository — org', () => {
   it('ensure stores org and get/list return it', () => {
     projects.ensure('a', 'A', 'C:\\a', 'ichiba')
     projects.ensure('b', 'B', 'C:\\b')
-    expect(projects.get('a')).toEqual({ id: 'a', name: 'A', cwd: 'C:\\a', org: 'ichiba' })
+    expect(projects.get('a')).toEqual({ id: 'a', name: 'A', cwd: 'C:\\a', org: 'ichiba', purpose: null })
     expect(projects.get('b')?.org).toBeNull()
     expect(projects.list().map((p) => [p.id, p.org])).toEqual([
       ['a', 'ichiba'],
@@ -93,7 +93,7 @@ describe('ProjectRepository — org', () => {
   it('ensure still leaves name and cwd of an existing project unchanged', () => {
     projects.ensure('a', 'A', 'C:\\a')
     projects.ensure('a', 'Renamed', 'C:\\elsewhere', 'ichiba')
-    expect(projects.get('a')).toEqual({ id: 'a', name: 'A', cwd: 'C:\\a', org: 'ichiba' })
+    expect(projects.get('a')).toEqual({ id: 'a', name: 'A', cwd: 'C:\\a', org: 'ichiba', purpose: null })
   })
 })
 
@@ -135,11 +135,49 @@ describe('ProjectRepository — remove', () => {
 describe('ProjectRepository.update', () => {
   it('changes cwd only and leaves name + org alone', () => {
     projects.ensure('p', 'P', 'C:\\old', 'ichiba')
-    expect(projects.update('p', { cwd: 'C:\\new' })).toEqual({ id: 'p', name: 'P', cwd: 'C:\\new', org: 'ichiba' })
+    expect(projects.update('p', { cwd: 'C:\\new' })).toEqual({ id: 'p', name: 'P', cwd: 'C:\\new', org: 'ichiba', purpose: null })
     expect(projects.get('p')?.cwd).toBe('C:\\new')
   })
 
   it('returns null for a missing project', () => {
     expect(projects.update('missing', { name: 'X' })).toBeNull()
+  })
+})
+
+// TASK-3128 — rule 4 of personal-operating-rules.
+describe('ProjectRepository — purpose', () => {
+  it('a pre-purpose projects table gains a nullable purpose; old rows read back null', () => {
+    db.close()
+    fs.unlinkSync(TEST_DB)
+    db = new Database(TEST_DB)
+    db.exec('CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, cwd TEXT NOT NULL)')
+    db.prepare('INSERT INTO projects VALUES (?, ?, ?)').run('old', 'Old', 'C:\\old')
+    db.prepare('INSERT INTO projects VALUES (?, ?, ?)').run('older', 'Older', 'C:\\older')
+
+    initSchema(db)
+
+    const cols = db.prepare('PRAGMA table_info(projects)').all() as Array<{
+      name: string
+      notnull: number
+    }>
+    expect(cols.find((c) => c.name === 'purpose')).toMatchObject({ notnull: 0 })
+    const repo = new ProjectRepository(db)
+    expect(repo.list().map((p) => [p.id, p.purpose])).toEqual([
+      ['old', null],
+      ['older', null]
+    ])
+  })
+
+  it('ensure stores purpose; ensure without it keeps the stored value', () => {
+    projects.ensure('a', 'A', 'C:\\a', undefined, 'fun')
+    projects.ensure('a', 'A', 'C:\\a', 'ichiba')
+    expect(projects.get('a')).toMatchObject({ org: 'ichiba', purpose: 'fun' })
+  })
+
+  it('update sets purpose; an update without purpose leaves it unchanged', () => {
+    projects.ensure('a', 'A', 'C:\\a', undefined, 'fun')
+    expect(projects.update('a', { purpose: 'income' })?.purpose).toBe('income')
+    expect(projects.update('a', { name: 'Renamed' })?.purpose).toBe('income')
+    expect(projects.get('a')?.purpose).toBe('income')
   })
 })
