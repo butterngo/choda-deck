@@ -178,3 +178,82 @@ describe('choda-deck activity week — TASK-3127', () => {
     expect(res.stderr).toContain('"no-such"')
   })
 })
+
+// TASK-3129 — `rules check` exit codes and JSON shape, and `activity week swap` from the CLI.
+describe('choda-deck rules check / activity week swap — TASK-3129', () => {
+  function seedRules(): string {
+    const dataDir = fs.mkdtempSync(path.join(tmp, 'rules-'))
+    fs.mkdirSync(path.join(dataDir, 'database'), { recursive: true })
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Database = require('better-sqlite3')
+    const db = new Database(path.join(dataDir, 'database', 'choda-deck.db'))
+    db.exec(`CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT, cwd TEXT);
+      CREATE TABLE workspaces (id TEXT PRIMARY KEY, project_id TEXT, label TEXT, cwd TEXT, archived_at TEXT);
+      CREATE TABLE tasks (id TEXT PRIMARY KEY, project_id TEXT, status TEXT);`)
+    // cwds that do not exist, so gh never reaches a real repo
+    for (const id of ['alpha', 'beta', 'gamma']) {
+      db.prepare('INSERT INTO projects VALUES (?, ?, ?)').run(
+        id,
+        id,
+        path.join(dataDir, 'nope', id)
+      )
+    }
+    db.prepare("INSERT INTO tasks VALUES ('TASK-5', 'beta', 'IMPLEMENTED')").run()
+    db.close()
+    return dataDir
+  }
+
+  it('prints { projectId, week, verdict, reasons } and exits 0 on pass, 3 on blocked', () => {
+    const dataDir = seedRules()
+    expect(
+      run(['activity', 'week', 'pick', 'alpha', 'beta', '--week', '2026-W45'], tmp, dataDir).status
+    ).toBe(0)
+
+    const pass = run(['rules', 'check', 'alpha', '--week', '2026-W45', '--json'], tmp, dataDir)
+    expect(pass.status).toBe(0)
+    expect(JSON.parse(pass.stdout)).toMatchObject({
+      projectId: 'alpha',
+      week: '2026-W45',
+      verdict: 'pass',
+      reasons: []
+    })
+
+    const blocked = run(['rules', 'check', 'gamma', '--week', '2026-W45', '--json'], tmp, dataDir)
+    expect(blocked.status).toBe(3)
+    const out = JSON.parse(blocked.stdout)
+    expect(out.verdict).toBe('blocked')
+    expect(out.reasons[0]).toMatchObject({ rule: 1 })
+
+    const implemented = run(
+      ['rules', 'check', 'beta', '--week', '2026-W45', '--json'],
+      tmp,
+      dataDir
+    )
+    expect(implemented.status).toBe(3)
+    expect(JSON.parse(implemented.stdout).reasons[0].message).toContain('TASK-5')
+  })
+
+  it('swap refuses an unclean <out> with exit 3, and --override records the reason', () => {
+    const dataDir = seedRules()
+    run(['activity', 'week', 'pick', 'alpha', 'beta', '--week', '2026-W45'], tmp, dataDir)
+    const refused = run(
+      ['activity', 'week', 'swap', 'beta', 'gamma', '--week', '2026-W45'],
+      tmp,
+      dataDir
+    )
+    expect(refused.status).toBe(3)
+    expect(refused.stderr).toContain('TASK-5')
+
+    const forced = run(
+      ['activity', 'week', 'swap', 'beta', 'gamma', '--override', 'paused', '--week', '2026-W45'],
+      tmp,
+      dataDir
+    )
+    expect(forced.status).toBe(0)
+    const pick = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'artifacts', 'activity', 'week-2026-W45.json'), 'utf8')
+    )
+    expect(pick.picked).toEqual(['alpha', 'gamma'])
+    expect(pick.swaps[0]).toMatchObject({ out: 'beta', in: 'gamma', override: 'paused' })
+  })
+})

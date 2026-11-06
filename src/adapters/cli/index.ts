@@ -27,7 +27,8 @@ Commands:
   mcp serve     Start MCP server (set MCP_TRANSPORT=http for Streamable HTTP)
   sync pull     Pull remote changes into the local SQLite DB (ADR-030 Phase 2)
   activity digest  Write the daily Claude activity digest (TASK-2151)
-  activity week [pick <ids>]  Active projects per ISO week + the week's pick (TASK-3127)
+  activity week [pick <ids> | swap <out> <in>]  Active projects per ISO week + the week's pick (TASK-3127)
+  rules check <projectId>  Rules 1 and 2 of personal-operating-rules; exit 3 = blocked (TASK-3129)
   improve measure <ws>  Measure a workspace's improve loop scorecard (TASK-2356)
   member add|remove|list  Manage team project membership on the remote (TASK-2243)
   session reconcile  List stale ACTIVE sessions whose task already merged (TASK-2312)
@@ -67,6 +68,10 @@ async function main(): Promise<number> {
     case 'activity': {
       const { dispatchActivity } = await import('./activity-command')
       return dispatchActivity(sub, argv.slice(2))
+    }
+    case 'rules': {
+      const { dispatchRules } = await import('./rules-command')
+      return dispatchRules(sub, argv.slice(2))
     }
     case 'improve': {
       const { dispatchImprove } = await import('./improve-command')
