@@ -257,3 +257,39 @@ describe('choda-deck rules check / activity week swap — TASK-3129', () => {
     expect(pick.swaps[0]).toMatchObject({ out: 'beta', in: 'gamma', override: 'paused' })
   })
 })
+
+// TASK-3130 — `rules check --cwd` resolves the project from a directory.
+describe('choda-deck rules check --cwd — TASK-3130', () => {
+  function seedCwd(): string {
+    const dataDir = fs.mkdtempSync(path.join(tmp, 'cwd-rules-'))
+    fs.mkdirSync(path.join(dataDir, 'database'), { recursive: true })
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Database = require('better-sqlite3')
+    const db = new Database(path.join(dataDir, 'database', 'choda-deck.db'))
+    db.exec(`CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT, cwd TEXT);
+      CREATE TABLE workspaces (id TEXT PRIMARY KEY, project_id TEXT, label TEXT, cwd TEXT, archived_at TEXT);
+      CREATE TABLE tasks (id TEXT PRIMARY KEY, project_id TEXT, status TEXT);`)
+    db.prepare('INSERT INTO projects VALUES (?, ?, ?)').run('alpha', 'alpha', path.join(dataDir, 'repos', 'alpha'))
+    db.prepare('INSERT INTO projects VALUES (?, ?, ?)').run('beta', 'beta', path.join(dataDir, 'repos', 'beta'))
+    db.close()
+    return dataDir
+  }
+
+  it('maps a worktree path to its project and returns the same shape as rules check <id>', () => {
+    const dataDir = seedCwd()
+    run(['activity', 'week', 'pick', 'alpha', '--week', '2026-W45'], tmp, dataDir)
+    const wt = path.join(dataDir, 'repos', 'beta.worktrees', 'autopilot-x', 'src')
+    const byCwd = run(['rules', 'check', '--cwd', wt, '--week', '2026-W45', '--json'], tmp, dataDir)
+    const byId = run(['rules', 'check', 'beta', '--week', '2026-W45', '--json'], tmp, dataDir)
+    expect(byCwd.status).toBe(3)
+    expect(JSON.parse(byCwd.stdout)).toEqual(JSON.parse(byId.stdout))
+    expect(JSON.parse(byCwd.stdout).projectId).toBe('beta')
+  })
+
+  it('an ignored directory passes with exit 0 and no reasons', () => {
+    const dataDir = seedCwd()
+    const res = run(['rules', 'check', '--cwd', 'c:/tmp/x', '--week', '2026-W45', '--json'], tmp, dataDir)
+    expect(res.status).toBe(0)
+    expect(JSON.parse(res.stdout)).toMatchObject({ verdict: 'pass', reasons: [] })
+  })
+})
