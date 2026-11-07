@@ -175,6 +175,16 @@ async function startSession(svc: BackendTaskService, body: unknown): Promise<unk
   if (!b.projectId || !b.taskId) {
     throw new WorkflowBadRequestError('projectId and taskId are required')
   }
+  // TASK-3142 — same rule as MCP session_start: the workspace must be a
+  // registered, non-archived workspace of this project.
+  if (b.workspaceId) {
+    const ws = await svc.getWorkspace(b.workspaceId)
+    if (!ws || ws.archivedAt || ws.projectId !== b.projectId) {
+      throw new WorkflowBadRequestError(
+        `unknown workspaceId: ${b.workspaceId} is not a registered workspace of ${b.projectId}`
+      )
+    }
+  }
   return svc.startSession({ projectId: b.projectId, workspaceId: b.workspaceId, taskId: b.taskId })
 }
 

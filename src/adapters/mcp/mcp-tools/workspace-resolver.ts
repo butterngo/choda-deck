@@ -42,7 +42,17 @@ export interface ResolveWorkspaceInput {
 export function resolveWorkspaceId(input: ResolveWorkspaceInput): string | null {
   const { explicitWorkspaceId, cwd, workspaces } = input
 
-  if (explicitWorkspaceId) return explicitWorkspaceId
+  // TASK-3142 — an explicit id must name a registered, non-archived workspace of
+  // this project (`workspaces` excludes archived rows). Returning it unchecked
+  // bound a session to a workspace that does not exist, and every later
+  // ac_check from its cwd failed with SESSION_MISMATCH.
+  if (explicitWorkspaceId) {
+    if (workspaces.some((w) => w.id === explicitWorkspaceId)) return explicitWorkspaceId
+    const list = workspaces.map((w) => `  - ${w.id} (${w.cwd})`).join('\n') || '  (none)'
+    throw new WorkspaceResolutionError(
+      `workspaceId ${explicitWorkspaceId} is not a registered workspace of this project — pick one below or call workspace_add:\n${list}`
+    )
+  }
 
   if (workspaces.length === 0) return null
 
