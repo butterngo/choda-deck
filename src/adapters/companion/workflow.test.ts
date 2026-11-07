@@ -174,6 +174,14 @@ describe('workflow routes (integration)', () => {
       expect(
         (await fetch(`${base}/sessions`, { method: 'POST', body: '{}' })).status
       ).toBe(400)
+      // TASK-3142 — an unregistered workspace is refused before any session starts
+      const badWs = await fetch(`${base}/sessions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ projectId: 'p1', workspaceId: 'companion', taskId: 'TASK-10' })
+      })
+      expect(badWs.status).toBe(400)
+      expect((await badWs.json()).error).toContain('companion')
 
       const ended = await fetch(`${base}/sessions/S-1/end`, {
         method: 'POST',

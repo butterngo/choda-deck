@@ -16,13 +16,45 @@ const NESTED = path.join(ROOT, 'packages', 'foo')
 const OTHER = path.resolve('/elsewhere')
 
 describe('resolveWorkspaceId', () => {
-  it('returns explicit workspaceId without consulting cwd or workspaces', () => {
+  // TASK-3142 — an explicit id is checked against the registered workspaces.
+  it('rejects an explicit workspaceId that is not registered, naming it and the real ones', () => {
+    let caught: unknown
+    try {
+      resolveWorkspaceId({
+        explicitWorkspaceId: 'companion',
+        workspaces: [ws('choda-deck-companion', OTHER)]
+      })
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(WorkspaceResolutionError)
+    const err = caught as WorkspaceResolutionError
+    expect(err.code).toBe('WORKSPACE_RESOLUTION_FAILED')
+    expect(err.message).toContain('workspaceId companion ')
+    expect(err.message).toContain('choda-deck-companion')
+  })
+
+  it('returns an explicit workspaceId that is registered, without consulting cwd', () => {
     const id = resolveWorkspaceId({
-      explicitWorkspaceId: 'explicit',
+      explicitWorkspaceId: 'main',
       cwd: OTHER,
-      workspaces: [ws('a', ROOT)]
+      workspaces: [ws('main', ROOT)]
     })
-    expect(id).toBe('explicit')
+    expect(id).toBe('main')
+  })
+
+  it('rejects an archived workspace (absent from the non-archived list)', () => {
+    // findWorkspaces(projectId) excludes archived rows, so an archived id
+    // reaches the resolver as "not in the list".
+    expect(() =>
+      resolveWorkspaceId({ explicitWorkspaceId: 'old-ws', workspaces: [ws('main', ROOT)] })
+    ).toThrow(WorkspaceResolutionError)
+  })
+
+  it('rejects an explicit workspaceId when the project has no workspaces, saying (none)', () => {
+    expect(() => resolveWorkspaceId({ explicitWorkspaceId: 'x', workspaces: [] })).toThrow(
+      /\(none\)/
+    )
   })
 
   it('matches cwd exactly to a workspace', () => {
