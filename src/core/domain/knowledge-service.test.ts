@@ -257,7 +257,44 @@ describe('deleteKnowledge', () => {
 })
 
 describe('updateKnowledge', () => {
-  it('updates body, re-pins refs to HEAD, bumps lastVerifiedAt', async () => {
+  it('body-only update keeps pins and lastVerifiedAt', async () => {
+    let today = new Date('2026-04-01T00:00:00Z')
+    const clocked = new KnowledgeService({
+      knowledge: repo,
+      projects,
+      git,
+      contentRoot: path.join(tmpDir, 'vault'),
+      now: () => today
+    })
+    git.headSha = 'sha-a'
+    await clocked.createKnowledge({
+      projectId: 'proj-k',
+      type: 'decision',
+      scope: 'project',
+      title: 'Body Only',
+      body: 'old body\n',
+      refs: [{ path: 'src/a.ts' }, { path: 'src/b.ts' }]
+    })
+
+    git.headSha = 'sha-b'
+    today = new Date('2026-04-29T00:00:00Z')
+    git.commitsSinceMap.set('sha-a::src/a.ts', 3)
+    const result = await clocked.updateKnowledge({ slug: 'body-only', body: 'new body\n' })
+
+    expect(result.body).toBe('new body\n')
+    expect(result.frontmatter.refs.map((r) => r.commitSha)).toEqual(['sha-a', 'sha-a'])
+    expect(result.frontmatter.lastVerifiedAt).toBe('2026-04-01')
+    expect(result.isStale).toBe(true)
+
+    const onDisk = parseFrontmatter(
+      fs.readFileSync(path.join(projectCwd, 'docs', 'knowledge', 'body-only.md'), 'utf8')
+    )
+    expect(onDisk.frontmatter.refs.map((r) => r.commitSha)).toEqual(['sha-a', 'sha-a'])
+    expect(onDisk.frontmatter.lastVerifiedAt).toBe('2026-04-01')
+    expect(repo.get('body-only')?.lastVerifiedAt).toBe('2026-04-01')
+  })
+
+  it('updates body with refs passed, re-pins refs to HEAD, bumps lastVerifiedAt', async () => {
     git.headSha = 'sha-old'
     await svc.createKnowledge({
       projectId: 'proj-k',
@@ -272,7 +309,11 @@ describe('updateKnowledge', () => {
 
     git.headSha = 'sha-new'
     git.commitsSinceMap.set('sha-new::src/y.ts', 0)
-    const result = await svc.updateKnowledge({ slug: 'edit-me', body: 'new body\n' })
+    const result = await svc.updateKnowledge({
+      slug: 'edit-me',
+      body: 'new body\n',
+      refs: [{ path: 'src/y.ts' }]
+    })
 
     expect(result.body).toBe('new body\n')
     expect(result.frontmatter.refs[0].commitSha).toBe('sha-new')
@@ -478,15 +519,26 @@ describe('TASK-2369 — git unavailable', () => {
     expect(repo.get(slug)).toEqual(rowBefore)
   })
 
-  it('updateKnowledge (body only) fails instead of blanking the pinned SHA', async () => {
+  it('updateKnowledge (body only) keeps the pinned SHA without needing git (TASK-3139)', async () => {
     const slug = await createPinned('Update Me')
+    const filePath = repo.get(slug)!.filePath
+
+    git.unavailable = true
+    await svc.updateKnowledge({ slug, body: 'new body\n' })
+    const after = parseFrontmatter(fs.readFileSync(filePath, 'utf8'))
+    expect(after.frontmatter.refs[0].commitSha).toBe('sha-good')
+    expect(after.body).toContain('new body')
+  })
+
+  it('updateKnowledge (refs passed) fails instead of blanking the pinned SHA', async () => {
+    const slug = await createPinned('Update Refs')
     const filePath = repo.get(slug)!.filePath
     const before = fs.readFileSync(filePath, 'utf8')
 
     git.unavailable = true
-    await expect(svc.updateKnowledge({ slug, body: 'new body\n' })).rejects.toThrow(
-      /cannot pin refs to HEAD/
-    )
+    await expect(
+      svc.updateKnowledge({ slug, body: 'new body\n', refs: [{ path: 'src/x.ts' }] })
+    ).rejects.toThrow(/cannot pin refs to HEAD/)
     expect(fs.readFileSync(filePath, 'utf8')).toBe(before)
   })
 

@@ -454,21 +454,27 @@ export class KnowledgeService implements KnowledgeOperations {
     const stalenessCwd = await this.resolveStalenessCwd(row.projectId, row.workspaceId)
     const scope = existing.frontmatter.scope
 
+    // TASK-3139: an edit is not a verification. Only passing refs (or
+    // knowledge_verify) may move a pin or lastVerifiedAt — a body-only update
+    // keeps both, so the staleness signal survives the edit.
     const newBody = input.body ?? existing.body
-    const newRefs: KnowledgeRef[] =
-      input.refs !== undefined
-        ? this.materializeRefs(input.refs, stalenessCwd, scope)
-        : this.repinRefs(existing.frontmatter.refs, stalenessCwd)
+    const inputRefs = input.refs
+    const refsChanged = inputRefs !== undefined
+    const newRefs: KnowledgeRef[] = refsChanged
+      ? this.materializeRefs(inputRefs, stalenessCwd, scope)
+      : existing.frontmatter.refs
 
-    const isoDate = toIsoDate(this.now())
+    const lastVerifiedAt = refsChanged
+      ? toIsoDate(this.now())
+      : existing.frontmatter.lastVerifiedAt
     const updatedFm: KnowledgeFrontmatter = {
       ...existing.frontmatter,
       refs: newRefs,
-      lastVerifiedAt: isoDate
+      lastVerifiedAt
     }
 
     fs.writeFileSync(existing.filePath, serializeFrontmatter(updatedFm, newBody), 'utf8')
-    await this.knowledge.updateLastVerified(input.slug, isoDate)
+    if (refsChanged) await this.knowledge.updateLastVerified(input.slug, lastVerifiedAt)
 
     if (scope === 'project') {
       await this.regenerateIndexForRow(row)
