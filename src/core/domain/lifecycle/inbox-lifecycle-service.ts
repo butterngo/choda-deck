@@ -74,7 +74,7 @@ export class InboxLifecycleService implements InboxLifecycleOperations {
       })
       if (input.body) this.tasks.update(task.id, { body: input.body })
       this.inbox.update(id, { status: 'converted', linkedTaskId: task.id })
-      this.closeLinkedConversations(id, `Converted to ${task.id}: ${input.title}`)
+      this.closeLinkedConversations(id, `Converted to ${task.id}: ${input.title}`, 'inbox_convert')
       const final = this.tasks.get(task.id)
       if (!final) throw new Error(`Task ${task.id} disappeared mid-transaction`)
       // Progressive localization (ADR-032 Pillar 6): soft-warn, never gate. If the
@@ -96,7 +96,7 @@ export class InboxLifecycleService implements InboxLifecycleOperations {
         throw new InboxStatusError(id, item.status, 'already converted — cannot archive')
       }
       this.inbox.update(id, { status: 'archived' })
-      this.closeLinkedConversations(id, reason ? `Archived: ${reason}` : 'Archived')
+      this.closeLinkedConversations(id, reason ? `Archived: ${reason}` : 'Archived', 'inbox_archive')
       const final = this.inbox.get(id)
       if (!final) throw new Error(`Inbox ${id} disappeared mid-transaction`)
       return final
@@ -104,17 +104,41 @@ export class InboxLifecycleService implements InboxLifecycleOperations {
     return tx()
   }
 
-  // Status enum narrowed to {open,decided} — driving the linked conversation to
-  // its terminal state means flipping to `decided` with the close reason as the
-  // decisionSummary. Idempotent when status is already `decided`.
-  private closeLinkedConversations(inboxId: string, decisionSummary: string): void {
-    const convs = this.conversations.findByLink('inbox', inboxId)
-    if (convs.length === 0) return
-    const decidedAt = new Date().toISOString()
-    for (const c of convs) {
-      if (c.status !== 'decided') {
-        this.conversations.update(c.id, { status: 'decided', decisionSummary, decidedAt })
+  // TASK-3140 — close through the append-only log (TASK-1067), never by writing
+  // the header: a direct write is erased by the next refold. The inbox action IS
+  // Butter's decision, so each registered participant not yet signed off gets a
+  // signoff turn attributed to the action; otherwise every research thread
+  // (participants Butter + researcher) would fold back to `open`. Idempotent
+  // when the conversation is already `decided`.
+  private closeLinkedConversations(
+    inboxId: string,
+    decisionSummary: string,
+    actor: 'inbox_convert' | 'inbox_archive'
+  ): void {
+    for (const c of this.conversations.findByLink('inbox', inboxId)) {
+      if (c.status === 'decided') continue
+      this.conversations.addMessage({
+        conversationId: c.id,
+        authorName: actor,
+        content: decisionSummary,
+        kind: 'decision'
+      })
+      const signed = new Set(
+        this.conversations
+          .getMessages(c.id)
+          .filter((m) => m.kind === 'signoff')
+          .map((m) => m.authorName)
+      )
+      for (const p of this.conversations.getParticipants(c.id)) {
+        if (signed.has(p.name)) continue
+        this.conversations.addMessage({
+          conversationId: c.id,
+          authorName: p.name,
+          content: `Signed off by ${actor}`,
+          kind: 'signoff'
+        })
       }
+      this.conversations.recomputeHeader(c.id)
     }
   }
 }

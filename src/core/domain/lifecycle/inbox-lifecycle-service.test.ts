@@ -140,6 +140,75 @@ describe('archiveInbox', () => {
   })
 })
 
+// TASK-3140 — the close is an append-only decision turn, so a refold agrees.
+describe('closing linked conversations through the log', () => {
+  async function linkedPlainConv(inboxId: string): Promise<string> {
+    const conv = await svc.createConversation({
+      projectId: 'proj-l',
+      title: 'no participants',
+      createdBy: 'human',
+      status: 'open'
+    })
+    await svc.linkConversation(conv.id, 'inbox', inboxId)
+    return conv.id
+  }
+
+  it('archive appends a decision turn and the thread is decided', async () => {
+    const item = await svc.createInbox({ projectId: 'proj-l', content: 'archive me' })
+    const convId = await linkedPlainConv(item.id)
+
+    await svc.archiveInbox(item.id, 'duplicate')
+
+    const decisions = (await svc.getConversationMessages(convId)).filter(
+      (m) => m.kind === 'decision'
+    )
+    expect(decisions.map((m) => m.content)).toEqual(['Archived: duplicate'])
+    expect((await svc.getConversation(convId))?.status).toBe('decided')
+  })
+
+  it('archive survives a refold — still decided with the same summary', async () => {
+    const item = await svc.createInbox({ projectId: 'proj-l', content: 'refold me' })
+    const convId = await linkedPlainConv(item.id)
+
+    await svc.archiveInbox(item.id, 'stale')
+    svc.recomputeConversationHeader(convId)
+
+    const after = await svc.getConversation(convId)
+    expect(after?.status).toBe('decided')
+    expect(after?.decisionSummary).toBe('Archived: stale')
+  })
+
+  it('convert appends a "Converted to TASK-" decision turn and stays decided after refold', async () => {
+    const item = await svc.createInbox({ projectId: 'proj-l', content: 'convert me' })
+    const convId = await linkedPlainConv(item.id)
+
+    const r = await svc.convertInboxToTask(item.id, { title: 'the task', body: BODY })
+    svc.recomputeConversationHeader(convId)
+
+    const decision = (await svc.getConversationMessages(convId)).find((m) => m.kind === 'decision')
+    expect(decision?.content.startsWith(`Converted to ${r.taskId}`)).toBe(true)
+    expect(decision?.content.startsWith('Converted to TASK-')).toBe(true)
+    expect((await svc.getConversation(convId))?.status).toBe('decided')
+  })
+
+  it('a research thread (Butter + researcher) gets one signoff per participant and closes', async () => {
+    const item = await svc.createInbox({ projectId: 'proj-l', content: 'researched' })
+    const { conversationId } = await svc.startInboxResearch(item.id, 'Claude')
+
+    await svc.archiveInbox(item.id, 'not mine')
+    svc.recomputeConversationHeader(conversationId)
+
+    const signoffs = (await svc.getConversationMessages(conversationId)).filter(
+      (m) => m.kind === 'signoff'
+    )
+    expect(signoffs.map((m) => m.authorName).sort()).toEqual(['Butter', 'Claude'])
+    expect(signoffs.every((m) => m.content === 'Signed off by inbox_archive')).toBe(true)
+    const after = await svc.getConversation(conversationId)
+    expect(after?.status).toBe('decided')
+    expect(after?.decisionSummary).toBe('Archived: not mine')
+  })
+})
+
 describe('transaction rollback (atomicity)', () => {
   it('rolls back conversation creation when inbox update fails', async () => {
     const item = await svc.createInbox({ projectId: 'proj-l', content: 'rollback test' })
