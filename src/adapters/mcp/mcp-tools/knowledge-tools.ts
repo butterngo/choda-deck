@@ -166,7 +166,7 @@ export const register = (server: InstrumentedServer, svc: KnowledgeOperations): 
     'knowledge_update',
     {
       description:
-        'Edit a knowledge entry — replace body and/or refs. Auto-bumps lastVerifiedAt to today and re-pins refs to current HEAD (no separate knowledge_verify call needed). At least one of body/refs must be provided. Frontmatter fields (title, type, scope) are immutable — delete + re-create to change them.',
+        'Edit a knowledge entry — replace body and/or refs. A body-only edit keeps the existing ref pins and lastVerifiedAt — an edit is not a verification. Only knowledge_verify, or passing refs here, moves pins and lastVerifiedAt. At least one of body/refs must be provided. Frontmatter fields (title, type, scope) are immutable — delete + re-create to change them.',
       inputSchema: {
         slug: z.string().describe('Slug of the entry to update'),
         body: z.string().optional().describe('New markdown body (no frontmatter). Omit to keep existing.'),
