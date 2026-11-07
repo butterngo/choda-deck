@@ -673,7 +673,7 @@ describe('abandonSession', () => {
     expect(r.session.handoff?.failureReason).toBe('spawn crashed')
   })
 
-  it('closes session-linked conversations with abandon-prefixed decisionSummary', async () => {
+  it('leaves session-linked conversations open and untouched (TASK-3141)', async () => {
     const started = await svc.startSession({ projectId: 'proj-s' })
     const conv = await svc.openConversation({
       projectId: 'proj-s',
@@ -681,13 +681,15 @@ describe('abandonSession', () => {
       createdBy: 'Butter',
       initialMessage: { content: 'thoughts?' }
     })
+    const messagesBefore = (await svc.getConversationMessages(conv.id)).length
 
     const r = await svc.abandonSession(started.session.id, 'cost cap exceeded')
 
-    expect(r.closedConversationIds).toEqual([conv.id])
+    expect(r.closedConversationIds).toEqual([])
     const after = await svc.getConversation(conv.id)
-    expect(after?.status).toBe('decided')
-    expect(after?.decisionSummary).toBe('Abandoned: cost cap exceeded')
+    expect(after?.status).toBe('open')
+    expect(after?.decisionSummary).toBeNull()
+    expect((await svc.getConversationMessages(conv.id)).length).toBe(messagesBefore)
   })
 
   it('does not touch task when session has no taskId', async () => {
@@ -714,7 +716,7 @@ describe('abandonSession', () => {
     )
   })
 
-  it('rolls back transaction on conversation close failure — task and session stay intact', async () => {
+  it('never writes a conversation header — abandon succeeds even if that write would throw (TASK-3141)', async () => {
     const task = await svc.createTask({ projectId: 'proj-s', title: 'Atomic' })
     const started = await svc.startSession({ projectId: 'proj-s', taskId: task.id })
     const conv = await svc.openConversation({
@@ -728,16 +730,16 @@ describe('abandonSession', () => {
     const lifecycle = (svc as any).sessionLifecycle
     const orig = lifecycle.conversations.update.bind(lifecycle.conversations)
     lifecycle.conversations.update = () => {
-      throw new Error('simulated conv update failure')
+      throw new Error('conversation header must not be written by abandon')
     }
 
-    await expect(svc.abandonSession(started.session.id, 'will rollback')).rejects.toThrow(
-      'simulated conv update failure'
-    )
+    try {
+      await svc.abandonSession(started.session.id, 'dropped')
+    } finally {
+      lifecycle.conversations.update = orig
+    }
 
-    lifecycle.conversations.update = orig
-
-    expect((await svc.getSession(started.session.id))?.status).toBe('active')
+    expect((await svc.getSession(started.session.id))?.status).toBe('completed')
     expect((await svc.getConversation(conv.id))?.status).toBe('open')
     expect((await svc.getTask(task.id))?.status).toBe('IN-PROGRESS')
   })

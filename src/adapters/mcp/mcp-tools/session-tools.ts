@@ -372,7 +372,7 @@ export const register = (
     'session_cancel',
     {
       description:
-        'Cancel (retire) an active session WITHOUT marking its task DONE. Use for an empty or abandoned session — an orphaned session_start where no real work followed, or a session you want to drop without completing the task. Marks the session completed with a failureReason, closes any linked conversations, and intentionally leaves the bound task status untouched (stays IN-PROGRESS for human review). Distinct from session_end, which marks the task DONE.',
+        'Cancel (retire) an active session WITHOUT marking its task DONE. Use for an empty or abandoned session — an orphaned session_start where no real work followed, or a session you want to drop without completing the task. Marks the session completed with a failureReason, leaves every linked conversation as it is (closedConversationIds is always []), and intentionally leaves the bound task status untouched (stays IN-PROGRESS for human review). Distinct from session_end, which marks the task DONE.',
       inputSchema: {
         sessionId: z.string(),
         reason: z
