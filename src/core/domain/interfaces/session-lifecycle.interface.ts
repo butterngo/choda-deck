@@ -168,7 +168,8 @@ export interface SessionLifecycleOperations {
   endSession(id: string, input: EndSessionInput): Promise<EndSessionResult>
   /**
    * Failure-path session close. Marks session `completed` with `handoff.failureReason`,
-   * closes linked conversations, and intentionally **does not** touch the bound task's
+   * leaves linked conversations untouched (TASK-3141 — `closedConversationIds` is always
+   * `[]`), and intentionally **does not** touch the bound task's
    * status (task stays IN-PROGRESS for human review). Distinct from `endSession`, which
    * marks the task IMPLEMENTED (awaiting review + master → DONE).
    */

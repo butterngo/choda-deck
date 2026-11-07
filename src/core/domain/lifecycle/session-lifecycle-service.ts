@@ -260,20 +260,11 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
       }
 
       const endedAt = now()
-      const decisionSummary = `Abandoned: ${reason}`
 
-      const closedConversationIds: string[] = []
-      const linkedConvs = this.conversations.findByLink('session', id)
-      for (const conv of linkedConvs) {
-        if (conv.status === 'decided') continue
-        this.conversations.update(conv.id, {
-          status: 'decided',
-          decisionSummary,
-          decidedAt: endedAt
-        })
-        closedConversationIds.push(conv.id)
-      }
-
+      // TASK-3141 — cancelling a session decides nothing, so it closes no
+      // conversation. It used to stamp every linked thread decided with
+      // the cancel reason (by a direct header write the fold later erases),
+      // resolving unrelated discussions. Same rule as session_end (TASK-1621).
       // Intentionally do NOT touch session.taskId — task stays IN-PROGRESS for human review.
       const handoff = { ...(session.handoff ?? {}), failureReason: reason }
       const updated = this.sessions.update(id, {
@@ -282,7 +273,7 @@ export class SessionLifecycleService implements SessionLifecycleOperations {
         handoff
       })
 
-      return { session: updated, closedConversationIds }
+      return { session: updated, closedConversationIds: [] }
     })
     return tx()
   }

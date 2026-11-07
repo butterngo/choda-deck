@@ -94,6 +94,23 @@ describe('session_cancel — retire an active session without completing its tas
     expect((await svc.getTask('TASK-C1'))?.status).toBe('IN-PROGRESS')
   })
 
+  it('closes no linked conversation — closedConversationIds is [] (TASK-3141)', async () => {
+    const start = await callTool('session_start', { projectId: 'proj-c', taskId: 'TASK-C1' })
+    const sessionId = start.sessionId as string
+    const conv = await svc.openConversation({
+      projectId: 'proj-c',
+      title: 'Linked to the cancelled session',
+      createdBy: 'Butter',
+      sessionId,
+      initialMessage: { content: 'still open?' }
+    })
+
+    const out = await callTool('session_cancel', { sessionId, reason: 'dropped' })
+
+    expect(out.closedConversationIds).toEqual([])
+    expect((await svc.getConversation(conv.id))?.status).toBe('open')
+  })
+
   it('drops the cancelled session out of the active set', async () => {
     const start = await callTool('session_start', { projectId: 'proj-c', taskId: 'TASK-C1' })
     const sessionId = start.sessionId as string
