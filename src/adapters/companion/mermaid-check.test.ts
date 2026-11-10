@@ -91,7 +91,9 @@ beforeAll(async () => {
   // fails on a timeout that has nothing to do with what it asserts. Making one
   // test flaky at random is worse than making the setup slow on purpose.
   await checkMermaid('sequenceDiagram\n  A->>B: warm')
-})
+  // 120 s: the warm-up itself has exceeded the 30 s default hookTimeout under
+  // full-suite load (TASK-3200).
+}, 120_000)
 
 afterAll(async () => {
   await handle?.close()

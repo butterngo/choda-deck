@@ -10,6 +10,7 @@ import * as os from 'os'
 import * as path from 'path'
 import { createHash } from 'crypto'
 import { startCompanionServer, COMPANION_BIND, type CompanionServerHandle } from './http-server'
+import { checkMermaid } from './mermaid-check'
 import type { CompanionServices } from './service-factory'
 import type { WorkspaceOperations } from '../../core/domain/interfaces/workspace-repository.interface'
 
@@ -99,7 +100,13 @@ beforeAll(async () => {
 
   handle = await startCompanionServer(services, 0)
   base = `http://${COMPANION_BIND}:${handle.address.port}`
-})
+
+  // Pay the cold mermaid + happy-dom import here, not inside a 15 s test. The
+  // diagram route's first parse triggers it, and under full-suite fork load it
+  // has taken 25-58 s — the "attempts 2" retry cases below then time out on
+  // work that is not theirs (TASK-3200, INBOX-2234/2060).
+  await checkMermaid('sequenceDiagram\n  A->>B: warm')
+}, 120_000)
 
 afterAll(async () => {
   await handle?.close()
