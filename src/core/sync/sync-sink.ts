@@ -15,15 +15,28 @@ import type Database from 'better-sqlite3'
 import type { PgConnection, Queryable } from '../domain/repositories/postgres/connection'
 import { ConversationRepository } from '../domain/repositories/conversation-repository'
 import { advanceCountersFromImport } from '../domain/repositories/counter-repository'
-import { mergeClock } from './lamport-clock'
+import { mergeClock, peek } from './lamport-clock'
 import type { PulledRow, TableDelta } from './sync-pull'
 import {
   APPLY_TABLES,
   assertApplyTables,
+  isRedelivery,
   planApplyRow,
+  restampLamport,
   type ApplyResult,
   type RowVerdict
 } from './sync-apply'
+
+// TASK-3202 — the row as the canonical store will write it: `sync_updated_at`
+// lifted to `stamped`, and the tombstone marker lifted with it so a soft delete
+// stays ≥ its own update stamp.
+function stampRow(row: PulledRow, stamped: number): PulledRow {
+  return {
+    ...row,
+    sync_updated_at: stamped,
+    sync_deleted_at: row.sync_deleted_at !== null && row.sync_deleted_at !== undefined ? stamped : null
+  }
+}
 
 // Apply pushed deltas into canonical Postgres. One transaction covers the whole
 // push so a partial failure rolls back and the pusher re-drains cleanly.
@@ -37,17 +50,24 @@ export async function applyDeltaToPg(
   let applied = 0
   let tombstoned = 0
   let conflicts = 0
-  let maxLamport = 0
 
   const affectedConvIds = new Set<string>()
   await conn.transaction(async (tx) => {
+    // TASK-3202 — the canonical clock is `canonicalMax`: every canonical write
+    // path advances it (this loop's final GREATEST, the PG-native inbox tick), so
+    // it is never below any Lamport a row holds. FOR UPDATE serialises concurrent
+    // pushes on it, so two pushes cannot hand out the same re-stamp.
+    const clockRow = await tx.query<{ counter: string }>(
+      'SELECT counter FROM _sync_clock WHERE id = 0 FOR UPDATE'
+    )
+    let clock = Number(clockRow.rows[0]?.counter ?? 0)
+
     for (const delta of deltas) {
       const cols = await pgColumns(tx, delta.table)
       for (const row of delta.rows) {
         if (delta.table === 'conversation_messages' && typeof row.conversation_id === 'string') {
           affectedConvIds.add(row.conversation_id)
         }
-        maxLamport = Math.max(maxLamport, row.sync_updated_at)
         const cur = await tx.query<{ sync_updated_at: string | null; sync_origin: string | null }>(
           `SELECT sync_updated_at, sync_origin FROM ${delta.table} WHERE id = $1`,
           [row.id]
@@ -57,44 +77,43 @@ export async function applyDeltaToPg(
           existing && existing.sync_updated_at !== null ? Number(existing.sync_updated_at) : null
         // TASK-1508 AC-5 — the origin is what tells an equal-Lamport re-delivery of OUR
         // OWN accepted write apart from a genuine tie against another device.
-        const verdict = planApplyRow(canonical, row, {
-          origin: existing?.sync_origin ?? null,
-          pushOrigin: origin
-        })
+        const state = { origin: existing?.sync_origin ?? null, pushOrigin: origin }
+        const verdict = planApplyRow(canonical, row, state)
 
         if (verdict === 'conflict') {
           conflicts++
           verdicts.push({ table: delta.table, id: row.id, verdict, canonicalLamport: canonical ?? 0 })
           continue
         }
+        const stamped = restampLamport(row.sync_updated_at, clock, isRedelivery(canonical, row, state))
+        clock = Math.max(clock, stamped)
+        const stored = stampRow(row, stamped)
         if (verdict === 'tombstoned') {
           if (existing) {
             await tx.query(
               `UPDATE ${delta.table} SET sync_deleted_at = $1, sync_updated_at = $2, sync_origin = $3 WHERE id = $4`,
               [
-                row.sync_deleted_at ?? null,
-                row.sync_updated_at,
+                stored.sync_deleted_at,
+                stored.sync_updated_at,
                 (row.sync_origin as string | null) ?? origin,
                 row.id
               ]
             )
           }
           tombstoned++
-          verdicts.push({ table: delta.table, id: row.id, verdict, canonicalLamport: row.sync_updated_at })
+          verdicts.push({ table: delta.table, id: row.id, verdict, canonicalLamport: stamped, stamped })
           continue
         }
-        await upsertPgRow(tx, delta.table, cols, row, origin)
+        await upsertPgRow(tx, delta.table, cols, stored, origin)
         applied++
-        verdicts.push({ table: delta.table, id: row.id, verdict, canonicalLamport: row.sync_updated_at })
+        verdicts.push({ table: delta.table, id: row.id, verdict, canonicalLamport: stamped, stamped })
       }
     }
-    // Advance the canonical Lamport clock past everything just pushed so the
-    // store's own next write outranks the pulled values (symmetric to the
+    // Advance the canonical Lamport clock past everything just stored so the
+    // store's own next write outranks the pushed values (symmetric to the
     // mergeClock the pull side runs locally).
-    if (maxLamport > 0) {
-      await tx.query('UPDATE _sync_clock SET counter = GREATEST(counter, $1) WHERE id = 0', [
-        maxLamport
-      ])
+    if (clock > 0) {
+      await tx.query('UPDATE _sync_clock SET counter = GREATEST(counter, $1) WHERE id = 0', [clock])
     }
     // TASK-1136 — refold the derived header for conversations whose message log
     // changed, so a laptop-synced decision shows `decided` on a direct PG read.
@@ -169,43 +188,44 @@ export function applyDeltaToSqlite(
   let applied = 0
   let tombstoned = 0
   let conflicts = 0
-  let maxLamport = 0
 
   const run = db.transaction(() => {
+    // TASK-3202 — see applyDeltaToPg: the clock is the canonical max.
+    let clock = peek(db)
     for (const delta of deltas) {
       for (const row of delta.rows) {
-        maxLamport = Math.max(maxLamport, row.sync_updated_at)
         const existing = db
           .prepare(`SELECT sync_updated_at, sync_origin FROM ${delta.table} WHERE id = ?`)
           .get(row.id) as { sync_updated_at: number | null; sync_origin: string | null } | undefined
         const canonical =
           existing && existing.sync_updated_at !== null ? existing.sync_updated_at : null
-        const verdict = planApplyRow(canonical, row, {
-          origin: existing?.sync_origin ?? null,
-          pushOrigin: origin
-        })
+        const state = { origin: existing?.sync_origin ?? null, pushOrigin: origin }
+        const verdict = planApplyRow(canonical, row, state)
 
         if (verdict === 'conflict') {
           conflicts++
           verdicts.push({ table: delta.table, id: row.id, verdict, canonicalLamport: canonical ?? 0 })
           continue
         }
+        const stamped = restampLamport(row.sync_updated_at, clock, isRedelivery(canonical, row, state))
+        clock = Math.max(clock, stamped)
+        const stored = stampRow(row, stamped)
         if (verdict === 'tombstoned') {
           if (existing) {
             db.prepare(
               `UPDATE ${delta.table} SET sync_deleted_at = ?, sync_updated_at = ?, sync_origin = ? WHERE id = ?`
-            ).run(row.sync_deleted_at ?? null, row.sync_updated_at, row.sync_origin ?? origin, row.id)
+            ).run(stored.sync_deleted_at, stored.sync_updated_at, row.sync_origin ?? origin, row.id)
           }
           tombstoned++
-          verdicts.push({ table: delta.table, id: row.id, verdict, canonicalLamport: row.sync_updated_at })
+          verdicts.push({ table: delta.table, id: row.id, verdict, canonicalLamport: stamped, stamped })
           continue
         }
-        upsertSqliteRow(db, delta.table, row, origin)
+        upsertSqliteRow(db, delta.table, stored, origin)
         applied++
-        verdicts.push({ table: delta.table, id: row.id, verdict, canonicalLamport: row.sync_updated_at })
+        verdicts.push({ table: delta.table, id: row.id, verdict, canonicalLamport: stamped, stamped })
       }
     }
-    if (maxLamport > 0) mergeClock(db, maxLamport)
+    if (clock > 0) mergeClock(db, clock)
   })
   run()
 

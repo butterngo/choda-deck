@@ -7,7 +7,7 @@ import Database from 'better-sqlite3'
 import { initSchema } from '../domain/repositories/schema'
 import { applyDeltaToSqlite } from './sync-sink'
 import { planApplyRow, assertApplyTables, type ApplyVerdict } from './sync-apply'
-import { peek } from './lamport-clock'
+import { mergeClock, peek } from './lamport-clock'
 import type { PulledRow } from './sync-pull'
 
 function inboxRow(id: string, lamport: number, extra: Partial<PulledRow> = {}): PulledRow {
@@ -189,5 +189,86 @@ describe('applyDeltaToSqlite — projects.purpose', () => {
     }
     expect(stored.purpose).toBe('reputation')
     db.close()
+  })
+})
+
+// TASK-3202 — a node that writes before its first pull stamps rows 1..n, below
+// the cursor every other node already holds; `since` is strictly greater-than,
+// so nobody would ever fetch them. The sink lifts such a row to clock + 1 and
+// says so in the verdict. Rows already above the clock are untouched.
+describe('applyDeltaToSqlite — re-stamp below the canonical clock (TASK-3202)', () => {
+  let db: Database.Database
+
+  beforeEach(() => {
+    db = new Database(':memory:')
+    initSchema(db)
+    mergeClock(db, 5000) // canonical already holds rows up to 5000
+  })
+
+  function stampOf(id: string): { sync_updated_at: number; sync_deleted_at: number | null } {
+    return db
+      .prepare('SELECT sync_updated_at, sync_deleted_at FROM inbox_items WHERE id = ?')
+      .get(id) as never
+  }
+
+  it('a row stamped below the clock is stored at clock + 1, and the verdict carries it', () => {
+    const res = applyDeltaToSqlite(db, [{ table: 'inbox_items', rows: [inboxRow('INBOX-1', 1)] }], 'laptop')
+    expect(res.verdicts[0]).toMatchObject({ verdict: 'applied', canonicalLamport: 5001, stamped: 5001 })
+    expect(stampOf('INBOX-1').sync_updated_at).toBe(5001)
+    expect(peek(db)).toBe(5001)
+  })
+
+  it('CONTROL — a row stamped above the clock keeps its own value (LWW order intact)', () => {
+    const res = applyDeltaToSqlite(db, [{ table: 'inbox_items', rows: [inboxRow('INBOX-1', 7000)] }], 'laptop')
+    expect(res.verdicts[0]).toMatchObject({ canonicalLamport: 7000, stamped: 7000 })
+    expect(stampOf('INBOX-1').sync_updated_at).toBe(7000)
+    expect(peek(db)).toBe(7000)
+  })
+
+  it('rows in one push get distinct, ascending stamps', () => {
+    const res = applyDeltaToSqlite(
+      db,
+      [{ table: 'inbox_items', rows: [inboxRow('INBOX-1', 1), inboxRow('INBOX-2', 2)] }],
+      'laptop'
+    )
+    expect(res.verdicts.map((v) => v.stamped)).toEqual([5001, 5002])
+    expect(peek(db)).toBe(5002)
+  })
+
+  it('a tombstone below the clock is lifted on both columns', () => {
+    // A row that sits below the clock: written at 10 while the clock was 0, then
+    // the clock moved on to 5000 (other nodes' pushes).
+    const fresh = new Database(':memory:')
+    initSchema(fresh)
+    applyDeltaToSqlite(fresh, [{ table: 'inbox_items', rows: [inboxRow('INBOX-1', 10)] }], 'laptop')
+    mergeClock(fresh, 5000)
+    const res = applyDeltaToSqlite(
+      fresh,
+      [{ table: 'inbox_items', rows: [inboxRow('INBOX-1', 11, { sync_deleted_at: 11 })] }],
+      'laptop'
+    )
+    expect(res.verdicts[0]).toMatchObject({ verdict: 'tombstoned', stamped: 5001 })
+    const row = fresh
+      .prepare('SELECT sync_updated_at, sync_deleted_at FROM inbox_items WHERE id = ?')
+      .get('INBOX-1')
+    expect(row).toEqual({ sync_updated_at: 5001, sync_deleted_at: 5001 })
+  })
+
+  it('a tombstone for a row canonical never saw still reports a lifted stamp', () => {
+    const res = applyDeltaToSqlite(
+      db,
+      [{ table: 'inbox_items', rows: [inboxRow('INBOX-9', 1, { sync_deleted_at: 1 })] }],
+      'laptop'
+    )
+    expect(res.verdicts[0]).toMatchObject({ verdict: 'tombstoned', stamped: 5001 })
+    expect(peek(db)).toBe(5001)
+  })
+
+  it('an idempotent re-delivery keeps its value — the TASK-1508 tie exemption survives', () => {
+    applyDeltaToSqlite(db, [{ table: 'inbox_items', rows: [inboxRow('INBOX-1', 7000)] }], 'laptop')
+    const again = applyDeltaToSqlite(db, [{ table: 'inbox_items', rows: [inboxRow('INBOX-1', 7000)] }], 'laptop')
+    expect(again.verdicts[0]).toMatchObject({ verdict: 'applied', stamped: 7000 })
+    expect(stampOf('INBOX-1').sync_updated_at).toBe(7000)
+    expect(peek(db)).toBe(7000) // not bumped — nothing changed
   })
 })

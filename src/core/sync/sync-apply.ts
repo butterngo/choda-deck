@@ -43,8 +43,27 @@ export interface RowVerdict {
   verdict: ApplyVerdict
   // The Lamport value now standing canonical for this row. On a conflict it is
   // the canonical row's existing value (what beat the push); on apply/tombstone
-  // it is the pushed row's value. The pusher logs conflicts against this.
+  // it is the value the row was STORED with (see `stamped`). The pusher logs
+  // conflicts against this.
   canonicalLamport: number
+  // TASK-3202 — on apply/tombstone, the Lamport the canonical store actually
+  // wrote: at least one above everything it already held, so a row pushed by a
+  // node whose clock never merged a pull (fresh install, offline at boot) does
+  // not land BELOW the cursor every other node already holds — `since` is
+  // strictly greater-than, and such a row would never be fetched by anyone.
+  // Equals the pushed value when that was already above the canonical clock.
+  // Absent on a conflict, and absent from a server older than this field.
+  stamped?: number
+}
+
+// TASK-3202 — the one place the re-stamp rule lives. `clock` is the canonical
+// store's Lamport counter as of this push (advanced row by row inside the
+// transaction). An idempotent re-delivery (TASK-1508: same origin, equal value)
+// keeps its value — bumping it would make every other node re-fetch a row that
+// did not change, and would make the pusher's own next retry read as a conflict.
+export function restampLamport(pushed: number, clock: number, redelivery: boolean): number {
+  if (redelivery) return pushed
+  return Math.max(pushed, clock + 1)
 }
 
 export interface ApplyResult {
@@ -94,16 +113,27 @@ export function planApplyRow(
   canonical?: CanonicalRowState
 ): ApplyVerdict {
   if (canonicalLamport !== null && row.sync_updated_at <= canonicalLamport) {
-    const idempotentRedelivery =
-      row.sync_updated_at === canonicalLamport &&
-      canonical !== undefined &&
-      canonical.origin !== null &&
-      canonical.origin === canonical.pushOrigin
-    if (!idempotentRedelivery) return 'conflict'
+    if (!isRedelivery(canonicalLamport, row, canonical)) return 'conflict'
   }
   return row.sync_deleted_at !== null && row.sync_deleted_at !== undefined
     ? 'tombstoned'
     : 'applied'
+}
+
+// The TASK-1508 tie exemption, shared with the re-stamp rule (TASK-3202) so the
+// two never disagree about what counts as "our own write coming back".
+export function isRedelivery(
+  canonicalLamport: number | null,
+  row: PulledRow,
+  canonical?: CanonicalRowState
+): boolean {
+  return (
+    canonicalLamport !== null &&
+    row.sync_updated_at === canonicalLamport &&
+    canonical !== undefined &&
+    canonical.origin !== null &&
+    canonical.origin === canonical.pushOrigin
+  )
 }
 
 // Guard for the endpoint: reject a delta set that names any non-APPLY table

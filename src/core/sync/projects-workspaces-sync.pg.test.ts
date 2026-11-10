@@ -15,6 +15,7 @@ import { startHttpTransport, type HttpTransportHandle } from '../../adapters/mcp
 import { wrapWithSyncWriteThrough } from './sync-write-through'
 import { HttpWriteClient } from './http-write-client'
 import { startSyncLoop } from './sync-loop'
+import { getLastPullAt } from './lamport-clock'
 
 const TOKEN = 'pw-e2e-token'
 
@@ -97,13 +98,9 @@ describeIfDocker('TASK-1146 — project + workspace sync laptop → PG → lapto
     expect((await lap2.getProject('hc'))?.org).toBe('ichiba')
     expect((await lap2.getProject('mk'))?.org).toBeNull()
 
-    // A real laptop pulls before it writes, which merges the remote clock into its
-    // own; without it this fresh in-memory node would stamp the update below the
-    // cursor lap2 already holds from the earlier test's rows, and it would never
-    // be fetched. Model the running loop, not a node that has never synced.
-    const loop1 = startSyncLoop({ db: lap1.syncDatabase, remoteUrl, token: TOKEN, intervalMs: 10_000_000 })
-    await loop1.runOnce()
-    loop1.stop()
+    // lap1 has never pulled, so its clock is still at ~2 while lap2's cursor is
+    // already past every row canonical holds. TASK-3202: canonical re-stamps the
+    // update above its own clock, so lap2 still receives it.
     await wrapped.ensureProject('mk', 'Infrastructure', 'C:/dev/micro_k8s', 'personal')
     await loop2.runOnce()
     loop2.stop()
@@ -112,5 +109,51 @@ describeIfDocker('TASK-1146 — project + workspace sync laptop → PG → lapto
 
     lap1.close()
     lap2.close()
+  })
+
+  // TASK-3202 AC-1 / AC-3 — the bug itself: a fresh node that writes before its
+  // first pull. Its rows are stamped 1..n, below the cursor every synced node
+  // holds; `since` is strictly greater-than, so without the re-stamp nobody
+  // would ever fetch them.
+  it('a fresh node that never pulled still reaches a node whose cursor is already ahead', async () => {
+    // Seed canonical so a synced node's cursor is well above a fresh clock.
+    const seeder = wrapWithSyncWriteThrough(
+      new SqliteTaskService(':memory:'),
+      new HttpWriteClient({ remoteUrl, token: TOKEN })
+    )
+    await seeder.ensureProject('seed', 'Seed', 'C:/dev/seed')
+    for (let i = 0; i < 5; i++) await seeder.createTask({ projectId: 'seed', title: `seed ${i}` })
+
+    const lapB = new SqliteTaskService(':memory:')
+    const loopB = startSyncLoop({ db: lapB.syncDatabase, remoteUrl, token: TOKEN, intervalMs: 10_000_000 })
+    await loopB.runOnce()
+    const cursorB = getLastPullAt(lapB.syncDatabase)
+    expect(cursorB).toBeGreaterThan(1)
+
+    // Node A: fresh DB, NO pull, writes straight away (offline at boot / first
+    // tool call before the first sync cycle).
+    const lapA = new SqliteTaskService(':memory:')
+    const wrappedA = wrapWithSyncWriteThrough(lapA, new HttpWriteClient({ remoteUrl, token: TOKEN }))
+    await wrappedA.ensureProject('fresh', 'Fresh Node Project', 'C:/dev/fresh')
+
+    // AC-3 — after the push the local row equals the canonical row, and both sit
+    // above B's cursor.
+    const localA = lapA.syncDatabase
+      .prepare('SELECT sync_updated_at FROM projects WHERE id = ?')
+      .get('fresh') as { sync_updated_at: number }
+    const pg = await env.conn.query<{ sync_updated_at: string }>(
+      'SELECT sync_updated_at FROM projects WHERE id = $1',
+      ['fresh']
+    )
+    expect(Number(pg.rows[0]?.sync_updated_at)).toBe(localA.sync_updated_at)
+    expect(localA.sync_updated_at).toBeGreaterThan(cursorB)
+
+    // AC-1 — B pulls and receives it.
+    await loopB.runOnce()
+    loopB.stop()
+    expect((await lapB.getProject('fresh'))?.name).toBe('Fresh Node Project')
+
+    lapA.close()
+    lapB.close()
   })
 })
