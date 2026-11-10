@@ -3,10 +3,12 @@
 //   image   → screenshot stored under artifacts/, referenced from a local entry
 //   network → headers/cookies record (NO response body) into a local entry
 //
-// Sync boundary (ADR-036): inbox + task ride the CHODA_BACKEND=sync write-through
-// loop to the remote automatically. conversation + knowledge are LOCAL-ONLY. image
-// and network captures are restricted to conversation|knowledge (TASK-1332) so
-// captured secrets (cookies/tokens) can never reach the sync path.
+// Sync boundary (ADR-036 §5, corrected TASK-3154): inbox + task ride the
+// CHODA_BACKEND=sync write-through loop to the remote, and so do conversation
+// messages since TASK-1136; only knowledge stays off that path. image / network /
+// element / design captures are restricted to conversation|knowledge (TASK-1332)
+// as defence in depth, but the gate is parse-time redaction (TASK-3155) and the
+// credential-page refusal (TASK-3156): no credential value is ever written.
 
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
 import type { KnowledgeType } from '../../core/domain/knowledge-types'

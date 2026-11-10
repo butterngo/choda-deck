@@ -229,9 +229,10 @@ function headerBlock(title: string, headers?: Record<string, string>): string {
 
 /**
  * Render a network capture as markdown — method/url/status + headers + cookies,
- * plus request/response bodies when the page interceptor captured them. Secrets
- * in the headers/cookies/bodies stay local-only (image/network can't target the
- * sync path).
+ * plus request/response bodies when the page interceptor captured them. The
+ * record has already passed redactNetworkRecord (TASK-3155), so credential
+ * values are [redacted] whatever destination — including a conversation that
+ * syncs to the remote — the text ends up in.
  */
 export function formatNetworkRecord(record: NetworkRecord): string {
   const status = record.status !== undefined ? ` → ${record.status}` : ''

@@ -11,8 +11,10 @@
 // stdio server (sync off) never wraps, so its writes stay unstamped exactly as
 // before (ADR-030 Phase 1 note — local stamping IS write-through's job).
 //
-// Scope = tasks + inbox (the APPLY_TABLES set). conversation_* mutators are NOT
-// wrapped — that is the gated 979e slice with its append-preserving merge.
+// Scope = tasks + inbox + projects + workspaces + deploy_checks, and since
+// TASK-1136 the conversation mutators too (CONVERSATION_METHODS below, append-only
+// fold). A capture written to a conversation therefore reaches the remote in
+// sync mode — it arrives already redacted (TASK-3155 / ADR-036 §5).
 
 import type Database from 'better-sqlite3'
 import type { SqliteTaskService } from '../domain/sqlite-task-service'
