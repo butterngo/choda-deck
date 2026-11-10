@@ -11,8 +11,10 @@
 // panel page) — popups are hard-capped at 800x600, the side panel is not.
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {})
 
-// Classic-script SW, so the shared correlation helper loads via importScripts.
-importScripts('lib/correlate.js')
+// Classic-script SW, so the shared helpers load via importScripts. netview.js
+// owns headersToObject (TASK-3157) so the panel's cookie parser and this buffer
+// agree on how a repeated header is joined.
+importScripts('lib/correlate.js', 'lib/netview.js')
 
 const MAX_PER_TAB = 25
 
@@ -49,12 +51,6 @@ function prune(tabId, resType) {
   for (const r of forTab.slice(MAX_PER_TAB)) delete requests[r.requestId]
 }
 
-function toObject(headers) {
-  const out = {}
-  for (const h of headers || []) out[h.name.toLowerCase()] = h.value
-  return out
-}
-
 chrome.webRequest.onSendHeaders.addListener(
   (d) => {
     const r = rec(d.requestId)
@@ -63,7 +59,7 @@ chrome.webRequest.onSendHeaders.addListener(
     r.url = d.url
     r.ts = d.timeStamp
     r.resType = RES_TYPE[d.type] || 'api'
-    r.requestHeaders = toObject(d.requestHeaders)
+    r.requestHeaders = ChodaNetView.headersToObject(d.requestHeaders)
     // Which PAGE made this call, stamped now rather than read off the focused tab at
     // capture time — the panel outlives tab switches, so focus is not provenance.
     // referer carries the full url incl. path; d.initiator is origin-only but always
@@ -81,7 +77,7 @@ chrome.webRequest.onHeadersReceived.addListener(
   (d) => {
     const r = rec(d.requestId)
     r.status = d.statusCode
-    r.responseHeaders = toObject(d.responseHeaders)
+    r.responseHeaders = ChodaNetView.headersToObject(d.responseHeaders)
   },
   { urls: ['<all_urls>'], types: OBSERVED_TYPES },
   ['responseHeaders', 'extraHeaders']

@@ -1,10 +1,40 @@
 // View-model helpers for the Network panel detail tabs.
 const {
+  headersToObject,
   generalRows,
   rawHeaderText,
   parseRequestCookies,
   parseResponseCookies
 } = require('./netview.js')
+
+// TASK-3157 — a repeated header name is joined, never collapsed to its last value.
+describe('headersToObject', () => {
+  it('lower-cases names and keeps single values as-is', () => {
+    expect(headersToObject([{ name: 'Content-Type', value: 'text/html' }])).toEqual({
+      'content-type': 'text/html'
+    })
+  })
+
+  it('joins repeated set-cookie headers with a newline', () => {
+    const out = headersToObject([
+      { name: 'Set-Cookie', value: 'a=1; Path=/' },
+      { name: 'set-cookie', value: 'b=2; HttpOnly' }
+    ])
+    expect(out['set-cookie']).toBe('a=1; Path=/\nb=2; HttpOnly')
+  })
+
+  it('joins other repeated headers with ", " (RFC 9110 §5.3)', () => {
+    const out = headersToObject([
+      { name: 'Accept', value: 'text/html' },
+      { name: 'Accept', value: 'application/json' }
+    ])
+    expect(out['accept']).toBe('text/html, application/json')
+  })
+
+  it('is empty for a missing list', () => {
+    expect(headersToObject(undefined)).toEqual({})
+  })
+})
 
 describe('generalRows', () => {
   it('lists url + method + status', () => {
@@ -82,6 +112,13 @@ describe('parseResponseCookies', () => {
 
   it('ignores a malformed header with no =', () => {
     expect(parseResponseCookies({ 'set-cookie': 'nonsense' })).toEqual([])
+  })
+
+  it('returns one entry per newline-joined Set-Cookie (TASK-3157)', () => {
+    expect(parseResponseCookies({ 'set-cookie': 'a=1; Path=/\nb=2; HttpOnly' })).toEqual([
+      { name: 'a', value: '1', attributes: ['Path=/'] },
+      { name: 'b', value: '2', attributes: ['HttpOnly'] }
+    ])
   })
 
   it('is empty when nothing was set', () => {
