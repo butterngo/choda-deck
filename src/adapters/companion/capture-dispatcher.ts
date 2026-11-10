@@ -3,10 +3,12 @@
 //   image   → screenshot stored under artifacts/, referenced from a local entry
 //   network → headers/cookies record (NO response body) into a local entry
 //
-// Sync boundary (ADR-036): inbox + task ride the CHODA_BACKEND=sync write-through
-// loop to the remote automatically. conversation + knowledge are LOCAL-ONLY. image
-// and network captures are restricted to conversation|knowledge (TASK-1332) so
-// captured secrets (cookies/tokens) can never reach the sync path.
+// Sync boundary (ADR-036 §5, corrected TASK-3154): inbox + task ride the
+// CHODA_BACKEND=sync write-through loop to the remote, and so do conversation
+// messages since TASK-1136; only knowledge stays off that path. image / network /
+// element / design captures are restricted to conversation|knowledge (TASK-1332)
+// as defence in depth, but the gate is parse-time redaction (TASK-3155) and the
+// credential-page refusal (TASK-3156): no credential value is ever written.
 
 import type { BackendTaskService } from '../../core/domain/backend-task-service.interface'
 import type { KnowledgeType } from '../../core/domain/knowledge-types'
@@ -26,6 +28,7 @@ import {
   writeImageArtifact
 } from './capture-artifacts'
 import { parseDiscoveryBundle, writeDiscoverySession } from './discovery-artifacts'
+import { credentialPageRule } from './capture-sensitive-pages'
 
 const CAPTURE_AUTHOR = 'companion'
 const DEFAULT_KNOWLEDGE_TYPE: KnowledgeType = 'learning'
@@ -80,6 +83,17 @@ function guardLocalOnly(kind: string, destination: CaptureDestination): void {
       `${kind} captures may only target conversation or knowledge (local-only)`
     )
   }
+}
+
+// TASK-3156 — a screenshot of a credential page stores the secret as pixels, so
+// it is refused before anything touches disk unless the caller opted in.
+function guardCredentialPage(sourceUrl: string, p: Record<string, unknown>): void {
+  if (p.allowSensitive === true) return
+  const rule = credentialPageRule(sourceUrl)
+  if (rule === null) return
+  throw new CaptureBadRequestError(
+    `refused: ${sourceUrl} is a credential page (rule ${rule}) — resend with payload.allowSensitive=true to keep it anyway`
+  )
 }
 
 export class CompanionCaptureDispatcher implements CaptureDispatcher {
@@ -147,6 +161,7 @@ export class CompanionCaptureDispatcher implements CaptureDispatcher {
 
     let body = markdown
     if (p.dataUrl !== undefined) {
+      guardCredentialPage(capture.sourceUrl, p)
       const stored = writeImageArtifact(this.artifactsDir, p.dataUrl)
       body += `\n\n![element](${stored.relPath})\n\n(${stored.bytes} bytes)`
     }
@@ -231,6 +246,7 @@ export class CompanionCaptureDispatcher implements CaptureDispatcher {
     guardLocalOnly('image', capture.destination)
     const p = asObject(capture.payload, 'image payload must be an object { dataUrl, projectId, ... }')
     const target = parseTarget(p)
+    guardCredentialPage(capture.sourceUrl, p)
     const stored = writeImageArtifact(this.artifactsDir, p.dataUrl)
     const title = titleFrom(target, `Screenshot from ${capture.sourceUrl}`, capture.sourceUrl)
     const body = withSource(`![capture](${stored.relPath})\n\n(${stored.bytes} bytes)`, capture.sourceUrl)
