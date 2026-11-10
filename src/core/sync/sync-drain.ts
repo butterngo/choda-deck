@@ -14,6 +14,7 @@
 
 import type Database from 'better-sqlite3'
 import type { ApplySink } from './sync-apply'
+import { adoptStampedVerdicts } from './sync-stamp-adopt'
 import {
   listPendingOps,
   deletePendingOp,
@@ -84,7 +85,7 @@ export async function drainPendingOps(
   for (const op of ops) {
     let outcome: { dropped: boolean; canonicalLamport: number }
     try {
-      outcome = await pushOne(sink, opts.origin, op)
+      outcome = await pushOne(db, sink, opts.origin, op)
     } catch (err) {
       const status = (err as { status?: number }).status
       const msg = err instanceof Error ? err.message : String(err)
@@ -124,17 +125,21 @@ export async function drainPendingOps(
 }
 
 // Push a single op; report whether the remote DROPPED it (LWW conflict) and the
-// canonical Lamport that beat it.
+// canonical Lamport that beat it. An accepted op adopts the canonical re-stamp
+// (TASK-3202) so the local row and clock agree with what the store wrote.
 async function pushOne(
+  db: Database.Database,
   sink: ApplySink,
   origin: string,
   op: PendingOp
 ): Promise<{ dropped: boolean; canonicalLamport: number }> {
-  const result = await sink.applyDelta([{ table: op.table_name, rows: [pendingOpRow(op)] }], origin)
+  const deltas = [{ table: op.table_name, rows: [pendingOpRow(op)] }]
+  const result = await sink.applyDelta(deltas, origin)
   const verdict = result.verdicts.find((v) => v.id === op.row_id)
   if (verdict?.verdict === 'conflict') {
     return { dropped: true, canonicalLamport: verdict.canonicalLamport }
   }
+  adoptStampedVerdicts(db, deltas, result)
   return { dropped: false, canonicalLamport: verdict?.canonicalLamport ?? 0 }
 }
 

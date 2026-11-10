@@ -7,6 +7,7 @@ import Database from 'better-sqlite3'
 import { createPendingOpsTable, enqueueOp, countPendingOps } from './pending-ops'
 import { createSyncConflictsTable, drainPendingOps, type ConflictRecord } from './sync-drain'
 import { SyncApplyError } from './http-write-client'
+import { createSyncClockTables, peek } from './lamport-clock'
 import type { ApplySink, ApplyResult, RowVerdict } from './sync-apply'
 import type { TableDelta, PulledRow } from './sync-pull'
 
@@ -127,5 +128,69 @@ describe('drainPendingOps', () => {
     const res = await drainPendingOps(db, sink, { origin: 'laptop', isReachable: reachable })
     expect(res).toMatchObject({ reachable: true, drained: 0, rejected: 0, remaining: 2 })
     expect(countPendingOps(db)).toBe(2) // transient → nothing dropped
+  })
+})
+
+// TASK-3202 — an accepted op adopts the canonical re-stamp: the local row moves
+// to what the store actually wrote, and the clock merges past it.
+describe('drainPendingOps — adopts the canonical re-stamp (TASK-3202)', () => {
+  let db: Database.Database
+  beforeEach(() => {
+    db = new Database(':memory:')
+    createPendingOpsTable(db)
+    createSyncConflictsTable(db)
+    createSyncClockTables(db)
+    db.exec(
+      'CREATE TABLE inbox_items (id TEXT PRIMARY KEY, content TEXT, sync_updated_at INTEGER, sync_deleted_at INTEGER, sync_origin TEXT)'
+    )
+  })
+
+  function seed(id: string, lamport: number): void {
+    db.prepare('INSERT INTO inbox_items VALUES (?, ?, ?, NULL, ?)').run(id, 'x', lamport, 'laptop')
+    enqueueOp(db, { tableName: 'inbox_items', rowId: id, op: 'upsert', row: row(id, lamport), lamport, enqueuedAt: lamport })
+  }
+
+  function stampingSink(stampTo: number | undefined): ApplySink {
+    return {
+      async applyDelta(deltas: TableDelta[]): Promise<ApplyResult> {
+        const verdicts: RowVerdict[] = deltas.flatMap((d) =>
+          d.rows.map((r) => ({
+            table: d.table,
+            id: r.id,
+            verdict: 'applied' as const,
+            canonicalLamport: stampTo ?? r.sync_updated_at,
+            ...(stampTo === undefined ? {} : { stamped: stampTo })
+          }))
+        )
+        return { applied: verdicts.length, tombstoned: 0, conflicts: 0, verdicts }
+      }
+    }
+  }
+
+  const stampOf = (id: string): number =>
+    (db.prepare('SELECT sync_updated_at FROM inbox_items WHERE id = ?').get(id) as { sync_updated_at: number })
+      .sync_updated_at
+
+  it('moves the local row to `stamped` and merges the clock', async () => {
+    seed('A', 1)
+    const res = await drainPendingOps(db, stampingSink(5001), { origin: 'laptop', isReachable: () => Promise.resolve(true) })
+    expect(res).toMatchObject({ drained: 1, conflicts: 0 })
+    expect(stampOf('A')).toBe(5001)
+    expect(peek(db)).toBe(5001)
+  })
+
+  it('CONTROL — a verdict without `stamped` (older server) leaves the row and clock alone', async () => {
+    seed('A', 1)
+    await drainPendingOps(db, stampingSink(undefined), { origin: 'laptop', isReachable: () => Promise.resolve(true) })
+    expect(stampOf('A')).toBe(1)
+    expect(peek(db)).toBe(0)
+  })
+
+  it('does not drag back a row that was edited locally after the op was queued', async () => {
+    seed('A', 1)
+    db.prepare('UPDATE inbox_items SET sync_updated_at = 2 WHERE id = ?').run('A') // newer local edit
+    await drainPendingOps(db, stampingSink(5001), { origin: 'laptop', isReachable: () => Promise.resolve(true) })
+    expect(stampOf('A')).toBe(2)
+    expect(peek(db)).toBe(5001) // the clock still merges — the next edit must outrank 5001
   })
 })

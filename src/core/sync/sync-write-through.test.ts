@@ -7,16 +7,31 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { SqliteTaskService } from '../domain/sqlite-task-service'
 import { wrapWithSyncWriteThrough } from './sync-write-through'
 import { countPendingOps, listPendingOps } from './pending-ops'
-import type { ApplySink, ApplyResult } from './sync-apply'
+import type { ApplySink, ApplyResult, RowVerdict } from './sync-apply'
+import { peek } from './lamport-clock'
 import type { TableDelta } from './sync-pull'
 
 class RecordingSink implements ApplySink {
   calls: Array<{ deltas: TableDelta[]; origin: string }> = []
   fail = false
+  // TASK-3202 — when set, every accepted row is reported re-stamped to this value.
+  stampTo: number | undefined
   async applyDelta(deltas: TableDelta[], origin: string): Promise<ApplyResult> {
     if (this.fail) throw new Error('offline')
     this.calls.push({ deltas, origin })
-    return { applied: 1, tombstoned: 0, conflicts: 0, verdicts: [] }
+    const verdicts: RowVerdict[] =
+      this.stampTo === undefined
+        ? []
+        : deltas.flatMap((d) =>
+            d.rows.map((r) => ({
+              table: d.table,
+              id: r.id,
+              verdict: 'applied' as const,
+              canonicalLamport: this.stampTo as number,
+              stamped: this.stampTo as number
+            }))
+          )
+    return { applied: 1, tombstoned: 0, conflicts: 0, verdicts }
   }
 }
 
@@ -223,5 +238,22 @@ describe('wrapWithSyncWriteThrough', () => {
     const wrapped = wrapWithSyncWriteThrough(svc, sink)
     const db = (wrapped as unknown as { syncDatabase: typeof svc.syncDatabase }).syncDatabase
     expect(db).toBe(svc.syncDatabase)
+  })
+
+  // TASK-3202 — a fresh node's first write is stamped 1 locally; canonical lifts
+  // it past everything it holds and the wrapper adopts that, so the local row,
+  // the canonical row and the local clock agree.
+  it('adopts the canonical re-stamp on the local row and clock', async () => {
+    const wrapped = wrapWithSyncWriteThrough(svc, sink)
+    sink.stampTo = 5001
+    const task = await wrapped.createTask({ projectId: 'p', title: 'first offline-born write' })
+    expect(sink.calls[0].deltas[0].rows[0].sync_updated_at).toBe(1) // what was pushed
+    expect(stamped(task.id).sync_updated_at).toBe(5001) // what canonical wrote
+    expect(peek(svc.syncDatabase)).toBe(5001)
+
+    // The next local write ticks past the adopted value, not past 1.
+    sink.stampTo = undefined
+    await wrapped.updateTask(task.id, { title: 'v2' })
+    expect(stamped(task.id).sync_updated_at).toBe(5002)
   })
 })

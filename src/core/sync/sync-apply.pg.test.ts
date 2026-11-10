@@ -125,6 +125,23 @@ describeIfDocker('ADR-030 Phase 3 — POST /sync/apply → canonical Postgres', 
     expect((await rawTask('TASK-1'))?.title).toBe('updated')
   })
 
+  // TASK-3202 AC-2 — against the real PG sink: a push below the canonical clock is
+  // lifted to clock + 1 and reported; one above it keeps its own value.
+  it('re-stamps a push below the canonical clock, and leaves one above it alone', async () => {
+    await env.conn.query('UPDATE _sync_clock SET counter = 5000 WHERE id = 0')
+
+    const low = await svc.applyDelta([taskRow('TASK-1', 1, 'fresh-node write')], 'laptop')
+    expect(low.verdicts[0]).toMatchObject({ verdict: 'applied', canonicalLamport: 5001, stamped: 5001 })
+    expect(Number((await rawTask('TASK-1'))?.sync_updated_at)).toBe(5001)
+
+    const high = await svc.applyDelta([taskRow('TASK-2', 7000, 'synced-node write')], 'laptop')
+    expect(high.verdicts[0]).toMatchObject({ stamped: 7000 })
+    expect(Number((await rawTask('TASK-2'))?.sync_updated_at)).toBe(7000)
+
+    const clock = await env.conn.query<{ counter: string }>('SELECT counter FROM _sync_clock WHERE id = 0')
+    expect(Number(clock.rows[0].counter)).toBe(7000)
+  })
+
   it('POST /sync/apply over HTTP applies and returns verdicts', async () => {
     const res = await fetch(`${remoteUrl}/sync/apply`, {
       method: 'POST',

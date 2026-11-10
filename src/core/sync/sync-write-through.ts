@@ -19,8 +19,9 @@ import type { SqliteTaskService } from '../domain/sqlite-task-service'
 import type { BackendTaskService } from '../domain/backend-task-service.interface'
 import { tick } from './lamport-clock'
 import { enqueueOp } from './pending-ops'
-import type { ApplySink } from './sync-apply'
+import type { ApplyResult, ApplySink } from './sync-apply'
 import type { PulledRow } from './sync-pull'
+import { adoptStampedVerdicts } from './sync-stamp-adopt'
 
 interface MutatorSpec {
   table: 'tasks' | 'inbox_items' | 'projects' | 'workspaces' | 'deploy_checks'
@@ -152,11 +153,17 @@ async function push(
   row: PulledRow,
   lamport: number
 ): Promise<void> {
+  const deltas = [{ table, rows: [row] }]
+  let result: ApplyResult
   try {
-    await sink.applyDelta([{ table, rows: [row] }], origin)
+    result = await sink.applyDelta(deltas, origin)
   } catch {
     enqueueOp(db, { tableName: table, rowId, op, row, lamport, enqueuedAt: Date.now() })
+    return
   }
+  // TASK-3202 — outside the try: adopting the store's re-stamp is local work,
+  // and a failure there must not re-enqueue an op the remote already accepted.
+  adoptStampedVerdicts(db, deltas, result)
 }
 
 // TASK-2200 — removeProject deletes the project AND its workspaces locally, so the
@@ -232,8 +239,9 @@ async function pushConversation(
     }
   ].filter((d) => d.rows.length > 0)
 
+  let result: ApplyResult
   try {
-    await sink.applyDelta(deltas, origin)
+    result = await sink.applyDelta(deltas, origin)
   } catch {
     for (const { table, row } of staged) {
       enqueueOp(db, {
@@ -245,5 +253,7 @@ async function pushConversation(
         enqueuedAt: Date.now()
       })
     }
+    return
   }
+  adoptStampedVerdicts(db, deltas, result)
 }
