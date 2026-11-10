@@ -26,6 +26,7 @@ import {
   writeImageArtifact
 } from './capture-artifacts'
 import { parseDiscoveryBundle, writeDiscoverySession } from './discovery-artifacts'
+import { credentialPageRule } from './capture-sensitive-pages'
 
 const CAPTURE_AUTHOR = 'companion'
 const DEFAULT_KNOWLEDGE_TYPE: KnowledgeType = 'learning'
@@ -80,6 +81,17 @@ function guardLocalOnly(kind: string, destination: CaptureDestination): void {
       `${kind} captures may only target conversation or knowledge (local-only)`
     )
   }
+}
+
+// TASK-3156 — a screenshot of a credential page stores the secret as pixels, so
+// it is refused before anything touches disk unless the caller opted in.
+function guardCredentialPage(sourceUrl: string, p: Record<string, unknown>): void {
+  if (p.allowSensitive === true) return
+  const rule = credentialPageRule(sourceUrl)
+  if (rule === null) return
+  throw new CaptureBadRequestError(
+    `refused: ${sourceUrl} is a credential page (rule ${rule}) — resend with payload.allowSensitive=true to keep it anyway`
+  )
 }
 
 export class CompanionCaptureDispatcher implements CaptureDispatcher {
@@ -147,6 +159,7 @@ export class CompanionCaptureDispatcher implements CaptureDispatcher {
 
     let body = markdown
     if (p.dataUrl !== undefined) {
+      guardCredentialPage(capture.sourceUrl, p)
       const stored = writeImageArtifact(this.artifactsDir, p.dataUrl)
       body += `\n\n![element](${stored.relPath})\n\n(${stored.bytes} bytes)`
     }
@@ -231,6 +244,7 @@ export class CompanionCaptureDispatcher implements CaptureDispatcher {
     guardLocalOnly('image', capture.destination)
     const p = asObject(capture.payload, 'image payload must be an object { dataUrl, projectId, ... }')
     const target = parseTarget(p)
+    guardCredentialPage(capture.sourceUrl, p)
     const stored = writeImageArtifact(this.artifactsDir, p.dataUrl)
     const title = titleFrom(target, `Screenshot from ${capture.sourceUrl}`, capture.sourceUrl)
     const body = withSource(`![capture](${stored.relPath})\n\n(${stored.bytes} bytes)`, capture.sourceUrl)

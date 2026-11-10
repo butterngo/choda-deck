@@ -176,6 +176,68 @@ describe('CompanionCaptureDispatcher — image kind', () => {
   })
 })
 
+// TASK-3156 — screenshots of credential pages are refused unless opted in.
+describe('CompanionCaptureDispatcher — credential pages (TASK-3156)', () => {
+  const RUNNER_URL = 'https://github.com/o/r/settings/actions/runners/new'
+  const capturesCount = (): number =>
+    fs.existsSync(path.join(ARTIFACTS, 'captures'))
+      ? fs.readdirSync(path.join(ARTIFACTS, 'captures')).length
+      : 0
+  const imgFrom = (sourceUrl: string, extra = {}): CaptureRequest =>
+    ({
+      kind: 'image',
+      destination: 'knowledge',
+      sourceUrl,
+      payload: { dataUrl: PNG_DATA_URL, projectId: 'choda-deck', ...extra }
+    }) as CaptureRequest
+  const elFrom = (sourceUrl: string, extra = {}): CaptureRequest =>
+    ({
+      kind: 'element',
+      destination: 'knowledge',
+      sourceUrl,
+      payload: {
+        pick: { selector: '#token', label: 'token' },
+        markdown: 'some text',
+        projectId: 'choda-deck',
+        ...extra
+      }
+    }) as CaptureRequest
+
+  it('refuses an image capture of the runner registration page and writes nothing', async () => {
+    const svc = makeSvc()
+    const err = await make(svc)
+      .dispatch(imgFrom(RUNNER_URL))
+      .catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(CaptureBadRequestError)
+    expect((err as Error).message).toContain('credential page')
+    expect((err as Error).message).toContain('allowSensitive')
+    expect(capturesCount()).toBe(0)
+    expect(svc.createKnowledge).not.toHaveBeenCalled()
+  })
+
+  it('keeps the same capture when payload.allowSensitive is true', async () => {
+    const svc = makeSvc()
+    await make(svc).dispatch(imgFrom(RUNNER_URL, { allowSensitive: true }))
+    expect(capturesCount()).toBe(1)
+  })
+
+  it('refuses an element crop from that page, but not a text-only element pick', async () => {
+    const svc = makeSvc()
+    await expect(
+      make(svc).dispatch(elFrom(RUNNER_URL, { dataUrl: PNG_DATA_URL }))
+    ).rejects.toBeInstanceOf(CaptureBadRequestError)
+    expect(capturesCount()).toBe(0)
+    await make(svc).dispatch(elFrom(RUNNER_URL))
+    expect(svc.createKnowledge).toHaveBeenCalledTimes(1)
+  })
+
+  it('an ordinary page needs no allowSensitive', async () => {
+    const svc = makeSvc()
+    await make(svc).dispatch(imgFrom('https://example.com/page'))
+    expect(capturesCount()).toBe(1)
+  })
+})
+
 describe('CompanionCaptureDispatcher — network kind', () => {
   const record = {
     method: 'GET',
