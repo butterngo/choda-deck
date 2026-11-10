@@ -214,6 +214,23 @@ describe('CompanionCaptureDispatcher — network kind', () => {
       make(svc).dispatch(netReq('knowledge', { url: 'https://x' }))
     ).rejects.toBeInstanceOf(CaptureBadRequestError)
   })
+
+  // TASK-3155 — the stored message never carries the credential value; the
+  // header name survives so a reader knows it was sent.
+  it('redacts an authorization header before the conversation message is stored', async () => {
+    const svc = makeSvc()
+    await make(svc).dispatch(
+      netReq('conversation', {
+        ...record,
+        requestHeaders: { authorization: 'Bearer zz_test_secret_0001', accept: '*/*' }
+      })
+    )
+    const content = (svc.openConversation as ReturnType<typeof vi.fn>).mock.calls[0][0]
+      .initialMessage.content
+    expect(content).toContain('[redacted]')
+    expect(content).toContain('authorization')
+    expect(content).not.toContain('zz_test_secret_0001')
+  })
 })
 
 describe('CompanionCaptureDispatcher — network-bundle kind (TASK-1372)', () => {
@@ -251,6 +268,29 @@ describe('CompanionCaptureDispatcher — network-bundle kind (TASK-1372)', () =>
     const call = (svc.openConversation as ReturnType<typeof vi.fn>).mock.calls[0][0]
     expect(call.initialMessage.content).toContain(files[0])
     expect(call.initialMessage.content).toContain('3 requests')
+  })
+
+  // TASK-3155 — the HAR on disk is redacted too (same parse call site).
+  it('writes a HAR whose text carries [redacted] and never the pushed secret', async () => {
+    const svc = makeSvc()
+    await make(svc).dispatch(
+      bundleReq('conversation', {
+        entries: [
+          {
+            method: 'GET',
+            url: 'https://api.ex.com/a',
+            status: 200,
+            requestHeaders: { authorization: 'Bearer zz_test_secret_0001' }
+          }
+        ],
+        projectId: 'choda-deck'
+      })
+    )
+    const dir = path.join(ARTIFACTS, 'captures')
+    const file = fs.readdirSync(dir).find((f) => f.endsWith('.har')) as string
+    const text = fs.readFileSync(path.join(dir, file), 'utf8')
+    expect(text).toContain('[redacted]')
+    expect(text).not.toContain('zz_test_secret_0001')
   })
 
   it('empty entries → CaptureBadRequestError (400)', async () => {

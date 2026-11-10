@@ -6,6 +6,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { randomBytes } from 'crypto'
 import { CaptureBadRequestError } from './capture-contract'
+import { redactNetworkRecord } from './capture-redact'
 
 const DATA_URL_RE = /^data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/=]+)$/i
 const MIME_EXT: Record<string, string> = {
@@ -111,7 +112,9 @@ export function parseNetworkRecord(record: unknown): NetworkRecord {
   if (typeof r.reqBody === 'string' && r.reqBody.length > 0) {
     out.reqBody = r.reqBody.slice(0, MAX_BODY_CHARS)
   }
-  return out
+  // TASK-3155 — the one call site both the single-record and the HAR bundle path
+  // share: nothing downstream ever sees a credential value.
+  return redactNetworkRecord(out)
 }
 
 // ---- HAR bundle (TASK-1372) -------------------------------------------------
