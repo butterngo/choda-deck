@@ -207,6 +207,8 @@ export interface KnowledgeSearchHit extends KnowledgeListItem {
   distance: number
   /** TASK-3253 — Reciprocal Rank Fusion of the vector and lexical ranks. */
   score: number
+  /** TASK-1622 — `distance` is past the swept no-match cut. Shown, never hidden. */
+  weak: boolean
   /**
    * TASK-1599 — leading prose of the entry body, so a result carries context
    * without a second fetch. Always a string; `''` when the body is empty or
@@ -235,4 +237,14 @@ export interface KnowledgeSearchResult {
   reason?: string
   providerId?: string
   results: KnowledgeSearchHit[]
+  /**
+   * TASK-1622 — true when nothing in `results` is a confident match: the
+   * nearest vector is past the swept cut (`NO_MATCH_DISTANCE`). The results are
+   * still the nearest entries; a client should call them "nearest", not
+   * "results".
+   */
+  noConfidentMatch?: boolean
+  /** TASK-1622 — the signals `noConfidentMatch` was decided from. */
+  nearestDistance?: number | null
+  lexicalMatches?: number
 }

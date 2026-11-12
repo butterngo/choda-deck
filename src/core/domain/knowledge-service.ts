@@ -9,6 +9,7 @@ import { KNOWLEDGE_TYPES, KNOWLEDGE_SCOPES } from './knowledge-types'
 import { isLikelyWorktreePath } from '../worktree-path'
 import { embeddingChunks, embeddingTextHash } from './embedding/embedding-backfill'
 import { rrfFuse } from './embedding/lexical-index'
+import { NO_MATCH_DISTANCE, hasConfidentMatch } from './embedding/relevance'
 import type {
   CreateKnowledgeInput,
   KnowledgeEntry,
@@ -823,6 +824,11 @@ export class KnowledgeService implements KnowledgeOperations {
     const missing = fused.map((f) => f.slug).filter((s) => !distance.has(s))
     for (const [s, d] of await this.embeddingStore.distancesFor(vec, missing)) distance.set(s, d)
 
+    const signals = {
+      nearestDistance: vectorHits[0]?.distance ?? null,
+      lexicalMatches: lexical.length
+    }
+
     const rows = await Promise.all(fused.map((f) => this.knowledge.get(f.slug)))
     const results = fused
       .map((h, i) => {
@@ -842,11 +848,18 @@ export class KnowledgeService implements KnowledgeOperations {
           lastVerifiedAt: row.lastVerifiedAt,
           distance: distance.get(h.slug)!,
           score: h.score,
+          weak: distance.get(h.slug)! > NO_MATCH_DISTANCE,
           excerpt: this.excerptOf(row.filePath)
         }
       })
       .filter((r): r is NonNullable<typeof r> => r !== null)
-    return { enabled: true, providerId: provider.id, results }
+    return {
+      enabled: true,
+      providerId: provider.id,
+      results,
+      noConfidentMatch: !hasConfidentMatch(signals),
+      ...signals
+    }
   }
 
   // Fire-and-forget embed. Failures log a warning but never reject — the row
