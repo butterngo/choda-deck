@@ -5,8 +5,11 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/core/domain/embedding/lexical-index.ts
+    commitSha: 91531989853386c80ed6a05cbdf0dfcf62d7e0d5
   - path: src/core/domain/knowledge-service.ts
+    commitSha: 91531989853386c80ed6a05cbdf0dfcf62d7e0d5
   - path: src/core/domain/embedding/embedding-store.ts
+    commitSha: 91531989853386c80ed6a05cbdf0dfcf62d7e0d5
 createdAt: 2026-11-12
 lastVerifiedAt: 2026-11-12
 ---

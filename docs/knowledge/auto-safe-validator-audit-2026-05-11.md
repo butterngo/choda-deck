@@ -1,9 +1,14 @@
 ---
-type: audit
+type: evaluation
 title: auto-safe validator audit — TASK-704 bypass investigation
-date: 2026-05-11
-convRef: CONV-1778483640100-2
+projectId: choda-deck
+scope: project
+refs: []
+createdAt: 2026-05-11
+lastVerifiedAt: 2026-05-11
 ---
+
+> Legacy frontmatter (TASK-3267): convRef: CONV-1778483640100-2
 
 # auto-safe validator audit — 2026-05-11
 

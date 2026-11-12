@@ -1,11 +1,14 @@
 ---
+type: spike
 title: Spike Pre-warm + Budget Enforcement (ADR-019 Phase 2)
-date: 2026-05-11
-status: complete
-linked_task: TASK-705
-linked_conv: CONV-1778483640100-2
-related_adrs: [ADR-017, ADR-019]
+projectId: choda-deck
+scope: project
+refs: []
+createdAt: 2026-05-11
+lastVerifiedAt: 2026-05-11
 ---
+
+> Legacy frontmatter (TASK-3267): status: complete, linked_task: TASK-705, linked_conv: CONV-1778483640100-2, related_adrs: [ADR-017, ADR-019]
 
 # Spike: pre-warm spawn context + budget enforcement repeat-test
 

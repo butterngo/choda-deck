@@ -6,15 +6,15 @@ workspaceId: main
 scope: project
 refs:
   - path: src/core/domain/activity/activity-digest.ts
-    commitSha: 
+    commitSha: 056c0450088c9cebbb894a2f5e28cfd8fa5fe8fe
   - path: src/core/domain/activity/activity-runner.ts
-    commitSha: 
+    commitSha: 056c0450088c9cebbb894a2f5e28cfd8fa5fe8fe
   - path: src/adapters/cli/activity-command.ts
-    commitSha: 
+    commitSha: 056c0450088c9cebbb894a2f5e28cfd8fa5fe8fe
   - path: src/adapters/companion/activity.ts
-    commitSha: 
+    commitSha: 056c0450088c9cebbb894a2f5e28cfd8fa5fe8fe
   - path: scripts/install-activity-digest-task.mjs
-    commitSha: 
+    commitSha: 056c0450088c9cebbb894a2f5e28cfd8fa5fe8fe
 createdAt: 2026-09-27
 lastVerifiedAt: 2026-09-27
 anchorTaskId: TASK-2149

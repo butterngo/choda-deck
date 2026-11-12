@@ -36,6 +36,7 @@ Commands:
   run report <goalId> [--smoke f] [--out p]  Write a goal's test report (TASK-2600)
   deploy scan <goalId> [--out p]  Write a goal's deploy checklist (TASK-2604)
   knowledge eval [--fixture p] [--perturb reverse]  Score knowledge_search on a labelled query set (TASK-3252)
+  knowledge check [--json]  Report orphan rows, bad frontmatter and stale vectors (TASK-3267)
   knowledge backfill  Re-embed knowledge rows that are missing, stale or from another provider (TASK-3261)
 
 Meta:

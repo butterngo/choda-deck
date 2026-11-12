@@ -5,11 +5,11 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/adapters/companion/vault-projects.ts
-    commitSha: 
+    commitSha: 3fc8ba11589b644a7b67299850a579c60bb421e6
   - path: src/adapters/companion/vault-projects.test.ts
-    commitSha: 
+    commitSha: 3fc8ba11589b644a7b67299850a579c60bb421e6
   - path: src/adapters/companion/vault.ts
-    commitSha: 
+    commitSha: 3fc8ba11589b644a7b67299850a579c60bb421e6
 createdAt: 2026-09-20
 lastVerifiedAt: 2026-09-20
 affectedFeatureId: feature-companion-cockpit

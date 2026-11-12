@@ -48,6 +48,8 @@ import * as memoryWriteTools from './mcp-tools/memory-write'
 import * as memoryRecallTools from './mcp-tools/memory-recall'
 import * as memoryPromoteTools from './mcp-tools/memory-promote-to-knowledge'
 import * as acCheckTools from './mcp-tools/ac-check'
+import { checkKnowledgeDatabase } from '../../core/domain/embedding/knowledge-check-db'
+import { knowledgeCheckBootLine } from '../../core/domain/embedding/knowledge-check'
 
 interface BuildDeps {
   svc: BackendTaskService
@@ -249,6 +251,20 @@ export async function startMcpServer(): Promise<void> {
 
   const transport = new StdioServerTransport()
   await server.connect(transport)
+
+  // TASK-3267 — say once at boot what the knowledge layer has drifted on. It
+  // runs after the handshake, on a timer that never holds the process, and its
+  // own failure is reported, never raised.
+  setTimeout(() => void reportKnowledgeDrift(dataPaths.dbPath), 0).unref()
+}
+
+async function reportKnowledgeDrift(dbPath: string): Promise<void> {
+  try {
+    const line = knowledgeCheckBootLine(await checkKnowledgeDatabase(dbPath))
+    if (line) process.stderr.write(line)
+  } catch (err) {
+    process.stderr.write(`[choda-deck] knowledge check skipped: ${(err as Error).message}\n`)
+  }
 }
 
 // ADR-034: when MCP_OAUTH_MODE=1, build a Keycloak-backed OAuthConfig from env.

@@ -5,7 +5,9 @@ projectId: choda-deck
 scope: project
 refs:
   - path: scripts/proof-speech.mjs
+    commitSha: 386fddaeeb26bc4a7ee3d7c18266659bfb011d2e
   - path: src/adapters/companion/meetings.ts
+    commitSha: 386fddaeeb26bc4a7ee3d7c18266659bfb011d2e
 createdAt: 2026-09-17
 lastVerifiedAt: 2026-09-17
 ---

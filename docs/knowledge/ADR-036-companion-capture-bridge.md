@@ -5,9 +5,13 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/adapters/companion/http-server.ts
+    commitSha: e59e88f881ef06acea825cef3f60043a85f2b0b6
   - path: src/adapters/companion/capture-contract.ts
+    commitSha: e59e88f881ef06acea825cef3f60043a85f2b0b6
   - path: src/adapters/companion/bridge-token.ts
+    commitSha: e59e88f881ef06acea825cef3f60043a85f2b0b6
   - path: src/adapters/companion/service-factory.ts
+    commitSha: e59e88f881ef06acea825cef3f60043a85f2b0b6
 createdAt: 2026-07-11
 lastVerifiedAt: 2026-07-11
 ---

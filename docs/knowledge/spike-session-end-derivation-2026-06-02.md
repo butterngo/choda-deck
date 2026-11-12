@@ -1,10 +1,14 @@
 ---
+type: spike
 title: "Spike: session_end derivation — data-source catalog (TASK-985 AC #1)"
-date: 2026-06-02
-status: complete
-linked_task: TASK-985
-related_adrs: [ADR-031, ADR-029, ADR-009]
+projectId: choda-deck
+scope: project
+refs: []
+createdAt: 2026-06-02
+lastVerifiedAt: 2026-06-02
 ---
+
+> Legacy frontmatter (TASK-3267): status: complete, linked_task: TASK-985, related_adrs: [ADR-031, ADR-029, ADR-009]
 
 # Spike: session_end derivation data sources (TASK-985 AC #1)
 

@@ -5,9 +5,9 @@ projectId: choda-deck
 scope: project
 refs:
   - path: src/adapters/companion/meeting-transcribe.ts
-    commitSha: 
+    commitSha: 1d9b9c8148cae7abcc47a962f91a4ba381152b9a
   - path: src/adapters/companion/meeting-transcribe-plausibility.test.ts
-    commitSha: 
+    commitSha: 1d9b9c8148cae7abcc47a962f91a4ba381152b9a
 createdAt: 2026-09-19
 lastVerifiedAt: 2026-09-19
 ---

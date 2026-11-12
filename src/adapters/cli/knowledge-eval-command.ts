@@ -37,6 +37,10 @@ knowledge backfill
   Embed every knowledge row whose vector is missing, from another provider,
   or from text that no longer matches its file. Rows whose file is gone are
   listed as orphans and left alone.
+knowledge check [--json]
+  Report, without writing anything, the rows whose file is gone, whose file's
+  frontmatter does not parse, and whose vectors no longer match the file.
+  Exits 1 when any list is non-empty (TASK-3267).
 `
 
 export interface KnowledgeEvalIo {
@@ -139,9 +143,13 @@ export async function dispatchKnowledge(sub: string | undefined, args: string[])
     const { knowledgeBackfillCommand } = await import('./knowledge-backfill-command')
     return knowledgeBackfillCommand(io)
   }
+  if (sub === 'check') {
+    const { knowledgeCheckCommand } = await import('./knowledge-check-command')
+    return knowledgeCheckCommand(args, io)
+  }
   if (sub !== 'eval') {
     io.err(
-      `error: unknown knowledge subcommand "${sub ?? ''}" — use "knowledge eval" or "knowledge backfill"\n\n${KNOWLEDGE_HELP}`
+      `error: unknown knowledge subcommand "${sub ?? ''}" — use "knowledge eval", "knowledge backfill" or "knowledge check"\n\n${KNOWLEDGE_HELP}`
     )
     return 2
   }
