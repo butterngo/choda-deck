@@ -12,6 +12,7 @@ export interface EmbeddingSearchHit {
 export interface BackfillCandidate {
   rowid: number
   slug: string
+  title: string
   filePath: string
   providerId: string | null
   textHash: string | null
@@ -26,6 +27,9 @@ export interface EmbeddingMismatchReport {
 
 /**
  * Encapsulates the `knowledge_vec` virtual table (sqlite-vec). One per service.
+ * Since TASK-3260 a knowledge entry has one vector per chunk of its text:
+ * `knowledge_chunk_map` maps each vec rowid to its entry, and an entry
+ * scores by its nearest chunk.
  * When the extension is unavailable or the active provider is noop, the store
  * is "disabled" — all mutating ops no-op, search throws.
  */
@@ -62,9 +66,26 @@ export class EmbeddingStore {
     report.hadVecTable = this.vecTableExists()
     report.previousProviderId = this.detectPreviousProviderId()
 
-    const mismatch = report.previousProviderId !== null && report.previousProviderId !== provider.id
+    // A knowledge_vec from before TASK-3260 is keyed by entry rowid, not chunk
+    // id; reading it through the chunk map would pair vectors with the wrong
+    // entries, so it is cleared like a provider change.
+    const preChunkLayout = report.hadVecTable && !this.chunkTableExists()
+    const mismatch =
+      preChunkLayout ||
+      (report.previousProviderId !== null && report.previousProviderId !== provider.id)
+    this.db.exec(
+      `CREATE TABLE IF NOT EXISTS knowledge_chunk_map (
+         chunk_id INTEGER PRIMARY KEY AUTOINCREMENT,
+         entry_rowid INTEGER NOT NULL,
+         chunk_index INTEGER NOT NULL
+       )`
+    )
+    this.db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_map_entry ON knowledge_chunk_map(entry_rowid)'
+    )
     if (mismatch) {
       this.db.exec('DROP TABLE IF EXISTS knowledge_vec')
+      this.db.exec('DELETE FROM knowledge_chunk_map')
       this.db.exec(
         'UPDATE knowledge_index SET embedding_provider_id = NULL, embedding_dims = NULL, embedding_text_hash = NULL'
       )
@@ -88,6 +109,7 @@ export class EmbeddingStore {
     return row?.rowid ?? null
   }
 
+  /** One-vector entry: the whole text is a single chunk. */
   upsert(
     rowid: number,
     providerId: string,
@@ -95,13 +117,28 @@ export class EmbeddingStore {
     vector: Float32Array,
     textHash: string | null = null
   ): void {
+    this.upsertChunks(rowid, providerId, dims, [vector], textHash)
+  }
+
+  /** Replaces every chunk vector of the entry at `rowid` (TASK-3260). */
+  upsertChunks(
+    rowid: number,
+    providerId: string,
+    dims: number,
+    vectors: Float32Array[],
+    textHash: string | null = null
+  ): void {
     if (!this.isEnabled()) return
-    const json = JSON.stringify(Array.from(vector))
+    const insertChunk = this.db.prepare(
+      'INSERT INTO knowledge_chunk_map (entry_rowid, chunk_index) VALUES (?, ?)'
+    )
+    const insertVec = this.db.prepare('INSERT INTO knowledge_vec(rowid, embedding) VALUES (?, ?)')
     const tx = this.db.transaction(() => {
-      this.db.prepare('DELETE FROM knowledge_vec WHERE rowid = ?').run(BigInt(rowid))
-      this.db
-        .prepare('INSERT INTO knowledge_vec(rowid, embedding) VALUES (?, ?)')
-        .run(BigInt(rowid), json)
+      this.deleteChunks(rowid)
+      vectors.forEach((vector, i) => {
+        const chunkId = insertChunk.run(rowid, i).lastInsertRowid
+        insertVec.run(BigInt(chunkId), JSON.stringify(Array.from(vector)))
+      })
       this.db
         .prepare(
           'UPDATE knowledge_index SET embedding_provider_id = ?, embedding_dims = ?, embedding_text_hash = ? WHERE rowid = ?'
@@ -114,10 +151,19 @@ export class EmbeddingStore {
   delete(rowid: number): void {
     if (!this.extensionLoaded) return
     try {
-      this.db.prepare('DELETE FROM knowledge_vec WHERE rowid = ?').run(BigInt(rowid))
+      this.deleteChunks(rowid)
     } catch {
-      /* table may not exist yet */
+      /* tables may not exist yet */
     }
+  }
+
+  private deleteChunks(rowid: number): void {
+    const ids = this.db
+      .prepare('SELECT chunk_id FROM knowledge_chunk_map WHERE entry_rowid = ?')
+      .all(rowid) as Array<{ chunk_id: number }>
+    const del = this.db.prepare('DELETE FROM knowledge_vec WHERE rowid = ?')
+    for (const { chunk_id } of ids) del.run(BigInt(chunk_id))
+    this.db.prepare('DELETE FROM knowledge_chunk_map WHERE entry_rowid = ?').run(rowid)
   }
 
   /* Slug-keyed wrappers — `EmbeddingStorePort` (slice 20b) is slug-first because
@@ -129,13 +175,13 @@ export class EmbeddingStore {
     slug: string,
     providerId: string,
     dims: number,
-    vector: Float32Array,
+    vectors: Float32Array[],
     textHash: string | null = null
   ): void {
     if (!this.isEnabled()) return
     const rowid = this.rowidForSlug(slug)
     if (rowid === null) return
-    this.upsert(rowid, providerId, dims, vector, textHash)
+    this.upsertChunks(rowid, providerId, dims, vectors, textHash)
   }
 
   deleteBySlug(slug: string): void {
@@ -146,10 +192,11 @@ export class EmbeddingStore {
   }
 
   /**
-   * k nearest entries. With a filter, the KNN index cannot narrow before its
-   * own k-cut (sqlite-vec takes `k` inside MATCH), so the filtered path scans
-   * the matching rows with `vec_distance_l2` — the vec0 default metric, so the
-   * distances equal the unfiltered path's — and cuts after (TASK-3259).
+   * k nearest entries, each scored by its nearest chunk (TASK-3260). vec0 KNN
+   * is an exhaustive scan too, so an exact `vec_distance_l2` scan grouped per
+   * entry costs the same and needs no over-fetch: it returns k distinct
+   * entries whenever k exist, filtered (TASK-3259) or not. L2 is vec0's
+   * default metric, so the distances match what KNN reported before.
    */
   search(query: Float32Array, k: number, filter: KnowledgeSearchFilter = {}): EmbeddingSearchHit[] {
     if (!this.isEnabled()) return []
@@ -168,22 +215,16 @@ export class EmbeddingStore {
       where.push('ki.scope = ?')
       params.push(filter.scope)
     }
-    const sql =
-      where.length === 0
-        ? `SELECT ki.slug, v.rowid AS rowid, v.distance AS distance,
-                ki.embedding_provider_id AS provider_id
-         FROM knowledge_vec v
-         JOIN knowledge_index ki ON ki.rowid = v.rowid
-         WHERE v.embedding MATCH ? AND k = ?
-         ORDER BY v.distance`
-        : `SELECT ki.slug, v.rowid AS rowid, vec_distance_l2(v.embedding, ?) AS distance,
-                ki.embedding_provider_id AS provider_id
-         FROM knowledge_vec v
-         JOIN knowledge_index ki ON ki.rowid = v.rowid
-         WHERE ${where.join(' AND ')}
-         ORDER BY distance
-         LIMIT ?`
-    const args = where.length === 0 ? [json, k] : [json, ...params, k]
+    const sql = `SELECT ki.slug, ki.rowid AS rowid, MIN(vec_distance_l2(v.embedding, ?)) AS distance,
+              ki.embedding_provider_id AS provider_id
+       FROM knowledge_vec v
+       JOIN knowledge_chunk_map c ON c.chunk_id = v.rowid
+       JOIN knowledge_index ki ON ki.rowid = c.entry_rowid
+       ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
+       GROUP BY ki.rowid
+       ORDER BY distance, ki.rowid
+       LIMIT ?`
+    const args = [json, ...params, k]
     const rows = this.db.prepare(sql).all(...args) as Array<{
       slug: string
       rowid: number | bigint
@@ -202,12 +243,13 @@ export class EmbeddingStore {
   backfillCandidates(): BackfillCandidate[] {
     const rows = this.db
       .prepare(
-        `SELECT rowid, slug, file_path, embedding_provider_id, embedding_text_hash
+        `SELECT rowid, slug, title, file_path, embedding_provider_id, embedding_text_hash
          FROM knowledge_index ORDER BY created_at ASC, rowid ASC`
       )
       .all() as Array<{
       rowid: number
       slug: string
+      title: string
       file_path: string
       embedding_provider_id: string | null
       embedding_text_hash: string | null
@@ -215,6 +257,7 @@ export class EmbeddingStore {
     return rows.map((r) => ({
       rowid: r.rowid,
       slug: r.slug,
+      title: r.title,
       filePath: r.file_path,
       providerId: r.embedding_provider_id,
       textHash: r.embedding_text_hash
@@ -234,6 +277,13 @@ export class EmbeddingStore {
       )
       .all(activeProviderId) as Array<{ slug: string }>
     return rows.map((r) => r.slug)
+  }
+
+  private chunkTableExists(): boolean {
+    const row = this.db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_chunk_map'")
+      .get() as { name?: string } | undefined
+    return !!row?.name
   }
 
   private vecTableExists(): boolean {

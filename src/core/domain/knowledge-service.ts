@@ -7,7 +7,7 @@ import { GitOpsImpl } from './knowledge-git'
 import { parseFrontmatter, serializeFrontmatter } from './knowledge-frontmatter'
 import { KNOWLEDGE_TYPES, KNOWLEDGE_SCOPES } from './knowledge-types'
 import { isLikelyWorktreePath } from '../worktree-path'
-import { embeddingText, embeddingTextHash } from './embedding/embedding-backfill'
+import { embeddingChunks, embeddingTextHash } from './embedding/embedding-backfill'
 import type {
   CreateKnowledgeInput,
   KnowledgeEntry,
@@ -87,7 +87,7 @@ export interface EmbeddingStorePort {
     slug: string,
     providerId: string,
     dims: number,
-    vector: Float32Array,
+    vectors: Float32Array[],
     textHash?: string | null
   ): Awaitable<void>
   deleteBySlug(slug: string): Awaitable<void>
@@ -221,7 +221,7 @@ export class KnowledgeService implements KnowledgeOperations {
 
     await this.syncEdgesOnCreate(slug, input.type, input.structured)
 
-    this.scheduleEmbed(slug, input.body)
+    this.scheduleEmbed(slug, input.title, input.body)
 
     const staleness = this.computeStaleness(refs, stalenessCwd, input.scope)
     return {
@@ -308,7 +308,7 @@ export class KnowledgeService implements KnowledgeOperations {
       }
     }
 
-    this.scheduleEmbed(slug, body)
+    this.scheduleEmbed(slug, frontmatter.title, body)
 
     const stalenessCwd = workspaceCwd ?? project.cwd
     const staleness = this.computeStaleness(frontmatter.refs, stalenessCwd, frontmatter.scope)
@@ -488,7 +488,7 @@ export class KnowledgeService implements KnowledgeOperations {
     }
 
     if (input.body !== undefined && input.body !== existing.body) {
-      this.scheduleEmbed(input.slug, newBody)
+      this.scheduleEmbed(input.slug, updatedFm.title, newBody)
     }
 
     const staleness = this.computeStaleness(newRefs, stalenessCwd, scope)
@@ -803,20 +803,20 @@ export class KnowledgeService implements KnowledgeOperations {
   // Fire-and-forget embed. Failures log a warning but never reject — the row
   // stays in knowledge_index without a vector and is filtered out of search
   // until a backfill pass picks it up.
-  private scheduleEmbed(slug: string, body: string): void {
+  private scheduleEmbed(slug: string, title: string, body: string): void {
     if (!this.embeddingStore || !this.embeddingProvider) return
     void (async (): Promise<void> => {
       try {
         const provider = await this.embeddingProvider!()
         if (!this.embeddingStore!.isEnabled() || provider.id === 'noop') return
-        const text = embeddingText(body)
-        const vec = await provider.embed(text)
+        const chunks = embeddingChunks(title, body)
+        const vectors = await provider.embedBatch(chunks)
         await this.embeddingStore!.upsertBySlug(
           slug,
           provider.id,
           provider.dims,
-          vec,
-          embeddingTextHash(text)
+          vectors,
+          embeddingTextHash(chunks)
         )
       } catch (err) {
         console.warn(

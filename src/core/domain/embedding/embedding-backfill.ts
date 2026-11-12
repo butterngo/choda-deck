@@ -1,24 +1,50 @@
 import { createHash } from 'crypto'
 import type { EmbeddingProvider } from './embedding-provider.interface'
 import type { EmbeddingStore } from './embedding-store'
+import { parseFrontmatter } from '../knowledge-frontmatter'
 
-// TASK-3261 — one definition of "the text a knowledge entry is embedded from",
-// shared by the service's embed-on-write and the backfill, so the stored hash
-// means the same thing on both paths.
-export function embeddingText(body: string): string {
-  return body.trim()
+// TASK-3261 / TASK-3260 — one definition of "the texts a knowledge entry is
+// embedded from", shared by the service's embed-on-write and the backfill, so
+// the stored hash means the same thing on both paths.
+//
+// MiniLM reads about 256 tokens (~190 words) and drops the rest; 81% of
+// entries are longer. So the body is cut into windows of CHUNK_WORDS words,
+// each overlapping the previous by CHUNK_OVERLAP so a phrase on a boundary is
+// whole in one of them, and every window carries the title.
+export const CHUNK_WORDS = 200
+export const CHUNK_OVERLAP = 40
+
+export function embeddingChunks(title: string, body: string): string[] {
+  const head = title.trim()
+  const words = body
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 0)
+  const withTitle = (ws: string[]): string => `${head}\n\n${ws.join(' ')}`.trim()
+  if (words.length <= CHUNK_WORDS) return [withTitle(words)]
+  const chunks: string[] = []
+  for (let start = 0; ; start += CHUNK_WORDS - CHUNK_OVERLAP) {
+    const end = Math.min(start + CHUNK_WORDS, words.length)
+    chunks.push(withTitle(words.slice(start, end)))
+    if (end === words.length) return chunks
+  }
 }
 
-export function embeddingTextHash(text: string): string {
-  return createHash('sha256').update(text).digest('hex')
+export function embeddingTextHash(chunks: string[]): string {
+  return createHash('sha256').update(JSON.stringify(chunks)).digest('hex')
 }
 
-const FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---\r?\n?([\s\S]*)$/
-
-/** The note's body: the file minus its frontmatter block, if it has one. */
-export function bodyOfNote(raw: string): string {
-  const m = raw.match(FRONTMATTER_RE)
-  return m ? m[1] : raw
+/**
+ * The note's title and body. The title is the frontmatter's when it parses
+ * (disk wins over the index, TASK-1432), else the index row's.
+ */
+export function noteText(raw: string, indexTitle: string): { title: string; body: string } {
+  try {
+    const { frontmatter, body } = parseFrontmatter(raw)
+    return { title: frontmatter.title || indexTitle, body }
+  } catch {
+    return { title: indexTitle, body: raw }
+  }
 }
 
 export interface BackfillReport {
@@ -30,7 +56,7 @@ export interface BackfillReport {
 }
 
 /**
- * Embeds every knowledge row whose stored vector is missing, from another
+ * Embeds every knowledge row whose stored vectors are missing, from another
  * provider, or from text that no longer matches its file. A file edited on
  * disk outside updateKnowledge is picked up here; before TASK-3261 it kept
  * its old vector for good.
@@ -48,19 +74,20 @@ export async function runEmbeddingBackfill(
       report.orphans.push({ slug: row.slug, filePath: row.filePath })
       continue
     }
-    const text = embeddingText(bodyOfNote(raw))
-    if (text.length === 0) {
-      report.failed.push({ slug: row.slug, reason: 'empty body' })
+    const { title, body } = noteText(raw, row.title)
+    const chunks = embeddingChunks(title, body)
+    if (chunks.every((c) => c.length === 0)) {
+      report.failed.push({ slug: row.slug, reason: 'empty title and body' })
       continue
     }
-    const hash = embeddingTextHash(text)
+    const hash = embeddingTextHash(chunks)
     if (row.providerId === provider.id && row.textHash === hash) {
       report.unchanged++
       continue
     }
     try {
-      const vec = await provider.embed(text)
-      store.upsert(row.rowid, provider.id, provider.dims, vec, hash)
+      const vectors = await provider.embedBatch(chunks)
+      store.upsertChunks(row.rowid, provider.id, provider.dims, vectors, hash)
       report.embedded.push(row.slug)
       onProgress(row.slug)
     } catch (err) {

@@ -130,7 +130,8 @@ describe('KnowledgeService.searchKnowledge', () => {
     seedKnowledge('about-fish', 'fish swim silently in water')
     await waitForEmbedQueue()
 
-    const hits = await svc.searchKnowledge('cats are small soft mammals that purr', 3)
+    // TASK-3260 — an entry is embedded as title-prefixed chunks.
+    const hits = await svc.searchKnowledge('about-cats\n\ncats are small soft mammals that purr', 3)
     expect(hits.enabled).toBe(true)
     expect(hits.providerId).toBe('fake-test-provider')
     expect(hits.results[0].slug).toBe('about-cats')
@@ -144,7 +145,10 @@ describe('KnowledgeService.searchKnowledge', () => {
     svc.updateKnowledge({ slug: 'alpha', body: 'completely different replacement content here' })
     await waitForEmbedQueue()
 
-    const hits = await svc.searchKnowledge('completely different replacement content here', 1)
+    const hits = await svc.searchKnowledge(
+      'alpha\n\ncompletely different replacement content here',
+      1
+    )
     expect(hits.results[0].slug).toBe('alpha')
     expect(hits.results[0].distance).toBeLessThan(0.001)
   })
@@ -257,7 +261,7 @@ describe('KnowledgeService.searchKnowledge filters', () => {
 
   it('still returns k entries of the project when the global nearest all belong to another', async () => {
     for (let i = 0; i < 20; i++) seed(`b-${i}`, `${query} ${i}`, { projectId: 'proj-b' })
-    for (let i = 0; i < 5; i++) seed(`a-${i}`, `zzzz unrelated words qqqq ${i}`)
+    for (let i = 0; i < 5; i++) seed(`a-${i}`, `${'zzzz qqqq '.repeat(30)}${i}`)
     await waitForEmbedQueue()
 
     // The precondition that makes this test discriminating: a post-filter of
