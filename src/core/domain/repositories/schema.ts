@@ -754,6 +754,11 @@ function createM1Tables(db: Database.Database): void {
   } catch {
     /* exists */
   }
+  // TASK-3253: lexical leg of knowledge_search. Filled on create/update and by
+  // `choda-deck knowledge backfill` for rows written before it existed.
+  db.exec(
+    "CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(slug UNINDEXED, title, body, tokenize = 'unicode61 remove_diacritics 2')"
+  )
 
   // ADR-022 (TASK-651): workspace-scoped knowledge.
   try {

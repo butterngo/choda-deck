@@ -9,6 +9,7 @@ import {
   type BackfillReport
 } from '../../core/domain/embedding/embedding-backfill'
 import { resolveDataPaths } from '../../core/paths'
+import { KnowledgeLexicalIndex } from '../../core/domain/embedding/lexical-index'
 
 // TASK-3261 — `choda-deck knowledge backfill`. Replaces the logic that lived in
 // scripts/backfill-embeddings.mjs, which restated the provider id and the
@@ -53,7 +54,8 @@ export async function knowledgeBackfillCommand(
       store,
       provider,
       (p) => (fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null),
-      (slug) => io.out(`embedded ${slug}\n`)
+      (slug) => io.out(`embedded ${slug}\n`),
+      new KnowledgeLexicalIndex(db)
     )
     io.out(formatBackfillReport(report))
     return report.failed.length === 0 ? 0 : 1

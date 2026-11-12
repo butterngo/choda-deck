@@ -7,6 +7,7 @@ import type { TableDelta } from '../sync/sync-pull'
 import type { ApplyResult } from '../sync/sync-apply'
 import { EmbeddingStore } from './embedding/embedding-store'
 import { loadEmbeddingProvider } from './embedding/embedding-provider-factory'
+import { KnowledgeLexicalIndex } from './embedding/lexical-index'
 import type { EmbeddingProvider } from './embedding/embedding-provider.interface'
 import type { SessionOperations } from './interfaces/session-repository.interface'
 import type { ContextSourceOperations } from './interfaces/context-source-repository.interface'
@@ -281,7 +282,8 @@ export class SqliteTaskService
       workspaces: this.workspaces,
       embeddingStore: this.embeddingStore,
       embeddingProvider: () => this.embeddingProviderPromise,
-      edges: this.relationships
+      edges: this.relationships,
+      lexicalIndex: new KnowledgeLexicalIndex(this.db)
     })
   }
 

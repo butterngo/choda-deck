@@ -199,7 +199,14 @@ export interface KnowledgeVerifyResult {
 }
 
 export interface KnowledgeSearchHit extends KnowledgeListItem {
+  /**
+   * Nearest-chunk vector distance to the query. Every hit carries one, also a
+   * hit the lexical leg found (TASK-3253), so TASK-1622 can read it. Results
+   * are ordered by `score`, not by this.
+   */
   distance: number
+  /** TASK-3253 — Reciprocal Rank Fusion of the vector and lexical ranks. */
+  score: number
   /**
    * TASK-1599 — leading prose of the entry body, so a result carries context
    * without a second fetch. Always a string; `''` when the body is empty or

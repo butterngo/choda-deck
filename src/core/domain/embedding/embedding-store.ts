@@ -239,6 +239,30 @@ export class EmbeddingStore {
     }))
   }
 
+  /**
+   * Nearest-chunk distance of each named entry to the query (TASK-3253), so a
+   * hit found only by the lexical leg still carries a real `distance`.
+   */
+  distancesFor(query: Float32Array, slugs: string[]): Map<string, number> {
+    const out = new Map<string, number>()
+    if (!this.isEnabled() || slugs.length === 0) return out
+    const rows = this.db
+      .prepare(
+        `SELECT ki.slug AS slug, MIN(vec_distance_l2(v.embedding, ?)) AS distance
+         FROM knowledge_vec v
+         JOIN knowledge_chunk_map c ON c.chunk_id = v.rowid
+         JOIN knowledge_index ki ON ki.rowid = c.entry_rowid
+         WHERE ki.slug IN (${slugs.map(() => '?').join(', ')})
+         GROUP BY ki.rowid`
+      )
+      .all(JSON.stringify(Array.from(query)), ...slugs) as Array<{
+      slug: string
+      distance: number
+    }>
+    for (const r of rows) out.set(r.slug, r.distance)
+    return out
+  }
+
   /** Every knowledge row with what the backfill needs to decide (TASK-3261). */
   backfillCandidates(): BackfillCandidate[] {
     const rows = this.db

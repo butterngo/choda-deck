@@ -2,6 +2,7 @@ import { createHash } from 'crypto'
 import type { EmbeddingProvider } from './embedding-provider.interface'
 import type { EmbeddingStore } from './embedding-store'
 import { parseFrontmatter } from '../knowledge-frontmatter'
+import type { KnowledgeLexicalIndex } from './lexical-index'
 
 // TASK-3261 / TASK-3260 — one definition of "the texts a knowledge entry is
 // embedded from", shared by the service's embed-on-write and the backfill, so
@@ -65,7 +66,8 @@ export async function runEmbeddingBackfill(
   store: EmbeddingStore,
   provider: EmbeddingProvider,
   readFile: (filePath: string) => string | null,
-  onProgress: (slug: string) => void = () => {}
+  onProgress: (slug: string) => void = () => {},
+  lexical: KnowledgeLexicalIndex | null = null
 ): Promise<BackfillReport> {
   const report: BackfillReport = { embedded: [], unchanged: 0, orphans: [], failed: [] }
   for (const row of store.backfillCandidates()) {
@@ -75,6 +77,9 @@ export async function runEmbeddingBackfill(
       continue
     }
     const { title, body } = noteText(raw, row.title)
+    // TASK-3253 — cheap and idempotent, so every entry with a file is
+    // rewritten; this is also how rows written before the FTS table get in.
+    lexical?.upsert(row.slug, title, body)
     const chunks = embeddingChunks(title, body)
     if (chunks.every((c) => c.length === 0)) {
       report.failed.push({ slug: row.slug, reason: 'empty title and body' })
