@@ -7,6 +7,7 @@ import type { TableDelta } from '../sync/sync-pull'
 import type { ApplyResult } from '../sync/sync-apply'
 import { EmbeddingStore } from './embedding/embedding-store'
 import { loadEmbeddingProvider } from './embedding/embedding-provider-factory'
+import { KnowledgeLexicalIndex } from './embedding/lexical-index'
 import type { EmbeddingProvider } from './embedding/embedding-provider.interface'
 import type { SessionOperations } from './interfaces/session-repository.interface'
 import type { ContextSourceOperations } from './interfaces/context-source-repository.interface'
@@ -78,6 +79,7 @@ import type {
   KnowledgeSource,
   KnowledgeListFilter,
   KnowledgeListItem,
+  KnowledgeSearchFilter,
   KnowledgeSearchResult,
   KnowledgeVerifyResult,
   RegisterExistingKnowledgeInput,
@@ -280,7 +282,8 @@ export class SqliteTaskService
       workspaces: this.workspaces,
       embeddingStore: this.embeddingStore,
       embeddingProvider: () => this.embeddingProviderPromise,
-      edges: this.relationships
+      edges: this.relationships,
+      lexicalIndex: new KnowledgeLexicalIndex(this.db)
     })
   }
 
@@ -712,8 +715,12 @@ export class SqliteTaskService
   async deleteKnowledge(slug: string): Promise<{ slug: string; deletedFile: boolean }> {
     return this.knowledgeService.deleteKnowledge(slug)
   }
-  searchKnowledge(query: string, k?: number): Promise<KnowledgeSearchResult> {
-    return this.knowledgeService.searchKnowledge(query, k)
+  searchKnowledge(
+    query: string,
+    k?: number,
+    filter?: KnowledgeSearchFilter
+  ): Promise<KnowledgeSearchResult> {
+    return this.knowledgeService.searchKnowledge(query, k, filter)
   }
 
   // ── Code refs + TOUCHES edges (TASK-988) ────────────────────────────────────

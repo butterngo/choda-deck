@@ -216,7 +216,7 @@ export const register = (server: InstrumentedServer, svc: KnowledgeOperations): 
     'knowledge_search',
     {
       description:
-        'Semantic search over knowledge entries. Embeds the query with the active provider and ranks rows by vector distance. Returns enabled=false (with reason) when sqlite-vec or embedding deps are not installed; entries created since the last embed pass may be missing from results.',
+        'Semantic search over knowledge entries. Embeds the query with the active provider and ranks rows by vector distance. projectId/type/scope narrow the search before the top-K cut. Returns enabled=false (with reason) when sqlite-vec or embedding deps are not installed; entries created since the last embed pass may be missing from results.',
       inputSchema: {
         query: z.string().describe('Natural-language query'),
         topK: z
@@ -225,9 +225,13 @@ export const register = (server: InstrumentedServer, svc: KnowledgeOperations): 
           .min(1)
           .max(50)
           .optional()
-          .describe('Max results (default 5, max 50)')
+          .describe('Max results (default 5, max 50)'),
+        projectId: z.string().optional().describe('Only entries of this project'),
+        type: z.enum(TYPE_ENUM).optional().describe('Only entries of this type'),
+        scope: z.enum(SCOPE_ENUM).optional().describe('Only entries of this scope')
       }
     },
-    async ({ query, topK }) => textResponse(await svc.searchKnowledge(query, topK ?? 5))
+    async ({ query, topK, projectId, type, scope }) =>
+      textResponse(await svc.searchKnowledge(query, topK ?? 5, { projectId, type, scope }))
   )
 }

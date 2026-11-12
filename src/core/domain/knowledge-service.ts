@@ -7,6 +7,9 @@ import { GitOpsImpl } from './knowledge-git'
 import { parseFrontmatter, serializeFrontmatter } from './knowledge-frontmatter'
 import { KNOWLEDGE_TYPES, KNOWLEDGE_SCOPES } from './knowledge-types'
 import { isLikelyWorktreePath } from '../worktree-path'
+import { embeddingChunks, embeddingTextHash } from './embedding/embedding-backfill'
+import { rrfFuse } from './embedding/lexical-index'
+import { NO_MATCH_DISTANCE, hasConfidentMatch } from './embedding/relevance'
 import type {
   CreateKnowledgeInput,
   KnowledgeEntry,
@@ -17,6 +20,7 @@ import type {
   KnowledgeListItem,
   KnowledgeRef,
   KnowledgeRefStaleness,
+  KnowledgeSearchFilter,
   KnowledgeSearchResult,
   KnowledgeVerifyResult,
   RegisterExistingKnowledgeInput,
@@ -85,11 +89,45 @@ export interface EmbeddingStorePort {
     slug: string,
     providerId: string,
     dims: number,
-    vector: Float32Array
+    vectors: Float32Array[],
+    textHash?: string | null
   ): Awaitable<void>
   deleteBySlug(slug: string): Awaitable<void>
-  search(query: Float32Array, k: number): Awaitable<EmbeddingSearchHitNarrow[]>
+  search(
+    query: Float32Array,
+    k: number,
+    filter?: KnowledgeSearchFilter
+  ): Awaitable<EmbeddingSearchHitNarrow[]>
+  distancesFor(query: Float32Array, slugs: string[]): Awaitable<Map<string, number>>
 }
+
+/** TASK-3253 — the lexical leg. `KnowledgeLexicalIndex` satisfies it. */
+export interface KnowledgeLexicalPort {
+  upsert(slug: string, title: string, body: string): Awaitable<void>
+  delete(slug: string): Awaitable<void>
+  search(query: string, k: number, filter?: KnowledgeSearchFilter): Awaitable<string[]>
+}
+
+// How deep each leg is read before fusion. Both legs are exact scans of a
+// store of ~1k entries, so depth costs little; it only has to exceed any k a
+// caller asks for (knowledge_search caps topK at 50).
+const FUSION_DEPTH = 50
+
+// The lexical leg is precise at its top (an exact identifier) and noisy below
+// it (an OR over every prose word matches half the store), so it contributes
+// only its top LEXICAL_DEPTH hits, at LEXICAL_WEIGHT of the vector leg's RRF
+// weight. Swept 2026-11-12 on the TASK-3252 eval set, goal snapshot with
+// chunked q8 vectors (identifier / paraphrase recall@5):
+//   weight 1,  depth 50  1.000 / 0.833   <- the unweighted fusion
+//   weight 1,  depth 3   1.000 / 0.833
+//   weight 0.5, depth 5  0.833 / 0.833
+//   weight 0.4-0.7, depth 2-3  0.833 / 0.917   <- plateau; vector-only is 0.750 / 0.917
+//   any weight, depth 4+       paraphrase falls to 0.833 or lower
+// Chosen from the middle of the plateau. A stopword filter on the FTS query
+// changed nothing and was dropped. 24 labelled queries is a small set:
+// re-sweep when it grows.
+const LEXICAL_WEIGHT = 0.5
+const LEXICAL_DEPTH = 3
 
 export class KnowledgeNotFoundError extends Error {
   constructor(slug: string) {
@@ -122,6 +160,7 @@ export interface KnowledgeServiceDeps {
   embeddingStore?: EmbeddingStorePort
   embeddingProvider?: () => Promise<EmbeddingProvider>
   edges?: KnowledgeEdgePort
+  lexicalIndex?: KnowledgeLexicalPort
 }
 
 export class KnowledgeService implements KnowledgeOperations {
@@ -134,6 +173,7 @@ export class KnowledgeService implements KnowledgeOperations {
   private readonly embeddingStore: EmbeddingStorePort | null
   private readonly embeddingProvider: (() => Promise<EmbeddingProvider>) | null
   private readonly edges: KnowledgeEdgePort | null
+  private readonly lexicalIndex: KnowledgeLexicalPort | null
 
   constructor(deps: KnowledgeServiceDeps) {
     this.knowledge = deps.knowledge
@@ -145,6 +185,7 @@ export class KnowledgeService implements KnowledgeOperations {
     this.embeddingStore = deps.embeddingStore ?? null
     this.embeddingProvider = deps.embeddingProvider ?? null
     this.edges = deps.edges ?? null
+    this.lexicalIndex = deps.lexicalIndex ?? null
   }
 
   async createKnowledge(input: CreateKnowledgeInput): Promise<KnowledgeEntry> {
@@ -214,7 +255,7 @@ export class KnowledgeService implements KnowledgeOperations {
 
     await this.syncEdgesOnCreate(slug, input.type, input.structured)
 
-    this.scheduleEmbed(slug, input.body)
+    await this.indexText(slug, input.title, input.body)
 
     const staleness = this.computeStaleness(refs, stalenessCwd, input.scope)
     return {
@@ -301,7 +342,7 @@ export class KnowledgeService implements KnowledgeOperations {
       }
     }
 
-    this.scheduleEmbed(slug, body)
+    await this.indexText(slug, frontmatter.title, body)
 
     const stalenessCwd = workspaceCwd ?? project.cwd
     const staleness = this.computeStaleness(frontmatter.refs, stalenessCwd, frontmatter.scope)
@@ -412,6 +453,7 @@ export class KnowledgeService implements KnowledgeOperations {
      * index row first would fail. SQLite has no such FK but the order
      * works there too. */
     await this.embeddingStore?.deleteBySlug(slug)
+    await this.lexicalIndex?.delete(slug)
     await this.knowledge.delete(slug)
 
     if (row.scope === 'project') {
@@ -481,7 +523,7 @@ export class KnowledgeService implements KnowledgeOperations {
     }
 
     if (input.body !== undefined && input.body !== existing.body) {
-      this.scheduleEmbed(input.slug, newBody)
+      await this.indexText(input.slug, updatedFm.title, newBody)
     }
 
     const staleness = this.computeStaleness(newRefs, stalenessCwd, scope)
@@ -736,7 +778,11 @@ export class KnowledgeService implements KnowledgeOperations {
       : `${prose.slice(0, EXCERPT_MAX_CHARS - 1).trimEnd()}…`
   }
 
-  async searchKnowledge(query: string, k = 5): Promise<KnowledgeSearchResult> {
+  async searchKnowledge(
+    query: string,
+    k = 5,
+    filter: KnowledgeSearchFilter = {}
+  ): Promise<KnowledgeSearchResult> {
     if (!this.embeddingStore || !this.embeddingProvider) {
       return { enabled: false, reason: 'embedding store not configured', results: [] }
     }
@@ -765,12 +811,31 @@ export class KnowledgeService implements KnowledgeOperations {
         results: []
       }
     }
-    const hits = await this.embeddingStore.search(vec, Math.max(1, k))
-    const rows = await Promise.all(hits.map((h) => this.knowledge.get(h.slug)))
-    const results = hits
+    const depth = Math.max(FUSION_DEPTH, k)
+    const vectorHits = await this.embeddingStore.search(vec, depth, filter)
+    const lexical = this.lexicalIndex
+      ? await this.lexicalIndex.search(query, LEXICAL_DEPTH, filter)
+      : []
+    const fused = rrfFuse([vectorHits.map((h) => h.slug), lexical], [1, LEXICAL_WEIGHT]).slice(
+      0,
+      Math.max(1, k)
+    )
+    const distance = new Map(vectorHits.map((h) => [h.slug, h.distance]))
+    const missing = fused.map((f) => f.slug).filter((s) => !distance.has(s))
+    for (const [s, d] of await this.embeddingStore.distancesFor(vec, missing)) distance.set(s, d)
+
+    const signals = {
+      nearestDistance: vectorHits[0]?.distance ?? null,
+      lexicalMatches: lexical.length
+    }
+
+    const rows = await Promise.all(fused.map((f) => this.knowledge.get(f.slug)))
+    const results = fused
       .map((h, i) => {
         const row = rows[i]
-        if (!row) return null
+        // An entry the lexical leg found but that has no vector yet carries no
+        // distance; it is dropped rather than given an invented one.
+        if (!row || !distance.has(h.slug)) return null
         return {
           slug: row.slug,
           projectId: row.projectId,
@@ -781,25 +846,47 @@ export class KnowledgeService implements KnowledgeOperations {
           filePath: row.filePath,
           createdAt: row.createdAt,
           lastVerifiedAt: row.lastVerifiedAt,
-          distance: h.distance,
+          distance: distance.get(h.slug)!,
+          score: h.score,
+          weak: distance.get(h.slug)! > NO_MATCH_DISTANCE,
           excerpt: this.excerptOf(row.filePath)
         }
       })
       .filter((r): r is NonNullable<typeof r> => r !== null)
-    return { enabled: true, providerId: provider.id, results }
+    return {
+      enabled: true,
+      providerId: provider.id,
+      results,
+      noConfidentMatch: !hasConfidentMatch(signals),
+      ...signals
+    }
   }
 
   // Fire-and-forget embed. Failures log a warning but never reject — the row
   // stays in knowledge_index without a vector and is filtered out of search
   // until a backfill pass picks it up.
-  private scheduleEmbed(slug: string, body: string): void {
+  // The lexical row is written in line, so a search right after a write finds
+  // it; the vectors follow from the fire-and-forget embed.
+  private async indexText(slug: string, title: string, body: string): Promise<void> {
+    await this.lexicalIndex?.upsert(slug, title, body)
+    this.scheduleEmbed(slug, title, body)
+  }
+
+  private scheduleEmbed(slug: string, title: string, body: string): void {
     if (!this.embeddingStore || !this.embeddingProvider) return
     void (async (): Promise<void> => {
       try {
         const provider = await this.embeddingProvider!()
         if (!this.embeddingStore!.isEnabled() || provider.id === 'noop') return
-        const vec = await provider.embed(body)
-        await this.embeddingStore!.upsertBySlug(slug, provider.id, provider.dims, vec)
+        const chunks = embeddingChunks(title, body)
+        const vectors = await provider.embedBatch(chunks)
+        await this.embeddingStore!.upsertBySlug(
+          slug,
+          provider.id,
+          provider.dims,
+          vectors,
+          embeddingTextHash(chunks)
+        )
       } catch (err) {
         console.warn(
           `[choda-deck] embed failed for knowledge ${slug}:`,

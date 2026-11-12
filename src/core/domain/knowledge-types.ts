@@ -199,7 +199,16 @@ export interface KnowledgeVerifyResult {
 }
 
 export interface KnowledgeSearchHit extends KnowledgeListItem {
+  /**
+   * Nearest-chunk vector distance to the query. Every hit carries one, also a
+   * hit the lexical leg found (TASK-3253), so TASK-1622 can read it. Results
+   * are ordered by `score`, not by this.
+   */
   distance: number
+  /** TASK-3253 — Reciprocal Rank Fusion of the vector and lexical ranks. */
+  score: number
+  /** TASK-1622 — `distance` is past the swept no-match cut. Shown, never hidden. */
+  weak: boolean
   /**
    * TASK-1599 — leading prose of the entry body, so a result carries context
    * without a second fetch. Always a string; `''` when the body is empty or
@@ -212,9 +221,30 @@ export interface KnowledgeSearchHit extends KnowledgeListItem {
   excerpt: string
 }
 
+/**
+ * TASK-3259 — narrows a search to entries matching every field given. Applied
+ * before the k-cut, so a filtered search still returns k hits when k matching
+ * entries exist.
+ */
+export interface KnowledgeSearchFilter {
+  projectId?: string
+  type?: KnowledgeType
+  scope?: KnowledgeScope
+}
+
 export interface KnowledgeSearchResult {
   enabled: boolean
   reason?: string
   providerId?: string
   results: KnowledgeSearchHit[]
+  /**
+   * TASK-1622 — true when nothing in `results` is a confident match: the
+   * nearest vector is past the swept cut (`NO_MATCH_DISTANCE`). The results are
+   * still the nearest entries; a client should call them "nearest", not
+   * "results".
+   */
+  noConfidentMatch?: boolean
+  /** TASK-1622 — the signals `noConfidentMatch` was decided from. */
+  nearestDistance?: number | null
+  lexicalMatches?: number
 }

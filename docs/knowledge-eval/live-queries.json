@@ -1,0 +1,184 @@
+{
+  "queries": [
+    {
+      "id": "ident-01",
+      "class": "identifier",
+      "query": "assertNoSymbolBleed",
+      "expect": ["gotcha-projection-guards-rendered-not-fields"]
+    },
+    {
+      "id": "ident-02",
+      "class": "identifier",
+      "query": "QUEUE_AC_FINAL_VERIFY_NUDGE",
+      "expect": ["ADR-023-auto-safe-v2-hardening"]
+    },
+    {
+      "id": "ident-03",
+      "class": "identifier",
+      "query": "checkpointSession",
+      "expect": ["ADR-024-review-status-and-session-checkpoint"]
+    },
+    {
+      "id": "ident-04",
+      "class": "identifier",
+      "query": "ZaloTokenService",
+      "expect": ["feature-chat-messaging"]
+    },
+    {
+      "id": "ident-05",
+      "class": "identifier",
+      "query": "DropshipHttpMessageDelegatingHandler",
+      "expect": ["dropship-workflows-inventory"]
+    },
+    {
+      "id": "ident-06",
+      "class": "identifier",
+      "query": "CHODA_BACKEND",
+      "expect": ["ADR-030-dual-backend-sync"]
+    },
+    {
+      "id": "ident-07",
+      "class": "identifier",
+      "query": "loop_last_pull_at",
+      "expect": ["sync-loop-health-is-cross-process-read-it-from-the-sync-state-heartbeat-not-memo"]
+    },
+    {
+      "id": "ident-08",
+      "class": "identifier",
+      "query": "normalizeTranscript",
+      "expect": ["transcript-normalization-verbatim-safe-contract"]
+    },
+    {
+      "id": "ident-09",
+      "class": "identifier",
+      "query": "EC_BRIDGE_PORT",
+      "expect": ["releasing-english-companion-the-publish-step-can-silently-kill-auto-update"]
+    },
+    {
+      "id": "ident-10",
+      "class": "identifier",
+      "query": "withSrcdocBase",
+      "expect": ["a-srcdoc-frame-inherits-its-parent-s-base-url-so-anchors-and-relative-urls-resol"]
+    },
+    {
+      "id": "ident-11",
+      "class": "identifier",
+      "query": "lossGrad",
+      "expect": ["algo-gradient-descent-backprop"]
+    },
+    {
+      "id": "ident-12",
+      "class": "identifier",
+      "query": "sync_price_sale_channel_logs",
+      "expect": ["sale-channel-publish-status-gaps"]
+    },
+    {
+      "id": "para-01",
+      "class": "paraphrase",
+      "query": "before debugging the lightweight kubernetes cluster, confirm which connection route actually works",
+      "expect": ["reaching-k3s-check-which-access-path-is-alive-before-diagnosing-either-one"]
+    },
+    {
+      "id": "para-02",
+      "class": "paraphrase",
+      "query": "microsoft document library rejects uploads though disk allowance looks fine because whole organisation capacity exhausted",
+      "expect": ["sharepoint-507-quotalimitreached-while-the-drive-s-own-quota-says-normal-means-t"]
+    },
+    {
+      "id": "para-03",
+      "class": "paraphrase",
+      "query": "commits sent upstream land inside an existing merge request so the new request screen shows nothing",
+      "expect": ["a-push-to-a-branch-with-an-open-pr-joins-that-pr-so-the-create-pr-page-looks-emp"]
+    },
+    {
+      "id": "para-04",
+      "class": "paraphrase",
+      "query": "vietnamese characters appear garbled because backend reads database strings with windows latin encoding",
+      "expect": ["jm-api-decodes-non-ascii-db-text-as-cp1252-so-clean-utf-8-in-mysql-renders-as-mo"]
+    },
+    {
+      "id": "para-05",
+      "class": "paraphrase",
+      "query": "npm lifecycle script executes during container image creation both when installing and when pruning",
+      "expect": ["a-prepare-hook-also-runs-inside-the-docker-build-at-install-and-at-prune"]
+    },
+    {
+      "id": "para-06",
+      "class": "paraphrase",
+      "query": "removing a directory from version control index makes a later sync erase it locally",
+      "expect": ["untracking-a-folder-does-not-keep-it-the-next-pull-deletes-it-from-disk"]
+    },
+    {
+      "id": "para-07",
+      "class": "paraphrase",
+      "query": "the runner says green although some specs never executed; compare how many modules actually ran",
+      "expect": ["vitest-can-report-pass-while-silently-not-running-test-files-check-the-file-coun"]
+    },
+    {
+      "id": "para-08",
+      "class": "paraphrase",
+      "query": "pipeline marks green even though nothing got rolled out to the cluster",
+      "expect": ["build-helm-qc-reports-success-through-a-deploy-that-never-happened"]
+    },
+    {
+      "id": "para-09",
+      "class": "paraphrase",
+      "query": "terminal program sometimes observes outdated rows due to embedded database journaling",
+      "expect": ["sqlite-wal-read-consistency"]
+    },
+    {
+      "id": "para-10",
+      "class": "paraphrase",
+      "query": "server error responses should carry no friendly explanations",
+      "expect": ["a-500-body-is-not-the-place-to-be-helpful"]
+    },
+    {
+      "id": "para-11",
+      "class": "paraphrase",
+      "query": "shortest route finding guided by an optimistic distance estimate",
+      "expect": ["algo-astar"]
+    },
+    {
+      "id": "para-12",
+      "class": "paraphrase",
+      "query": "conversation logs should store typed records instead of only the displayed html",
+      "expect": ["chat-history-must-persist-structured-message-data-not-just-rendered-text"]
+    },
+    {
+      "id": "none-01",
+      "class": "nonsense",
+      "query": "zzzqqqxyzzy",
+      "expect": []
+    },
+    {
+      "id": "none-02",
+      "class": "nonsense",
+      "query": "purple elephant violin quantum breakfast",
+      "expect": []
+    },
+    {
+      "id": "none-03",
+      "class": "nonsense",
+      "query": "lorem ipsum dolor sit amet consectetur",
+      "expect": []
+    },
+    {
+      "id": "none-04",
+      "class": "nonsense",
+      "query": "glorp snarfle wibble frobnicate",
+      "expect": []
+    },
+    {
+      "id": "none-05",
+      "class": "nonsense",
+      "query": "banana submarine tuesday orchestra",
+      "expect": []
+    },
+    {
+      "id": "none-06",
+      "class": "nonsense",
+      "query": "qwfp arst zxcv neio",
+      "expect": []
+    }
+  ]
+}

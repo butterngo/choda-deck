@@ -35,6 +35,8 @@ Commands:
   mermaid check <file|->  Parse every mermaid fence in a markdown file (TASK-2596)
   run report <goalId> [--smoke f] [--out p]  Write a goal's test report (TASK-2600)
   deploy scan <goalId> [--out p]  Write a goal's deploy checklist (TASK-2604)
+  knowledge eval [--fixture p] [--perturb reverse]  Score knowledge_search on a labelled query set (TASK-3252)
+  knowledge backfill  Re-embed knowledge rows that are missing, stale or from another provider (TASK-3261)
 
 Meta:
   --help        Show this help
@@ -92,6 +94,10 @@ async function main(): Promise<number> {
     case 'deploy': {
       const { dispatchDeploy } = await import('./deploy-scan-command')
       return dispatchDeploy(sub, argv.slice(2))
+    }
+    case 'knowledge': {
+      const { dispatchKnowledge } = await import('./knowledge-eval-command')
+      return dispatchKnowledge(sub, argv.slice(2))
     }
     case 'run': {
       const { dispatchRun } = await import('./run-report-command')
