@@ -16,8 +16,16 @@ const MODEL_ID = 'Xenova/all-MiniLM-L6-v2'
 // cache into the install directory the first time someone searches.
 //
 // The value is a directory laid out the way `env.localModelPath` expects —
-// `<dir>/<modelId>/<file>`, i.e. `<dir>/Xenova/all-MiniLM-L6-v2/onnx/model.onnx`.
+// `<dir>/<modelId>/<file>`, i.e. the q8 onnx file under
+// `<dir>/Xenova/all-MiniLM-L6-v2/onnx/` (transformers v4 derives its name from the dtype).
 const MODEL_DIR_ENV = 'CHODA_EMBEDDING_MODEL_DIR'
+
+// TASK-3203 — the variant is part of the id. Vectors from different variants
+// are not comparable, so a variant change must change the id: the store sees
+// the mismatch and clears every stored vector for the backfill to re-embed.
+// scripts/backfill-embeddings.mjs must use the same id and dtype.
+export const LOCAL_PROVIDER_ID = 'local-minilm-l6-v2-q8'
+export const LOCAL_MODEL_DTYPE = 'q8'
 
 type FeaturePipeline = (
   text: string,
@@ -35,12 +43,12 @@ type TransformersModule = {
   pipeline(
     task: string,
     model: string,
-    opts?: { quantized?: boolean }
+    opts?: { dtype?: string }
   ): Promise<FeaturePipeline>
 }
 
 export class LocalEmbeddingProvider implements EmbeddingProvider {
-  readonly id = 'local-minilm-l6-v2'
+  readonly id = LOCAL_PROVIDER_ID
   readonly dims = 384
 
   private pipelinePromise: Promise<FeaturePipeline> | null = null
@@ -68,12 +76,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
         mod.env.allowRemoteModels = false
       }
 
-      // NOTE: `quantized` is a transformers.js v2 option and is ignored by the
-      // installed v4 — the fp32 model is what actually loads. Left as-is on
-      // purpose — see the "changing the embedding model variant silently
-      // degrades ranking" gotcha in docs/knowledge/ and INBOX-1675. Changing it
-      // is a re-embed migration of every stored vector, not a flag flip.
-      return mod.pipeline('feature-extraction', MODEL_ID, { quantized: true })
+      return mod.pipeline('feature-extraction', MODEL_ID, { dtype: LOCAL_MODEL_DTYPE })
     })()
     return this.pipelinePromise
   }

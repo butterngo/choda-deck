@@ -13,7 +13,7 @@
  *   CHODA_DATA_DIR / CHODA_DB_PATH — DB location (matches MCP server)
  *   CHODA_EMBEDDING_PROVIDER       — local (default) | noop
  *
- * Phase 1: only the local Xenova/all-MiniLM-L6-v2 provider is supported here.
+ * Phase 1: only the local Xenova/all-MiniLM-L6-v2 provider (q8) is supported here.
  * Switching providers also triggers an auto-DROP/CREATE of knowledge_vec on
  * the next MCP server startup (see EmbeddingStore.ensureSchema).
  */
@@ -25,7 +25,10 @@ import Database from 'better-sqlite3'
 import * as sqliteVec from 'sqlite-vec'
 import { pipeline } from '@huggingface/transformers'
 
-const PROVIDER_ID = 'local-minilm-l6-v2'
+// Must equal LOCAL_PROVIDER_ID / LOCAL_MODEL_DTYPE in
+// src/core/domain/embedding/local-embedding-provider.ts (TASK-3203).
+const PROVIDER_ID = 'local-minilm-l6-v2-q8'
+const DTYPE = 'q8'
 const MODEL = 'Xenova/all-MiniLM-L6-v2'
 const DIMS = 384
 
@@ -98,7 +101,7 @@ async function main() {
 
   console.log(`[backfill] ${pending.length} rows pending — loading model`)
   const tStart = Date.now()
-  const embed = await pipeline('feature-extraction', MODEL, { quantized: true })
+  const embed = await pipeline('feature-extraction', MODEL, { dtype: DTYPE })
   console.log(`[backfill] model loaded in ${Date.now() - tStart}ms`)
 
   const insertVec = db.prepare('INSERT INTO knowledge_vec(rowid, embedding) VALUES (?, ?)')
