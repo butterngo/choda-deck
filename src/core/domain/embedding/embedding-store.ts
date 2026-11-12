@@ -9,6 +9,14 @@ export interface EmbeddingSearchHit {
   providerId: string
 }
 
+export interface BackfillCandidate {
+  rowid: number
+  slug: string
+  filePath: string
+  providerId: string | null
+  textHash: string | null
+}
+
 export interface EmbeddingMismatchReport {
   hadVecTable: boolean
   previousProviderId: string | null
@@ -58,7 +66,7 @@ export class EmbeddingStore {
     if (mismatch) {
       this.db.exec('DROP TABLE IF EXISTS knowledge_vec')
       this.db.exec(
-        'UPDATE knowledge_index SET embedding_provider_id = NULL, embedding_dims = NULL'
+        'UPDATE knowledge_index SET embedding_provider_id = NULL, embedding_dims = NULL, embedding_text_hash = NULL'
       )
       report.reembeddedAll = true
     }
@@ -80,7 +88,13 @@ export class EmbeddingStore {
     return row?.rowid ?? null
   }
 
-  upsert(rowid: number, providerId: string, dims: number, vector: Float32Array): void {
+  upsert(
+    rowid: number,
+    providerId: string,
+    dims: number,
+    vector: Float32Array,
+    textHash: string | null = null
+  ): void {
     if (!this.isEnabled()) return
     const json = JSON.stringify(Array.from(vector))
     const tx = this.db.transaction(() => {
@@ -90,9 +104,9 @@ export class EmbeddingStore {
         .run(BigInt(rowid), json)
       this.db
         .prepare(
-          'UPDATE knowledge_index SET embedding_provider_id = ?, embedding_dims = ? WHERE rowid = ?'
+          'UPDATE knowledge_index SET embedding_provider_id = ?, embedding_dims = ?, embedding_text_hash = ? WHERE rowid = ?'
         )
-        .run(providerId, dims, rowid)
+        .run(providerId, dims, textHash, rowid)
     })
     tx()
   }
@@ -111,11 +125,17 @@ export class EmbeddingStore {
    * sqlite-vec's virtual table keys on it. Public callers (`KnowledgeService`)
    * use these; the rowid methods stay for the existing `embedding-store.test.ts`
    * unit suite + any future backfill caller that already knows the rowid. */
-  upsertBySlug(slug: string, providerId: string, dims: number, vector: Float32Array): void {
+  upsertBySlug(
+    slug: string,
+    providerId: string,
+    dims: number,
+    vector: Float32Array,
+    textHash: string | null = null
+  ): void {
     if (!this.isEnabled()) return
     const rowid = this.rowidForSlug(slug)
     if (rowid === null) return
-    this.upsert(rowid, providerId, dims, vector)
+    this.upsert(rowid, providerId, dims, vector, textHash)
   }
 
   deleteBySlug(slug: string): void {
@@ -175,6 +195,29 @@ export class EmbeddingStore {
       rowid: typeof r.rowid === 'bigint' ? Number(r.rowid) : r.rowid,
       distance: r.distance,
       providerId: r.provider_id ?? ''
+    }))
+  }
+
+  /** Every knowledge row with what the backfill needs to decide (TASK-3261). */
+  backfillCandidates(): BackfillCandidate[] {
+    const rows = this.db
+      .prepare(
+        `SELECT rowid, slug, file_path, embedding_provider_id, embedding_text_hash
+         FROM knowledge_index ORDER BY created_at ASC, rowid ASC`
+      )
+      .all() as Array<{
+      rowid: number
+      slug: string
+      file_path: string
+      embedding_provider_id: string | null
+      embedding_text_hash: string | null
+    }>
+    return rows.map((r) => ({
+      rowid: r.rowid,
+      slug: r.slug,
+      filePath: r.file_path,
+      providerId: r.embedding_provider_id,
+      textHash: r.embedding_text_hash
     }))
   }
 

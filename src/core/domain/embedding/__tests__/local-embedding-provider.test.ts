@@ -24,12 +24,12 @@ describe('LocalEmbeddingProvider variant', () => {
     expect(src).not.toMatch(/quanti[z]ed\s*:/)
   })
 
-  // Derived from the authority, not restated: the backfill script must embed
-  // with the same id and dtype as the provider the server searches with.
-  it('the backfill script uses the provider id and dtype', () => {
+  // TASK-3261 — the backfill no longer restates the id or the dtype: the
+  // script only delegates to the CLI, which embeds through this provider.
+  it('the backfill script delegates instead of restating the provider', () => {
     const script = read('scripts/backfill-embeddings.mjs')
-    expect(script).toContain(`const PROVIDER_ID = '${LOCAL_PROVIDER_ID}'`)
-    expect(script).toContain(`const DTYPE = '${LOCAL_MODEL_DTYPE}'`)
-    expect(script).not.toMatch(/quanti[z]ed\s*:/)
+    expect(script).toContain("'knowledge', 'backfill'")
+    expect(script).not.toContain(LOCAL_PROVIDER_ID)
+    expect(script).not.toMatch(/quanti[z]ed\s*:|dtype/)
   })
 })

@@ -747,6 +747,13 @@ function createM1Tables(db: Database.Database): void {
   } catch {
     /* exists */
   }
+  // TASK-3261: hash of the text the stored vector was embedded from, so the
+  // backfill re-embeds a row whose file changed on disk.
+  try {
+    db.exec('ALTER TABLE knowledge_index ADD COLUMN embedding_text_hash TEXT')
+  } catch {
+    /* exists */
+  }
 
   // ADR-022 (TASK-651): workspace-scoped knowledge.
   try {

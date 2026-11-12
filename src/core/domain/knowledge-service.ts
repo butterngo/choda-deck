@@ -7,6 +7,7 @@ import { GitOpsImpl } from './knowledge-git'
 import { parseFrontmatter, serializeFrontmatter } from './knowledge-frontmatter'
 import { KNOWLEDGE_TYPES, KNOWLEDGE_SCOPES } from './knowledge-types'
 import { isLikelyWorktreePath } from '../worktree-path'
+import { embeddingText, embeddingTextHash } from './embedding/embedding-backfill'
 import type {
   CreateKnowledgeInput,
   KnowledgeEntry,
@@ -86,7 +87,8 @@ export interface EmbeddingStorePort {
     slug: string,
     providerId: string,
     dims: number,
-    vector: Float32Array
+    vector: Float32Array,
+    textHash?: string | null
   ): Awaitable<void>
   deleteBySlug(slug: string): Awaitable<void>
   search(
@@ -807,8 +809,15 @@ export class KnowledgeService implements KnowledgeOperations {
       try {
         const provider = await this.embeddingProvider!()
         if (!this.embeddingStore!.isEnabled() || provider.id === 'noop') return
-        const vec = await provider.embed(body)
-        await this.embeddingStore!.upsertBySlug(slug, provider.id, provider.dims, vec)
+        const text = embeddingText(body)
+        const vec = await provider.embed(text)
+        await this.embeddingStore!.upsertBySlug(
+          slug,
+          provider.id,
+          provider.dims,
+          vec,
+          embeddingTextHash(text)
+        )
       } catch (err) {
         console.warn(
           `[choda-deck] embed failed for knowledge ${slug}:`,

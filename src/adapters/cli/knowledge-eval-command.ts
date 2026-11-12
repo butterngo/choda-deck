@@ -26,6 +26,10 @@ export const KNOWLEDGE_HELP = `knowledge eval [--fixture <path>] [--perturb reve
   --fixture   query set (default ${DEFAULT_FIXTURE}, relative to cwd)
   --perturb   reverse = reverse every result list; MRR must drop (proves the
               harness can fail)
+knowledge backfill
+  Embed every knowledge row whose vector is missing, from another provider,
+  or from text that no longer matches its file. Rows whose file is gone are
+  listed as orphans and left alone.
 `
 
 export interface KnowledgeEvalIo {
@@ -83,9 +87,13 @@ export async function dispatchKnowledge(sub: string | undefined, args: string[])
     out: (s) => process.stdout.write(s),
     err: (s) => process.stderr.write(s)
   }
+  if (sub === 'backfill') {
+    const { knowledgeBackfillCommand } = await import('./knowledge-backfill-command')
+    return knowledgeBackfillCommand(io)
+  }
   if (sub !== 'eval') {
     io.err(
-      `error: unknown knowledge subcommand "${sub ?? ''}" — only "knowledge eval" is supported\n\n${KNOWLEDGE_HELP}`
+      `error: unknown knowledge subcommand "${sub ?? ''}" — use "knowledge eval" or "knowledge backfill"\n\n${KNOWLEDGE_HELP}`
     )
     return 2
   }
