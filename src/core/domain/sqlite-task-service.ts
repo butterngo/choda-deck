@@ -78,6 +78,7 @@ import type {
   KnowledgeSource,
   KnowledgeListFilter,
   KnowledgeListItem,
+  KnowledgeSearchFilter,
   KnowledgeSearchResult,
   KnowledgeVerifyResult,
   RegisterExistingKnowledgeInput,
@@ -712,8 +713,12 @@ export class SqliteTaskService
   async deleteKnowledge(slug: string): Promise<{ slug: string; deletedFile: boolean }> {
     return this.knowledgeService.deleteKnowledge(slug)
   }
-  searchKnowledge(query: string, k?: number): Promise<KnowledgeSearchResult> {
-    return this.knowledgeService.searchKnowledge(query, k)
+  searchKnowledge(
+    query: string,
+    k?: number,
+    filter?: KnowledgeSearchFilter
+  ): Promise<KnowledgeSearchResult> {
+    return this.knowledgeService.searchKnowledge(query, k, filter)
   }
 
   // ── Code refs + TOUCHES edges (TASK-988) ────────────────────────────────────

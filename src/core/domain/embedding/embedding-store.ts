@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3'
 import type { EmbeddingProvider } from './embedding-provider.interface'
+import type { KnowledgeSearchFilter } from '../knowledge-types'
 
 export interface EmbeddingSearchHit {
   slug: string
@@ -124,19 +125,46 @@ export class EmbeddingStore {
     this.delete(rowid)
   }
 
-  search(query: Float32Array, k: number): EmbeddingSearchHit[] {
+  /**
+   * k nearest entries. With a filter, the KNN index cannot narrow before its
+   * own k-cut (sqlite-vec takes `k` inside MATCH), so the filtered path scans
+   * the matching rows with `vec_distance_l2` — the vec0 default metric, so the
+   * distances equal the unfiltered path's — and cuts after (TASK-3259).
+   */
+  search(query: Float32Array, k: number, filter: KnowledgeSearchFilter = {}): EmbeddingSearchHit[] {
     if (!this.isEnabled()) return []
     const json = JSON.stringify(Array.from(query))
-    const rows = this.db
-      .prepare(
-        `SELECT ki.slug, v.rowid AS rowid, v.distance AS distance,
+    const where: string[] = []
+    const params: string[] = []
+    if (filter.projectId !== undefined) {
+      where.push('ki.project_id = ?')
+      params.push(filter.projectId)
+    }
+    if (filter.type !== undefined) {
+      where.push('ki.type = ?')
+      params.push(filter.type)
+    }
+    if (filter.scope !== undefined) {
+      where.push('ki.scope = ?')
+      params.push(filter.scope)
+    }
+    const sql =
+      where.length === 0
+        ? `SELECT ki.slug, v.rowid AS rowid, v.distance AS distance,
                 ki.embedding_provider_id AS provider_id
          FROM knowledge_vec v
          JOIN knowledge_index ki ON ki.rowid = v.rowid
          WHERE v.embedding MATCH ? AND k = ?
          ORDER BY v.distance`
-      )
-      .all(json, k) as Array<{
+        : `SELECT ki.slug, v.rowid AS rowid, vec_distance_l2(v.embedding, ?) AS distance,
+                ki.embedding_provider_id AS provider_id
+         FROM knowledge_vec v
+         JOIN knowledge_index ki ON ki.rowid = v.rowid
+         WHERE ${where.join(' AND ')}
+         ORDER BY distance
+         LIMIT ?`
+    const args = where.length === 0 ? [json, k] : [json, ...params, k]
+    const rows = this.db.prepare(sql).all(...args) as Array<{
       slug: string
       rowid: number | bigint
       distance: number

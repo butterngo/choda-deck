@@ -212,6 +212,17 @@ export interface KnowledgeSearchHit extends KnowledgeListItem {
   excerpt: string
 }
 
+/**
+ * TASK-3259 — narrows a search to entries matching every field given. Applied
+ * before the k-cut, so a filtered search still returns k hits when k matching
+ * entries exist.
+ */
+export interface KnowledgeSearchFilter {
+  projectId?: string
+  type?: KnowledgeType
+  scope?: KnowledgeScope
+}
+
 export interface KnowledgeSearchResult {
   enabled: boolean
   reason?: string

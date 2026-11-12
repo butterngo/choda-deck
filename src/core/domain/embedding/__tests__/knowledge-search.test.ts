@@ -220,3 +220,85 @@ describe('KnowledgeService.searchKnowledge', () => {
     })
   })
 })
+
+// TASK-3259 — filters narrow the candidate set before the k-cut.
+describe('KnowledgeService.searchKnowledge filters', () => {
+  const seed = (
+    slug: string,
+    body: string,
+    opts: { projectId?: string; type?: 'decision' | 'learning'; scope?: 'project' | 'cross' } = {}
+  ): void => {
+    svc.createKnowledge({
+      projectId: opts.projectId ?? 'proj-s',
+      type: opts.type ?? 'decision',
+      scope: opts.scope ?? 'project',
+      title: slug,
+      body,
+      refs: [],
+      slug
+    })
+  }
+  const query = 'routing transport planner'
+
+  beforeEach(() => {
+    fs.mkdirSync(path.join(tmpDir, 'repo-b'), { recursive: true })
+    new ProjectRepository(db).ensure('proj-b', 'Other', path.join(tmpDir, 'repo-b'))
+  })
+
+  it('returns only entries of the given project', async () => {
+    seed('a-near', query)
+    seed('b-near', query, { projectId: 'proj-b' })
+    await waitForEmbedQueue()
+
+    const hits = await svc.searchKnowledge(query, 5, { projectId: 'proj-s' })
+    expect(hits.results.map((r) => r.slug)).toEqual(['a-near'])
+    expect(hits.results.every((r) => r.projectId === 'proj-s')).toBe(true)
+  })
+
+  it('still returns k entries of the project when the global nearest all belong to another', async () => {
+    for (let i = 0; i < 20; i++) seed(`b-${i}`, `${query} ${i}`, { projectId: 'proj-b' })
+    for (let i = 0; i < 5; i++) seed(`a-${i}`, `zzzz unrelated words qqqq ${i}`)
+    await waitForEmbedQueue()
+
+    // The precondition that makes this test discriminating: a post-filter of
+    // the global top 20 would find no proj-s entry at all.
+    const global = await svc.searchKnowledge(query, 20)
+    expect(global.results.some((r) => r.projectId === 'proj-s')).toBe(false)
+
+    const hits = await svc.searchKnowledge(query, 5, { projectId: 'proj-s' })
+    expect(hits.results).toHaveLength(5)
+    expect(new Set(hits.results.map((r) => r.slug))).toEqual(
+      new Set(['a-0', 'a-1', 'a-2', 'a-3', 'a-4'])
+    )
+  })
+
+  it('returns the same distances as the unfiltered search for the rows it keeps', async () => {
+    seed('one', 'alpha routing')
+    seed('two', 'beta storage')
+    await waitForEmbedQueue()
+
+    const all = await svc.searchKnowledge(query, 2)
+    const filtered = await svc.searchKnowledge(query, 2, { projectId: 'proj-s' })
+    expect(filtered.results.map((r) => [r.slug, r.distance.toFixed(5)])).toEqual(
+      all.results.map((r) => [r.slug, r.distance.toFixed(5)])
+    )
+  })
+
+  it('type filter excludes entries of another type', async () => {
+    seed('a-decision', query)
+    seed('a-learning', query, { type: 'learning' })
+    await waitForEmbedQueue()
+
+    const hits = await svc.searchKnowledge(query, 5, { type: 'learning' })
+    expect(hits.results.map((r) => r.slug)).toEqual(['a-learning'])
+  })
+
+  it('scope filter excludes entries of another scope', async () => {
+    seed('a-project', query)
+    seed('a-cross', query, { scope: 'cross' })
+    await waitForEmbedQueue()
+
+    const hits = await svc.searchKnowledge(query, 5, { scope: 'cross' })
+    expect(hits.results.map((r) => r.slug)).toEqual(['a-cross'])
+  })
+})

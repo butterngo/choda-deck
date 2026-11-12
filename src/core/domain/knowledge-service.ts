@@ -17,6 +17,7 @@ import type {
   KnowledgeListItem,
   KnowledgeRef,
   KnowledgeRefStaleness,
+  KnowledgeSearchFilter,
   KnowledgeSearchResult,
   KnowledgeVerifyResult,
   RegisterExistingKnowledgeInput,
@@ -88,7 +89,11 @@ export interface EmbeddingStorePort {
     vector: Float32Array
   ): Awaitable<void>
   deleteBySlug(slug: string): Awaitable<void>
-  search(query: Float32Array, k: number): Awaitable<EmbeddingSearchHitNarrow[]>
+  search(
+    query: Float32Array,
+    k: number,
+    filter?: KnowledgeSearchFilter
+  ): Awaitable<EmbeddingSearchHitNarrow[]>
 }
 
 export class KnowledgeNotFoundError extends Error {
@@ -736,7 +741,11 @@ export class KnowledgeService implements KnowledgeOperations {
       : `${prose.slice(0, EXCERPT_MAX_CHARS - 1).trimEnd()}…`
   }
 
-  async searchKnowledge(query: string, k = 5): Promise<KnowledgeSearchResult> {
+  async searchKnowledge(
+    query: string,
+    k = 5,
+    filter: KnowledgeSearchFilter = {}
+  ): Promise<KnowledgeSearchResult> {
     if (!this.embeddingStore || !this.embeddingProvider) {
       return { enabled: false, reason: 'embedding store not configured', results: [] }
     }
@@ -765,7 +774,7 @@ export class KnowledgeService implements KnowledgeOperations {
         results: []
       }
     }
-    const hits = await this.embeddingStore.search(vec, Math.max(1, k))
+    const hits = await this.embeddingStore.search(vec, Math.max(1, k), filter)
     const rows = await Promise.all(hits.map((h) => this.knowledge.get(h.slug)))
     const results = hits
       .map((h, i) => {

@@ -3,6 +3,7 @@ import type {
   KnowledgeEntry,
   KnowledgeListFilter,
   KnowledgeListItem,
+  KnowledgeSearchFilter,
   KnowledgeSearchResult,
   KnowledgeSource,
   KnowledgeVerifyResult,
@@ -32,5 +33,9 @@ export interface KnowledgeOperations {
   updateKnowledge(input: UpdateKnowledgeInput): Promise<KnowledgeEntry>
   verifyKnowledge(slug: string): Promise<KnowledgeVerifyResult>
   deleteKnowledge(slug: string): Promise<{ slug: string; deletedFile: boolean }>
-  searchKnowledge(query: string, k?: number): Promise<KnowledgeSearchResult>
+  searchKnowledge(
+    query: string,
+    k?: number,
+    filter?: KnowledgeSearchFilter
+  ): Promise<KnowledgeSearchResult>
 }
