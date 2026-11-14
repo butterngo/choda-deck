@@ -200,14 +200,15 @@ export interface KnowledgeVerifyResult {
 
 export interface KnowledgeSearchHit extends KnowledgeListItem {
   /**
-   * Nearest-chunk vector distance to the query. Every hit carries one, also a
-   * hit the lexical leg found (TASK-3253), so TASK-1622 can read it. Results
-   * are ordered by `score`, not by this.
+   * Nearest-chunk vector distance to the query, also for a hit the lexical leg
+   * found (TASK-3253), so TASK-1622 can read it. `null` when the entry has no
+   * vector yet — such a hit is still returned, marked `weak`. Results are
+   * ordered by `score`, not by this.
    */
-  distance: number
+  distance: number | null
   /** TASK-3253 — Reciprocal Rank Fusion of the vector and lexical ranks. */
   score: number
-  /** TASK-1622 — `distance` is past the swept no-match cut. Shown, never hidden. */
+  /** TASK-1622 — `distance` is past the swept no-match cut, or absent. Shown, never hidden. */
   weak: boolean
   /**
    * TASK-1599 — leading prose of the entry body, so a result carries context
