@@ -106,6 +106,34 @@ describe('EmbeddingStore', () => {
     expect(cleared.embedding_dims).toBeNull()
   })
 
+  it('ensureSchema drops chunk-map rows left behind by a pre-chunk build wiping the vectors', () => {
+    const provider = fakeProvider('local-minilm-l6-v2-q8', 4)
+    store.ensureSchema(provider)
+    const wiped = insertKnowledgeRow('wiped')
+    const kept = insertKnowledgeRow('kept')
+    store.upsertChunks(wiped, provider.id, 4, [new Float32Array(4), new Float32Array(4)])
+
+    // What a pre-TASK-3260 adapter does on a provider-id mismatch: it knows no
+    // chunk map, so the map survives while every vector and provider id goes.
+    db.exec('DROP TABLE knowledge_vec')
+    db.exec('UPDATE knowledge_index SET embedding_provider_id = NULL, embedding_dims = NULL')
+    db.exec('CREATE VIRTUAL TABLE knowledge_vec USING vec0(embedding float[4])')
+
+    const healer = new EmbeddingStore(db, true)
+    const report = healer.ensureSchema(provider)
+    expect(report.orphanChunksRemoved).toBe(2)
+    expect(report.reembeddedAll).toBe(false)
+    expect(healer.pendingSlugs(provider.id)).toEqual(['wiped', 'kept'])
+
+    healer.upsertChunks(kept, provider.id, 4, [new Float32Array([0, 0, 1, 0])])
+    const again = new EmbeddingStore(db, true).ensureSchema(provider)
+    expect(again.orphanChunksRemoved).toBe(0)
+    const mapped = db.prepare('SELECT entry_rowid FROM knowledge_chunk_map').all() as Array<{
+      entry_rowid: number
+    }>
+    expect(mapped.map((r) => r.entry_rowid)).toEqual([kept])
+  })
+
   it('search returns hits ordered by distance', () => {
     const provider = fakeProvider('local-minilm-l6-v2', 4)
     store.ensureSchema(provider)

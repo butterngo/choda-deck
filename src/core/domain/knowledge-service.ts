@@ -833,9 +833,11 @@ export class KnowledgeService implements KnowledgeOperations {
     const results = fused
       .map((h, i) => {
         const row = rows[i]
-        // An entry the lexical leg found but that has no vector yet carries no
-        // distance; it is dropped rather than given an invented one.
-        if (!row || !distance.has(h.slug)) return null
+        if (!row) return null
+        // An entry the lexical leg found but that has no vector carries no
+        // distance and counts as weak. It is kept: dropping it hid exact-title
+        // and exact-identifier hits whenever vectors went missing (INBOX-2665).
+        const d = distance.get(h.slug) ?? null
         return {
           slug: row.slug,
           projectId: row.projectId,
@@ -846,9 +848,9 @@ export class KnowledgeService implements KnowledgeOperations {
           filePath: row.filePath,
           createdAt: row.createdAt,
           lastVerifiedAt: row.lastVerifiedAt,
-          distance: distance.get(h.slug)!,
+          distance: d,
           score: h.score,
-          weak: distance.get(h.slug)! > NO_MATCH_DISTANCE,
+          weak: d === null || d > NO_MATCH_DISTANCE,
           excerpt: this.excerptOf(row.filePath)
         }
       })
@@ -863,8 +865,8 @@ export class KnowledgeService implements KnowledgeOperations {
   }
 
   // Fire-and-forget embed. Failures log a warning but never reject — the row
-  // stays in knowledge_index without a vector and is filtered out of search
-  // until a backfill pass picks it up.
+  // stays in knowledge_index without a vector and only the lexical leg can
+  // find it until a backfill pass picks it up.
   // The lexical row is written in line, so a search right after a write finds
   // it; the vectors follow from the fire-and-forget embed.
   private async indexText(slug: string, title: string, body: string): Promise<void> {

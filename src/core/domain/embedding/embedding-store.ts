@@ -23,6 +23,8 @@ export interface EmbeddingMismatchReport {
   previousProviderId: string | null
   activeProviderId: string
   reembeddedAll: boolean
+  /** Chunk-map rows whose vector was gone, removed at boot (INBOX-2665). */
+  orphanChunksRemoved?: number
 }
 
 /**
@@ -97,6 +99,7 @@ export class EmbeddingStore {
         `CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_vec USING vec0(embedding float[${provider.dims}])`
       )
     }
+    report.orphanChunksRemoved = this.removeOrphanChunks()
 
     this.vecTableReady = true
     return report
@@ -301,6 +304,22 @@ export class EmbeddingStore {
       )
       .all(activeProviderId) as Array<{ slug: string }>
     return rows.map((r) => r.slug)
+  }
+
+  /**
+   * A build from before TASK-3260 knows no chunk map: on a provider-id mismatch
+   * it drops `knowledge_vec` and clears every row's provider id but leaves the
+   * map, so each entry keeps chunk rows pointing at vectors that no longer
+   * exist (INBOX-2665: the installed Companion adapter did this to 931 of 961
+   * entries). Their rows already read as unembedded, so the backfill re-embeds
+   * them; this only removes the dangling map rows so the counts stay true.
+   */
+  private removeOrphanChunks(): number {
+    return this.db
+      .prepare(
+        'DELETE FROM knowledge_chunk_map WHERE chunk_id NOT IN (SELECT rowid FROM knowledge_vec)'
+      )
+      .run().changes
   }
 
   private chunkTableExists(): boolean {

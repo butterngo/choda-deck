@@ -19,7 +19,7 @@ export interface EvalFixture {
 
 export interface EvalHit {
   slug: string
-  distance?: number
+  distance?: number | null
 }
 
 export type EvalSearch = (query: string, k: number) => Promise<EvalHit[]>
@@ -162,7 +162,9 @@ function median(xs: number[]): number {
 }
 
 function profile(lists: EvalHit[][]): DistanceProfile | null {
-  const withDist = lists.filter((l) => l.length > 0 && l.every((h) => h.distance !== undefined))
+  const withDist = lists.filter(
+    (l) => l.length > 0 && l.every((h) => typeof h.distance === 'number')
+  )
   if (withDist.length === 0) return null
   const top1 = withDist.map((l) => l[0].distance!)
   return {

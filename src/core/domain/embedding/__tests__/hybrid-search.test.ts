@@ -67,6 +67,7 @@ const git: GitOps = {
 let tmpDir: string
 let db: Database.Database
 let svc: KnowledgeService
+let store: EmbeddingStore
 
 const fts = (slug: string): { title: string; body: string } | undefined =>
   db.prepare('SELECT title, body FROM knowledge_fts WHERE slug = ?').get(slug) as
@@ -96,7 +97,7 @@ beforeEach(() => {
     fs.mkdirSync(path.join(tmpDir, id))
     projects.ensure(id, id, path.join(tmpDir, id))
   }
-  const store = new EmbeddingStore(db, true)
+  store = new EmbeddingStore(db, true)
   const provider = new FlatProvider()
   store.ensureSchema(provider)
   svc = new KnowledgeService({
@@ -144,6 +145,20 @@ describe('hybrid knowledge_search (TASK-3253)', () => {
     expect(hits.results[0].slug).toBe('target')
     expect(typeof hits.results[0].distance).toBe('number')
     expect(hits.results[0].score).toBeGreaterThan(hits.results[1].score)
+  })
+
+  it('an exact-identifier entry with no vector is still returned, weak and without a distance', async () => {
+    for (let i = 0; i < 4; i++) await seed(`filler-${i}`, `ordinary prose number ${i}`)
+    await seed('unembedded', 'the knob is CONNECTOR_PRODUCT_ID and nothing else')
+    await drain()
+    store.deleteBySlug('unembedded')
+
+    const hits = await svc.searchKnowledge('CONNECTOR_PRODUCT_ID', 5)
+    const hit = hits.results.find((h) => h.slug === 'unembedded')
+    expect(hit).toBeDefined()
+    expect(hit!.distance).toBeNull()
+    expect(hit!.weak).toBe(true)
+    expect(hits.lexicalMatches).toBeGreaterThan(0)
   })
 
   it('a query full of FTS syntax characters returns results instead of an error', async () => {
