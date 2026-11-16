@@ -52,7 +52,18 @@ export function handleAuthorizeRedirect(
   // Default the public client + auth-code flow when the client omits them.
   if (!forwarded.has('client_id')) forwarded.set('client_id', cfg.clientId)
   if (!forwarded.has('response_type')) forwarded.set('response_type', 'code')
+  forwarded.set('scope', withOfflineAccess(forwarded.get('scope')))
   return { location: `${cfg.authorizationEndpoint}?${forwarded.toString()}` }
+}
+
+// Without offline_access Keycloak ties the refresh token to the SSO session,
+// which dies after 30 min idle — the connector's next refresh gets invalid_grant
+// and claude.ai asks for a reconnect. An offline token lives on the realm's
+// offline-session idle window instead, and is revocable per user in Keycloak.
+function withOfflineAccess(scope: string | null): string {
+  const scopes = (scope ?? 'openid').split(' ').filter((s) => s.length > 0)
+  if (!scopes.includes('offline_access')) scopes.push('offline_access')
+  return scopes.join(' ')
 }
 
 export async function handleTokenProxy(

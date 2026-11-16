@@ -28,7 +28,7 @@ describe('keycloak-proxy — handleAuthorizeRedirect', () => {
     expect(url.origin + url.pathname).toBe(CFG.authorizationEndpoint)
     expect(url.searchParams.get('code_challenge')).toBe('xyz')
     expect(url.searchParams.get('state')).toBe('s1')
-    expect(url.searchParams.get('scope')).toBe('openid')
+    expect(url.searchParams.get('scope')).toBe('openid offline_access')
   })
 
   it('defaults client_id + response_type when the client omits them', () => {
@@ -36,6 +36,17 @@ describe('keycloak-proxy — handleAuthorizeRedirect', () => {
     const url = new URL(location)
     expect(url.searchParams.get('client_id')).toBe('choda-connector')
     expect(url.searchParams.get('response_type')).toBe('code')
+  })
+
+  it('requests offline_access so the refresh token outlives the 30-min SSO idle', () => {
+    const omitted = new URL(handleAuthorizeRedirect(CFG, new URLSearchParams()).location)
+    expect(omitted.searchParams.get('scope')).toBe('openid offline_access')
+
+    const present = new URL(
+      handleAuthorizeRedirect(CFG, new URLSearchParams({ scope: 'offline_access openid' }))
+        .location
+    )
+    expect(present.searchParams.get('scope')).toBe('offline_access openid')
   })
 })
 
