@@ -26,6 +26,7 @@ Usage: choda-deck <command> [options]
 Commands:
   mcp serve     Start MCP server (set MCP_TRANSPORT=http for Streamable HTTP)
   sync pull     Pull remote changes into the local SQLite DB (ADR-030 Phase 2)
+  sync backfill  Stamp + push project/workspace rows written outside sync mode (TASK-3343)
   activity digest  Write the daily Claude activity digest (TASK-2151)
   activity week [pick <ids> | swap <out> <in>]  Active projects per ISO week + the week's pick (TASK-3127)
   rules check <projectId>  Rules 1 and 2 of personal-operating-rules; exit 3 = blocked (TASK-3129)
@@ -67,7 +68,7 @@ async function main(): Promise<number> {
     case 'mcp':
       return dispatchMcp(sub)
     case 'sync':
-      return dispatchSync(sub)
+      return dispatchSync(sub, argv.slice(2))
     case 'activity': {
       const { dispatchActivity } = await import('./activity-command')
       return dispatchActivity(sub, argv.slice(2))
@@ -112,9 +113,15 @@ async function main(): Promise<number> {
 
 // ADR-030 Phase 2 — `sync pull`: read-only drain of remote changes into the
 // local SQLite working copy. No write-through (that's parked Phases 3-6).
-async function dispatchSync(sub: string | undefined): Promise<number> {
+async function dispatchSync(sub: string | undefined, args: string[]): Promise<number> {
+  if (sub === 'backfill') {
+    const { syncBackfillCommand } = await import('./sync-backfill-command')
+    return syncBackfillCommand(args)
+  }
   if (sub !== 'pull') {
-    process.stderr.write(`error: only "sync pull" is supported (got "${sub ?? ''}")\n`)
+    process.stderr.write(
+      `error: only "sync pull" and "sync backfill" are supported (got "${sub ?? ''}")\n`
+    )
     return 2
   }
   const remoteUrl = process.env.CHODA_PULL_REMOTE_URL
