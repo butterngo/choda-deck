@@ -66,6 +66,8 @@ export interface ActivityMetrics {
   correctionRate: number
   claudeRunMinutes: number
   waitMinutes: number
+  /** TASK-3494 — wait-run time outside active buckets (Claude ran, nobody was there). */
+  unattendedRunMinutes: number
   activeMinutes: number
   projectSwitches: number
   switchesPerActiveHour: number
@@ -189,6 +191,16 @@ function round(v: number, places: number): number {
 
 function sortedRecord(r: Map<string, number>): Record<string, number> {
   return Object.fromEntries([...r.entries()].sort(([a], [b]) => a.localeCompare(b)))
+}
+
+/** Milliseconds of [from, to] that fall inside the given active buckets. */
+function activeOverlap(from: number, to: number, buckets: Set<number>): number {
+  let ms = 0
+  for (let b = Math.floor(from / BUCKET_MS); b * BUCKET_MS < to; b++) {
+    if (!buckets.has(b)) continue
+    ms += Math.min(to, (b + 1) * BUCKET_MS) - Math.max(from, b * BUCKET_MS)
+  }
+  return ms
 }
 
 function bump(m: Map<string, number>, key: string, by = 1): void {
@@ -318,16 +330,23 @@ export function computeTranscriptDigest(input: TranscriptDigestInput): Transcrip
   prompts.sort((a, b) => a.t - b.t)
 
   // claudeRun: prompt → last main-thread assistant row of the same session before
-  // that session's next prompt. wait: a run during which no other session got a prompt.
+  // that session's next prompt. wait: a run during which no other session got a prompt,
+  // counted only inside active buckets (TASK-3494) — a multi-hour unattended run is
+  // not Butter waiting, so its time outside active buckets goes to unattendedRun.
+  // Wait runs never overlap (one would contain the other's prompt), so wait ≤ active.
   let runMs = 0
   let waitMs = 0
+  let unattendedMs = 0
   for (const p of prompts) {
     const next = prompts.find((q) => q.session === p.session && q.t > p.t)?.t ?? Infinity
     const ends = (assistantTimes.get(p.session) ?? []).filter((t) => t > p.t && t < next)
     if (ends.length === 0) continue
     const end = Math.max(...ends)
     runMs += end - p.t
-    if (!prompts.some((o) => o.session !== p.session && o.t > p.t && o.t < end)) waitMs += end - p.t
+    if (prompts.some((o) => o.session !== p.session && o.t > p.t && o.t < end)) continue
+    const attended = activeOverlap(p.t, end, buckets)
+    waitMs += attended
+    unattendedMs += end - p.t - attended
   }
 
   let switches = 0
@@ -370,6 +389,7 @@ export function computeTranscriptDigest(input: TranscriptDigestInput): Transcrip
       correctionRate: prompts.length ? round(corrections.length / prompts.length, 2) : 0,
       claudeRunMinutes: round(runMs / 60_000, 1),
       waitMinutes: round(waitMs / 60_000, 1),
+      unattendedRunMinutes: round(unattendedMs / 60_000, 1),
       activeMinutes,
       projectSwitches: switches,
       switchesPerActiveHour: activeMinutes ? round(switches / (activeMinutes / 60), 1) : 0,
