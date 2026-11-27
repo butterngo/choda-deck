@@ -108,6 +108,30 @@ describe('computeTranscriptDigest — TASK-2150', () => {
     expect(d.metrics.waitMinutes).toBe(1)
   })
 
+  it('TASK-3494: a long unattended run counts as wait only inside active buckets', () => {
+    // 4h run with rows at 10:02 and 14:00 only: the buckets 10:00 and 14:00 are active,
+    // everything between is unattended. Unclipped it would be 240 wait minutes.
+    const d = digest([
+      prompt('start the long autopilot run', at('10:00')),
+      assistant(at('10:02')),
+      assistant(at('14:00'))
+    ])
+    expect(d.metrics.claudeRunMinutes).toBe(240)
+    expect(d.metrics.waitMinutes).toBe(5)
+    expect(d.metrics.unattendedRunMinutes).toBe(235)
+    expect(d.metrics.waitMinutes).toBeLessThanOrEqual(d.metrics.activeMinutes)
+  })
+
+  it('TASK-3494: a short run crossing a bucket boundary still counts fully as wait', () => {
+    const d = digest([
+      prompt('fix the failing test please', at('10:03')),
+      assistant(at('10:04')),
+      assistant(at('10:06'))
+    ])
+    expect(d.metrics.waitMinutes).toBe(3)
+    expect(d.metrics.unattendedRunMinutes).toBe(0)
+  })
+
   it('AC-6: subdirs and case variants stay in one workspace; unregistered cwds are unresolved', () => {
     const d = digest([
       prompt('work in the reports folder', at('10:00'), { cwd: 'C:\\ws\\docs\\reports' }),
